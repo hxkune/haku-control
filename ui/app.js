@@ -772,6 +772,60 @@ $('#man-add').addEventListener('click', () => {
   $('#man-host').value = '';
 });
 
+// ---- first-start wizard ([general] welcome=1 in a freshly created settings file)
+let wzStep = 0, wzShown = false;
+function wizard(show) {
+  $('#wizard').classList.toggle('hidden', !show);
+  if (show) { wzShown = true; wzGo(0); }
+}
+function wzGo(n) {
+  wzStep = Math.max(0, Math.min(3, n));
+  $$('.wz-step').forEach(s => s.classList.toggle('on', +s.dataset.step === wzStep));
+  $$('#wz-dots i').forEach((d, i) => d.classList.toggle('on', i <= wzStep));
+  $('#wz-back').classList.toggle('hidden', wzStep === 0);
+  $('#wz-next span').textContent = t(wzStep === 3 ? 'wz.finish' : 'wz.next');
+  if (wzStep === 2 && !S.ext.found.length && !S.ext.scanning) { S.ext.scanning = 1; send({ cmd: 'scan' }); }
+  updateWizard();
+}
+function updateWizard() {
+  if ($('#wizard').classList.contains('hidden')) return;
+  $$('#wz-lang button').forEach(b => b.classList.toggle('on', b.dataset.v === LANG));
+  const row = (name, ok, detail, note) => `<div class="wz-row"><div><b>${name}</b><small>${note || ''}</small></div>
+      <span class="state"><span class="dot ${ok ? 'on' : 'off'}"></span>${detail}</span></div>`;
+  $('#wz-pc').innerHTML =
+    row(t('wz.board'), S.msi, S.msi ? t('wz.found') : t('wz.notfound'), S.msi ? '' : t('wz.nomsi')) +
+    row(t('wz.mem'), S.sticks, S.sticks ? t('wz.sticks', S.sticks) : t('wz.notfound'), S.sticks || S.pawnio ? '' : t('wz.pawnio')) +
+    row(t('wz.gpu'), S.gpu_temp != null, S.gpu_temp != null ? S.gpu_temp + ' °C' : t('wz.notfound'));
+  const n = S.nano || {};
+  $('#wz-nano').textContent = n.configured ? t('wz.nano.on', n.name || n.ip || '') : n.pair ? '' : t('wz.nano.off');
+  $('#wizard [data-pair]').classList.toggle('hidden', !!n.configured);
+  const E = S.ext;
+  $('#wz-scan').disabled = !!E.scanning;
+  $('#wz-scan span').textContent = E.scanning ? t('dev.scanning') : t('dev.scan');
+  $('#wz-scan-st').textContent = E.scanning ? t('dev.scanning.note') : E.found.length ? t('dev.found', E.found.length) : '';
+  const html = E.found.map((f, i) => `<div class="found-row"><span class="kind">${esc(f.title)}</span>
+      <div class="what"><b>${esc(f.name || f.title)}</b><small>${esc(f.host)}${f.info ? ' · ' + esc(f.info) : ''}</small></div>
+      ${f.added ? `<span class="added">${t('dev.added')}</span>` : `<button class="btn small" data-wzf="${i}">${t('dev.add')}</button>`}</div>`).join('');
+  const box = $('#wz-found');
+  if (box.dataset.html !== html) {
+    box.dataset.html = html; box.innerHTML = html;
+    box.querySelectorAll('[data-wzf]').forEach(b => b.addEventListener('click', () => {
+      const f = E.found[+b.dataset.wzf]; b.disabled = true;
+      send({ cmd: 'dev_add', kind: f.kind, host: f.host, sub: f.sub, name: f.name || f.title, leds: 0 });
+    }));
+  }
+  const a = $('#wz-autostart'); a.checked = S.autostart === 1; a.disabled = S.autostart < 0;
+}
+$('#wz-back').addEventListener('click', () => wzGo(wzStep - 1));
+$('#wz-next').addEventListener('click', () => {
+  if (wzStep < 3) return wzGo(wzStep + 1);
+  setCfg('general', 'welcome', 0);
+  wizard(false);
+});
+$('#wz-scan').addEventListener('click', () => { S.ext.scanning = 1; updateWizard(); send({ cmd: 'scan' }); });
+$('#wz-autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.target.checked ? 1 : 0 }));
+$$('#wz-lang button').forEach(b => b.addEventListener('click', () => $$('#lang button').find(x => x.dataset.v === b.dataset.v).click()));
+
 // settings
 $('#autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.target.checked ? 1 : 0 }));
 $('#hotspot-auto').addEventListener('change', e => setCfg('hotspot', 'auto', e.target.checked ? 1 : 0));
@@ -827,6 +881,7 @@ $$('#lang button').forEach(b => b.addEventListener('click', () => {
   setCfg('general', 'lang', LANG);
   applyI18n(); buildEffects(); buildHotkeys(); buildBulbs(); buildDevices(); renderEffectSide();
   showTab(tab); updateNano(); updateChips(); updateSettings(); drawAll();
+  if (!$('#wizard').classList.contains('hidden')) wzGo(wzStep);
 }));
 
 // ------------------------------------------------------------------ status chips
@@ -860,7 +915,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings();
+  updateNano(); updateChips(); updateSettings(); updateWizard();
   if (nanoLayoutChanged) drawAll();
 }
 
@@ -879,6 +934,7 @@ if (wv) wv.addEventListener('message', e => {
     applyStatus(m);
     renderEffectSide();
     sizeCanvases();
+    if (!wzShown && cv('general', 'welcome', '0') === '1') wizard(true);
   }
 });
 

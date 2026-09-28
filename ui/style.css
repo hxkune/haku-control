@@ -452,3 +452,25 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .dev-card .opts { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
 .dev-card .btn.danger.confirm { color: #fff; --lc: #fff; }
 @media (max-width: 760px) { .manual-row { grid-template-columns: 1fr 1fr; } .found-row { grid-template-columns: 1fr auto; } .found-row .kind { display: none; } }
+
+/* ---------------- first-start wizard */
+.wizard { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px;
+  background: rgba(6, 6, 6, .82); backdrop-filter: blur(6px); animation: pop .2s ease; }
+.wiz { width: min(620px, 100%); min-height: 430px; display: flex; flex-direction: column; padding: 34px 36px 26px; background-color: #0f0f0f; }
+.wz-step { display: none; flex: 1; }
+.wz-step.on { display: block; animation: pop .18s ease; }
+.wz-step h2 { font: 600 26px var(--font-d, var(--font)); letter-spacing: -.3px; margin: 0 0 10px; }
+.wz-step > .muted { max-width: 500px; margin-bottom: 22px; line-height: 1.55; }
+.wz-mark { width: 74px; height: 74px; margin: 6px 0 22px; background: url(mark.svg) center / 88% no-repeat; }
+.wz-list { display: flex; flex-direction: column; }
+.wz-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); }
+.wz-row b { display: block; font-weight: 600; font-size: 13.5px; }
+.wz-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.wz-row small:empty { display: none; }
+.wz-row .state { color: var(--muted); font-size: 12px; white-space: nowrap; display: flex; align-items: center; gap: 7px; }
+.wz-found { margin-top: 6px; max-height: 170px; overflow: auto; }
+.wiz .note { color: var(--faint); font-size: 12px; margin-top: 14px; line-height: 1.5; }
+.wz-foot { display: flex; align-items: center; gap: 10px; margin-top: 26px; }
+.wz-dots { flex: 1; display: flex; gap: 8px; }
+.wz-dots i { width: 7px; height: 7px; border: 1px solid var(--line3); transform: rotate(45deg); }
+.wz-dots i.on { background: #fff; border-color: #fff; }

@@ -40,6 +40,8 @@ static const char default_ini[] =
 "brightness=100\r\n"
 "fps=30\r\n"
 "lang=en\r\n"
+"; 1 = show the first-start guide in the window\r\n"
+"welcome=1\r\n"
 "\r\n"
 "; Each effect can have its own palette and speed, otherwise [general] is used.\r\n"
 "[flow]\r\n"
@@ -434,11 +436,16 @@ static int jesc(char *out, int cap, const char *s) {
     return n;
 }
 
+static int pawnio_installed(void) {
+    wchar_t p[MAX_PATH]; ExpandEnvironmentStringsW(L"%ProgramFiles%\\PawnIO\\PawnIOLib.dll", p, MAX_PATH);
+    return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES;
+}
+
 static int status_body(char *out, int cap) {
     char gt[16] = "null";
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"bulbs\":[",
-                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active());
+    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"bulbs\":[",
+                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_installed());
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));

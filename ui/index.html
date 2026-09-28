@@ -272,6 +272,48 @@
   </section>
 </main>
 
+<!-- first start: a short walk through what was found -->
+<div class="wizard hidden" id="wizard">
+  <div class="card wiz">
+    <section class="wz-step" data-step="0">
+      <div class="wz-mark"></div>
+      <h2 data-i18n="wz.hello">Welcome to haku control</h2>
+      <p class="muted" data-i18n="wz.hello.text"></p>
+      <div class="seg lang-seg" id="wz-lang"><button data-v="en">English</button><button data-v="ru">Русский</button></div>
+    </section>
+    <section class="wz-step" data-step="1">
+      <h2 data-i18n="wz.pc">Inside your PC</h2>
+      <p class="muted" data-i18n="wz.pc.text"></p>
+      <div class="wz-list" id="wz-pc"></div>
+    </section>
+    <section class="wz-step" data-step="2">
+      <h2 data-i18n="wz.room">Lights in the room</h2>
+      <p class="muted" data-i18n="wz.room.text"></p>
+      <div class="wz-list">
+        <div class="wz-row"><div><b>Nanoleaf</b><small data-pair-msg></small><small id="wz-nano"></small></div>
+          <button class="btn small" data-pair><span data-i18n="wz.pair">Pair</span></button></div>
+        <div class="wz-row"><div><b data-i18n="wz.lan">WLED · OpenRGB · Govee · LIFX · Yeelight · Hue</b><small id="wz-scan-st"></small></div>
+          <button class="btn small" id="wz-scan"><span data-i18n="dev.scan">Scan network</span></button></div>
+      </div>
+      <div class="found wz-found" id="wz-found"></div>
+      <p class="note" data-i18n="wz.aidot"></p>
+    </section>
+    <section class="wz-step" data-step="3">
+      <h2 data-i18n="wz.done">All set</h2>
+      <p class="muted" data-i18n="wz.done.text"></p>
+      <div class="wz-list">
+        <div class="wz-row"><div><b data-i18n="autostart">Start with Windows</b><small data-i18n="autostart.note"></small></div>
+          <label class="switch"><input type="checkbox" id="wz-autostart"><span></span></label></div>
+      </div>
+    </section>
+    <footer class="wz-foot">
+      <div class="wz-dots" id="wz-dots"><i></i><i></i><i></i><i></i></div>
+      <button class="btn ghost" id="wz-back"><span data-i18n="wz.back">Back</span></button>
+      <button class="btn primary" id="wz-next"><span data-i18n="wz.next">Next</span></button>
+    </footer>
+  </div>
+</div>
+
 <div class="popover hidden" id="picker">
   <canvas id="pk-sv" width="240" height="150"></canvas>
   <input type="range" id="pk-hue" min="0" max="360" value="0">
