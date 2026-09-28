@@ -1,10 +1,9 @@
-// Icons and version info: shown as "haku control" in Explorer and Task Manager.
+// haku-control-setup.exe: icon, version info and the packed program (obj\payload.bin from scripts\pack.ps1).
 #include <windows.h>
 #include "version.h"
 
-1 ICON "app.ico"          // white mark on black: exe and window
-2 ICON "tray-dark.ico"    // tray, dark taskbar
-3 ICON "tray-light.ico"   // tray, light taskbar
+1 ICON "app.ico"
+PAYLOAD RCDATA "..\\obj\\payload.bin"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION HAKU_VER_NUM
@@ -17,13 +16,12 @@ BEGIN
     BLOCK "040904b0"
     BEGIN
       VALUE "CompanyName", "haku"
-      VALUE "FileDescription", "haku control"
+      VALUE "FileDescription", "haku control setup"
       VALUE "ProductName", "haku control"
       VALUE "LegalCopyright", "MIT License"
       VALUE "FileVersion", HAKU_VER_STR
       VALUE "ProductVersion", HAKU_VER_STR
-      VALUE "InternalName", "haku-control"
-      VALUE "OriginalFilename", "haku-control.exe"
+      VALUE "OriginalFilename", "haku-control-setup.exe"
     END
   END
   BLOCK "VarFileInfo"

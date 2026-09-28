@@ -22,3 +22,4 @@ art/out/
 .claude/
 bin-dev/
 obj-dev/
+dist/

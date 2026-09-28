@@ -35,11 +35,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.PKG }}
-          path: ${{ env.PKG }}.zip
+          path: |
+            ${{ env.PKG }}.zip
+            dist/haku-control-setup.exe
 
       - name: Draft release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: ${{ env.PKG }}.zip
+          files: |
+            dist/haku-control-setup.exe
+            ${{ env.PKG }}.zip

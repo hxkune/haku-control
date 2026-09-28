@@ -54,12 +54,14 @@ flash or changes SMBus addresses, and it restores each device's own effect when 
 Requirements: Windows 10/11 x64, [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
 (built into Windows 11), and [PawnIO](https://pawnio.eu) for memory lighting.
 
-1. Download the latest release zip and unpack it.
-2. In an **elevated** PowerShell 7, run `scripts\install.ps1`.
-   This copies the app to `C:\Program Files\haku-control` and adds a logon task that starts it with admin rights.
-   The rights are needed for SMBus and HID access.
-3. Click the tray icon to open the window. On the first start, a short guide shows what was found and
+1. Download `haku-control-setup.exe` from the latest release and run it. Windows asks for administrator rights:
+   the app talks to the motherboard and memory, so it starts at sign-in through an elevated task.
+2. The app appears in the tray and in the Start menu. On the first start, a short guide shows what was found and
    scans the network for lights.
+
+The setup also updates an existing install (settings are kept) and can be removed from *Settings → Apps*.
+`haku-control-setup.exe /extract <folder>` only unpacks the files. Without the installer, `scripts\install.ps1`
+does the same from a build folder.
 
 Settings, device keys and the log live in `%APPDATA%\haku-control`. To remove the app, run
 `scripts\uninstall.ps1` (add `-Purge` to delete the settings too).

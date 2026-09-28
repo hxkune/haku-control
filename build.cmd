@@ -40,4 +40,16 @@ xcopy /e /i /y /q ui %OUT%\ui >nul
 del /q %OUT%\ui\mock.* 2>nul
 rem PawnIO SMBus module (LGPL-2.1, see third_party\pawnio)
 copy /y third_party\pawnio\SmbusPIIX4.bin %OUT%\ >nul
+rem Start menu launcher: shows the window without a UAC prompt
+cl /nologo /utf-8 /O2 /GS /W3 /MT /DUNICODE /D_UNICODE /Fo%OBJ%\ src\launcher.c /Fe:%OUT%\haku-control-open.exe ^
+   /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib %OBJ%\haku-control.res || exit /b 1
+if defined DEFS goto done
+rem the installer: the whole program packed into one exe
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\pack.ps1 || exit /b 1
+rc /nologo /c65001 /i res /fo %OBJ%\setup.res res\setup.rc || exit /b 1
+if not exist dist mkdir dist
+cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /Fo%OBJ%\ src\setup.c /Fe:dist\haku-control-setup.exe ^
+   /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='asInvoker' uiAccess='false'" ^
+   user32.lib shell32.lib ole32.lib comctl32.lib advapi32.lib secur32.lib %OBJ%\setup.res || exit /b 1
+:done
 echo OK
