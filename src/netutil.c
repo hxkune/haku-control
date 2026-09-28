@@ -1,0 +1,245 @@
+// Small network helpers shared by the LAN light drivers: blocking TCP with timeouts, tiny HTTP/1.0,
+// UDP sockets, and a forgiving JSON field reader (flat lookups by key, good enough for device APIs).
+#include "common.h"
+#include "devices.h"
+#include <ws2tcpip.h>
+#include <stdlib.h>
+
+static volatile LONG wsa_ready;
+
+void net_init(void) {
+    if (InterlockedCompareExchange(&wsa_ready, 1, 0) == 0) { WSADATA w; WSAStartup(MAKEWORD(2, 2), &w); }
+}
+
+int net_addr(const char *host, int port, struct sockaddr_in *a) {
+    memset(a, 0, sizeof(*a));
+    a->sin_family = AF_INET; a->sin_port = htons((u_short)port);
+    if (inet_pton(AF_INET, host, &a->sin_addr) == 1) return 1;
+    struct addrinfo hints = { 0 }, *res = NULL;
+    hints.ai_family = AF_INET;
+    if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) return 0;
+    a->sin_addr = ((struct sockaddr_in *)res->ai_addr)->sin_addr;
+    freeaddrinfo(res);
+    return 1;
+}
+
+int host_port(const char *host, int def_port, char *h, int cap) {
+    strcpy_s(h, cap, host);
+    char *c = strrchr(h, ':');
+    if (c && strchr(h, ':') == c) { *c = 0; int p = atoi(c + 1); return p > 0 && p < 65536 ? p : def_port; }
+    return def_port;
+}
+
+SOCKET tcp_connect(const char *host, int port, int timeout_ms) {
+    net_init();
+    struct sockaddr_in a;
+    if (!net_addr(host, port, &a)) return INVALID_SOCKET;
+    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == INVALID_SOCKET) return s;
+    u_long nb = 1; ioctlsocket(s, FIONBIO, &nb);
+    connect(s, (struct sockaddr *)&a, sizeof(a));
+    fd_set w, e; FD_ZERO(&w); FD_SET(s, &w); FD_ZERO(&e); FD_SET(s, &e);
+    struct timeval tv = { timeout_ms / 1000, (timeout_ms % 1000) * 1000 };
+    if (select(0, NULL, &w, &e, &tv) != 1 || FD_ISSET(s, &e)) { closesocket(s); return INVALID_SOCKET; }
+    nb = 0; ioctlsocket(s, FIONBIO, &nb);
+    DWORD to = 3000;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char *)&to, sizeof(to));
+    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (char *)&to, sizeof(to));
+    int one = 1; setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (char *)&one, sizeof(one));
+    return s;
+}
+
+int tcp_send_all(SOCKET s, const void *data, int len) {
+    const char *p = (const char *)data;
+    while (len > 0) {
+        int n = send(s, p, len, 0);
+        if (n <= 0) return 0;
+        p += n; len -= n;
+    }
+    return 1;
+}
+
+int tcp_recv_all(SOCKET s, void *data, int len) {
+    char *p = (char *)data;
+    while (len > 0) {
+        int n = recv(s, p, len, 0);
+        if (n <= 0) return 0;
+        p += n; len -= n;
+    }
+    return 1;
+}
+
+int http_request(const char *host, int port, const char *method, const char *path, const char *body, char *buf, int cap) {
+    buf[0] = 0;
+    SOCKET s = tcp_connect(host, port, 1500);
+    if (s == INVALID_SOCKET) return 0;
+    char req[1024];
+    int bl = body ? (int)strlen(body) : 0;
+    int n = snprintf(req, sizeof(req), "%s %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n"
+                     "Content-Type: application/json\r\nContent-Length: %d\r\n\r\n", method, path, host, bl);
+    int ok = tcp_send_all(s, req, n) && (!bl || tcp_send_all(s, body, bl));
+    int got = 0;
+    while (ok && got < cap - 1) {
+        int r = recv(s, buf + got, cap - 1 - got, 0);
+        if (r <= 0) break;
+        got += r;
+    }
+    closesocket(s);
+    buf[got] = 0;
+    int status = 0;
+    if (sscanf_s(buf, "HTTP/%*d.%*d %d", &status) != 1) return 0;
+    char *b = strstr(buf, "\r\n\r\n");
+    if (b) memmove(buf, b + 4, strlen(b + 4) + 1); else buf[0] = 0;
+    return status;
+}
+
+SOCKET udp_socket(int bind_port, int broadcast) {
+    net_init();
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET) return s;
+    if (broadcast) { int one = 1; setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char *)&one, sizeof(one)); }
+    if (bind_port >= 0) {
+        int one = 1; setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&one, sizeof(one));
+        struct sockaddr_in a = { AF_INET, htons((u_short)bind_port) };
+        if (bind(s, (struct sockaddr *)&a, sizeof(a)) != 0) { closesocket(s); return INVALID_SOCKET; }
+    }
+    return s;
+}
+
+int udp_send(SOCKET s, const char *host, int port, const void *data, int len) {
+    struct sockaddr_in a;
+    if (!net_addr(host, port, &a)) return 0;
+    return sendto(s, (const char *)data, len, 0, (struct sockaddr *)&a, sizeof(a)) == len;
+}
+
+// Waits up to ms for a datagram. Returns its length (0 on timeout); from gets the sender's address.
+int udp_recv(SOCKET s, void *buf, int cap, int ms, char *from, int from_cap) {
+    fd_set r; FD_ZERO(&r); FD_SET(s, &r);
+    struct timeval tv = { ms / 1000, (ms % 1000) * 1000 };
+    if (select(0, &r, NULL, NULL, &tv) != 1) return 0;
+    struct sockaddr_in a; int al = sizeof(a);
+    int n = recvfrom(s, (char *)buf, cap, 0, (struct sockaddr *)&a, &al);
+    if (n <= 0) return 0;
+    if (from) inet_ntop(AF_INET, &a.sin_addr, from, from_cap);
+    return n;
+}
+
+// Sends one datagram to a multicast group out of every interface (and to every directed broadcast
+// address when group is NULL). Replies arrive on s.
+void udp_send_all_ifaces(SOCKET s, const char *group, int port, const void *data, int len) {
+    ULONG addrs[16];
+    if (group) {
+        int n = net_addresses(addrs, 16);
+        for (int i = 0; i < n; i++) {
+            struct in_addr ifa; ifa.s_addr = addrs[i];
+            setsockopt(s, IPPROTO_IP, IP_MULTICAST_IF, (char *)&ifa, sizeof(ifa));
+            udp_send(s, group, port, data, len);
+        }
+        if (!n) udp_send(s, group, port, data, len);
+    } else {
+        int n = net_broadcasts(addrs, 16);
+        for (int i = 0; i < n; i++) {
+            struct sockaddr_in a = { AF_INET, htons((u_short)port) };
+            a.sin_addr.s_addr = addrs[i];
+            sendto(s, (const char *)data, len, 0, (struct sockaddr *)&a, sizeof(a));
+        }
+        udp_send(s, "255.255.255.255", port, data, len);
+    }
+}
+
+// mDNS browse (RFC 6762 "legacy unicast": the query comes from an ephemeral port, so responders answer
+// straight to us). hit() gets the address of every host that answered for `service` (e.g. "_wled._tcp.local").
+void mdns_browse(const char *service, int ms, void (*hit)(const char *ip, void *ctx), void *ctx) {
+    SOCKET s = udp_socket(0, 0);
+    if (s == INVALID_SOCKET) return;
+    unsigned char q[256] = { 0 };
+    int n = 12;
+    q[5] = 1;   // one question
+    char tmp[128]; strcpy_s(tmp, sizeof(tmp), service);
+    for (char *ctx2 = NULL, *lab = strtok_s(tmp, ".", &ctx2); lab; lab = strtok_s(NULL, ".", &ctx2)) {
+        int l = (int)strlen(lab);
+        q[n++] = (unsigned char)l; memcpy(q + n, lab, l); n += l;
+    }
+    q[n++] = 0;
+    q[n++] = 0; q[n++] = 12;       // PTR
+    q[n++] = 0x80; q[n++] = 1;     // class IN, unicast response wanted
+    udp_send_all_ifaces(s, "224.0.0.251", 5353, q, n);
+    // the service name in wire format, to spot it in answers
+    char label[64]; const char *dot = strchr(service, '.');
+    int ll = dot ? (int)(dot - service) : (int)strlen(service);
+    if (ll > 60) ll = 60;
+    memcpy(label, service, ll); label[ll] = 0;
+    char seen[32][48]; int nseen = 0;
+    DWORD end = GetTickCount() + ms;
+    for (;;) {
+        int left = (int)(end - GetTickCount());
+        if (left <= 0) break;
+        unsigned char buf[1500]; char from[48];
+        int r = udp_recv(s, buf, sizeof(buf), left, from, sizeof(from));
+        if (r <= 12 || !(buf[2] & 0x80)) continue;   // responses only
+        int found = 0;
+        for (int i = 0; i + ll <= r && !found; i++) if (buf[i] == ll && !memcmp(buf + i + 1, label, ll)) found = 1;
+        if (!found) continue;
+        int dup = 0;
+        for (int i = 0; i < nseen; i++) if (!strcmp(seen[i], from)) dup = 1;
+        if (dup || nseen >= 32) continue;
+        strcpy_s(seen[nseen++], 48, from);
+        hit(from, ctx);
+    }
+    closesocket(s);
+}
+
+// ---- JSON: finds "key": and returns a pointer to the value (after spaces), or NULL.
+static const char *json_find(const char *js, const char *key) {
+    char pat[80]; snprintf(pat, sizeof(pat), "\"%s\"", key);
+    for (const char *p = strstr(js, pat); p; p = strstr(p + 1, pat)) {
+        const char *q = p + strlen(pat);
+        while (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n') q++;
+        if (*q != ':') continue;
+        q++;
+        while (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n') q++;
+        return q;
+    }
+    return NULL;
+}
+
+int json_get_str(const char *js, const char *key, char *out, int cap) {
+    out[0] = 0;
+    const char *v = js ? json_find(js, key) : NULL;
+    if (!v || *v != '"') return 0;
+    int i = 0;
+    for (v++; *v && *v != '"' && i < cap - 1; v++) {
+        if (*v == '\\' && v[1]) v++;
+        out[i++] = *v;
+    }
+    out[i] = 0;
+    return 1;
+}
+
+double json_get_num(const char *js, const char *key, double def) {
+    const char *v = js ? json_find(js, key) : NULL;
+    if (!v) return def;
+    if (*v == '"') v++;   // some devices quote numbers
+    if (!strncmp(v, "true", 4)) return 1;
+    if (!strncmp(v, "false", 5)) return 0;
+    char *e; double d = strtod(v, &e);
+    return e == v ? def : d;
+}
+
+const char *json_get_obj(const char *js, const char *key) {
+    const char *v = js ? json_find(js, key) : NULL;
+    return v && (*v == '{' || *v == '[') ? v : NULL;
+}
+
+// Copies s into out as a JSON string body (no quotes), escaping quotes, backslashes and control chars.
+int json_escape_to(char *out, int cap, const char *s) {
+    int n = 0;
+    for (; *s && n < cap - 8; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') { out[n++] = '\\'; out[n++] = (char)c; }
+        else if (c < 0x20) n += snprintf(out + n, cap - n, "\\u%04x", c);
+        else out[n++] = (char)c;
+    }
+    out[n] = 0;
+    return n;
+}

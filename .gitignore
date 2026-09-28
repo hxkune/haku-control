@@ -20,3 +20,5 @@ art/out/
 .vs/
 .vscode/
 .claude/
+bin-dev/
+obj-dev/

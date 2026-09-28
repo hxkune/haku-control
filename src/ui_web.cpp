@@ -55,7 +55,7 @@ static char *big_buf(void) {
 }
 
 static void post_state(void) { char *b = big_buf(); app_state_json(b, 512 * 1024); post(b); }
-static void post_status(void) { char b[8192]; app_status_json(b, sizeof(b)); post(b); }
+static void post_status(void) { static char b[64 * 1024]; app_status_json(b, sizeof(b)); post(b); }
 
 // Value of a string (or number) field in a flat JSON object.
 static std::string field(const std::string &js, const char *key) {
@@ -93,6 +93,13 @@ static void on_message(const std::string &js) {
     else if (cmd == "toggle") { app_toggle_device(field(js, "k").c_str()); post_status(); }
     else if (cmd == "power") { app_power(); post_status(); }
     else if (cmd == "pair") { nano_pair_start(); post_status(); }
+    else if (cmd == "scan") { ext_scan(); post_status(); }
+    else if (cmd == "dev_add") {
+        ext_add(field(js, "kind").c_str(), field(js, "host").c_str(), atoi(field(js, "sub").c_str()),
+                field(js, "name").c_str(), atoi(field(js, "leds").c_str()));
+        post_state();
+    }
+    else if (cmd == "dev_remove") { ext_remove(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "autostart") { app_autostart(atoi(field(js, "v").c_str())); post_state(); }
     else if (cmd == "open") app_open(field(js, "what").c_str());
     else if (cmd == "quit") app_quit();
@@ -107,7 +114,7 @@ static void fit(void) {
 
 static void create_webview(void) {
     wchar_t data[MAX_PATH];
-    ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\haku-control\\WebView2", data, MAX_PATH);
+    ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\" APP_ID L"\\WebView2", data, MAX_PATH);
     SHCreateDirectoryExW(NULL, data, NULL);
 
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(NULL, data, NULL,
@@ -182,7 +189,7 @@ static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SETFOCUS: if (ctrl) ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC); return 0;
     case WM_TIMER:
         if (!page_ready) return 0;
-        if (wp == FRAME_TIMER) { char b[8192]; app_frame_json(b, sizeof(b)); post(b); }
+        if (wp == FRAME_TIMER) { static char b[64 * 1024]; app_frame_json(b, sizeof(b)); post(b); }
         if (wp == STATUS_TIMER) post_status();
         return 0;
     case WM_UI_REFRESH: post_status(); return 0;

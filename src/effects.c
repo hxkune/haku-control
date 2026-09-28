@@ -73,6 +73,7 @@ void zone_section(int zone, char *out, int cap) {
     if (zone == ZONE_RAM) snprintf(out, cap, "zone.ram");
     else if (zone == ZONE_GPU) snprintf(out, cap, "zone.gpu");
     else if (zone == ZONE_NANO) snprintf(out, cap, "zone.nanoleaf");
+    else if (zone >= ZONE_EXT0) snprintf(out, cap, "zone.dev%d", ext_slot_id(zone - ZONE_EXT0));
     else snprintf(out, cap, "zone.light%d", zone - ZONE_LIGHT0 + 1);
 }
 
@@ -204,7 +205,7 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
             c = scalec(pal[0], 0.12f);
             for (int k = 0; k < nbub; k++) {
                 if (fabsf(bub[k].x - x) > 0.01f) continue;
-                float d = (bub[k].y - y) / (l->dev == DEV_GPU ? 0.12f : l->dev == DEV_NANO ? 0.18f : 0.07f);
+                float d = (bub[k].y - y) / (l->dev == DEV_GPU || l->dev == DEV_EXT ? 0.12f : l->dev == DEV_NANO ? 0.18f : 0.07f);
                 c = addc(c, scalec(palc(bub[k].c), expf(-d * d)));
             }
             break;
@@ -237,7 +238,7 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
         }
         case FX_AUDIO: {
             // VU: RAM fills bottom->top, GPU from the centre outwards; bass lifts brightness
-            float pos = l->dev == DEV_GPU ? fabsf(l->fill - 0.5f) * 2 : l->fill;
+            float pos = l->dev == DEV_GPU || l->dev == DEV_EXT ? fabsf(l->fill - 0.5f) * 2 : l->fill;
             float lit = smooth01((level_smooth * 1.15f - pos) / 0.12f + 0.5f);
             c = scalec(grad(pos * 0.7f + bass_smooth * 0.3f), 0.1f + 0.9f * lit * (0.6f + 0.4f * bass_smooth));
             break;

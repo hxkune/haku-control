@@ -11,6 +11,20 @@ const STATE = {
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
   nano: { configured: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', side: .45, pair: 0, panels },
+  ext: {
+    devs: [
+      { id: 1, kind: 'wled', title: 'WLED', name: 'Desk strip', host: '192.168.1.60', sub: -1, leds: 60, per_led: 1, online: 1, enabled: 1, info: 'WLED 0.14.4 · esp32' },
+      { id: 2, kind: 'openrgb', title: 'OpenRGB', name: 'Keyboard', host: '127.0.0.1', sub: 0, leds: 104, per_led: 1, online: 1, enabled: 1, info: 'OpenRGB · keyboard' },
+      { id: 3, kind: 'hue', title: 'Philips Hue', name: 'Living room', host: '192.168.1.20', sub: -1, leds: 3, per_led: 0, online: 0, enabled: 1, info: 'Press the link button on the Hue bridge' },
+    ],
+    found: [
+      { kind: 'wled', title: 'WLED', host: '192.168.1.60', sub: -1, name: 'Desk strip', leds: 60, info: 'WLED 0.14.4', added: 1 },
+      { kind: 'govee', title: 'Govee', host: '192.168.1.71', sub: -1, name: 'Govee H6076', leds: 1, info: '', added: 0 },
+      { kind: 'openrgb', title: 'OpenRGB', host: '127.0.0.1', sub: 1, name: 'Corsair Lighting Node', leds: 48, info: 'OpenRGB · cooler', added: 0 },
+    ],
+    scanning: 0,
+    kinds: ['wled:WLED:1', 'openrgb:OpenRGB:1', 'govee:Govee:0', 'lifx:LIFX:0', 'yeelight:Yeelight:0', 'hue:Philips Hue:0'].map(x => { const [kind, title, p] = x.split(':'); return { kind, title, per_led: +p }; }),
+  },
   cfg: { general: { palette: '#00C8FF, #7A3CFF, #FF2D95', speed: '5', fps: '30' }, layout: { gpu_leds: '8', board_led: '1', ram_enabled: '1', gpu_enabled: '1', lights_enabled: '1', nanoleaf_enabled: '1' },
     caustic: { palette: '#00E5FF, #0060FF, #00FFB0' }, bubbles: { palette: '#001830, #00E5FF, #FFFFFF' }, comet: { palette: '#FFFFFF, #00C8FF, #7A3CFF' },
     lava: { palette: '#FF2D00, #FF9000, #B0006A', speed: '3' }, breathe: { palette: '#00C8FF, #FF2D95', speed: '3' },
@@ -28,5 +42,8 @@ setInterval(() => {
   for (let i = 0; i < 3; i++) l.push([4, i, i === 0 ? 'ffd0a0' : hx(pc(i / 3 - t * .12))]);
   panels.forEach((p, i) => l.push([5, i, hx(pc(p[1] * .6 + .4 - t * .12))]));
   l.push([3, 0, hx(pc(.5 - t * .12))]);
+  for (let i = 0; i < 60; i++) l.push([100, i, hx(pc(i / 60 - t * .12))]);
+  for (let i = 0; i < 52; i++) l.push([101, i, hx(pc(i / 52 + .3 - t * .12))]);
+  for (let i = 0; i < 3; i++) l.push([102, i, hx(pc(i / 3 - t * .12))]);
   emit({ type: 'frame', l });
 }, 50);

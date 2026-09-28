@@ -5,19 +5,20 @@
 #include <string.h>
 #include <math.h>
 
-#define MAX_LEDS     96
+#define MAX_LEDS     2048   // whole scene (LAN strips can be long)
+#define EXT_SLOTS    16     // LAN / bridge devices (devices.c)
 #define MAX_PALETTE  8
 
 typedef struct { float r, g, b; } rgbf;
 
-typedef enum { DEV_RAM0, DEV_RAM1, DEV_GPU, DEV_BOARD, DEV_LIGHT, DEV_NANO, DEV_COUNT } dev_id;
+typedef enum { DEV_RAM0, DEV_RAM1, DEV_GPU, DEV_BOARD, DEV_LIGHT, DEV_NANO, DEV_EXT, DEV_COUNT } dev_id;   // DEV_EXT: slot = zone - ZONE_EXT0
 
 // One physical LED with its position in a shared "scene" space.
 //   x, y  : 0..1 (y = 0 at top)
 //   path  : 0..1 position along the chain RAM0 -> RAM1 -> GPU (used by flowing effects)
 //   fill  : 0..1 position inside its own device (bottom->top for RAM, left->right for GPU)
 // Colour zones: each can follow the effect, use its own palette, or hold a fixed colour.
-enum { ZONE_RAM, ZONE_GPU, ZONE_NANO, ZONE_LIGHT0, MAX_ZONES = ZONE_LIGHT0 + 8 };
+enum { ZONE_RAM, ZONE_GPU, ZONE_NANO, ZONE_LIGHT0, ZONE_EXT0 = ZONE_LIGHT0 + 8, MAX_ZONES = ZONE_EXT0 + EXT_SLOTS };
 
 typedef struct {
     dev_id dev;
@@ -53,6 +54,7 @@ void        cfg_set_and_save(const char *section, const char *key, const char *v
 int         cfg_palette(const char *section, rgbf *out, int max);
 const wchar_t *cfg_path(void);
 int         cfg_json(char *out, int cap);   // whole config as {"section":{"key":"value"}}
+void        cfg_remove_section(const char *section);
 
 // ---- effects.c
 typedef struct {
@@ -110,8 +112,25 @@ void nano_relayout(void);
 void nano_suspend(int sleeping);  // PC sleep / resume         // re-read the layout (after rotate / flip changed)
 int  nano_json(char *out, int cap);
 
+// ---- devices.c (LAN / bridge lights: WLED, OpenRGB, Govee, LIFX, Yeelight, Hue; own worker thread)
+void ext_start(void);
+void ext_stop(void);
+void ext_reload(void);                    // [dev.*] settings changed
+void ext_suspend(int sleeping);
+int  ext_count(void);                     // configured devices ("slots")
+int  ext_slot_leds(int k);                // LEDs of slot k in the scene (0: disabled / not known yet)
+int  ext_slot_id(int k);                  // N of its [dev.N] section
+int  ext_slot_strip(int k);               // 1: addressable strip, 0: separate lights
+int  ext_layout_changed(void);            // 1 once after a device appeared / changed its LED count
+void ext_submit(int k, const rgbf *c, int n);
+void ext_scan(void);                      // look for devices on the LAN (background)
+int  ext_add(const char *kind, const char *host, int sub, const char *name, int leds);
+void ext_remove(int id);
+int  ext_json(char *out, int cap);
+
 // ---- net.c
 int  net_broadcasts(unsigned long *out, int max);   // directed broadcast address of every IPv4 interface (network order)
+int  net_addresses(unsigned long *out, int max);    // own IPv4 address of every interface (network order)
 void hotspot_watch_start(void);
 void hotspot_watch_stop(void);
 int  hotspot_active(void);
@@ -122,7 +141,11 @@ void sensors_poll(sensors_t *s, int need_gpu);
 void sensors_close(void);
 
 // ---- main.c: application state shared with the settings window
+#ifdef HAKU_DEV   // build.cmd dev: separate instance for testing, no PC hardware access, no admin rights
+#define APP_ID L"haku-control-dev"
+#else
 #define APP_ID L"haku-control"            // exe, data folder, logon task, window class
+#endif
 void  app_data_path(const wchar_t *name, wchar_t *out);   // %APPDATA%\haku-control\<name> (MAX_PATH)
 int   app_ru(void);                      // [general] lang=ru (English otherwise)
 #define TR(en, ru) (app_ru() ? (ru) : (en))

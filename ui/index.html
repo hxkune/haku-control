@@ -24,9 +24,12 @@
     <button data-tab="bulbs">
       <svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>
       <span data-i18n="nav.bulbs">Bulbs</span><i>04</i></button>
+    <button data-tab="devices">
+      <svg viewBox="0 0 24 24"><path d="M5 12a7 7 0 0 1 14 0M8.5 12a3.5 3.5 0 0 1 7 0"/><circle cx="12" cy="12" r="1"/><path d="M3 19h18"/></svg>
+      <span data-i18n="nav.devices">Devices</span><i>05</i></button>
     <button data-tab="settings">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-      <span data-i18n="nav.settings">Settings</span><i>05</i></button>
+      <span data-i18n="nav.settings">Settings</span><i>06</i></button>
   </nav>
   <div class="side-foot">
     <div class="lbl"><span data-i18n="brightness">Brightness</span><b id="bright-val">100%</b></div>
@@ -193,6 +196,32 @@
     <div class="card empty hidden" id="bulbs-empty">
       <h3 data-i18n="bulbs.none">No bulbs</h3>
       <p class="muted" data-i18n="bulbs.none.text"></p>
+    </div>
+  </section>
+
+  <!-- ============ DEVICES (LAN / bridge lights) ============ -->
+  <section class="tab" id="tab-devices">
+    <div class="card">
+      <div class="card-head">
+        <div><h3 data-i18n="dev.find">Lights on your network</h3><p class="muted" id="scan-status"></p></div>
+        <button class="btn primary" id="scan-btn"><span data-i18n="dev.scan">Scan network</span></button>
+      </div>
+      <div class="found" id="found-list"></div>
+      <details class="manual" id="manual">
+        <summary data-i18n="dev.manual">Add by address</summary>
+        <div class="manual-row">
+          <label class="num"><span data-i18n="dev.kind">Type</span><select class="select" id="man-kind"></select></label>
+          <label class="num"><span data-i18n="dev.host">Address</span><input type="text" id="man-host" spellcheck="false" placeholder="192.168.1.40"></label>
+          <label class="num" id="man-sub-f"><span data-i18n="dev.sub">Controller #</span><input type="text" id="man-sub" value="0"></label>
+          <button class="btn" id="man-add"><span data-i18n="dev.add">Add</span></button>
+        </div>
+        <p class="note" id="man-note"></p>
+      </details>
+    </div>
+    <div class="bulb-grid dev-grid" id="dev-grid"></div>
+    <div class="card empty hidden" id="dev-empty">
+      <h3 data-i18n="dev.none">No network lights yet</h3>
+      <p class="muted" data-i18n="dev.none.text"></p>
     </div>
   </section>
 

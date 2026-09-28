@@ -12,7 +12,7 @@ const send = o => wv && wv.postMessage(JSON.stringify(o));
 const fxName = id => t('fx.' + id);
 // the ARGB header zone can be given its own name (e.g. "Water block")
 const stripName = () => cv('layout', 'strip_name', '') || t('pc.block');
-const TABS = ['effects', 'pc', 'nano', 'bulbs', 'settings'];
+const TABS = ['effects', 'pc', 'nano', 'bulbs', 'devices', 'settings'];
 const HOTKEYS = ['next', 'prev', 'off', 'brighter', 'dimmer'];
 const PRESETS = ['#FF0000', '#FF5A00', '#FFA000', '#FFE000', '#9DFF00', '#00FF6A', '#00FFD5', '#00C8FF',
   '#0068FF', '#2B2BFF', '#7A3CFF', '#B400FF', '#FF00D4', '#FF2D95', '#FFB070', '#FFFFFF'];
@@ -20,8 +20,8 @@ const DEFAULT_PAL = ['#00C8FF', '#7A3CFF', '#FF2D95'];
 const OFF = '#1c1c1c';
 const WIDE = '"Segoe UI Variable Text", "Segoe UI", sans-serif';
 
-let S = { cfg: {}, effects: [], effect: 'flow', brightness: 100, bulbs: [], nano: {}, autostart: -1 };
-let F = { ram: [[], []], gpu: [], board: null, bulbs: [], nano: [] };
+let S = { cfg: {}, effects: [], effect: 'flow', brightness: 100, bulbs: [], nano: {}, ext: { devs: [], found: [], kinds: [], scanning: 0 }, autostart: -1 };
+let F = { ram: [[], []], gpu: [], board: null, bulbs: [], nano: [], ext: {} };
 let tab = 'effects';
 let dragging = false;
 
@@ -292,10 +292,11 @@ function zoneName(z) {
   if (z === 'zone.ram') return t('pc.memory');
   if (z === 'zone.gpu') return stripName();
   if (z === 'zone.nanoleaf') return 'Nanoleaf';
+  const dm = /^zone\.dev(\d+)$/.exec(z); if (dm) { const d = S.ext.devs.find(x => x.id === +dm[1]); return d ? d.name : z; }
   const m = /^zone\.light(\d+)$/.exec(z); return m ? t('bulb', m[1]) : z;
 }
 function renderOwnList() {
-  const zones = ['zone.ram', 'zone.gpu'].concat(S.nano && S.nano.configured ? ['zone.nanoleaf'] : [], S.bulbs.map((_, i) => 'zone.light' + (i + 1)));
+  const zones = ['zone.ram', 'zone.gpu'].concat(S.nano && S.nano.configured ? ['zone.nanoleaf'] : [], S.bulbs.map((_, i) => 'zone.light' + (i + 1)), S.ext.devs.map(d => 'zone.dev' + d.id));
   $('#fx-own').innerHTML = zones.filter(z => cv(z, 'effect', '')).map(z => {
     const id = cv(z, 'effect');
     return `<div class="own-item"><span>${zoneName(z)}</span><b>${id === 'off' ? t('zone.offfx') : fxName(id)}</b></div>`;
@@ -508,6 +509,31 @@ function drawBulbs(c, X, Y, W, H) {
   }
 }
 
+// A LAN device: a strip (light bar) or separate lights (orbs), from the thinned-out live frame.
+function drawExt(c, X, Y, W, H, k) {
+  const d = S.ext.devs[k], dp = devicePixelRatio;
+  if (!d) return;
+  const cols = F.ext[k] || [];
+  if (d.per_led) {
+    const n = Math.max(cols.length, 2), bw = Math.min(W * 0.92, 560 * dp), bh = Math.min(H * 0.34, 14 * dp);
+    lightBar(c, X + (W - bw) / 2, Y + (H - bh) / 2, bw, bh, [...Array(n)].map((_, i) => d.online ? cols[i] || OFF : OFF), false);
+  } else {
+    const n = Math.max(1, d.leds), r = Math.min(H * 0.28, W / (n * 3.2), 24 * dp);
+    for (let i = 0; i < n; i++) {
+      const cx = X + W / 2 + (i - (n - 1) / 2) * r * 3.2, cy = Y + H / 2, col = cols[i], on = lit(col) && d.online;
+      const g = c.createRadialGradient(cx, cy, 0, cx, cy, r * 1.6);
+      if (on) { g.addColorStop(0, '#fff'); g.addColorStop(0.3, col); g.addColorStop(1, 'rgba(0,0,0,0)'); }
+      else { g.addColorStop(0, '#262626'); g.addColorStop(0.5, '#161616'); g.addColorStop(1, 'rgba(0,0,0,0)'); }
+      c.beginPath(); c.arc(cx, cy, r * 1.6, 0, 7); c.fillStyle = g; c.fill();
+    }
+  }
+}
+function drawExtAll(c, X, Y, W, H) {
+  const list = S.ext.devs.map((d, k) => [d, k]).filter(([d]) => d.enabled && d.leds).slice(0, 6);
+  const rh = H / Math.max(1, list.length);
+  list.forEach(([d, k], i) => drawExt(c, X, Y + i * rh, W, rh, k));
+}
+
 function label(c, text, x, y) {
   const d = devicePixelRatio;
   c.fillStyle = '#4e4e4e'; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'center'; c.letterSpacing = `${3 * d}px`;
@@ -522,15 +548,17 @@ function drawHero() {
   const cols = [['ram', 0.2], ['gpu', 0.38]];
   if (hasN) cols.push(['nano', 0.27]);
   if (hasB) cols.push(['bulbs', 0.15]);
+  if (S.ext.devs.some(d => d.enabled && d.leds)) cols.push(['ext', 0.3]);
   const tot = cols.reduce((a, b) => a + b[1], 0);
   let x = 0;
-  const names = { ram: t('pc.memory'), gpu: stripName(), nano: 'Nanoleaf', bulbs: t('nav.bulbs') };
+  const names = { ram: t('pc.memory'), gpu: stripName(), nano: 'Nanoleaf', bulbs: t('nav.bulbs'), ext: t('nav.devices') };
   for (const [k, f] of cols) {
     const w = W * f / tot, top = 18 * d, h = H - 46 * d;
     if (k === 'ram') drawRam(c, x, top, w, h);
     if (k === 'gpu') drawGpu(c, x, top, w, h);
     if (k === 'nano') drawNano(c, x, top, w, h);
     if (k === 'bulbs') drawBulbs(c, x, top, w, h);
+    if (k === 'ext') drawExtAll(c, x, top, w, h);
     label(c, names[k], x + w / 2, H - 16 * d);
     x += w;
   }
@@ -547,6 +575,7 @@ function drawAll() {
   if (tab === 'effects') drawHero();
   if (tab === 'pc') { drawCanvas('#live-ram', drawRam); drawCanvas('#live-gpu', drawGpu); }
   if (tab === 'nano') drawCanvas('#live-nano', drawNano);
+  if (tab === 'devices') S.ext.devs.forEach((d, k) => drawCanvas('#dev-live-' + d.id, (c, x, y, w, h) => drawExt(c, x, y, w, h, k)));
   if (tab === 'bulbs') S.bulbs.forEach((b, i) => {
     const o = $('#bulb-orb-' + i); if (!o) return;
     const col = F.bulbs[i], on = lit(col) && b.online;
@@ -556,12 +585,13 @@ function drawAll() {
 }
 
 function onFrame(l) {
-  F = { ram: [[], []], gpu: [], board: null, bulbs: [], nano: [] };
+  F = { ram: [[], []], gpu: [], board: null, bulbs: [], nano: [], ext: {} };
   for (const [d, i, c] of l) {
     const col = '#' + c;
     if (d === 0) F.ram[0][i] = col; else if (d === 1) F.ram[1][i] = col;
     else if (d === 2) F.gpu[i] = col; else if (d === 3) F.board = col;
     else if (d === 4) F.bulbs[i] = col; else if (d === 5) F.nano[i] = col;
+    else if (d >= 100) (F.ext[d - 100] = F.ext[d - 100] || [])[i] = col;
   }
   drawAll();
 }
@@ -648,6 +678,100 @@ function updateBulbs() {
 $('#bulb-smooth').addEventListener('input', e => { const v = (e.target.value / 100).toFixed(2); $('#smooth-val').textContent = v + t('sec'); setCfgSoon('lights', 'smooth', v); });
 $('#bulb-rate').addEventListener('input', e => { $('#rate-val').textContent = e.target.value; setCfgSoon('lights', 'rate', e.target.value); });
 
+// LAN / bridge devices
+let devSig = '';
+const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).title;
+function devStatus(d) {
+  if (!d.enabled) return t('dev.off');
+  if (!d.online) return d.info && /button|reach|forgot|colour/i.test(d.info) ? d.info : t('dev.offline');
+  return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
+}
+function buildDevices() {
+  const grid = $('#dev-grid');
+  grid.innerHTML = '';
+  $('#dev-empty').classList.toggle('hidden', S.ext.devs.length > 0);
+  S.ext.devs.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'card dev-card';
+    const sec = 'dev.' + d.id;
+    el.innerHTML = `<div class="card-head">
+        <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub : ''}</p></div>
+        <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
+      </div>
+      <canvas class="live" id="dev-live-${d.id}" data-h="${d.per_led ? 70 : 90}"></canvas>
+      <div class="zone" data-zone="zone.dev${d.id}"></div>
+      <div class="opts">
+        <label class="num"><span>${t('strip.name')}</span><input type="text" class="dev-name" maxlength="40" spellcheck="false" value="${esc(cv(sec, 'name', d.name))}"></label>
+        ${d.per_led ? `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>
+        <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
+        <button class="btn danger small dev-del">${t('dev.remove')}</button>
+      </div>`;
+    grid.appendChild(el);
+    renderZone(el.querySelector('.zone'));
+    el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
+    el.querySelector('.dev-name').addEventListener('change', e => {
+      const v = e.target.value.replace(/[;#\[\]=]/g, '').trim(); if (!v) return;
+      setCfg(sec, 'name', v); el.querySelector('h3').textContent = v; d.name = v; renderOwnList();
+    });
+    el.querySelector('.dev-rev')?.addEventListener('change', e => setCfg(sec, 'reverse', e.target.checked ? 1 : 0));
+    el.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => {
+      const n = Math.max(1, Math.min(512, +(cv(sec, 'leds', 0) > 0 ? cv(sec, 'leds') : d.leds) + +b.dataset.d));
+      setCfg(sec, 'leds', n); el.querySelector('.dev-leds').textContent = n;
+    }));
+    const del = el.querySelector('.dev-del');
+    del.addEventListener('click', () => {
+      if (!del.classList.contains('confirm')) {
+        del.classList.add('confirm'); del.textContent = t('dev.remove.sure');
+        setTimeout(() => { del.classList.remove('confirm'); del.textContent = t('dev.remove'); }, 3000);
+        return;
+      }
+      send({ cmd: 'dev_remove', id: d.id });
+    });
+  });
+  updateDevices();
+  requestAnimationFrame(sizeCanvases);
+}
+function updateDevices() {
+  const E = S.ext;
+  E.devs.forEach(d => {
+    const el = $('#dev-st-' + d.id); if (!el) return;
+    el.innerHTML = `<span class="dot ${d.enabled && d.online ? 'on' : 'off'}" style="display:inline-block;margin-right:6px"></span>${esc(devStatus(d))}`;
+  });
+  const btn = $('#scan-btn');
+  btn.disabled = !!E.scanning;
+  btn.querySelector('span').textContent = E.scanning ? t('dev.scanning') : t('dev.scan');
+  $('#scan-status').textContent = E.scanning ? t('dev.scanning.note') : E.found.length ? t('dev.found', E.found.length) : t('dev.scan.note');
+  const list = $('#found-list');
+  const html = E.found.map((f, i) => `<div class="found-row"><span class="kind">${esc(f.title)}</span>
+      <div class="what"><b>${esc(f.name || f.title)}</b><small>${esc(f.host)}${f.sub >= 0 && f.kind === 'openrgb' ? ' · #' + f.sub : ''}${f.leds ? ' · ' + t((S.ext.kinds.find(k => k.kind === f.kind) || {}).per_led ? 'dev.leds' : 'dev.lights', f.leds) : ''}${f.info ? ' · ' + esc(f.info) : ''}</small></div>
+      ${f.added ? `<span class="added">${t('dev.added')}</span>` : `<button class="btn small" data-found="${i}">${t('dev.add')}</button>`}</div>`).join('');
+  if (list.dataset.html !== html) {
+    list.dataset.html = html; list.innerHTML = html;
+    list.querySelectorAll('[data-found]').forEach(b => b.addEventListener('click', () => {
+      const f = E.found[+b.dataset.found];
+      b.disabled = true;
+      send({ cmd: 'dev_add', kind: f.kind, host: f.host, sub: f.sub, name: f.name || f.title, leds: 0 });
+    }));
+  }
+  const ks = $('#man-kind');
+  if (ks.options.length !== E.kinds.length) ks.innerHTML = E.kinds.map(k => `<option value="${k.kind}">${esc(k.title)}</option>`).join('');
+  manualHints();
+}
+function manualHints() {
+  const k = $('#man-kind').value;
+  $('#man-sub-f').classList.toggle('hidden', k !== 'openrgb');
+  $('#man-note').textContent = k ? t('dev.hint.' + k) : '';
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+$('#scan-btn').addEventListener('click', () => { S.ext.scanning = 1; updateDevices(); send({ cmd: 'scan' }); });
+$('#man-kind').addEventListener('change', manualHints);
+$('#man-add').addEventListener('click', () => {
+  const kind = $('#man-kind').value, host = $('#man-host').value.trim();
+  if (!kind || !/^[\w.\-]+(:\d+)?$/.test(host)) { $('#man-host').focus(); return; }
+  send({ cmd: 'dev_add', kind, host, sub: kind === 'openrgb' ? (+$('#man-sub').value || 0) : -1, name: kindTitle(kind), leds: 0 });
+  $('#man-host').value = '';
+});
+
 // settings
 $('#autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.target.checked ? 1 : 0 }));
 $('#hotspot-auto').addEventListener('change', e => setCfg('hotspot', 'auto', e.target.checked ? 1 : 0));
@@ -701,7 +825,7 @@ $$('#lang button').forEach(b => b.addEventListener('click', () => {
   if (LANG === b.dataset.v) return;
   LANG = b.dataset.v;
   setCfg('general', 'lang', LANG);
-  applyI18n(); buildEffects(); buildHotkeys(); buildBulbs(); renderEffectSide();
+  applyI18n(); buildEffects(); buildHotkeys(); buildBulbs(); buildDevices(); renderEffectSide();
   showTab(tab); updateNano(); updateChips(); updateSettings(); drawAll();
 }));
 
@@ -714,6 +838,8 @@ function updateChips() {
   if (S.gpu_temp != null) h.push(chip('on', `GPU <b>${S.gpu_temp}°</b>`));
   if (S.nano && S.nano.configured) h.push(chip(S.nano.online ? 'on' : 'off', `<b>Nanoleaf</b>`));
   if (S.bulbs.length) { const on = S.bulbs.filter(b => b.online).length; h.push(chip(on === S.bulbs.length ? 'on' : on ? 'warn' : 'off', `${t('chip.lamps')} <b>${on}/${S.bulbs.length}</b>`)); }
+  const ed = S.ext.devs.filter(d => d.enabled);
+  if (ed.length) { const on = ed.filter(d => d.online).length; h.push(chip(on === ed.length ? 'on' : on ? 'warn' : 'off', `${t('chip.devs')} <b>${on}/${ed.length}</b>`)); }
   $('#chips').innerHTML = h.join('');
   $('#ram-status').textContent = S.sticks ? t('ram.status', S.sticks) : t('ram.none');
   $('#gpu-status').textContent = S.msi ? t('gpu.status') : t('gpu.none');
@@ -728,9 +854,12 @@ function applyStatus(m) {
   const nanoLayoutChanged = JSON.stringify((m.nano || {}).panels) !== JSON.stringify((S.nano || {}).panels);
   const effectChanged = m.effect !== S.effect;
   Object.assign(S, m);
+  S.ext = S.ext || { devs: [], found: [], kinds: [], scanning: 0 };
+  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name]));
   if (!dragging) { setRange($('#bright'), S.brightness); $('#bright-val').textContent = S.brightness + '%'; }
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
+  if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
   updateNano(); updateChips(); updateSettings();
   if (nanoLayoutChanged) drawAll();
 }
@@ -746,6 +875,7 @@ if (wv) wv.addEventListener('message', e => {
     buildEffects(); buildHotkeys(); syncToggles();
     S.effect = null;           // force a full refresh
     S.bulbs = [];
+    devSig = '';
     applyStatus(m);
     renderEffectSide();
     sizeCanvases();

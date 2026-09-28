@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-#define MAX_LINES 512
+#define MAX_LINES 1024
 #define LINE_LEN  256
 
 static char     lines[MAX_LINES][LINE_LEN];
@@ -151,6 +151,27 @@ void cfg_set(const char *section, const char *key, const char *value) {
         nlines++;
     }
     dirty = 1;
+    ReleaseSRWLockExclusive(&lock);
+}
+
+// Deletes a whole [section] (header, keys and its comments up to the next section).
+void cfg_remove_section(const char *section) {
+    AcquireSRWLockExclusive(&lock);
+    int start = -1, end = nlines;
+    for (int i = 0; i < nlines; i++) {
+        char tmp[LINE_LEN]; strcpy_s(tmp, LINE_LEN, lines[i]);
+        char *s = trim(tmp);
+        if (*s != '[') continue;
+        char *e = strchr(s, ']'); if (e) *e = 0;
+        if (start < 0 && _stricmp(trim(s + 1), section) == 0) start = i;
+        else if (start >= 0) { end = i; break; }
+    }
+    if (start >= 0) {
+        while (end > start + 1 && !trim(lines[end - 1])[0]) end--;   // keep the blank line before the next section
+        memmove(lines[start], lines[end], (size_t)(nlines - end) * LINE_LEN);
+        nlines -= end - start;
+        dirty = 1;
+    }
     ReleaseSRWLockExclusive(&lock);
 }
 

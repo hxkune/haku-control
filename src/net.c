@@ -43,6 +43,19 @@ int net_broadcasts(ULONG *out, int max) {
     return c.n;
 }
 
+static int add_addr(ULONG a, int prefix, void *p) {
+    bc_ctx *c = p;
+    (void)prefix;
+    if (c->n < c->max) c->out[c->n++] = htonl(a);
+    return 0;
+}
+
+int net_addresses(ULONG *out, int max) {
+    bc_ctx c = { out, max, 0 };
+    for_each_ipv4(add_addr, &c);
+    return c.n;
+}
+
 static int is_hotspot_ip(ULONG a, int prefix, void *p) {
     (void)prefix; (void)p;
     struct in_addr h; inet_pton(AF_INET, HOTSPOT_IP, &h);

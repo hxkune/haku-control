@@ -162,7 +162,8 @@ static void build_scene(void) {
     if (sticks > 2) sticks = 2;
     int glit = gpu_on ? gpu_leds : 0;
 
-    scene_t s = { 0 };
+    static scene_t s;   // big: not on the stack
+    memset(&s, 0, sizeof(s));
     int total = sticks * 8 + glit;
     if (total == 0) total = 1;
     int k = 0;
@@ -194,6 +195,22 @@ static void build_scene(void) {
         float x, y, path; nano_panel(i, &x, &y, &path);
         l->dev = DEV_NANO; l->index = i; l->zone = ZONE_NANO;
         l->x = 0.1f + 0.8f * x; l->y = 0.1f + 0.8f * y; l->fill = path; l->path = path; l->zpath = path;
+    }
+    // LAN / bridge devices: strips as rows across the scene, separate lights spread like bulbs
+    int ne = ext_count(), rows = 0;
+    for (int k = 0; k < ne; k++) if (ext_slot_leds(k)) rows++;
+    for (int k = 0, row = 0; k < ne; k++) {
+        int n = ext_slot_leds(k), strip = ext_slot_strip(k);
+        if (!n) continue;
+        float ry = rows > 1 ? 0.3f + 0.6f * row / (rows - 1) : 0.6f;
+        row++;
+        for (int i = 0; i < n && s.count < MAX_LEDS - 1; i++) {
+            led_t *l = &s.leds[s.count++];
+            float f = n > 1 ? (float)i / (n - 1) : 0.5f;
+            l->dev = DEV_EXT; l->index = i; l->zone = ZONE_EXT0 + k;
+            l->x = 0.1f + 0.8f * f; l->y = strip ? ry : 0.5f + 0.3f * sinf(f * 6.283f + k);
+            l->fill = f; l->path = strip ? f : (float)i / n; l->zpath = f;
+        }
     }
     if (board_led) {
         led_t *l = &s.leds[s.count++];
@@ -229,8 +246,12 @@ static unsigned __stdcall ram_thread(void *p) {
 }
 
 static void open_devices(void) {
-    have_msi = msi_open();
-    have_ene = ene_open() > 0;
+#ifdef HAKU_DEV
+    return;   // the test build never touches the board or the memory
+#endif
+    // [devices] msi / ene = 0 leaves that hardware to other software (e.g. OpenRGB)
+    have_msi = cfg_geti("devices", "msi", 1) ? msi_open() : 0;
+    have_ene = cfg_geti("devices", "ene", 1) ? ene_open() > 0 : 0;
 }
 
 static void close_devices(int restore) {
@@ -252,7 +273,7 @@ static unsigned __stdcall render_thread(void *p) {
             // after resume from sleep: controllers were power-cycled
             close_devices(0); Sleep(1500); open_devices(); build_scene();
         }
-        if (nano_layout_changed() | lights_changed()) { build_scene(); ui_refresh(); }
+        if (nano_layout_changed() | lights_changed() | ext_layout_changed()) { build_scene(); ui_refresh(); }
         if (InterlockedExchange(&need_reload, 0) ||
             (GetTickCount() - last_cfg_check > 1000 && (last_cfg_check = GetTickCount(), cfg_changed_on_disk()))) {
             load_config();
@@ -267,8 +288,10 @@ static unsigned __stdcall render_thread(void *p) {
 
         sensors_t sn; sensors_poll(&sn, effects_need_gpu_temp() || cur_effect == effect_index("temperature"));
         last_sensors = sn;
+        static scene_t sc;
         EnterCriticalSection(&cs);
-        scene_t sc = scene; int fx = cur_effect; float br = brightness;
+        sc.count = scene.count; memcpy(sc.leds, scene.leds, scene.count * sizeof(led_t));
+        int fx = cur_effect; float br = brightness;
         effects_render(fx, &sc, &sn, dt, out);
         int bulb_k[8] = { 0 };
         for (int i = 0; i < sc.count; i++)
@@ -276,6 +299,7 @@ static unsigned __stdcall render_thread(void *p) {
         LeaveCriticalSection(&cs);
 
         rgbf gpu[40] = { 0 }, board = { 0, 0, 0 }, ram[2][8] = { 0 }, bulb[8] = { 0 }, nano[MAX_LEDS] = { 0 }; int rn[2] = { 0, 0 }, gn = 0, bn = 0, nn = 0;
+        static rgbf ext[EXT_SLOTS][512]; int en[EXT_SLOTS] = { 0 };
         for (int i = 0; i < sc.count; i++) {
             rgbf c = scalec(out[i], br);
             out[i] = c;   // kept for the preview (before the white-bulb conversion below)
@@ -295,6 +319,11 @@ static unsigned __stdcall render_thread(void *p) {
                 nano[l->index] = c;
                 if (l->index >= nn) nn = l->index + 1;
                 break;
+            case DEV_EXT: {
+                int k = l->zone - ZONE_EXT0;
+                if (k >= 0 && k < EXT_SLOTS && l->index < 512) { ext[k][l->index] = c; if (l->index >= en[k]) en[k] = l->index + 1; }
+                break;
+            }
             case DEV_RAM0: case DEV_RAM1: {
                 int st = (l->dev == DEV_RAM1) ^ ram_swap;
                 ram[st][ram_rev ? 7 - l->index : l->index] = led_fix(c, FIX_RAM); rn[st] = 8;
@@ -304,7 +333,9 @@ static unsigned __stdcall render_thread(void *p) {
             }
         }
 
-        EnterCriticalSection(&cs); frame_sc = sc; memcpy(frame_c, out, sc.count * sizeof(rgbf)); LeaveCriticalSection(&cs);
+        EnterCriticalSection(&cs);
+        frame_sc.count = sc.count; memcpy(frame_sc.leds, sc.leds, sc.count * sizeof(led_t)); memcpy(frame_c, out, sc.count * sizeof(rgbf));
+        LeaveCriticalSection(&cs);
 
         // switched-off devices get black (sent once, then skipped as unchanged)
         if (!gpu_on) gn = gpu_leds;
@@ -312,8 +343,17 @@ static unsigned __stdcall render_thread(void *p) {
 
         if (lights_count()) lights_submit(bulb, bulb_k, bn, lights_on);
         if (nano_configured()) nano_submit(nano, nn, nano_on);
+        for (int k = 0; k < EXT_SLOTS; k++) if (en[k]) ext_submit(k, ext[k], en[k]);
 
-        int changed = 0;
+        // "animating" = any LED of the scene changed (not only the PC hardware: a setup may be LAN lights only)
+        // (compared at 8 bits: slow fades that don't move a single LED step still let the loop idle)
+        static BYTE prev8[MAX_LEDS * 3]; static int prev_count;
+        int changed = sc.count != prev_count;
+        for (int i = 0; i < sc.count; i++) {
+            BYTE q[3] = { (BYTE)(clampf(out[i].r, 0, 1) * 255 + .5f), (BYTE)(clampf(out[i].g, 0, 1) * 255 + .5f), (BYTE)(clampf(out[i].b, 0, 1) * 255 + .5f) };
+            if (memcmp(prev8 + i * 3, q, 3)) { memcpy(prev8 + i * 3, q, 3); changed = 1; }
+        }
+        prev_count = sc.count;
         if (have_msi) changed |= msi_send(gpu, gn, &board) == 1;
         if (have_ene) {
             EnterCriticalSection(&cs);
@@ -405,6 +445,8 @@ static int status_body(char *out, int cap) {
     }
     n += snprintf(out + n, cap - n, "],\"nano\":");
     n += nano_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"ext\":");
+    n += ext_json(out + n, cap - n);
     return n;
 }
 
@@ -429,13 +471,32 @@ int app_state_json(char *out, int cap) {
     return n;
 }
 
+// Live colours for the window: [dev, index, "rrggbb"]; LAN devices come as dev 100 + slot and are
+// thinned out to at most 60 samples each (index = sample number).
 int app_frame_json(char *out, int cap) {
     static scene_t sc; static rgbf c[MAX_LEDS];
-    EnterCriticalSection(&cs); sc = frame_sc; memcpy(c, frame_c, sizeof(c)); LeaveCriticalSection(&cs);
+    EnterCriticalSection(&cs);
+    sc.count = frame_sc.count; memcpy(sc.leds, frame_sc.leds, sc.count * sizeof(led_t)); memcpy(c, frame_c, sc.count * sizeof(rgbf));
+    LeaveCriticalSection(&cs);
+    int per[EXT_SLOTS] = { 0 };
+    for (int i = 0; i < sc.count; i++) if (sc.leds[i].dev == DEV_EXT) { int k = sc.leds[i].zone - ZONE_EXT0; if (k >= 0 && k < EXT_SLOTS) per[k]++; }
     int n = snprintf(out, cap, "{\"type\":\"frame\",\"l\":[");
-    for (int i = 0; i < sc.count && n < cap - 32; i++)
-        n += snprintf(out + n, cap - n, "%s[%d,%d,\"%02x%02x%02x\"]", i ? "," : "", sc.leds[i].dev, sc.leds[i].index,
+    int first = 1;
+    for (int i = 0; i < sc.count && n < cap - 32; i++) {
+        int dev = sc.leds[i].dev, idx = sc.leds[i].index;
+        if (dev == DEV_EXT) {
+            int k = sc.leds[i].zone - ZONE_EXT0, total = per[k];
+            if (total > 60) {
+                int step = (total + 59) / 60;
+                if (idx % step) continue;
+                idx /= step;
+            }
+            dev = 100 + k;
+        }
+        n += snprintf(out + n, cap - n, "%s[%d,%d,\"%02x%02x%02x\"]", first ? "" : ",", dev, idx,
                       (int)(clampf(c[i].r, 0, 1) * 255 + .5f), (int)(clampf(c[i].g, 0, 1) * 255 + .5f), (int)(clampf(c[i].b, 0, 1) * 255 + .5f));
+        first = 0;
+    }
     n += snprintf(out + n, cap - n, "]}");
     return n;
 }
@@ -446,6 +507,7 @@ void app_set(const char *s, const char *k, const char *v) {
     if (!_stricmp(s, "general") && !_stricmp(k, "fps")) { int f = atoi(v); fps = f < 5 ? 5 : f > 60 ? 60 : f; }
     if (!_stricmp(s, "hotkeys") || !_stricmp(s, "general")) PostMessageW(hwnd, WM_REHOTKEY, 0, 0);   // also refreshes the tray tip (language)
     if (!_stricmp(s, "nanoleaf") && (!_stricmp(k, "rotate") || !_stricmp(k, "flip"))) nano_relayout();
+    if (!_strnicmp(s, "dev.", 4)) { cfg_save_if_dirty(); ext_reload(); }
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
 }
 
@@ -626,15 +688,15 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_POWERBROADCAST:
-        if (wp == PBT_APMSUSPEND) { logf_("sleep"); nano_suspend(1); lights_suspend(1); }
+        if (wp == PBT_APMSUSPEND) { logf_("sleep"); nano_suspend(1); lights_suspend(1); ext_suspend(1); }
         if (wp == PBT_APMRESUMEAUTOMATIC) { InterlockedExchange(&need_reinit, 1); logf_("resume"); }
-        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { nano_suspend(0); lights_suspend(0); }
+        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { nano_suspend(0); lights_suspend(0); ext_suspend(0); }
         return TRUE;
     case WM_QUERYENDSESSION:
         return TRUE;
     case WM_ENDSESSION:
         // shutdown / log off: room lights get their exit action while the network is still up
-        if (wp) { running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000); close_devices(1); nano_stop(); lights_stop(); }
+        if (wp) { running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000); close_devices(1); nano_stop(); lights_stop(); ext_stop(); }
         return 0;
     case WM_DESTROY:
         Shell_NotifyIconW(NIM_DELETE, &nid);
@@ -666,7 +728,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     (void)prev; (void)cmd; (void)show;
     app_inst = inst;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
-    HANDLE single = CreateMutexW(NULL, TRUE, L"Local\\haku_control_single_instance");
+    HANDLE single = CreateMutexW(NULL, TRUE, L"Local\\" APP_ID L"_single_instance");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         HWND other = FindWindowW(APP_ID, APP_ID);
         if (other) { AllowSetForegroundWindow(ASFW_ANY); PostMessageW(other, RegisterWindowMessageW(L"haku_control_show"), 0, 0); }
@@ -693,6 +755,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     open_devices();
     lights_start();
     nano_start();
+    ext_start();
     hotspot_watch_start();
     sensors_init();
     load_config();
@@ -710,6 +773,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     update_tip();
     register_hotkeys();
     if (wcsstr(GetCommandLineW(), L"--settings")) ui_open(inst);
+    if (wcsstr(GetCommandLineW(), L"--scan")) ext_scan();   // look for LAN lights right away (results in the log)
 
     ram_event = CreateEventW(NULL, FALSE, FALSE, NULL);
     th_ram = (HANDLE)_beginthreadex(NULL, 0, ram_thread, NULL, 0, NULL);
@@ -729,6 +793,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     close_devices(1);
     lights_stop();
     nano_stop();
+    ext_stop();
     hotspot_watch_stop();
     sensors_close();
     timeEndPeriod(1);
