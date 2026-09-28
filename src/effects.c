@@ -47,7 +47,7 @@ static rgbf  zpal[MAX_ZONES][MAX_PALETTE];
 static int   znpal[MAX_ZONES];
 static int   sync_all = 1;
 static int   last_fx = -1;
-static int   used_temp;                   // some LED shows the temperature effect
+static int   used_temp, used_audio;       // some LED shows the temperature / audio effect
 
 // Colour temperature -> RGB (Tanner Helland's approximation), for LEDs without a white channel.
 static rgbf kelvin_rgb(int k) {
@@ -68,6 +68,7 @@ int effects_zone_white(int zone, int *kelvin) {
 }
 
 int effects_need_gpu_temp(void) { return used_temp; }
+int effects_need_audio(void) { return used_audio; }
 
 void zone_section(int zone, char *out, int cap) {
     if (zone == ZONE_RAM) snprintf(out, cap, "zone.ram");
@@ -148,6 +149,7 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
         if (e == FX_BUBBLES) bub_leds[nbl++] = i;
     }
     used_temp = uses[FX_TEMP];
+    used_audio = uses[FX_AUDIO];
 
     // effect clocks; the pump effect follows the flow sensor (0..1) when there is one
     for (int e = 0; e < FX_N; e++) {

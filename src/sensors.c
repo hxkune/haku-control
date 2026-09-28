@@ -1,7 +1,7 @@
 // Sensors. GPU temperature comes from NVML (nvml.dll ships with the NVIDIA driver).
 // NVML is loaded only while an effect needs it and unloaded 30 s after the last use,
 // because the library alone costs more memory than the rest of the program.
-// Water temperature / flow (Aqua Computer QUADRO) and audio are filled in by later modules.
+// Audio level comes from audio.cpp, started the same lazy way. Water temperature / flow (Aqua Computer QUADRO) is still to come.
 #include "common.h"
 
 typedef int (*pfn_nvml_init)(void);
@@ -13,7 +13,8 @@ static HMODULE           nvml;
 static pfn_nvml_temp     nvml_temp;
 static pfn_nvml_shutdown nvml_shutdown;
 static void             *gpu;
-static DWORD             last_poll, last_need, nvml_failed_at;
+static DWORD             last_poll, last_need, nvml_failed_at, last_audio_need;
+static int               audio_on;
 static sensors_t         cache = { NAN, NAN, NAN, NAN, NAN };
 
 static void nvml_unload(void) {
@@ -45,8 +46,14 @@ static int nvml_load(void) {
 
 void sensors_init(void) {}
 
-void sensors_poll(sensors_t *s, int need_gpu) {
+void sensors_poll(sensors_t *s, int need_gpu, int need_audio) {
     DWORD now = GetTickCount();
+    if (need_audio) {
+        last_audio_need = now;
+        if (!audio_on) { audio_start(); audio_on = 1; }
+    } else if (audio_on && now - last_audio_need > 30000) { audio_stop(); audio_on = 0; }
+    if (audio_on) audio_read(&cache.audio_level, &cache.audio_bass);
+    else cache.audio_level = cache.audio_bass = NAN;
     if (need_gpu) {
         last_need = now;
         // retry a failed load at most once a minute
@@ -64,4 +71,4 @@ void sensors_poll(sensors_t *s, int need_gpu) {
     *s = cache;
 }
 
-void sensors_close(void) { nvml_unload(); }
+void sensors_close(void) { nvml_unload(); if (audio_on) { audio_stop(); audio_on = 0; } }

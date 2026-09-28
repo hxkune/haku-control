@@ -71,6 +71,7 @@ void effects_render(int effect, const scene_t *sc, const sensors_t *sn, double d
 void effects_reset(void);
 void zone_section(int zone, char *out, int cap);
 int  effects_need_gpu_temp(void);
+int  effects_need_audio(void);
 int  effects_zone_white(int zone, int *kelvin);      // 1 if the zone is in "white light" mode   // "zone.ram", "zone.gpu", "zone.light1"...
 
 // ---- dev_msi.c (MSI Mystic Light: onboard LED + JRAINBOW1 ARGB header)
@@ -137,7 +138,12 @@ int  hotspot_active(void);
 
 // ---- sensors.c
 void sensors_init(void);
-void sensors_poll(sensors_t *s, int need_gpu);
+void sensors_poll(sensors_t *s, int need_gpu, int need_audio);
+
+// ---- audio.cpp (WASAPI loopback, own thread while needed)
+void audio_start(void);
+void audio_stop(void);
+void audio_read(float *level, float *bass);
 void sensors_close(void);
 
 // ---- main.c: application state shared with the settings window

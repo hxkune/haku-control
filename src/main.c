@@ -288,7 +288,7 @@ static unsigned __stdcall render_thread(void *p) {
         prev = now;
         if (dt > 0.25) dt = 0.25;
 
-        sensors_t sn; sensors_poll(&sn, effects_need_gpu_temp() || cur_effect == effect_index("temperature"));
+        sensors_t sn; sensors_poll(&sn, effects_need_gpu_temp() || cur_effect == effect_index("temperature"), effects_need_audio() || cur_effect == effect_index("audio"));
         last_sensors = sn;
         static scene_t sc;
         EnterCriticalSection(&cs);
