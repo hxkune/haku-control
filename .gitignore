@@ -1,0 +1,22 @@
+# build output
+bin/
+obj/
+*.obj
+*.pdb
+*.ilk
+*.res
+
+# local runtime files
+*.log
+*.ini
+aidot.json
+nanoleaf.json
+msi_backup.bin
+
+# icon previews from art/gen-icons.ps1
+art/out/
+
+# editor / agent settings
+.vs/
+.vscode/
+.claude/

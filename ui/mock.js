@@ -1,0 +1,32 @@
+// Design preview without the core (open index.html?mock): fakes the WebView2 bridge with sample state and frames.
+const L = [];
+const emit = d => L.forEach(f => f({ data: d }));
+window.chrome = { webview: {
+  postMessage(s) { const o = JSON.parse(s); console.log('->', o); if (o.cmd === 'hello') setTimeout(() => emit(STATE), 30); },
+  addEventListener(t, f) { L.push(f); },
+} };
+const panels = [[.83,.12,33],[.83,.5,33],[.83,.88,33],[.45,.69,33],[.45,.12,33],[.54,.99,34],[.36,.99,34],[.54,.44,34],[.36,.44,34]];
+const STATE = {
+  type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1,
+  effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['off','Выключить']].map(([id,title])=>({id,title})),
+  bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
+  nano: { configured: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', side: .45, pair: 0, panels },
+  cfg: { general: { palette: '#00C8FF, #7A3CFF, #FF2D95', speed: '5', fps: '30' }, layout: { gpu_leds: '8', board_led: '1', ram_enabled: '1', gpu_enabled: '1', lights_enabled: '1', nanoleaf_enabled: '1' },
+    caustic: { palette: '#00E5FF, #0060FF, #00FFB0' }, bubbles: { palette: '#001830, #00E5FF, #FFFFFF' }, comet: { palette: '#FFFFFF, #00C8FF, #7A3CFF' },
+    lava: { palette: '#FF2D00, #FF9000, #B0006A', speed: '3' }, breathe: { palette: '#00C8FF, #FF2D95', speed: '3' },
+    temperature: { palette: '#0050FF, #00FF80, #FFB000, #FF0020', cold: '35', hot: '75' }, static: { palette: '#7A3CFF' },
+    'zone.light1': { mode: 'white', kelvin: '3200', brightness: '70' }, 'zone.gpu': { mode: 'palette', palette: '#00FFD5, #0068FF', effect: 'lava' }, 'zone.nanoleaf': { effect: 'breathe' },
+    hotkeys: { next: 'Ctrl+Alt+Right', prev: 'Ctrl+Alt+Left', off: 'Ctrl+Alt+Down', brighter: 'Ctrl+Alt+PageUp', dimmer: 'Ctrl+Alt+PageDown' } },
+};
+const pal = [[0,200,255],[122,60,255],[255,45,149]];
+const pc = p => { p = (p % 1 + 1) % 1 * 3; const i = Math.floor(p), f = p - i, a = pal[i % 3], b = pal[(i + 1) % 3]; return a.map((v, k) => Math.round(v + (b[k] - v) * f)); };
+const hx = c => c.map(v => v.toString(16).padStart(2, '0')).join('');
+setInterval(() => {
+  const t = performance.now() / 1000, l = [];
+  for (let s = 0; s < 2; s++) for (let i = 0; i < 8; i++) l.push([s, i, hx(pc((s * 8 + i) / 36 - t * .12))]);
+  for (let i = 0; i < 8; i++) l.push([2, i, hx(pc((16 + i) / 36 - t * .12))]);
+  for (let i = 0; i < 3; i++) l.push([4, i, i === 0 ? 'ffd0a0' : hx(pc(i / 3 - t * .12))]);
+  panels.forEach((p, i) => l.push([5, i, hx(pc(p[1] * .6 + .4 - t * .12))]));
+  l.push([3, 0, hx(pc(.5 - t * .12))]);
+  emit({ type: 'frame', l });
+}, 50);

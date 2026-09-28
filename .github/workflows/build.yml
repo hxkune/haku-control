@@ -1,0 +1,45 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write   # draft release on tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        shell: cmd
+        run: build.cmd
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'dev-' + $env:GITHUB_SHA.Substring(0, 7) }
+          $pkg = "haku-control-$v"
+          New-Item -ItemType Directory "$pkg\scripts" | Out-Null
+          Copy-Item bin "$pkg\bin" -Recurse
+          Copy-Item scripts\install.ps1, scripts\uninstall.ps1, scripts\stop.ps1, scripts\aidot-setup.ps1 "$pkg\scripts"
+          Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $pkg
+          Copy-Item third_party\pawnio\COPYING "$pkg\bin\SmbusPIIX4.COPYING.txt"
+          Compress-Archive -Path "$pkg\*" -DestinationPath "$pkg.zip"
+          "PKG=$pkg" >> $env:GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PKG }}
+          path: ${{ env.PKG }}.zip
+
+      - name: Draft release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: ${{ env.PKG }}.zip

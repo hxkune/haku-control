@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>haku control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="watermark"></div>
+
+<aside class="side">
+  <div class="brand"><div class="logo"></div><div class="word">control</div></div>
+  <nav id="nav">
+    <button data-tab="effects" class="active">
+      <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.9L19 9.7l-4.2 3 1.5 5.1L12 15l-4.3 2.8 1.5-5.1L5 9.7l5.2-1.8z"/></svg>
+      <span data-i18n="nav.effects">Effects</span><i>01</i></button>
+    <button data-tab="pc">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      <span data-i18n="nav.pc">PC</span><i>02</i></button>
+    <button data-tab="nano">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="8" y="13" width="8" height="8" rx="1.5"/></svg>
+      <span data-i18n="nav.nano">Nanoleaf</span><i>03</i></button>
+    <button data-tab="bulbs">
+      <svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>
+      <span data-i18n="nav.bulbs">Bulbs</span><i>04</i></button>
+    <button data-tab="settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      <span data-i18n="nav.settings">Settings</span><i>05</i></button>
+  </nav>
+  <div class="side-foot">
+    <div class="lbl"><span data-i18n="brightness">Brightness</span><b id="bright-val">100%</b></div>
+    <input type="range" class="range" id="bright" min="5" max="100" value="100">
+    <button class="power" id="power">
+      <svg viewBox="0 0 24 24"><path d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
+      <span>Lights off</span></button>
+  </div>
+</aside>
+<button class="side-toggle" id="side-toggle" data-i18n-title="side.hide">
+  <!-- half a rhombus growing out of the sidebar's right border -->
+  <svg viewBox="0 0 24 96"><path class="fillr" d="M0,0 L23,48 L0,96 Z"/><path class="edge" d="M0.5,0 L23,48 L0.5,96"/><path class="chev" d="M11.5,42 L7.5,48 L11.5,54"/></svg>
+</button>
+
+<main>
+  <header>
+    <div>
+      <h1 id="title">Effects</h1>
+      <p class="sub" id="subtitle"></p>
+    </div>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <!-- ============ EFFECTS ============ -->
+  <section class="tab active" id="tab-effects">
+    <div class="card hero"><canvas id="hero"></canvas></div>
+    <div class="fx-layout">
+      <div class="fx-grid" id="fx-grid"></div>
+      <div class="card fx-side">
+        <h3 id="fx-name" class="fx-title"></h3>
+        <p class="muted" id="fx-desc"></p>
+        <div class="field" id="fx-pal-field">
+          <div class="lbl"><span data-i18n="fx.colors">Effect colours</span></div>
+          <div class="swatches" id="fx-pal"></div>
+        </div>
+        <div class="field" id="fx-speed-field">
+          <div class="lbl"><span data-i18n="speed">Speed</span><b id="fx-speed-val">5</b></div>
+          <input type="range" class="range" id="fx-speed" min="1" max="10" value="5">
+        </div>
+        <div id="fx-temp" class="hidden">
+          <div class="field">
+            <div class="lbl"><span data-i18n="temp.source">Temperature source</span></div>
+            <div class="seg" id="temp-src"><button data-v="gpu" data-i18n="temp.gpu">Graphics card</button><button data-v="water" data-i18n="temp.water">Water (QUADRO)</button></div>
+          </div>
+          <div class="field row2">
+            <label class="num"><span data-i18n="temp.cold">Cold, °C</span><input type="number" id="temp-cold" min="0" max="120"></label>
+            <label class="num"><span data-i18n="temp.hot">Hot, °C</span><input type="number" id="temp-hot" min="0" max="120"></label>
+          </div>
+        </div>
+        <div class="set-row sync-row">
+          <div><b data-i18n="sync">Sync devices</b><p class="muted" id="fx-sync-note"></p></div>
+          <label class="switch"><input type="checkbox" id="fx-sync"><span></span></label>
+        </div>
+        <div id="fx-own" class="own-list"></div>
+        <p class="hint" data-i18n="fx.hint"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PC ============ -->
+  <section class="tab" id="tab-pc">
+    <div class="pc-grid">
+      <div class="card">
+        <div class="card-head">
+          <div><h3 data-i18n="pc.memory">Memory</h3><p class="muted" id="ram-status"></p></div>
+          <label class="switch"><input type="checkbox" data-toggle="ram_enabled"><span></span></label>
+        </div>
+        <canvas class="live" id="live-ram" data-h="170"></canvas>
+        <div class="zone" data-zone="zone.ram"></div>
+        <div class="opts">
+          <div class="wb">
+            <div class="lbl"><span data-i18n="wb">White balance</span><b data-wb-val="ram_warmth">0</b></div>
+            <input type="range" class="range wbr" data-wb="ram_warmth" min="-100" max="100" step="5" value="0">
+            <div class="wb-ends"><span data-i18n="wb.cool">cooler</span><span data-i18n="wb.warm">warmer</span></div>
+          </div>
+          <label class="check"><input type="checkbox" data-cal="gamma"><span></span><em data-i18n="gamma">Accurate colours (gamma correction)</em></label>
+          <label class="check"><input type="checkbox" data-layout="ram_reverse"><span></span><em data-i18n="reverse">Reverse direction</em></label>
+          <label class="check"><input type="checkbox" data-layout="ram_swap"><span></span><em data-i18n="swap">Swap sticks</em></label>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div><h3 id="strip-title">ARGB strip</h3><p class="muted" id="gpu-status"></p></div>
+          <label class="switch"><input type="checkbox" data-toggle="gpu_enabled"><span></span></label>
+        </div>
+        <canvas class="live" id="live-gpu" data-h="170"></canvas>
+        <div class="zone" data-zone="zone.gpu"></div>
+        <div class="opts">
+          <div class="wb">
+            <div class="lbl"><span data-i18n="wb">White balance</span><b data-wb-val="gpu_warmth">0</b></div>
+            <input type="range" class="range wbr" data-wb="gpu_warmth" min="-100" max="100" step="5" value="0">
+            <div class="wb-ends"><span data-i18n="wb.cool">cooler</span><span data-i18n="wb.warm">warmer</span></div>
+          </div>
+          <label class="check"><input type="checkbox" data-cal="gamma"><span></span><em data-i18n="gamma">Accurate colours (gamma correction)</em></label>
+          <label class="num"><span data-i18n="strip.name">Name</span><input type="text" id="strip-name" maxlength="40" spellcheck="false"></label>
+          <div class="stepper"><span data-i18n="leds">LEDs</span>
+            <button data-step="-1">−</button><b id="gpu-leds">8</b><button data-step="1">+</button></div>
+          <label class="check"><input type="checkbox" data-layout="gpu_reverse"><span></span><em data-i18n="reverse">Reverse direction</em></label>
+          <label class="check"><input type="checkbox" data-layout="board_led"><span></span><em data-i18n="boardled">Motherboard LED</em></label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ NANOLEAF ============ -->
+  <section class="tab" id="tab-nano">
+    <div class="card empty hidden" id="nano-empty">
+      <div class="empty-art"></div>
+      <h3 data-i18n="nano.none">Nanoleaf not connected</h3>
+      <p class="muted" data-i18n="nano.none.text"></p>
+      <button class="btn primary" data-pair data-i18n="connect">Connect</button>
+      <p class="pair-msg" data-pair-msg></p>
+    </div>
+    <div id="nano-main" class="nano-grid">
+      <div class="card nano-wall">
+        <div class="card-head">
+          <div><h3 id="nano-name">Nanoleaf</h3><p class="muted" id="nano-status"></p></div>
+          <label class="switch"><input type="checkbox" data-toggle="nanoleaf_enabled"><span></span></label>
+        </div>
+        <canvas class="live" id="live-nano" data-h="380"></canvas>
+        <div class="tools">
+          <button class="btn ghost" id="nano-rot-l" data-i18n-title="rot.l">
+            <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>90°</button>
+          <button class="btn ghost" id="nano-rot-r" data-i18n-title="rot.r">
+            <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>90°</button>
+          <button class="btn ghost" id="nano-flip">
+            <svg viewBox="0 0 24 24"><path d="M12 3v18M16 7l4 5-4 5zM8 7l-4 5 4 5z"/></svg><span data-i18n="flip">Mirror</span></button>
+          <span class="grow"></span>
+          <button class="btn ghost" data-pair data-i18n="reconnect">Reconnect</button>
+        </div>
+        <p class="pair-msg" data-pair-msg></p>
+        <p class="hint" data-i18n="nano.hint"></p>
+      </div>
+      <div class="card">
+        <h3 data-i18n="colour">Colour</h3>
+        <div class="zone" data-zone="zone.nanoleaf"></div>
+        <div class="field">
+          <div class="lbl"><span data-i18n="nano.rate">Update rate</span><b id="nano-rate-val">10/s</b></div>
+          <input type="range" class="range" id="nano-rate" min="2" max="10" value="10">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BULBS ============ -->
+  <section class="tab" id="tab-bulbs">
+    <div class="card bulbs-head">
+      <div class="card-head">
+        <div><h3 data-i18n="bulbs.title">AiDot bulbs</h3><p class="muted" id="bulbs-status"></p></div>
+        <label class="switch"><input type="checkbox" data-toggle="lights_enabled"><span></span></label>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <div class="lbl"><span data-i18n="bulbs.smooth">Colour smoothing</span><b id="smooth-val">0.35 s</b></div>
+          <input type="range" class="range" id="bulb-smooth" min="0" max="150" value="35">
+        </div>
+        <div class="field">
+          <div class="lbl"><span data-i18n="bulbs.rate">Commands per second</span><b id="rate-val">4</b></div>
+          <input type="range" class="range" id="bulb-rate" min="1" max="10" value="4">
+        </div>
+      </div>
+    </div>
+    <div class="bulb-grid" id="bulb-grid"></div>
+    <div class="card empty hidden" id="bulbs-empty">
+      <h3 data-i18n="bulbs.none">No bulbs</h3>
+      <p class="muted" data-i18n="bulbs.none.text"></p>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section class="tab" id="tab-settings">
+    <div class="set-grid">
+      <div class="card">
+        <h3 data-i18n="set.general">General</h3>
+        <div class="set-row">
+          <div><b data-i18n="lang">Language</b></div>
+          <div class="seg lang-seg" id="lang"><button data-v="en">English</button><button data-v="ru">Русский</button></div>
+        </div>
+        <div class="set-row">
+          <div><b data-i18n="autostart">Start with Windows</b><p class="muted" data-i18n="autostart.note"></p></div>
+          <label class="switch"><input type="checkbox" id="autostart"><span></span></label>
+        </div>
+        <div class="set-row">
+          <div><b data-i18n="hotspot">Windows hotspot</b><p class="muted" id="hotspot-status"></p></div>
+          <label class="switch"><input type="checkbox" id="hotspot-auto"><span></span></label>
+        </div>
+        <div class="field">
+          <div class="lbl"><span data-i18n="onexit">On PC shutdown, sleep or exit</span></div>
+          <div class="seg" id="on-exit"><button data-v="off" data-i18n="exit.off">Lights off</button><button data-v="keep" data-i18n="exit.keep">Keep as is</button><button data-v="restore" data-i18n="exit.restore">Nanoleaf scene</button></div>
+          <p class="hint" id="on-exit-note"></p>
+        </div>
+        <div class="field">
+          <div class="lbl"><span data-i18n="fps">Frames per second</span><b id="fps-val">30</b></div>
+          <input type="range" class="range" id="fps" min="10" max="60" step="5" value="30">
+        </div>
+      </div>
+      <div class="card">
+        <h3 data-i18n="hotkeys">Hotkeys</h3>
+        <div id="hotkeys"></div>
+        <p class="hint" data-i18n="hk.hint"></p>
+      </div>
+      <div class="card">
+        <h3 data-i18n="files">Files</h3>
+        <div class="btn-row">
+          <button class="btn ghost" data-open="ini" data-i18n="f.ini">Settings file</button>
+          <button class="btn ghost" data-open="log" data-i18n="f.log">Log</button>
+          <button class="btn ghost" data-open="folder" data-i18n="f.folder">App folder</button>
+        </div>
+        <div class="about mt"><div class="mark"></div>
+          <div><h3>haku control</h3><p data-i18n="about1"></p><p data-i18n="about2"></p></div></div>
+        <button class="btn danger" id="quit" data-i18n="quit">Quit haku control</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="popover hidden" id="picker">
+  <canvas id="pk-sv" width="240" height="150"></canvas>
+  <input type="range" id="pk-hue" min="0" max="360" value="0">
+  <div class="pk-row">
+    <div class="pk-cur" id="pk-cur"></div>
+    <input type="text" id="pk-hex" maxlength="7" spellcheck="false">
+  </div>
+  <div class="pk-presets" id="pk-presets"></div>
+  <div class="pk-actions">
+    <button class="btn ghost small" id="pk-del" data-i18n="pk.del">Remove colour</button>
+    <span class="grow"></span>
+    <button class="btn primary small" id="pk-ok" data-i18n="pk.ok">Done</button>
+  </div>
+</div>
+
+<script>/* design preview in a normal browser: index.html?mock */ if (location.search === "?mock") document.write('<script src="mock.js"><\/script>');</script>
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

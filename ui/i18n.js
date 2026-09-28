@@ -1,0 +1,155 @@
+'use strict';
+// haku control — UI strings. English is the main language, Russian is optional ([general] lang=ru).
+// Static page text uses data-i18n / data-i18n-title attributes; code uses t('key', ...args) with {0}, {1} placeholders.
+
+const STR = {
+  en: {
+    'nav.effects': 'Effects', 'nav.pc': 'PC', 'nav.nano': 'Nanoleaf', 'nav.bulbs': 'Bulbs', 'nav.settings': 'Settings',
+    'side.hide': 'Hide panel', 'side.show': 'Show panel',
+    'wb': 'White balance', 'wb.cool': 'cooler', 'wb.warm': 'warmer', 'gamma': 'Accurate colours (gamma correction)',
+    'sub.effects': 'effect & colours · all devices', 'sub.pc': 'memory · ARGB · board', 'sub.nano': 'panels on the wall',
+    'sub.bulbs': 'room light · aidot', 'sub.settings': 'startup · network · keys',
+    'brightness': 'Brightness', 'power.off': 'Lights off', 'power.on': 'Lights on',
+
+    'fx.colors': 'Effect colours', 'speed': 'Speed',
+    'temp.source': 'Temperature source', 'temp.gpu': 'Graphics card', 'temp.water': 'Water (QUADRO)', 'temp.cold': 'Cold, °C', 'temp.hot': 'Hot, °C',
+    'sync': 'Sync devices', 'sync.on': 'The effect runs as one chain through all devices', 'sync.off': 'Each device plays the effect on its own',
+    'fx.hint': 'On the device tabs, each device can get its own effect, palette, colour or white light.',
+
+    'pc.memory': 'Memory', 'pc.block': 'ARGB strip', 'strip.name': 'Name', 'reverse': 'Reverse direction', 'swap': 'Swap sticks', 'leds': 'LEDs',
+    'boardled': 'Motherboard LED', 'ram.status': 'ENE DRAM RGB · {0} sticks', 'ram.none': 'No memory sticks found',
+    'gpu.status': 'MSI Mystic Light · JRAINBOW1', 'gpu.none': 'Mystic Light unavailable', 'board': 'board',
+
+    'nano.none': 'Nanoleaf not connected',
+    'nano.none.text': 'The panels must be on the same network as this PC. Press Connect — haku control finds the controller and asks you to hold its power button.',
+    'connect': 'Connect', 'reconnect': 'Reconnect', 'rot.l': 'Rotate left', 'rot.r': 'Rotate right', 'flip': 'Mirror',
+    'nano.hint': 'The map follows how the panels hang on the wall. If it is upside down, rotate it so effects run the right way.',
+    'colour': 'Colour', 'nano.rate': 'Update rate', 'per.s': '/s',
+    'nano.online': '{0} · {1} panels', 'nano.offline': 'offline', 'nano.wait': 'Waiting for the panel layout…',
+    'pair.1': 'Looking for the controller on the network…',
+    'pair.2': 'Hold the power button on the controller for 5–7 seconds, until the light blinks',
+    'pair.3': 'Done — panels connected',
+    'pair.4': 'No controller found. Make sure the panels are on the same network as this PC.',
+    'pair.5': 'Timed out — press Connect again',
+
+    'bulbs.title': 'AiDot bulbs', 'bulbs.smooth': 'Colour smoothing', 'bulbs.rate': 'Commands per second', 'sec': ' s',
+    'bulbs.none': 'No bulbs', 'bulbs.none.text': 'Bulb keys live in %APPDATA%\\haku-control\\aidot.json — the AiDot setup script creates them.',
+    'bulbs.status': '{0} of {1} online', 'bulbs.notset': 'Not set up', 'bulb': 'Bulb {0}', 'bulb.offline': 'offline',
+
+    'set.general': 'General', 'autostart': 'Start with Windows', 'autostart.note': 'Starts when you sign in',
+    'hotspot': 'Windows hotspot', 'hotspot.on': 'On · PC network for Nanoleaf and bulbs', 'hotspot.off': 'Off · only needed when lights join the PC Wi-Fi',
+    'onexit': 'On PC shutdown, sleep or exit', 'exit.off': 'Lights off', 'exit.keep': 'Keep as is', 'exit.restore': 'Nanoleaf scene',
+    'exit.off.note': 'Nanoleaf and bulbs switch off (also when the PC sleeps) — without the PC nothing controls them anyway.',
+    'exit.keep.note': 'Nanoleaf and bulbs stay on with the last colour.',
+    'exit.restore.note': 'Nanoleaf returns to its own scene, bulbs stay as they are.',
+    'fps': 'Frames per second', 'lang': 'Language',
+    'hotkeys': 'Hotkeys', 'hk.next': 'Next effect', 'hk.prev': 'Previous effect', 'hk.off': 'Lights off / on', 'hk.brighter': 'Brighter', 'hk.dimmer': 'Dimmer',
+    'hk.none': 'not set', 'hk.press': 'Press a shortcut…', 'hk.hint': 'Click a shortcut and press a new one. Esc cancels, Backspace clears.',
+    'files': 'Files', 'f.ini': 'Settings file', 'f.log': 'Log', 'f.folder': 'App folder',
+    'about1': 'v2.0 · PC, Nanoleaf and room light', 'about2': 'close the window — the light keeps running from the tray', 'quit': 'Quit haku control',
+
+    'pk.del': 'Remove colour', 'pk.ok': 'Done', 'add.colour': 'Add colour',
+    'zone.effect': 'Effect', 'zone.own': 'own', 'zone.global': 'Main effect', 'zone.offfx': 'Off', 'zone.mode': 'Colour mode',
+    'mode.effect': 'Effect', 'mode.palette': 'Palette', 'mode.static': 'Colour', 'mode.white': 'White', 'zone.bright': 'Own brightness',
+    'zone.note': 'Colours of “{0}”. Choose Palette or Colour to set your own.', 'kelvin': 'Warm ↔ cool',
+    'bulb.white.note': 'The bulb uses its own white LEDs — brighter and cleaner than RGB.',
+    'chip.board': 'Board', 'chip.offline': 'offline', 'chip.mem': 'Memory', 'chip.pcs': 'pcs', 'chip.lamps': 'Bulbs',
+
+    'fx.flow': 'Flow', 'fx.caustic': 'Caustics', 'fx.bubbles': 'Bubbles', 'fx.comet': 'Comet', 'fx.lava': 'Lava', 'fx.breathe': 'Breathe',
+    'fx.temperature': 'Temperature', 'fx.pump': 'Pump flow', 'fx.audio': 'Audio', 'fx.static': 'Static colour', 'fx.off': 'Off',
+    'short.flow': 'Chain flow', 'short.caustic': 'Light under water', 'short.bubbles': 'Rising lights', 'short.comet': 'Running tail',
+    'short.lava': 'Plasma', 'short.breathe': 'Colour to colour', 'short.temperature': 'Sensor driven', 'short.pump': 'Pump driven',
+    'short.audio': 'Coming soon', 'short.static': 'One colour', 'short.off': 'All dark',
+    'desc.flow': 'Palette colours flow down the chain: memory → ARGB strip → Nanoleaf wall.',
+    'desc.caustic': 'Rippling light like the bottom of a pool. Looks best through clear coolant.',
+    'desc.bubbles': 'Bright bubbles rise over a dim first colour.',
+    'desc.comet': 'A tail of light flies through every device.',
+    'desc.lava': 'Slow plasma: colours blend and melt into each other.',
+    'desc.breathe': 'Each colour fades into the next, never through black.',
+    'desc.temperature': 'Colour follows temperature: first colour is cold, last is hot.',
+    'desc.pump': 'Like Flow, but the speed follows the pump (once QUADRO is connected).',
+    'desc.audio': 'Reacts to sound — coming in a later version.',
+    'desc.static': 'One colour everywhere — the first palette colour.',
+    'desc.off': 'Lighting is off.',
+  },
+  ru: {
+    'nav.effects': 'Эффекты', 'nav.pc': 'ПК', 'nav.nano': 'Nanoleaf', 'nav.bulbs': 'Лампочки', 'nav.settings': 'Настройки',
+    'side.hide': 'Скрыть панель', 'side.show': 'Показать панель',
+    'wb': 'Баланс белого', 'wb.cool': 'холоднее', 'wb.warm': 'теплее', 'gamma': 'Точные цвета (гамма-коррекция)',
+    'sub.effects': 'эффект и цвета · все устройства', 'sub.pc': 'память · ARGB · плата', 'sub.nano': 'панели на стене',
+    'sub.bulbs': 'комнатный свет · aidot', 'sub.settings': 'запуск · сеть · клавиши',
+    'brightness': 'Яркость', 'power.off': 'Выключить свет', 'power.on': 'Включить свет',
+
+    'fx.colors': 'Цвета эффекта', 'speed': 'Скорость',
+    'temp.source': 'Источник температуры', 'temp.gpu': 'Видеокарта', 'temp.water': 'Вода (QUADRO)', 'temp.cold': 'Холодно, °C', 'temp.hot': 'Горячо, °C',
+    'sync': 'Синхронизировать устройства', 'sync.on': 'Эффект идёт единой цепочкой через все устройства', 'sync.off': 'Каждое устройство играет эффект само по себе',
+    'fx.hint': 'На вкладках устройств можно выбрать каждому свой эффект, палитру, цвет или белый свет.',
+
+    'pc.memory': 'Память', 'pc.block': 'ARGB-лента', 'strip.name': 'Название', 'reverse': 'Развернуть направление', 'swap': 'Поменять планки местами', 'leds': 'Светодиодов',
+    'boardled': 'Светодиод на материнской плате', 'ram.status': 'ENE DRAM RGB · {0} планки', 'ram.none': 'Планки не найдены',
+    'gpu.status': 'MSI Mystic Light · JRAINBOW1', 'gpu.none': 'Mystic Light недоступен', 'board': 'плата',
+
+    'nano.none': 'Nanoleaf не подключён',
+    'nano.none.text': 'Панели должны быть в той же сети, что и компьютер. Нажмите «Подключить» — программа найдёт контроллер и попросит зажать на нём кнопку питания.',
+    'connect': 'Подключить', 'reconnect': 'Переподключить', 'rot.l': 'Повернуть влево', 'rot.r': 'Повернуть вправо', 'flip': 'Отразить',
+    'nano.hint': 'Схема повторяет, как панели висят на стене. Если она перевёрнута — поверните, чтобы эффекты шли в нужную сторону.',
+    'colour': 'Цвет', 'nano.rate': 'Частота обновления', 'per.s': '/с',
+    'nano.online': '{0} · {1} панелей', 'nano.offline': 'нет связи', 'nano.wait': 'Жду раскладку панелей…',
+    'pair.1': 'Ищу контроллер в сети…',
+    'pair.2': 'Зажмите кнопку питания на контроллере на 5–7 секунд, пока не замигает индикатор',
+    'pair.3': 'Готово — панели подключены',
+    'pair.4': 'Контроллер не найден. Проверьте, что панели в той же сети, что и ПК.',
+    'pair.5': 'Время вышло — нажмите «Подключить» ещё раз',
+
+    'bulbs.title': 'Лампочки AiDot', 'bulbs.smooth': 'Плавность смены цвета', 'bulbs.rate': 'Команд в секунду', 'sec': ' с',
+    'bulbs.none': 'Лампочек нет', 'bulbs.none.text': 'Ключи лампочек хранятся в %APPDATA%\\haku-control\\aidot.json — их создаёт скрипт настройки AiDot.',
+    'bulbs.status': 'В сети {0} из {1}', 'bulbs.notset': 'Не настроены', 'bulb': 'Лампочка {0}', 'bulb.offline': 'не в сети',
+
+    'set.general': 'Общие', 'autostart': 'Запуск вместе с Windows', 'autostart.note': 'Программа стартует при входе в систему',
+    'hotspot': 'Точка доступа Windows', 'hotspot.on': 'Включена · сеть ПК для Nanoleaf и лампочек', 'hotspot.off': 'Выключена · нужна, только если свет подключён к Wi-Fi ПК',
+    'onexit': 'При выключении, сне ПК или выходе', 'exit.off': 'Погасить свет', 'exit.keep': 'Оставить как есть', 'exit.restore': 'Сцена Nanoleaf',
+    'exit.off.note': 'Nanoleaf и лампочки гаснут (и при уходе ПК в сон) — без ПК ими всё равно не управлять.',
+    'exit.keep.note': 'Nanoleaf и лампочки остаются гореть последним цветом.',
+    'exit.restore.note': 'Nanoleaf возвращается к своей сцене, лампочки остаются как есть.',
+    'fps': 'Кадров в секунду', 'lang': 'Язык',
+    'hotkeys': 'Горячие клавиши', 'hk.next': 'Следующий эффект', 'hk.prev': 'Предыдущий эффект', 'hk.off': 'Выключить / включить', 'hk.brighter': 'Ярче', 'hk.dimmer': 'Темнее',
+    'hk.none': 'не задано', 'hk.press': 'Нажмите сочетание…', 'hk.hint': 'Нажмите на сочетание и введите новое. Esc — отмена, Backspace — убрать.',
+    'files': 'Файлы', 'f.ini': 'Файл настроек', 'f.log': 'Журнал', 'f.folder': 'Папка программы',
+    'about1': 'v2.0 · свет ПК, Nanoleaf и комнаты', 'about2': 'окно можно закрыть — свет работает из трея', 'quit': 'Выйти из haku control',
+
+    'pk.del': 'Убрать цвет', 'pk.ok': 'Готово', 'add.colour': 'Добавить цвет',
+    'zone.effect': 'Эффект', 'zone.own': 'свой', 'zone.global': 'Общий эффект', 'zone.offfx': 'Выключено', 'zone.mode': 'Режим цвета',
+    'mode.effect': 'Как у эффекта', 'mode.palette': 'Палитра', 'mode.static': 'Цвет', 'mode.white': 'Белый', 'zone.bright': 'Своя яркость',
+    'zone.note': 'Цвета эффекта «{0}». Выберите «Палитра» или «Цвет», чтобы задать свои.', 'kelvin': 'Тёплый ↔ холодный',
+    'bulb.white.note': 'Лампочка светит своими белыми светодиодами — ярче и чище, чем RGB.',
+    'chip.board': 'Плата', 'chip.offline': 'нет связи', 'chip.mem': 'Память', 'chip.pcs': 'шт', 'chip.lamps': 'Лампы',
+
+    'fx.flow': 'Течение', 'fx.caustic': 'Каустика', 'fx.bubbles': 'Пузырьки', 'fx.comet': 'Комета', 'fx.lava': 'Лава', 'fx.breathe': 'Дыхание',
+    'fx.temperature': 'Температура', 'fx.pump': 'Поток по насосу', 'fx.audio': 'Звук', 'fx.static': 'Статичный цвет', 'fx.off': 'Выключить',
+    'short.flow': 'Поток по цепочке', 'short.caustic': 'Свет под водой', 'short.bubbles': 'Всплывающие огни', 'short.comet': 'Бегущий хвост',
+    'short.lava': 'Плазма', 'short.breathe': 'Цвет в цвет', 'short.temperature': 'По датчику', 'short.pump': 'По насосу',
+    'short.audio': 'Скоро', 'short.static': 'Один цвет', 'short.off': 'Всё погасить',
+    'desc.flow': 'Цвета палитры текут по цепочке: память → ARGB-лента → стена Nanoleaf.',
+    'desc.caustic': 'Переливы света, как на дне бассейна. Лучше всего смотрится в прозрачной воде.',
+    'desc.bubbles': 'Яркие пузырьки всплывают на фоне тусклого первого цвета.',
+    'desc.comet': 'Хвост света пролетает через все устройства.',
+    'desc.lava': 'Медленная плазма: цвета смешиваются и перетекают.',
+    'desc.breathe': 'Цвет плавно переходит в следующий по кругу, без затухания в чёрный.',
+    'desc.temperature': 'Цвет по температуре: первый цвет — холодно, последний — горячо.',
+    'desc.pump': 'Как «Течение», но скорость зависит от насоса (после подключения QUADRO).',
+    'desc.audio': 'Реакция на звук — появится в следующей версии.',
+    'desc.static': 'Один цвет на всём — первый цвет палитры.',
+    'desc.off': 'Подсветка выключена.',
+  },
+};
+
+let LANG = 'en';
+function t(key, ...args) {
+  const s = (STR[LANG] && STR[LANG][key]) ?? STR.en[key] ?? key;
+  return args.length ? s.replace(/\{(\d)\}/g, (_, i) => args[i]) : s;
+}
+function applyI18n() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+}

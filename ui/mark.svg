@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- haku control mark: a tribal capital H inside an orbit that opens like a C (same paths as art/gen-icons.ps1) -->
+  <defs>
+    <path id="h" d="M 80,6 C 94,40 104,68 106,96 L 106,176 C 104,202 96,226 82,252 C 84,224 82,200 80,176 L 80,102 C 80,72 80,40 80,6 Z
+      M 196,20 C 188,46 182,70 182,94 L 182,168 C 182,194 190,218 204,240 C 180,222 162,200 160,176 L 160,96 C 160,70 174,44 196,20 Z
+      M 104,132 C 128,120 150,112 172,106 L 236,86 C 212,102 190,116 168,128 C 146,140 124,146 104,152 Z"/>
+    <mask id="cut">
+      <rect width="256" height="256" fill="#fff"/>
+      <path d="M 30,133 A 120,70 0 1 0 270,133 A 120,70 0 1 0 30,133 Z" fill="#000" transform="rotate(-16 128 128)"/>
+      <use href="#h" fill="#000" stroke="#000" stroke-width="14" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <path fill="#fff" mask="url(#cut)" transform="rotate(-16 128 128)" d="M 4,138 A 122,82 0 1 0 248,138 A 122,82 0 1 0 4,138 Z"/>
+  <use href="#h" fill="#fff"/>
+</svg>
