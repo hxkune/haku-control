@@ -559,7 +559,7 @@ function drawHero() {
     if (k === 'nano') drawNano(c, x, top, w, h);
     if (k === 'bulbs') drawBulbs(c, x, top, w, h);
     if (k === 'ext') drawExtAll(c, x, top, w, h);
-    label(c, names[k], x + w / 2, H - 16 * d);
+    if (w > 64 * d) label(c, names[k], x + w / 2, H - 16 * d);
     x += w;
   }
 }
@@ -861,7 +861,20 @@ function buildHotkeys() {
   });
 }
 
+function updateRemote() {
+  const R = S.remote || {};
+  $('#remote-on').checked = cv('remote', 'enabled', '0') === '1';
+  $('#remote-info').classList.toggle('hidden', !(cv('remote', 'enabled', '0') === '1'));
+  $('#remote-urls').textContent = R.on ? (R.urls || []).join('   ') : t('phone.off');
+  $('#remote-pin').textContent = R.on ? R.pin : '';
+  $('#remote-paired').textContent = t('phone.paired', R.paired || 0);
+}
+$('#remote-on').addEventListener('change', e => { setCfg('remote', 'enabled', e.target.checked ? 1 : 0); updateRemote(); });
+$('#remote-newpin').addEventListener('click', () => send({ cmd: 'remote_pin' }));
+$('#remote-forget').addEventListener('click', () => send({ cmd: 'remote_forget' }));
+
 function updateSettings() {
+  updateRemote();
   const a = $('#autostart');
   a.checked = S.autostart === 1; a.disabled = S.autostart < 0;
   $('#hotspot-auto').checked = cv('hotspot', 'auto', '0') !== '0';

@@ -78,6 +78,18 @@ Settings, device keys and the log live in `%APPDATA%\haku-control`. To remove th
 - **Lights on the PC's own Wi-Fi (optional):** *Settings → Windows hotspot* keeps the Windows Mobile Hotspot
   running, so lights can join a network that exists whenever the PC is on.
 
+### Phone
+
+*Settings → Phone → Control from your phone* serves the same interface on your home network (port 8723).
+Open the address it shows on the phone, enter the PIN from the PC once, and add the page to the home screen.
+Only private network addresses are served (and Tailscale's, for control from outside through your own tailnet);
+Windows asks once whether to allow the app on the network. Siri Shortcuts or scripts can send commands too:
+
+```
+POST http://<pc>:8723/api/cmd   header X-Haku-Token: <token from pairing>
+{"cmd":"power"}   {"cmd":"effect","id":"lava"}   {"cmd":"brightness","v":40}
+```
+
 ## Build
 
 Needs Visual Studio 2019 or newer (or Build Tools) with *Desktop development with C++* and a Windows 10/11 SDK.
@@ -112,11 +124,11 @@ third_party WebView2 SDK loader, PawnIO SMBus module
 2. ~~First-start guide; network scan.~~
 3. ~~LAN / bridge lights: OpenRGB bridge, WLED, Philips Hue, Govee, LIFX, Yeelight.~~ Next: confirm them on real
    hardware, more Mystic Light boards and ENE versions in the own drivers.
-4. Installer, signed builds, auto-update. Phone control from the local network.
+4. ~~Phone control from the local network.~~ Installer, signed builds, auto-update.
 
 ## License
 
-Code: [MIT](LICENSE). The **haku** name and logo (`art/`, `ui/haku.png`, `ui/mark.svg`, `res/*.ico`) are not
+Code: [MIT](LICENSE). The **haku** name and logo (`art/`, `ui/haku.png`, `ui/mark.svg`, `ui/icon-256.png`, `res/*.ico`) are not
 covered by the MIT license. Please don't use them for other projects or forks you distribute.
 Third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

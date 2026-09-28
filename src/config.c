@@ -225,9 +225,11 @@ int cfg_json(char *out, int cap) {
         *eq = 0;
         if (!first_key) out[n++] = ',';
         first_key = 0;
-        n = json_put_str(out, cap, n, trim(s));
+        char *k = trim(s);
+        n = json_put_str(out, cap, n, k);
         out[n++] = ':';
-        n = json_put_str(out, cap, n, trim(eq + 1));
+        // pairing secrets ([dev.N] key=) stay in the file
+        n = json_put_str(out, cap, n, !_stricmp(k, "key") && trim(eq + 1)[0] ? "(set)" : trim(eq + 1));
     }
     ReleaseSRWLockShared(&lock);
     if (open) out[n++] = '}';

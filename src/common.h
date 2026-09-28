@@ -129,6 +129,15 @@ int  ext_add(const char *kind, const char *host, int sub, const char *name, int 
 void ext_remove(int id);
 int  ext_json(char *out, int cap);
 
+// ---- remote.c (phone / LAN control over HTTP, [remote] enabled=1)
+void remote_apply(void);          // start / stop / move to the configured port
+void remote_stop(void);
+void remote_forget(void);         // drop all paired devices
+void remote_new_pin(void);
+int  remote_json(char *out, int cap);
+void app_remote_cmd(const char *json);   // runs a window command on the UI thread (main.c)
+void ui_dispatch(const char *json);      // ui_web.cpp: the window's command handler
+
 // ---- net.c
 int  net_broadcasts(unsigned long *out, int max);   // directed broadcast address of every IPv4 interface (network order)
 int  net_addresses(unsigned long *out, int max);    // own IPv4 address of every interface (network order)

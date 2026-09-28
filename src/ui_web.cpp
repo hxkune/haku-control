@@ -100,6 +100,8 @@ static void on_message(const std::string &js) {
         post_state();
     }
     else if (cmd == "dev_remove") { ext_remove(atoi(field(js, "id").c_str())); post_state(); }
+    else if (cmd == "remote_pin") { remote_new_pin(); post_status(); }
+    else if (cmd == "remote_forget") { remote_forget(); post_status(); }
     else if (cmd == "autostart") { app_autostart(atoi(field(js, "v").c_str())); post_state(); }
     else if (cmd == "open") app_open(field(js, "what").c_str());
     else if (cmd == "quit") app_quit();
@@ -220,6 +222,13 @@ static void bring_to_front(void) {
     SetWindowPos(wnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     SetWindowPos(wnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
     SetForegroundWindow(wnd);
+}
+
+// Commands from a phone (remote.c, marshalled to this thread): same handling as the page's, then the open
+// window (if any) is brought up to date.
+extern "C" void ui_dispatch(const char *json) {
+    on_message(json);
+    post_state();
 }
 
 extern "C" void ui_open(HINSTANCE inst) {

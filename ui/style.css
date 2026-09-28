@@ -474,3 +474,49 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .wz-dots { flex: 1; display: flex; gap: 8px; }
 .wz-dots i { width: 7px; height: 7px; border: 1px solid var(--line3); transform: rotate(45deg); }
 .wz-dots i.on { background: #fff; border-color: #fff; }
+
+/* ================= phones (the page served by the PC for remote control) =================
+   Tabs move to a bottom bar, brightness + power to a strip above it; no sidebar. */
+@media (max-width: 700px) {
+  body { flex-direction: column; }
+  .side, body.collapsed .side {
+    position: fixed; left: 0; right: 0; bottom: 0; width: auto; margin: 0; padding: 0 6px env(safe-area-inset-bottom);
+    flex-direction: column-reverse; border-right: 0; border-top: 1px solid var(--line); z-index: 20;
+  }
+  .brand, .side-toggle, .watermark { display: none; }
+  nav { flex-direction: row; gap: 0; }
+  nav button { flex: 1; flex-direction: column; gap: 3px; padding: 8px 0 7px; justify-content: center; --cut: 0px; clip-path: none; }
+  nav button span { font-size: 10px; }
+  nav button i { display: none; }
+  nav button.active { background: none; color: #fff; }
+  nav button.active svg { filter: drop-shadow(0 0 6px rgba(255, 255, 255, .6)); }
+  nav button svg { width: 19px; height: 19px; }
+  .side-foot { margin: 0; padding: 8px 10px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+  .side-foot .lbl { display: contents; }
+  .side-foot .lbl span { display: none; }
+  .side-foot .lbl b { grid-column: 3; grid-row: 1; font-size: 12px; min-width: 36px; text-align: right; }
+  .side-foot .range { grid-column: 2; grid-row: 1; margin: 0; }
+  .side-foot .power { grid-column: 1; grid-row: 1; width: auto; padding: 8px 12px; }
+  .side-foot .power span { display: none; }
+  main { padding: 18px 14px 150px; width: 100%; }
+  header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 16px; }
+  header h1 { font-size: 24px; }
+  .chips { justify-content: flex-start; }
+  .hero { height: 180px; }
+  .fx-grid { grid-template-columns: 1fr 1fr !important; gap: 10px; }
+  .row2, .manual-row { grid-template-columns: 1fr !important; }
+  .card { padding: 16px; }
+  .bulb-grid, .set-grid { grid-template-columns: 1fr; columns: 1; }
+  .popover { left: 12px !important; right: 12px; width: auto; }
+  .wiz { padding: 24px 20px 20px; }
+}
+
+/* ---------------- phone card / remote page */
+.pin { font: 600 22px var(--mono); letter-spacing: .25em; color: #fff; }
+.phone-urls { user-select: text; word-break: break-all; }
+.remote .pc-only { display: none !important; }
+.remote-offline { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 60; padding: 8px 16px;
+  background: #fff; color: #000; font-size: 12.5px; font-weight: 600; }
+.pin-card { min-height: 0; max-width: 420px; }
+.pin-card .pin-in { margin: 18px 0 6px; font: 600 26px var(--mono); letter-spacing: .4em; text-align: center; padding: 12px; }
+.pin-card .btn { margin-top: 16px; align-self: flex-start; }

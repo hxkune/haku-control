@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8">
 <title>haku control</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="haku">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-256.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -228,6 +234,22 @@
   <!-- ============ SETTINGS ============ -->
   <section class="tab" id="tab-settings">
     <div class="set-grid">
+      <div class="card pc-only" id="phone-card">
+        <h3 data-i18n="phone">Phone</h3>
+        <div class="set-row">
+          <div><b data-i18n="phone.on">Control from your phone</b><p class="muted" data-i18n="phone.note"></p></div>
+          <label class="switch"><input type="checkbox" id="remote-on"><span></span></label>
+        </div>
+        <div id="remote-info" class="hidden">
+          <div class="set-row"><div><b data-i18n="phone.open">Open on the phone</b><p class="muted phone-urls" id="remote-urls"></p></div></div>
+          <div class="set-row"><div><b data-i18n="phone.pin">PIN</b><p class="muted" id="remote-paired"></p></div><b class="pin" id="remote-pin"></b></div>
+          <div class="btn-row">
+            <button class="btn small ghost" id="remote-newpin"><span data-i18n="phone.newpin">New PIN</span></button>
+            <button class="btn small ghost" id="remote-forget"><span data-i18n="phone.forget">Forget paired phones</span></button>
+          </div>
+          <p class="hint" data-i18n="phone.shortcuts"></p>
+        </div>
+      </div>
       <div class="card">
         <h3 data-i18n="set.general">General</h3>
         <div class="set-row">
@@ -329,7 +351,9 @@
   </div>
 </div>
 
-<script>/* design preview in a normal browser: index.html?mock */ if (location.search === "?mock") document.write('<script src="mock.js"><\/script>');</script>
+<script>/* in a normal browser: ?mock = design preview, otherwise remote control through the PC's web server */
+  if (location.search === "?mock") document.write('<script src="mock.js"><\/script>');
+  else if (!(window.chrome && window.chrome.webview)) document.write('<script src="remote.js"><\/script>');</script>
 <script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>

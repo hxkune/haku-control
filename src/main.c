@@ -26,6 +26,7 @@
 #define ID_LIGHTS_ON 1207
 #define ID_NANO_ON   1208
 #define WM_REHOTKEY  (WM_APP + 2)
+#define WM_REMOTE_CMD (WM_APP + 3)
 #define SAVE_TIMER   1
 enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN };
 
@@ -454,6 +455,8 @@ static int status_body(char *out, int cap) {
     n += nano_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"ext\":");
     n += ext_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"remote\":");
+    n += remote_json(out + n, cap - n);
     return n;
 }
 
@@ -515,6 +518,7 @@ void app_set(const char *s, const char *k, const char *v) {
     if (!_stricmp(s, "hotkeys") || !_stricmp(s, "general")) PostMessageW(hwnd, WM_REHOTKEY, 0, 0);   // also refreshes the tray tip (language)
     if (!_stricmp(s, "nanoleaf") && (!_stricmp(k, "rotate") || !_stricmp(k, "flip"))) nano_relayout();
     if (!_strnicmp(s, "dev.", 4)) { cfg_save_if_dirty(); ext_reload(); }
+    if (!_stricmp(s, "remote")) { cfg_save_if_dirty(); remote_apply(); }
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
 }
 
@@ -530,6 +534,11 @@ void app_open(const char *what) {
     if (!strcmp(what, "log")) { app_data_path(L"haku-control.log", p); open_in_editor(p); }
     else if (!strcmp(what, "ini")) open_in_editor(cfg_path());
     else if (!strcmp(what, "folder")) ShellExecuteW(NULL, L"open", data_dir, NULL, NULL, SW_SHOWNORMAL);
+}
+
+void app_remote_cmd(const char *json) {
+    DWORD_PTR r;
+    SendMessageTimeoutW(hwnd, WM_REMOTE_CMD, 0, (LPARAM)json, SMTO_BLOCK, 3000, &r);
 }
 
 void app_save_soon(void) { SetTimer(hwnd, SAVE_TIMER, 500, NULL); }
@@ -660,6 +669,9 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             if (old) DestroyIcon(old);
         }
         return 0;
+    case WM_REMOTE_CMD:
+        ui_dispatch((const char *)lp);
+        return 0;
     case WM_REHOTKEY:
         register_hotkeys();
         update_tip();
@@ -763,6 +775,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     lights_start();
     nano_start();
     ext_start();
+    remote_apply();
     hotspot_watch_start();
     sensors_init();
     load_config();
@@ -801,6 +814,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     lights_stop();
     nano_stop();
     ext_stop();
+    remote_stop();
     hotspot_watch_stop();
     sensors_close();
     timeEndPeriod(1);
