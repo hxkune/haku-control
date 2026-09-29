@@ -22,7 +22,9 @@ typedef struct {
     long long asc;
     int    seq;
     DWORD  retry_at, last_send, last_ping;
-    unsigned char rx[4096]; int rxn;
+    unsigned char rx[32768]; int rxn;
+    unsigned fx_hash;              // research: last logged effect attributes
+    char   sent_probe[64];
     float  cur[3];                 // smoothed colour
     int    sent_rgb[3], sent_dim, sent_on, sent_k;
     BCRYPT_KEY_HANDLE bkey;
@@ -150,7 +152,7 @@ static int load_keys(void) {
 
 // ---------------------------------------------------------------- framing
 static int send_frame(bulb_t *b, int type, const char *json) {
-    static unsigned char out[4096];
+    static unsigned char out[24576];
     int n = aes_enc(b->bkey, json, (int)strlen(json), out + 8, sizeof(out) - 8);
     if (n < 0) return -1;
     out[0] = 0x1E; out[1] = 0xED; out[2] = 0; out[3] = (unsigned char)type;
@@ -202,6 +204,26 @@ static void connect_bulb(bulb_t *b) {
     b->last_ping = GetTickCount();
 }
 
+// Research: what the bulb says about effects (set from the AiDot app, which runs them through the cloud). The
+// "attr" object of any message mentioning an effect is logged once per change, to learn how to start effects
+// locally. [lights] probe=1 also asks the bulbs for all attributes every 5 s while they are switched off in the app.
+static void log_effect_attrs(bulb_t *b, const char *js) {
+    if (!strstr(js, "Effect") && !strstr(js, "effect") && !strstr(js, "Script") && !strstr(js, "Mode")) return;
+    const char *a = strstr(js, "\"attr\"");
+    a = a ? strchr(a, '{') : NULL;
+    if (!a) a = js;
+    int depth = 0, in_str = 0, n = 0;
+    for (const char *p = a; *p; p++, n++) {   // the attr object, braces balanced (strings respected)
+        if (in_str) { if (*p == '\\' && p[1]) { p++; n++; } else if (*p == '"') in_str = 0; continue; }
+        if (*p == '"') in_str = 1; else if (*p == '{') depth++; else if (*p == '}' && --depth == 0) { n++; break; }
+    }
+    unsigned h = 2166136261u;
+    for (int i = 0; i < n; i++) h = (h ^ (unsigned char)a[i]) * 16777619u;
+    if (h == b->fx_hash) return;
+    b->fx_hash = h;
+    logf_("aidot: %s effect attributes (%d chars): %.*s", b->mac, n, n, a);
+}
+
 // Handles complete frames in b->rx.
 static void process_rx(bulb_t *b) {
     while (b->rxn >= 8) {
@@ -210,7 +232,7 @@ static void process_rx(bulb_t *b) {
         int len = (h[4] << 24) | (h[5] << 16) | (h[6] << 8) | h[7];
         if (len < 0 || len > (int)sizeof(b->rx) - 9) { close_bulb(b, "frame too large"); return; }
         if (b->rxn < 8 + len) return;
-        static unsigned char body[4096];
+        static unsigned char body[32768];
         memcpy(body, h + 8, len);
         int n = aes_dec(b->bkey, body, len);
         memmove(b->rx, b->rx + 8 + len, b->rxn - 8 - len);
@@ -222,12 +244,33 @@ static void process_rx(bulb_t *b) {
         const char *js = (const char *)body;
         long long asc = json_int(js, "ascNumber");
         if (asc > 0) b->asc = asc + 1;
+        log_effect_attrs(b, js);
         if (strstr(js, "\"loginResp\"")) {
             long long code = json_int(js, "code");
             if (code == 200) { b->online = 1; b->sent_on = -1; logf_("aidot: %s online at %s", b->mac, b->ip); }
             else { logf_("aidot: %s login refused (%lld)", b->mac, code); close_bulb(b, "login refused"); b->retry_at = GetTickCount() + 60000; return; }
         }
     }
+}
+
+static void send_attr(bulb_t *b, const char *method, const char *attr) {
+    char pw[128];
+    static char msg[20000];
+    json_escape(b->pass, pw, sizeof(pw));
+    b->seq++;
+    if (b->simple)
+        snprintf(msg, sizeof(msg),
+                 "{\"method\":\"%s\",\"service\":\"device\",\"clientId\":\"ha-%s\",\"srcAddr\":\"0.%s\",\"seq\":\"ha93%05d\","
+                 "\"payload\":{\"devId\":\"%s\",\"parentId\":\"%s\",\"userId\":\"%s\",\"password\":\"%s\",\"attr\":%s,\"channel\":\"tcp\",\"ascNumber\":%lld},"
+                 "\"tst\":%lld,\"deviceId\":\"%s\"}",
+                 method, user_id, user_id, b->seq % 100000, b->id, b->id, user_id, pw, attr, b->asc, now_ms(), b->id);
+    else
+        snprintf(msg, sizeof(msg),
+                 "{\"method\":\"%s\",\"service\":\"device\",\"clientId\":\"\",\"srcAddr\":\"0.%s\",\"seq\":\"ha93%05d\","
+                 "\"payload\":{\"devId\":\"\",\"parentId\":\"\",\"userId\":\"\",\"password\":\"\",\"attr\":%s,\"channel\":\"tcp\",\"ascNumber\":%lld},"
+                 "\"tst\":%lld,\"deviceId\":\"%s\"}",
+                 method, user_id, b->seq % 100000, attr, b->asc, now_ms(), b->id);
+    if (send_frame(b, 1, msg) < 0) close_bulb(b, "send");
 }
 
 static void send_color(bulb_t *b, int on, int r, int g, int bl, int dim, int kelvin) {
@@ -238,22 +281,7 @@ static void send_color(bulb_t *b, int on, int r, int g, int bl, int dim, int kel
         int rgbw = (int)(((unsigned)r << 24) | ((unsigned)g << 16) | ((unsigned)bl << 8));
         snprintf(attr, sizeof(attr), "{\"OnOff\":1,\"RGBW\":%d,\"Dimming\":%d}", rgbw, dim);
     }
-    char pw[128], msg[1024];
-    json_escape(b->pass, pw, sizeof(pw));
-    b->seq++;
-    if (b->simple)
-        snprintf(msg, sizeof(msg),
-                 "{\"method\":\"setDevAttrReq\",\"service\":\"device\",\"clientId\":\"ha-%s\",\"srcAddr\":\"0.%s\",\"seq\":\"ha93%05d\","
-                 "\"payload\":{\"devId\":\"%s\",\"parentId\":\"%s\",\"userId\":\"%s\",\"password\":\"%s\",\"attr\":%s,\"channel\":\"tcp\",\"ascNumber\":%lld},"
-                 "\"tst\":%lld,\"deviceId\":\"%s\"}",
-                 user_id, user_id, b->seq % 100000, b->id, b->id, user_id, pw, attr, b->asc, now_ms(), b->id);
-    else
-        snprintf(msg, sizeof(msg),
-                 "{\"method\":\"setDevAttrReq\",\"service\":\"device\",\"clientId\":\"\",\"srcAddr\":\"0.%s\",\"seq\":\"ha93%05d\","
-                 "\"payload\":{\"devId\":\"\",\"parentId\":\"\",\"userId\":\"\",\"password\":\"\",\"attr\":%s,\"channel\":\"tcp\",\"ascNumber\":%lld},"
-                 "\"tst\":%lld,\"deviceId\":\"%s\"}",
-                 user_id, b->seq % 100000, attr, b->asc, now_ms(), b->id);
-    if (send_frame(b, 1, msg) < 0) close_bulb(b, "send");
+    send_attr(b, "setDevAttrReq", attr);
 }
 
 // ---------------------------------------------------------------- discovery
@@ -371,7 +399,30 @@ static unsigned __stdcall thread_fn(void *p) {
             if (!b->online || !have) continue;
             // switched off in the app: the bulb goes dark (once) and stays connected
             if (!en) {
-                if (b->sent_on != 0) { send_color(b, 0, 0, 0, 0, 0, 0); b->sent_on = 0; b->last_send = now; }
+                if (b->sent_on != 0 && !cfg_geti("lights", "probe", 0)) { send_color(b, 0, 0, 0, 0, 0, 0); b->sent_on = 0; b->last_send = now; }
+                // research ([lights] probe=1): leave the bulb to the AiDot app, read its attributes, replay attr_send
+                if (cfg_geti("lights", "probe", 0)) {
+                    b->sent_on = -1;
+                    if (now - b->last_send > 5000) { send_attr(b, "getDevAttrReq", "{}"); b->last_send = now; }
+                    // %APPDATA%\haku-control\aidot-send.json: an attr object, sent once per change of the file
+                    static char as[16384]; static FILETIME as_time; static DWORD as_check;
+                    if (now - as_check > 2000) {
+                        as_check = now;
+                        wchar_t fp[MAX_PATH]; app_data_path(L"aidot-send.json", fp);
+                        WIN32_FILE_ATTRIBUTE_DATA fa;
+                        if (GetFileAttributesExW(fp, GetFileExInfoStandard, &fa) && CompareFileTime(&fa.ftLastWriteTime, &as_time)) {
+                            as_time = fa.ftLastWriteTime; as[0] = 0;
+                            FILE *f = _wfopen(fp, L"rb");
+                            if (f) { size_t n = fread(as, 1, sizeof(as) - 1, f); as[n] = 0; fclose(f); }
+                            for (int k = 0; k < nbulbs; k++) bulbs[k].sent_probe[0] = 0;
+                        }
+                    }
+                    if (as[0] == '{' && !b->sent_probe[0]) {
+                        strcpy_s(b->sent_probe, sizeof(b->sent_probe), "sent");
+                        logf_("aidot: %s research: sending %.300s", b->mac, as);
+                        send_attr(b, "setDevAttrReq", as);
+                    }
+                }
                 continue;
             }
 
