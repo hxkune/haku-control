@@ -42,6 +42,7 @@ device runs its own effect.
 | LIFX | official LAN protocol | tested against a simulator |
 | Yeelight (with *LAN Control*) | LAN JSON protocol, music mode | tested against a simulator |
 | Philips WiZ | local UDP JSON protocol, no keys | tested against a simulator |
+| Tuya / Smart Life colour lights (Lidl, Gosund, Nous, Teckin…) | local protocol 3.3 / 3.4 / 3.5, keys from your own Tuya cloud project | **experimental: not tested yet** |
 | AiDot Wi-Fi bulbs (e.g. Linkind / "Matter Smart Light Bulb") | local LAN protocol, keys fetched once | verified with RGBTW bulbs |
 
 "Tested against a simulator" means the protocol was checked with `tools/sim/fake_devices.py`, not yet on the

@@ -105,6 +105,12 @@ static void on_message(const std::string &js) {
     else if (cmd == "autostart") { app_autostart(atoi(field(js, "v").c_str())); post_state(); }
     else if (cmd == "open") app_open(field(js, "what").c_str());
     else if (cmd == "update_check") update_check_now();
+    else if (cmd == "tuya_login") {   // PC window only, like aidot_login
+        std::string sec = field(js, "secret");
+        accounts_tuya_login(field(js, "region").c_str(), field(js, "id").c_str(), sec.c_str());
+        SecureZeroMemory(&sec[0], sec.size());
+        post_status();
+    }
     else if (cmd == "aidot_login") {   // PC window only (not in the phone's list): the password stays on this PC
         std::string pw = field(js, "password");
         accounts_aidot_login(field(js, "country").c_str(), field(js, "email").c_str(), pw.c_str());

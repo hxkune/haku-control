@@ -157,6 +157,7 @@ int  mood_json(char *out, int cap);
 
 // ---- accounts.c (one-time vendor sign-ins that hand out local-control keys)
 void accounts_aidot_login(const char *country, const char *email, const char *password);
+void accounts_tuya_login(const char *region, const char *access_id, const char *secret);
 int  accounts_json(char *out, int cap);
 
 // ---- net.c

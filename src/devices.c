@@ -6,7 +6,7 @@
 #include <process.h>
 #include <stdlib.h>
 
-static const ext_driver *drivers[] = { &drv_wled, &drv_openrgb, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz };
+static const ext_driver *drivers[] = { &drv_wled, &drv_openrgb, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz, &drv_tuya };
 #define NDRV (int)(sizeof(drivers) / sizeof(drivers[0]))
 
 const ext_driver *ext_driver_by_kind(const char *kind) {

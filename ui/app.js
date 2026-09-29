@@ -123,7 +123,44 @@ function updateAccounts() {
   m.textContent = busy ? t('acc.busy') : A.state === 2 ? t('acc.aidot.done', A.found) :
     A.state === 3 ? (known ? t('acc.err.' + A.msg) : t('acc.err.vendor', A.msg)) : '';
   m.classList.toggle('bad', A.state === 3);
+  updateTuya();
 }
+// Tuya: a cloud project's Access ID / Secret (iot.tuya.com) reads the linked app's lights and their local keys
+const TACC = { shown: false, pending: false };
+function updateTuya() {
+  const T = (S.accounts || {}).tuya || {}, nt = S.ext.devs.filter(d => d.kind === 'tuya').length;
+  $('#acc-tuya').textContent = T.state === 2 ? t('acc.tuya.ok', T.found) : nt ? t('acc.tuya.devs', nt) : t('acc.tuya.none');
+  $('#tuya-open-t').textContent = t(T.state === 2 || nt ? 'acc.signin.again' : 'acc.signin');
+  const rg = $('#tuya-region');
+  if (!rg.options.length && T.regions) {
+    rg.innerHTML = T.regions.map(([c, n]) => `<option value="${c}">${n}</option>`).join('');
+    rg.value = cv('tuya', 'region', 'eu');
+  }
+  const busy = T.state === 1;
+  $('#tuya-go').disabled = busy;
+  if (TACC.pending && !busy && (T.state === 2 || T.state === 3)) {
+    TACC.pending = false;
+    if (T.state === 2) TACC.shown = false;
+  }
+  $('#tuya-form').classList.toggle('hidden', !TACC.shown);
+  $('#tuya-open').classList.toggle('hidden', TACC.shown);
+  const m = $('#tuya-msg'), known = T.msg && t('acc.err.' + T.msg) !== 'acc.err.' + T.msg;
+  m.textContent = busy ? t('acc.busy') : T.state === 2 ? t('acc.tuya.done', T.found) :
+    T.state === 3 ? (known ? t('acc.err.' + T.msg) : t('acc.err.tvendor', T.msg)) : '';
+  m.classList.toggle('bad', T.state === 3);
+}
+$('#tuya-open').addEventListener('click', () => { TACC.shown = true; updateTuya(); setTimeout(() => $('#tuya-id').focus(), 30); });
+$('#tuya-cancel').addEventListener('click', () => { TACC.shown = false; $('#tuya-secret').value = ''; updateTuya(); });
+$('#tuya-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const id = $('#tuya-id').value.trim(), secret = $('#tuya-secret').value.trim(), region = $('#tuya-region').value;
+  if (!id || !secret) return;
+  $('#tuya-secret').value = '';
+  setCfg('tuya', 'region', region);
+  TACC.pending = true;
+  send({ cmd: 'tuya_login', region, id, secret });
+  updateTuya();
+});
 $('#aidot-open').addEventListener('click', () => { ACC.shown = true; updateAccounts(); setTimeout(() => $('#aidot-email').focus(), 30); });
 $('#aidot-cancel').addEventListener('click', () => { ACC.shown = false; $('#aidot-pass').value = ''; updateAccounts(); });
 $('#aidot-form').addEventListener('submit', e => {

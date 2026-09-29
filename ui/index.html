@@ -272,6 +272,24 @@
         </div>
       </form>
       <p class="acc-msg" id="aidot-msg"></p>
+      <div class="acc-row">
+        <div><b>Tuya / Smart Life</b><small id="acc-tuya"></small></div>
+        <button class="btn small ghost pc-only" id="tuya-open"><span id="tuya-open-t"></span></button>
+      </div>
+      <form class="acc-form hidden pc-only" id="tuya-form" autocomplete="off">
+        <p class="note" data-i18n="acc.tuya.how"></p>
+        <div class="acc-fields">
+          <label class="num"><span data-i18n="acc.tuya.region">Data center</span><select class="select" id="tuya-region"></select></label>
+          <label class="num"><span>Access ID</span><input type="text" id="tuya-id" spellcheck="false"></label>
+          <label class="num"><span>Access Secret</span><input type="password" id="tuya-secret"></label>
+        </div>
+        <p class="note" data-i18n="acc.tuya.privacy"></p>
+        <div class="btn-row">
+          <button class="btn primary" type="submit" id="tuya-go"><span data-i18n="acc.signin">Sign in</span></button>
+          <button class="btn ghost" type="button" id="tuya-cancel"><span data-i18n="cancel">Cancel</span></button>
+        </div>
+      </form>
+      <p class="acc-msg" id="tuya-msg"></p>
       <p class="hint remote-only" data-i18n="acc.phone"></p>
     </div>
     <div class="bulb-grid dev-grid" id="dev-grid"></div>
