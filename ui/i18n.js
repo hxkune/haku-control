@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 'use strict';
 // haku control — UI strings. English is the main language, Russian is optional ([general] lang=ru).
 // Static page text uses data-i18n / data-i18n-title attributes; code uses t('key', ...args) with {0}, {1} placeholders.
@@ -112,7 +113,7 @@ const STR = {
     'files': 'Files', 'f.ini': 'Settings file', 'f.log': 'Log', 'f.folder': 'App folder',
     'about1': 'v{0} · PC, Nanoleaf and room light',
     'upd': 'Check for updates', 'upd.note': 'Once a day asks GitHub for a new release. Nothing is installed by itself.',
-    'upd.avail': 'Version {0} is available', 'upd.get': 'Download {0}', 'upd.now': 'Check now', 'about2': 'close the window — the light keeps running from the tray', 'quit': 'Quit haku control',
+    'upd.avail': 'Version {0} is available', 'upd.get': 'Download {0}', 'upd.now': 'Check now', 'about2': 'close the window — the light keeps running from the tray', 'about3': 'Free software, GPL-3.0 · official builds: github.com/hxkune/haku-control', 'quit': 'Quit haku control',
 
     'pk.del': 'Remove colour', 'pk.ok': 'Done', 'add.colour': 'Add colour',
     'zone.effect': 'Effect', 'zone.own': 'own', 'zone.global': 'Main effect', 'zone.offfx': 'Off', 'zone.mode': 'Colour mode',
@@ -247,7 +248,7 @@ const STR = {
     'files': 'Файлы', 'f.ini': 'Файл настроек', 'f.log': 'Журнал', 'f.folder': 'Папка программы',
     'about1': 'v{0} · свет ПК, Nanoleaf и комнаты',
     'upd': 'Проверять обновления', 'upd.note': 'Раз в день спрашивает GitHub о новой версии. Сама ничего не устанавливает.',
-    'upd.avail': 'Доступна версия {0}', 'upd.get': 'Скачать {0}', 'upd.now': 'Проверить сейчас', 'about2': 'окно можно закрыть — свет работает из трея', 'quit': 'Выйти из haku control',
+    'upd.avail': 'Доступна версия {0}', 'upd.get': 'Скачать {0}', 'upd.now': 'Проверить сейчас', 'about2': 'окно можно закрыть — свет работает из трея', 'about3': 'Свободная программа, GPL-3.0 · официальные сборки: github.com/hxkune/haku-control', 'quit': 'Выйти из haku control',
 
     'pk.del': 'Убрать цвет', 'pk.ok': 'Готово', 'add.colour': 'Добавить цвет',
     'zone.effect': 'Эффект', 'zone.own': 'свой', 'zone.global': 'Общий эффект', 'zone.offfx': 'Выключено', 'zone.mode': 'Режим цвета',

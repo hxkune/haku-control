@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Philips WiZ bulbs and strips over their local UDP JSON protocol (port 38899), one colour per light, no keys.
 // Messages: registration (discovery broadcast), getSystemConfig (model), getPilot (state), setPilot (colour,
 // dimming 10..100, state), as used by the WiZ app and the pywizlight project.

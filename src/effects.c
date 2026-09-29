@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Effects. Every effect is a pure function of (led position, time, sensors, palette),
 // except bubbles which keeps a tiny particle list.
 // Each colour zone (RAM, GPU block, Nanoleaf, every bulb) either follows the main effect or runs

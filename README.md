@@ -142,8 +142,18 @@ third_party WebView2 SDK loader, PawnIO SMBus module
 
 ## License
 
-Code: [MIT](LICENSE). The **haku** name and logo (`art/`, `ui/haku.png`, `ui/mark.svg`, `ui/icon-256.png`, `res/*.ico`) are not
-covered by the MIT license. Please don't use them for other projects or forks you distribute.
+Copyright (C) 2026 haku ([hxkune](https://github.com/hxkune)).
+
+haku control is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License, version 3](LICENSE) (GPL-3.0-only). In short: you may use, study, change and share it,
+but anything you distribute that is based on it must be released under the same license, with its full source code,
+and must keep the copyright notices. It comes without any warranty.
+
+Versions up to and including 0.2.0 were published under the MIT license; everything after that is GPL-3.0.
+
+The **haku** name and logo (`art/`, `ui/haku.png`, `ui/mark.svg`, `ui/icon-256.png`, `res/*.ico`) are not covered by
+the license. Forks must use their own name and logo, so nobody mistakes them for the official app.
+Official builds come only from [github.com/hxkune/haku-control/releases](https://github.com/hxkune/haku-control/releases).
 Third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Not affiliated with MSI, G.Skill, ENE, Nanoleaf, AiDot or NVIDIA; their names are used only to describe compatibility.

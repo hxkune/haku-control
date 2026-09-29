@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 """Stand-in for the AiDot cloud on http://127.0.0.1:8779, to test the in-app AiDot sign-in.
 
 Test build: [aidot] server=http://127.0.0.1:8779 in %APPDATA%\\haku-control-dev\\settings.ini. The password must

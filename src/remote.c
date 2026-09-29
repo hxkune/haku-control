@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Phone / remote control: a tiny HTTP server on the local network ([remote] enabled=1, port=8723).
 //   GET  /, /<file>          the settings page from .\ui (the page talks to /api when it is not inside WebView2)
 //   POST /api/pair {"pin"}   PIN shown in the desktop window -> token (kept in %APPDATA%\haku-control\remote.json)

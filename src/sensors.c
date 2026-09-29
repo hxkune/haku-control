@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Sensors. GPU temperature comes from NVML (nvml.dll ships with the NVIDIA driver).
 // NVML is loaded only while an effect needs it and unloaded 30 s after the last use,
 // because the library alone costs more memory than the rest of the program.

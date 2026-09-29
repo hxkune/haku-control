@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // ENE DRAM RGB over PawnIO + SmbusPIIX4.bin (AMD chipsets). Only the verified controller version
 // "AUDA0-E6K5-0101" (e.g. G.Skill Trident Z5 RGB) is driven; anything else is left alone.
 // Only already-mapped controllers are used (no address remapping), and the save register

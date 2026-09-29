@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // haku-control-hotspot: turns on the Windows Mobile Hotspot, sharing the wired / USB internet connection.
 // Started by haku control only when the hotspot is off; exits right away.
 // Exit codes: 0 already on, 1 started, 2 nothing to share, 3 refused, 4 error.

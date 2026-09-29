@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Govee lights with the "LAN Control" switch on in the Govee Home app (official LAN API):
 //   scan: multicast 239.255.255.250:4001, answers come to UDP 4002; commands go to the light's UDP 4003.
 // One colour per light (colorwc + brightness). Replies (scan, devStatus) all arrive on port 4002, so one

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Sound level for the audio effect: WASAPI loopback of the default output device (what you hear).
 // The capture thread runs only while some zone shows the audio effect (sensors.c starts / stops it).
 // Output: level (whole signal) and bass (below ~150 Hz), 0..1, with an automatic gain so quiet and loud

@@ -7,7 +7,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write   # draft release on tags
+  contents: write   # release on tags
 
 jobs:
   build:
@@ -55,7 +55,8 @@ jobs:
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
+          generate_release_notes: true
           files: |
             dist/haku-control-setup.exe
             ${{ env.PKG }}.zip

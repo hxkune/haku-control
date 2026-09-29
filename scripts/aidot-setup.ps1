@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Fetches the local-control keys of your AiDot bulbs (one cloud login) into %APPDATA%\haku-control\aidot.json.
 # Run in PowerShell 7:  pwsh -File "C:\Program Files\haku-control\aidot-setup.ps1"
 # Needed again only after the bulbs were reset / re-added in the AiDot app; haku control picks the new keys up by itself.

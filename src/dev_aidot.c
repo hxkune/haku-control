@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // AiDot / Linkind Wi-Fi bulbs, local LAN protocol (same as the official python-AiDot library):
 //   discovery: UDP broadcast to :6666, AES-256-ECB with a fixed key
 //   control:   TCP :10000, frames "1E ED | type u16 | len u32 | AES-128-ECB(json)" with the per-bulb key

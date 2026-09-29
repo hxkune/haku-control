@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 'use strict';
 // Small QR code generator for the phone link (byte mode, error correction level M, versions 1-6 = up to 106
 // bytes, plenty for "http://192.168.137.1:8723/#pin=123456"). Follows ISO/IEC 18004; the structure mirrors

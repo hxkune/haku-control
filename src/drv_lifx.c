@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // LIFX bulbs and strips over the official LAN protocol (binary, UDP 56700), one colour per light.
 // https://lan.developer.lifx.com  Messages used: GetService(2)/StateService(3), Get(101)/LightState(107),
 // SetColor(102), SetLightPower(117).

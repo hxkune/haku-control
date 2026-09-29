@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // haku-control-open.exe: what the Start menu shortcut runs. It needs no admin rights, so opening the window
 // never shows a UAC prompt: if haku control is running it just asks it to show its window, otherwise it
 // starts the elevated logon task (which may run with highest privileges without a prompt) and then asks.

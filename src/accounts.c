@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Accounts: one-time sign-ins to vendor clouds that hand out the keys for local control. Only the keys are
 // saved; the password goes to the vendor, encrypted the way its own app does it, and is wiped right after.
 //   AiDot (Linkind): login -> houses -> devices; each light's aesKey / password -> %APPDATA%\haku-control\aidot.json,

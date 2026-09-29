@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 """Fake LAN lights for testing haku control without the hardware.
 
     python tools/sim/fake_devices.py            # all fakes on this PC

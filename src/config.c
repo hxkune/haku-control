@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Tiny INI reader/writer. Keeps the file as lines so edits preserve user comments.
 // Comments start with ';' (anywhere) or '#' at the start of a line ('#' inside values is a colour).
 #include "common.h"

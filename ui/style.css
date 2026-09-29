@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* haku control — monochrome, minimal Y2K. The only colour on screen is the live light itself. */
 :root {
   --bg: #0a0a0a;
@@ -743,3 +744,4 @@ body.calm nav button { transition: none; }
 .remote-only { display: none; }
 .remote .remote-only { display: block; }
 @media (max-width: 760px) { .acc-fields { grid-template-columns: 1fr; } }
+.about .about-lic { color: var(--faint); font-size: 11.5px; margin-top: 4px; user-select: text; }

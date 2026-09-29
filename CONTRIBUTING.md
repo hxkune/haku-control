@@ -23,6 +23,11 @@ Code that talks to hardware must follow these rules. Pull requests that break th
 4. **Share the bus.** SMBus access goes through the `Global\Access_SMBUS.HTP.Method` mutex, like other RGB tools.
 5. **Stay light.** No busy loops. Skip unchanged frames. Polling threads sleep.
 
+## License of contributions
+
+By sending a pull request you agree that your contribution is licensed under the GPL-3.0 (GPL-3.0-only),
+like the rest of the project.
+
 ## Code style
 
 - C core (`src/`): C11-ish, MSVC, no external dependencies. Keep a comment at the top of each file that

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // OpenRGB SDK client (https://openrgb.org, "SDK Server", TCP 6742). Every OpenRGB controller (a keyboard,
 // a GPU, a fan hub...) becomes one haku device: host = the OpenRGB server, sub = controller index.
 // The protocol is used at version 0 (the client never announces a newer one), so the controller data

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 """Stand-in for Ollama on 127.0.0.1:11434, to test the mood feature without a real model.
 
 Answers /api/tags with two models (an embedding model first, which must be skipped) and /api/chat with a

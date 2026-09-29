@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 'use strict';
 // Remote control: when this page is opened from a phone (served by haku control's own small web server),
 // it has no WebView2 bridge. This file provides one on top of the HTTP API:

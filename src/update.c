@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Update check: once a day asks GitHub for the latest release of the repo the build came from and tells the
 // settings window when it is newer. Nothing is downloaded or installed; the window offers a link to the release
 // page. Off with [general] update_check=0. Builds without a repo (HAKU_REPO empty, local builds) never check.
@@ -11,7 +12,7 @@
 #include <stdlib.h>
 
 #ifndef HAKU_REPO
-#define HAKU_REPO ""   // "owner/name", set by build.cmd from the HAKU_REPO environment variable (CI: the GitHub repo)
+#define HAKU_REPO "hxkune/haku-control"   // the official repo; build.cmd / CI can point a fork at its own (HAKU_REPO)
 #endif
 
 static char   latest[32], page[256];

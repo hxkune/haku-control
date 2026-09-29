@@ -19,7 +19,7 @@ BEGIN
       VALUE "CompanyName", "haku"
       VALUE "FileDescription", "haku control"
       VALUE "ProductName", "haku control"
-      VALUE "LegalCopyright", "MIT License"
+      VALUE "LegalCopyright", "(C) 2026 haku. GPL-3.0"
       VALUE "FileVersion", HAKU_VER_STR
       VALUE "ProductVersion", HAKU_VER_STR
       VALUE "InternalName", "haku-control"

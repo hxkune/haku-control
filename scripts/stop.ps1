@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Stops a running haku control cleanly (works without admin rights).
 # Also stops the old "rgbfx" build if it is still running. -Dev stops only the test build (build.cmd dev).
 param([switch]$Dev)

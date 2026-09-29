@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // haku control: RGB effects for PC lighting (MSI Mystic Light ARGB header, ENE DRAM) and room lights
 // (Nanoleaf, AiDot), all in one scene.
 // One render thread computes frames; a second thread feeds the (slower) SMBus RAM sticks.

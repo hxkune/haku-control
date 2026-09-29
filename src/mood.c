@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Mood: "sunset on the beach" -> palette + effect + speed, picked by a local language model through Ollama
 // (https://ollama.com, http://127.0.0.1:11434). Nothing leaves the PC. The model is [mood] model=, or the first
 // chat model Ollama has installed. One request at a time on its own thread; the result is part of the status

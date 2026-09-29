@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Settings window: a WebView2 page (ui\index.html next to the exe, served as https://haku-control.ui/).
 // Created on demand and fully torn down on close, so the browser processes exist only while it is open.
 // Page -> core: JSON strings {"cmd":...}; core -> page: {"type":"state"|"status"|"frame"|...}.

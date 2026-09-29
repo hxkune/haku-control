@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 'use strict';
 // haku control settings page. Talks to the core through WebView2 messages:
 //   page -> core: JSON strings {cmd: ...}

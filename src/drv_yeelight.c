@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Yeelight bulbs / strips with "LAN Control" on (Yeelight app). Control is JSON lines over TCP 55443; normal
 // commands are limited to ~60/min, so after connecting we ask the bulb for "music mode": it connects back to us
 // and then takes any number of commands. Discovery: SSDP-like M-SEARCH to 239.255.255.250:1982.

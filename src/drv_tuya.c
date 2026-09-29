@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Tuya / Smart Life lights over the local protocol (TCP 6668), versions 3.3, 3.4 and 3.5, one colour per light.
 // Keys and DP numbers come from %APPDATA%\haku-control\tuya.json (Devices -> Sign-ins: Tuya cloud project);
 // addresses and protocol versions from the devices' own UDP broadcasts (6666 / 6667 / 7000). A [dev.N] entry's

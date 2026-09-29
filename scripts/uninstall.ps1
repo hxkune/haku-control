@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Removes haku control: stops it, deletes the logon task and C:\Program Files\haku-control.
 # Settings and device keys in %APPDATA%\haku-control are kept unless -Purge is given.
 param([switch]$Purge)

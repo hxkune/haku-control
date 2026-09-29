@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Packs the built program (bin\) into obj\payload.bin for haku-control-setup.exe (see src\setup.c for the format).
 param([string]$Bin = (Join-Path (Split-Path $PSScriptRoot) 'bin'), [string]$Out = (Join-Path (Split-Path $PSScriptRoot) 'obj\payload.bin'))
 $ErrorActionPreference = 'Stop'

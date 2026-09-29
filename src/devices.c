@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // LAN / bridge light devices ("ext devices"), see devices.h.
 // Threads: the render thread hands frames over with ext_submit(); one worker thread owns the devices
 // (connects with backoff, sends at most drv->rate frames/s, skips unchanged frames apart from a 1 s keep-alive,

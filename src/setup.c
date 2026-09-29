@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // haku-control-setup.exe: installs / updates / removes haku control.
 //   haku-control-setup.exe              install or update (asks first)
 //   haku-control-setup.exe /uninstall   remove (Apps & Features runs this copy from the install folder)

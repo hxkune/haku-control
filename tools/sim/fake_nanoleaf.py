@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 """Stand-in for a Nanoleaf controller on 127.0.0.1:16021 (+ UDP 60222), to test the Nanoleaf driver.
 
 Four Shapes triangles. Checks every custom animation it gets (panel count, frames, colour values, fade times)

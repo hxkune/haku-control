@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // LAN / bridge light devices ("ext devices"): WLED, OpenRGB, Govee, LIFX, Yeelight...
 // Each configured device lives in a settings section [dev.<id>] (kind, host, sub, name, leds, enabled, reverse)
 // and becomes one colour zone ("zone.dev<id>"). One worker thread (devices.c) opens, feeds and closes them;

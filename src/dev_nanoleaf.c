@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Nanoleaf (Blocks / Shapes / Canvas...) via the local OpenAPI:
 //   HTTP :16021 for layout, state and effects,
 //   usually: the effect is precomputed (effects_bake) and written once as a looping custom animation that the

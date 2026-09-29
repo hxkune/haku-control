@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Design preview without the core (open index.html?mock): fakes the WebView2 bridge with sample state and frames.
 const L = [];
 // index.html?mock#tri / #hex: Nanoleaf Light Panels triangles / Shapes hexagons instead of Blocks. Positions are in

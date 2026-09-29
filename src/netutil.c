@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Small network helpers shared by the LAN light drivers: blocking TCP with timeouts, tiny HTTP/1.0,
 // UDP sockets, and a forgiving JSON field reader (flat lookups by key, good enough for device APIs).
 #include "common.h"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // WLED (ESP8266 / ESP32 LED controller firmware, https://kno.wled.ge):
 //   HTTP JSON API for info / on-off, UDP realtime "DNRGB" (port 21324) for frames, mDNS "_wled._tcp" to find it.
 // While frames arrive WLED shows them; when they stop (timeout byte) it returns to its own effect by itself.

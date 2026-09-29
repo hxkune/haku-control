@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // MSI Mystic Light, 185-byte protocol, per-LED "sync" direct mode (protocol as documented by OpenRGB).
 // Only boards whose 185-byte layout was verified are opened (currently MS-7D73, MPG B650I EDGE WIFI).
 // Layout of the 0x53 per-LED packet for this board: [0] onboard LED, [1..40] JRAINBOW1.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # Installs haku control into C:\Program Files\haku-control and registers an elevated logon task.
 # Run elevated after build.cmd:  pwsh -File scripts\install.ps1
 # Re-running updates the program; settings in %APPDATA%\haku-control are kept.

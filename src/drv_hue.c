@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Philips Hue through the bridge's local REST API (v1). One haku device = one bridge; its colour lights are
 // the device's "LEDs". Pairing: when added, the bridge's link button has to be pressed; the app user name the
 // bridge hands out is stored in [dev.N] key=. The bridge takes about 10 light commands a second, so each frame

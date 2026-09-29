@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // Network helpers: per-interface broadcast addresses, and a watchdog that keeps the
 // Windows Mobile Hotspot on (Nanoleaf / bulbs live on the PC's own Wi-Fi network).
 // Turning the hotspot on needs WinRT, so that is done by the small haku-control-hotspot.exe,
