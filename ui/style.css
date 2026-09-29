@@ -708,3 +708,20 @@ body.calm .sheet.in, body.calm .sheet-wrap { animation: none; }
 .hero { overflow: visible; }   /* the customize menu may reach below it */
 .hero { transition: height .45s cubic-bezier(.2, .8, .25, 1); }
 body.calm .hero { transition: none; }
+
+/* ---------------- sidebar tabs come and go with the hardware */
+nav button { max-height: 48px; overflow: hidden; }
+nav button, nav button.gone {
+  transition-property: border-color, background-color, color, transform, opacity, filter, --lc, max-height, padding, margin;
+  transition-duration: .22s, .22s, .22s, .22s, .3s, .22s, .22s, .38s, .38s, .38s;
+  transition-timing-function: cubic-bezier(.25, .8, .3, 1);
+}
+nav button.gone { max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: -4px; opacity: 0; pointer-events: none; border-width: 0; }
+.more-lights { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 20px; }
+.more-lights .btn-row { margin-top: 0; }
+@media (max-width: 700px) {
+  nav button { max-height: none; max-width: 30%; }
+  nav button, nav button.gone { transition-property: color, opacity, max-width, flex-grow; transition-duration: .38s; }
+  nav button.gone { max-width: 0; flex-grow: 0; margin-top: 0; padding: 0; }
+}
+body.calm nav button { transition: none; }

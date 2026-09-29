@@ -84,12 +84,29 @@ document.addEventListener('pointerdown', e => { if (e.target.type === 'range') d
 document.addEventListener('pointerup', () => { dragging = false; });
 
 // ------------------------------------------------------------------ navigation
+// Sidebar: only the tabs for hardware this PC has (Effects, Devices and Settings always; the open tab stays too).
+// Nanoleaf and AiDot are reached from Devices until they are set up.
+const NAV_NEED = { pc: () => S.msi || S.sticks, nano: () => S.nano && S.nano.configured, bulbs: () => S.bulbs.length > 0 };
+function updateNav() {
+  let n = 0;
+  $$('#nav button').forEach(b => {
+    const need = NAV_NEED[b.dataset.tab], show = !need || !!need() || b.dataset.tab === tab;
+    b.classList.toggle('gone', !show);
+    b.tabIndex = show ? 0 : -1;
+    if (show) b.querySelector('i').textContent = String(++n).padStart(2, '0');
+  });
+  $('[data-go="nano"]').classList.toggle('hidden', !!NAV_NEED.nano());
+  $('[data-go="bulbs"]').classList.toggle('hidden', !!NAV_NEED.bulbs());
+  $('#more-lights').classList.toggle('hidden', !!NAV_NEED.nano() && !!NAV_NEED.bulbs());
+}
+
 function showTab(t) {
   closeSheet();
   tab = t;
   $('main').scrollTop = 0;
   $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
+  updateNav();
   $('#title').textContent = window.t('nav.' + t);
   $('#subtitle').textContent = window.t('sub.' + t);
   requestAnimationFrame(sizeCanvases);
@@ -106,6 +123,7 @@ document.addEventListener('pointermove', e => {
   c.style.setProperty('--my', (e.clientY - r.top) + 'px');
 }, { passive: true });
 $$('#nav button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$$('[data-go]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.go)));
 
 // ------------------------------------------------------------------ colour picker
 const PK = { h: 0, s: 1, v: 1, onChange: null, onDelete: null, anchor: null };
@@ -473,14 +491,54 @@ function drawGpu(c, X, Y, W, H) {
 }
 
 // Nanoleaf panels at their wall positions; panel size from the nearest neighbour.
+// Nanoleaf panel shapes by shapeType (Nanoleaf OpenAPI): number of sides and edge length in layout units.
+// Unknown types (e.g. Blocks) are drawn as squares sized from the distance to their neighbours.
+const NANO_SHAPES = {
+  0: [3, 150], 8: [3, 134], 9: [3, 67],          // Light Panels triangle, Shapes triangle, Shapes mini triangle
+  2: [4, 100], 3: [4, 100], 4: [4, 100],         // Canvas squares
+  7: [6, 67], 14: [6, 134], 15: [6, 33.5],       // Shapes hexagon, Elements hexagon, Elements hexagon corner
+  17: [2, 154], 18: [2, 77],                     // Lines (a bar)
+};
+// Every panel as a polygon: centre, circumradius r, and the angle of its first corner (canvas, radians).
+// A triangle or hexagon turns so that the edge it shares with its nearest neighbour faces that neighbour: this
+// follows the real layout whatever the angle conventions. A panel on its own uses the angle from the controller.
 function nanoGeometry() {
-  const P = (S.nano && S.nano.panels) || [];
-  const side = S.nano.side || 0.25;
-  return P.map(([x, y], i) => {
-    let s = side;
-    P.forEach(([x2, y2], j) => { if (i !== j) s = Math.min(s, Math.max(Math.abs(x - x2), Math.abs(y - y2))); });
-    return { x, y, s };
+  const P = (S.nano && S.nano.panels) || [], unit = S.nano.unit || 0, side = S.nano.side || 0.25;
+  const deg = Math.PI / 180;
+  return P.map(([x, y, shape, ang = 0], i) => {
+    const info = NANO_SHAPES[shape];
+    let near = null, nd = 1e9, box = side;
+    P.forEach(([x2, y2], j) => {
+      if (i === j) return;
+      const dd = Math.hypot(x2 - x, y2 - y);
+      if (dd < nd) { nd = dd; near = [x2, y2]; }
+      box = Math.min(box, Math.max(Math.abs(x - x2), Math.abs(y - y2)));
+    });
+    if (!info || !unit) return { x, y, n: 4, r: box / Math.SQRT2, a0: Math.PI / 4, bar: 0 };   // square, axis aligned
+    const [n, len] = info, a = len * unit;
+    if (n === 2) return { x, y, n, r: a / 2, a0: ang * deg, bar: a * 0.14 };
+    const r = n === 3 ? a / Math.sqrt(3) : n === 4 ? a / Math.SQRT2 : a;
+    const share = n === 3 ? a / Math.sqrt(3) : n === 4 ? a : a * Math.sqrt(3);   // centre distance of two panels sharing an edge
+    let a0;
+    if (near && n !== 4 && Math.abs(nd - share) < share * 0.2) a0 = Math.atan2(near[1] - y, near[0] - x) + Math.PI / n;
+    else a0 = (n === 3 ? 90 : n === 6 ? -90 : 45) * deg + ang * deg;   // base shape: triangle pointing down, hexagon pointy top
+    return { x, y, n, r, a0, bar: 0 };
   });
+}
+function nanoPath(c, cx, cy, p, k, shrink) {
+  c.beginPath();
+  if (p.n === 2) {   // a light line: a thin bar
+    const L = p.r * k * (1 - shrink), T = Math.max(p.bar * k, 2), dx = Math.cos(p.a0), dy = Math.sin(p.a0);
+    c.moveTo(cx - dx * L - dy * T / 2, cy - dy * L + dx * T / 2); c.lineTo(cx + dx * L - dy * T / 2, cy + dy * L + dx * T / 2);
+    c.lineTo(cx + dx * L + dy * T / 2, cy + dy * L - dx * T / 2); c.lineTo(cx - dx * L + dy * T / 2, cy - dy * L - dx * T / 2);
+  } else {
+    const r = p.r * k * (1 - shrink);
+    for (let v = 0; v < p.n; v++) {
+      const t = p.a0 + v * 2 * Math.PI / p.n;
+      c[v ? 'lineTo' : 'moveTo'](cx + Math.cos(t) * r, cy + Math.sin(t) * r);
+    }
+  }
+  c.closePath();
 }
 function drawNano(c, X, Y, W, H) {
   const G = nanoGeometry(), d = devicePixelRatio;
@@ -490,19 +548,18 @@ function drawNano(c, X, Y, W, H) {
     return;
   }
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-  G.forEach(p => { x0 = Math.min(x0, p.x - p.s / 2); x1 = Math.max(x1, p.x + p.s / 2); y0 = Math.min(y0, p.y - p.s / 2); y1 = Math.max(y1, p.y + p.s / 2); });
-  const pad = 18 * d, k = Math.min((W - pad * 2) / (x1 - x0), (H - pad * 2) / (y1 - y0));
+  G.forEach(p => { x0 = Math.min(x0, p.x - p.r); x1 = Math.max(x1, p.x + p.r); y0 = Math.min(y0, p.y - p.r); y1 = Math.max(y1, p.y + p.r); });
+  const pad = 18 * d, k = Math.min((W - pad * 2) / Math.max(x1 - x0, 1e-6), (H - pad * 2) / Math.max(y1 - y0, 1e-6));
   const ox = X + (W - (x1 - x0) * k) / 2 - x0 * k, oy = Y + (H - (y1 - y0) * k) / 2 - y0 * k;
   G.forEach((p, i) => {
-    const col = F.nano[i] || OFF, s = p.s * k, g = s * 0.06;
-    const px = ox + p.x * k - s / 2 + g, py = oy + p.y * k - s / 2 + g, ps = s - g * 2;
+    const col = F.nano[i] || OFF, cx = ox + p.x * k, cy = oy + p.y * k, r = p.r * k;
     c.save();
     if (lit(col)) { c.shadowColor = col; c.shadowBlur = 30 * d; }
-    rr(c, px, py, ps, ps, ps * 0.02); c.fillStyle = col; c.fill();
+    nanoPath(c, cx, cy, p, k, 0.08); c.fillStyle = col; c.fill();
     c.restore();
-    const sh = c.createLinearGradient(px, py, px + ps, py + ps);
+    const sh = c.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
     sh.addColorStop(0, 'rgba(255,255,255,.25)'); sh.addColorStop(.5, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.2)');
-    rr(c, px, py, ps, ps, ps * 0.02); c.fillStyle = sh; c.fill();
+    nanoPath(c, cx, cy, p, k, 0.08); c.fillStyle = sh; c.fill();
     c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = d; c.stroke();
   });
 }
@@ -577,7 +634,7 @@ function label(c, text, x, y, bright) {
 // that opens its settings in a floating sheet. [ui] hero_hide lists groups left out of the preview.
 const HERO = { hits: [], hover: '', anim: {}, t: 0, k: 1, moving: false, raf: 0 };
 const HERO_GROUPS = [['ram', 0.2], ['gpu', 0.38], ['nano', 0.27], ['bulbs', 0.15], ['ext', 0.3]];
-const heroGroups = () => HERO_GROUPS.filter(([k]) => k === 'ram' || k === 'gpu' || (k === 'nano' && S.nano.configured) ||
+const heroGroups = () => HERO_GROUPS.filter(([k]) => (k === 'ram' && S.sticks) || (k === 'gpu' && S.msi) || (k === 'nano' && S.nano.configured) ||
   (k === 'bulbs' && S.bulbs.length) || (k === 'ext' && S.ext.devs.some(d => d.enabled && d.leds)));
 const heroHidden = () => cv('ui', 'hero_hide', '').split(',').filter(Boolean);
 const groupName = k => ({ ram: t('pc.memory'), gpu: stripName(), nano: 'Nanoleaf', bulbs: t('nav.bulbs'), ext: t('nav.devices') })[k];
@@ -636,6 +693,11 @@ function drawHero() {
     }
     x += w;
   }
+  if (!cols.length && S.effects.length) {   // nothing to show yet: the whole preview invites to add a device
+    c.fillStyle = HERO.hover === 'add' ? '#d8d8d8' : '#6a6a6a'; c.font = `${13 * d}px ${WIDE}`; c.textAlign = 'center';
+    c.fillText('+  ' + t('hero.empty'), W / 2, H / 2);
+    hits.push({ key: 'add', k: 'add', x: W * .3, y: H * .3, w: W * .4, h: H * .4 });
+  }
   HERO.hits = hits;
   const hv = hits.find(h => h.key === HERO.hover);
   if (hv) {   // faceted frame around the device under the cursor
@@ -677,6 +739,7 @@ function sheetCards(h) {
   if (h.k === 'nano') return [S.nano.configured ? $$('#nano-main > .card') : [$('#nano-empty')], 'nano'];
   if (h.k === 'bulb') return [[$('#bulb-grid').children[h.i]], 'bulbs'];
   if (h.k === 'ext') return [[$(`#dev-live-${h.id}`)?.closest('.card')], 'devices'];
+  if (h.k === 'add') return [[], 'devices'];
   return [[], ''];
 }
 function openSheet(h, cx, cy) {
@@ -1191,8 +1254,8 @@ $$('#lang button').forEach(b => b.addEventListener('click', () => {
 function chip(dot, text) { return `<span class="chip"><span class="dot ${dot}"></span>${text}</span>`; }
 function updateChips() {
   const h = [];
-  h.push(chip(S.msi ? 'on' : 'off', `${t('chip.board')} <b>${S.msi ? 'MSI' : t('chip.offline')}</b>`));
-  h.push(chip(S.sticks ? 'on' : 'off', `${t('chip.mem')} <b>${S.sticks || 0} ${t('chip.pcs')}</b>`));
+  if (S.msi) h.push(chip('on', `${t('chip.board')} <b>MSI</b>`));
+  if (S.sticks) h.push(chip('on', `${t('chip.mem')} <b>${S.sticks} ${t('chip.pcs')}</b>`));
   if (S.gpu_temp != null) h.push(chip('on', `GPU <b>${S.gpu_temp}°</b>`));
   if (S.nano && S.nano.configured) h.push(chip(S.nano.online ? 'on' : 'off', `<b>Nanoleaf</b>`));
   if (S.bulbs.length) { const on = S.bulbs.filter(b => b.online).length; h.push(chip(on === S.bulbs.length ? 'on' : on ? 'warn' : 'off', `${t('chip.lamps')} <b>${on}/${S.bulbs.length}</b>`)); }
@@ -1218,7 +1281,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood();
+  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateNav();
   if (nanoLayoutChanged) drawAll();
 }
 

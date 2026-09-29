@@ -13,7 +13,7 @@
 
 #define MAX_PANELS 32
 
-typedef struct { int id, shape; float x, y, path; } panel_t;
+typedef struct { int id, shape; float x, y, path, o; } panel_t;   // o: drawing angle on screen, degrees clockwise
 typedef struct { char ip[32], token[64]; } addr_t;
 
 static addr_t  cur;                    // used by the streaming thread only
@@ -22,7 +22,7 @@ static volatile LONG have_pending, want_relayout;
 static char    dev_name[64];
 static panel_t panels[MAX_PANELS];
 static int     npanels, online;
-static float   side_ratio;
+static float   side_ratio, unit_ratio;   // layout sideLength and one layout unit, in 0..1 map units
 static volatile LONG layout_new;
 static SRWLOCK lk = SRWLOCK_INIT;
 static rgbf    target[MAX_PANELS];
@@ -155,10 +155,16 @@ static void parse_layout(const char *js) {
         char one[256]; int l = (int)(oe - o); if (l > 255) l = 255;
         memcpy(one, o, l); one[l] = 0;
         int id = (int)jnum(one, "panelId", 0), shape = (int)jnum(one, "shapeType", 0);
-        // panel 0 / controller shapes carry no light
-        if (id > 0 && shape != 12 && shape != 35) {
+        // panel 0, controllers, connectors and caps carry no light (Rhythm 1, Shapes controller 12, Lines connector 16,
+        // controller cap 19, power connector 20, Blocks controller 35)
+        if (id > 0 && shape != 1 && shape != 12 && shape != 16 && shape != 19 && shape != 20 && shape != 35) {
             float x = (float)jnum(one, "x", 0), y = (float)jnum(one, "y", 0);
-            p[n].id = id; p[n].shape = shape;
+            // the panel's own orientation goes through the same rotation / mirror as its position; the page draws
+            // with y down, where angles turn the other way
+            float o = (float)jnum(one, "o", 0) - rot;
+            if (flip) o = 180 - o;
+            o = fmodf(-o + 720, 360);
+            p[n].id = id; p[n].shape = shape; p[n].o = o;
             p[n].x = x * cs + y * sn;          // layout y points up
             p[n].y = -x * sn + y * cs;
             if (flip) p[n].x = -p[n].x;
@@ -186,6 +192,7 @@ static void parse_layout(const char *js) {
     AcquireSRWLockExclusive(&lk);
     memcpy(panels, p, sizeof(p)); npanels = n;
     side_ratio = side > 0 ? side / span : 0.2f;
+    unit_ratio = 1 / span;
     ReleaseSRWLockExclusive(&lk);
     InterlockedExchange(&layout_new, 1);
     logf_("nanoleaf: %d panels, orientation %.0f", n, rot);
@@ -503,13 +510,13 @@ void nano_panel(int i, float *x, float *y, float *path) {
     ReleaseSRWLockShared(&lk);
 }
 
-// {"configured":1,"online":1,"ip":"..","name":"..","side":0.3,"pair":0,"panels":[[x,y,shape],...]}
+// {"configured":1,"online":1,"ip":"..","name":"..","side":0.3,"unit":0.002,"pair":0,"panels":[[x,y,shape,angle],...]}
 int nano_json(char *out, int cap) {
     AcquireSRWLockShared(&lk);
-    int n = snprintf(out, cap, "{\"configured\":%d,\"online\":%d,\"ip\":\"%s\",\"name\":\"%s\",\"side\":%.4f,\"pair\":%ld,\"panels\":[",
-                     th != NULL, online, cur.ip, dev_name, side_ratio, pair_state);
+    int n = snprintf(out, cap, "{\"configured\":%d,\"online\":%d,\"ip\":\"%s\",\"name\":\"%s\",\"side\":%.4f,\"unit\":%.6f,\"pair\":%ld,\"panels\":[",
+                     th != NULL, online, cur.ip, dev_name, side_ratio, unit_ratio, pair_state);
     for (int i = 0; i < npanels && n < cap - 64; i++)
-        n += snprintf(out + n, cap - n, "%s[%.4f,%.4f,%d]", i ? "," : "", panels[i].x, panels[i].y, panels[i].shape);
+        n += snprintf(out + n, cap - n, "%s[%.4f,%.4f,%d,%.1f]", i ? "," : "", panels[i].x, panels[i].y, panels[i].shape, panels[i].o);
     ReleaseSRWLockShared(&lk);
     n += snprintf(out + n, cap - n, "]}");
     return n;

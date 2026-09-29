@@ -1,16 +1,29 @@
 // Design preview without the core (open index.html?mock): fakes the WebView2 bridge with sample state and frames.
 const L = [];
+// index.html?mock#tri / #hex: Nanoleaf Light Panels triangles / Shapes hexagons instead of Blocks. Positions are in
+// Nanoleaf layout units (y up) and normalised the way dev_nanoleaf.c does it.
+function mockLayout(shape, pts) {
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys);
+  const w = Math.max(...xs) - x0, h = Math.max(...ys) - y0, span = Math.max(w, h, 1);
+  return { unit: 1 / span, panels: pts.map(([x, y, o]) => [(x - x0 + (span - w) / 2) / span, 1 - (y - y0 + (span - h) / 2) / span, shape, (720 - o) % 360]) };
+}
+const TRI_H = 150 * Math.sqrt(3) / 2;
+const LAYOUTS = {
+  tri: mockLayout(0, [...[0, 1, 2, 3, 4, 5].map(i => [75 * (i + 1), i % 2 ? 2 * TRI_H / 3 : TRI_H / 3, i % 2 ? 0 : 180]), [75, -TRI_H / 3, 0], [150, -2 * TRI_H / 3 + 0, 180]]),
+  hex: mockLayout(7, [[0, 0, 0], [116, 0, 0], [232, 0, 0], [58, -100.5, 0], [174, -100.5, 0]]),
+};
 const emit = d => L.forEach(f => f({ data: d }));
 window.chrome = { webview: {
   postMessage(s) { const o = JSON.parse(s); console.log('->', o); if (o.cmd === 'hello') setTimeout(() => emit(STATE), 30); },
   addEventListener(t, f) { L.push(f); },
 } };
-const panels = [[.83,.12,33],[.83,.5,33],[.83,.88,33],[.45,.69,33],[.45,.12,33],[.54,.99,34],[.36,.99,34],[.54,.44,34],[.36,.44,34]];
+const LAY = LAYOUTS[location.hash.slice(1)];
+const panels = LAY ? LAY.panels : [[.83,.12,33],[.83,.5,33],[.83,.88,33],[.45,.69,33],[.45,.12,33],[.54,.99,34],[.36,.99,34],[.54,.44,34],[.36,.44,34]];
 const STATE = {
   type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
-  nano: { configured: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', side: .45, pair: 0, panels },
+  nano: { configured: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', side: .45, unit: LAY ? LAY.unit : 0, pair: 0, panels },
   ext: {
     devs: [
       { id: 1, kind: 'wled', title: 'WLED', name: 'Desk strip', host: '192.168.1.60', sub: -1, leds: 60, per_led: 1, online: 1, enabled: 1, info: 'WLED 0.14.4 · esp32' },
