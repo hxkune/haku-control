@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="ambient" id="ambient"><i class="a"></i><i class="b"></i></div>
 <div class="watermark"></div>
 
 <aside class="side">
@@ -270,6 +271,10 @@
         <div class="set-row">
           <div><b data-i18n="hotspot">Windows hotspot</b><p class="muted" id="hotspot-status"></p></div>
           <label class="switch"><input type="checkbox" id="hotspot-auto"><span></span></label>
+        </div>
+        <div class="set-row">
+          <div><b data-i18n="motion">Animations</b><p class="muted" data-i18n="motion.note"></p></div>
+          <label class="switch"><input type="checkbox" id="ui-motion"><span></span></label>
         </div>
         <div class="field">
           <div class="lbl"><span data-i18n="onexit">On PC shutdown, sleep or exit</span></div>

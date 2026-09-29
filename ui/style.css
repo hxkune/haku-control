@@ -529,3 +529,89 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .pin-card { min-height: 0; max-width: 420px; }
 .pin-card .pin-in { margin: 18px 0 6px; font: 600 26px var(--mono); letter-spacing: .4em; text-align: center; padding: 12px; }
 .pin-card .btn { margin-top: 16px; align-self: flex-start; }
+
+/* ================= ambient light and small motion =================
+   The background picks up the live colours of the devices: four soft pools of light (memory, ARGB strip + board,
+   Nanoleaf, bulbs + network lights), set from the frames by app.js and faded by the browser. Cards are slightly
+   see-through so the light reaches them. Hover: a faint spotlight follows the cursor, edges light up. */
+@property --amb0 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --amb1 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --amb2 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --amb3 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --lc { syntax: '<color>'; inherits: false; initial-value: transparent; }
+
+.ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+  transition: --amb0 1.4s ease, --amb1 1.4s ease, --amb2 1.4s ease, --amb3 1.4s ease; }
+.ambient i { position: absolute; inset: -8%; will-change: transform; }
+.ambient .a { background:
+  radial-gradient(36vmax 26vmax at 28% 6%, var(--amb0), transparent 72%),
+  radial-gradient(40vmax 30vmax at 94% 12%, var(--amb2), transparent 72%);
+  animation: drift-a 42s ease-in-out infinite alternate; }
+.ambient .b { background:
+  radial-gradient(46vmax 24vmax at 55% 104%, var(--amb1), transparent 72%),
+  radial-gradient(36vmax 28vmax at 100% 88%, var(--amb3), transparent 72%);
+  animation: drift-b 54s ease-in-out infinite alternate; }
+@keyframes drift-a { to { transform: translate(-3%, 4%) scale(1.06); } }
+@keyframes drift-b { to { transform: translate(3%, -3%) scale(1.04); } }
+
+.card { background-color: rgba(16, 16, 16, .86); }
+.fx { background-color: rgba(16, 16, 16, .82); }
+.fx.on { background-color: rgba(20, 20, 20, .9); }
+.wiz, .popover { background-color: #101010; }
+
+/* edges and borders fade instead of snapping */
+.card, .fx, .btn, .seg, .seg button, .chip, .kbd, .power, nav button, .stepper button, .select, .num input,
+input[type=text], .own-item, .sw, .addr {
+  transition-property: border-color, background-color, color, transform, opacity, filter, --lc;
+  transition-duration: .22s;
+  transition-timing-function: cubic-bezier(.25, .8, .3, 1);
+}
+
+@media (hover: hover) {
+  /* spotlight under the cursor (position from app.js) */
+  .card:not(.hero)::after, .fx::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s;
+    background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .045), transparent 62%);
+  }
+  .fx::after { background: radial-gradient(180px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .07), transparent 65%); }
+  .card:not(.hero):hover::after, .fx:hover::after { opacity: 1; }
+  .card:hover { border-color: rgba(255, 255, 255, .12); --lc: var(--line2); }
+  .wiz:hover, .pin-card:hover { border-color: var(--line); --lc: var(--line); }
+
+  .fx:hover { transform: translateY(-2px); }
+  .fx:hover canvas { filter: brightness(1.25) drop-shadow(0 0 6px rgba(255, 255, 255, .18)); }
+  .fx canvas { transition: filter .25s; }
+
+  nav button svg, nav button i { transition: transform .22s cubic-bezier(.25, .8, .3, 1), color .22s; }
+  nav button:hover svg { transform: translateX(2px); }
+  nav button:hover i { color: var(--muted); }
+
+  .chip:hover { border-color: var(--line2); --lc: var(--line2); color: var(--text); }
+  .range:hover::-webkit-slider-thumb { transform: rotate(45deg) scale(1.18); }
+  .switch:hover span { border-color: #fff; }
+
+  /* a light band sweeps over chrome buttons */
+  .btn.primary, .power.off {
+    background-image: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, .95) 50%, transparent 60%), var(--chrome);
+    background-size: 260% 100%, 100% 100%;
+    background-position: 130% 0, 0 0;
+    transition: background-position .75s cubic-bezier(.25, .8, .3, 1), transform .12s;
+  }
+  .btn.primary:hover, .power.off:hover { background-position: -30% 0, 0 0; filter: none; }
+}
+nav button:active, .power:active, .fx:active, .seg button:active, .kbd:active { transform: scale(.985); }
+
+/* cards come in as a short wave when a tab opens (--i from app.js) */
+.tab.active .card, .tab.active .fx { animation: rise .42s cubic-bezier(.2, .75, .25, 1) backwards; animation-delay: calc(var(--i, 0) * 32ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+
+/* live status dots breathe */
+.dot.on { animation: breathe 2.8s ease-in-out infinite; }
+@keyframes breathe { 50% { box-shadow: 0 0 3px rgba(255, 255, 255, .35); } }
+
+/* Settings -> Animations off ([general] ui_motion=0); Windows' own "animation effects" switch is not used,
+   many people turn it off for speed and still want this */
+body.calm .ambient i, body.calm .dot.on, body.calm .tab.active .card, body.calm .tab.active .fx, body.calm .tab { animation: none; }
+body.calm .fx:hover { transform: none; }
+body.calm .ambient, body.calm .card::after, body.calm .fx::after { display: none; }
+body.calm .btn.primary, body.calm .power.off { transition: none; }

@@ -67,6 +67,7 @@ const STR = {
     'bulbs.none': 'No bulbs', 'bulbs.none.text': 'Bulb keys live in %APPDATA%\\haku-control\\aidot.json — the AiDot setup script creates them.',
     'bulbs.status': '{0} of {1} online', 'bulbs.notset': 'Not set up', 'bulb': 'Bulb {0}', 'bulb.offline': 'offline',
 
+    'motion': 'Animations', 'motion.note': 'Light in the background, hover effects, smooth transitions',
     'set.general': 'General', 'autostart': 'Start with Windows', 'autostart.note': 'Starts when you sign in',
     'hotspot': 'Windows hotspot', 'hotspot.on': 'On · PC network for Nanoleaf and bulbs', 'hotspot.off': 'Off · only needed when lights join the PC Wi-Fi',
     'onexit': 'On PC shutdown, sleep or exit', 'exit.off': 'Lights off', 'exit.keep': 'Keep as is', 'exit.restore': 'Nanoleaf scene',
@@ -169,6 +170,7 @@ const STR = {
     'bulbs.none': 'Лампочек нет', 'bulbs.none.text': 'Ключи лампочек хранятся в %APPDATA%\\haku-control\\aidot.json — их создаёт скрипт настройки AiDot.',
     'bulbs.status': 'В сети {0} из {1}', 'bulbs.notset': 'Не настроены', 'bulb': 'Лампочка {0}', 'bulb.offline': 'не в сети',
 
+    'motion': 'Анимации', 'motion.note': 'Свет на фоне, эффекты при наведении, плавные переходы',
     'set.general': 'Общие', 'autostart': 'Запуск вместе с Windows', 'autostart.note': 'Программа стартует при входе в систему',
     'hotspot': 'Точка доступа Windows', 'hotspot.on': 'Включена · сеть ПК для Nanoleaf и лампочек', 'hotspot.off': 'Выключена · нужна, только если свет подключён к Wi-Fi ПК',
     'onexit': 'При выключении, сне ПК или выходе', 'exit.off': 'Погасить свет', 'exit.keep': 'Оставить как есть', 'exit.restore': 'Сцена Nanoleaf',

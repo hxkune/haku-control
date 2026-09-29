@@ -91,8 +91,18 @@ function showTab(t) {
   $('#title').textContent = window.t('nav.' + t);
   $('#subtitle').textContent = window.t('sub.' + t);
   requestAnimationFrame(sizeCanvases);
+  $$(`#tab-${t} .card, #tab-${t} .fx`).forEach((c, i) => c.style.setProperty('--i', Math.min(i, 14)));
   try { localStorage.setItem('tab', t); } catch (e) { }
 }
+
+// cursor spotlight on cards and effect tiles
+document.addEventListener('pointermove', e => {
+  const c = e.target.closest && e.target.closest('.card, .fx');
+  if (!c) return;
+  const r = c.getBoundingClientRect();
+  c.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+  c.style.setProperty('--my', (e.clientY - r.top) + 'px');
+}, { passive: true });
 $$('#nav button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
 // ------------------------------------------------------------------ colour picker
@@ -594,6 +604,40 @@ function onFrame(l) {
     else if (d >= 100) (F.ext[d - 100] = F.ext[d - 100] || [])[i] = col;
   }
   drawAll();
+  ambient();
+}
+
+// Background light: one colour per device group, brightness-weighted, with a little extra saturation so a
+// rainbow does not average to grey. Groups without devices borrow the overall colour, a bit weaker.
+const AMB = { t: 0, last: [] };
+function groupColor(list) {
+  let r = 0, g = 0, b = 0, w = 0;
+  for (const c of list) {
+    if (!c) continue;
+    const n = parseInt(c.slice(1), 16), R = n >> 16, G = (n >> 8) & 255, B = n & 255, l = Math.max(R, G, B);
+    if (l < 10) continue;
+    r += R * l; g += G * l; b += B * l; w += l;
+  }
+  if (!w) return null;
+  r /= w; g /= w; b /= w;
+  const m = Math.max(r, g, b), avg = (r + g + b) / 3;
+  const sat = x => Math.max(0, Math.min(255, (avg + (x - avg) * 1.6) * 255 / m));
+  return [sat(r), sat(g), sat(b), Math.min(1, m / 255 * 1.3)];
+}
+function ambient() {
+  const now = performance.now();
+  if (now - AMB.t < 400) return;
+  AMB.t = now;
+  const groups = [[...F.ram[0], ...F.ram[1]], [...F.gpu, F.board], F.nano, [...F.bulbs, ...Object.values(F.ext).flat()]];
+  const all = groupColor(groups.flat());
+  const el = $('#ambient');
+  groups.forEach((g, i) => {
+    let c = groupColor(g), a = 0;
+    if (c) a = .08 + .16 * c[3];
+    else if (all) { c = all; a = .05 + .07 * all[3]; }
+    const v = c ? `rgba(${c[0] | 0}, ${c[1] | 0}, ${c[2] | 0}, ${a.toFixed(2)})` : 'rgba(0, 0, 0, 0)';
+    if (AMB.last[i] !== v) { AMB.last[i] = v; el.style.setProperty('--amb' + i, v); }
+  });
 }
 
 // ------------------------------------------------------------------ PC / Nanoleaf / bulbs / settings
@@ -828,6 +872,7 @@ $$('#wz-lang button').forEach(b => b.addEventListener('click', () => $$('#lang b
 
 // settings
 $('#autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.target.checked ? 1 : 0 }));
+$('#ui-motion').addEventListener('change', e => { setCfg('general', 'ui_motion', e.target.checked ? 1 : 0); updateSettings(); });
 $('#hotspot-auto').addEventListener('change', e => setCfg('hotspot', 'auto', e.target.checked ? 1 : 0));
 $('#fps').addEventListener('input', e => { $('#fps-val').textContent = e.target.value; setCfgSoon('general', 'fps', e.target.value); });
 $$('[data-open]').forEach(b => b.addEventListener('click', () => send({ cmd: 'open', what: b.dataset.open })));
@@ -906,6 +951,8 @@ function updateSettings() {
   const a = $('#autostart');
   a.checked = S.autostart === 1; a.disabled = S.autostart < 0;
   $('#hotspot-auto').checked = cv('hotspot', 'auto', '0') !== '0';
+  const motion = cv('general', 'ui_motion', '1') !== '0';
+  $('#ui-motion').checked = motion; document.body.classList.toggle('calm', !motion);
   $('#hotspot-status').textContent = S.hotspot ? t('hotspot.on') : t('hotspot.off');
   const f = +cv('general', 'fps', 30); setRange($('#fps'), f); $('#fps-val').textContent = f;
   const ex = cv('general', 'on_exit', 'off');
