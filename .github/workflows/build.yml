@@ -23,7 +23,11 @@ jobs:
           cmd /c build.cmd 2>&1 | Tee-Object -FilePath build.log
           if ($LASTEXITCODE) {
             # the last lines as annotations, so the reason shows on the run's summary page
-            Get-Content build.log -Tail 25 | Where-Object { $_.Trim() } | ForEach-Object { "::error title=build::$_" }
+            # (GitHub shows at most 10 per step: errors first)
+            $log = Get-Content build.log
+            $bad = $log | Select-String -Pattern 'error|fatal|not found|not recognized|cannot|unresolved' | ForEach-Object { $_.Line }
+            if (-not $bad) { $bad = $log | Select-Object -Last 10 }
+            $bad | Select-Object -First 10 | ForEach-Object { "::error title=build::$_" }
             exit 1
           }
 
