@@ -9,22 +9,28 @@
 #include <stdlib.h>
 
 #define OLLAMA_PORT 11434
+#define MOOD_MAX    8       // colours (a palette holds MAX_PALETTE)
 
 static SRWLOCK lk = SRWLOCK_INIT;
 static volatile LONG busy;
 static int  seq;                    // bumps with every finished request, so the page knows a result is new
 static char err[16];                // "", "offline", "nomodel", "answer"
-static char name[96], effect[24], model[96], colors[6][8];
+static char name[96], effect[24], model[96], colors[MOOD_MAX][8];
 static int  ncolors, speed;
 static char req_text[600];
 static int  req_again;
 
-// the effects a mood may use, with what they look like (the model picks one)
+// the effects a mood may use: what they look like and what they suit (the model picks one; without the hints small
+// models answer "breathe" to almost everything)
 static const char *const FX[][2] = {
-    { "flow", "palette colours travel along all the lights" }, { "caustic", "rippling light under water" },
-    { "bubbles", "lights rising slowly" }, { "comet", "a running tail of light" }, { "lava", "slow warm plasma" },
-    { "breathe", "fades from one colour to the next" }, { "static", "still colours, no motion" },
-    { "audio", "reacts to the music playing" },
+    { "flow", "colours travel along the lights; sunsets, landscapes, neon, rainbows, most moods" },
+    { "caustic", "rippling light like under water; sea, pool, rain, ice, underwater" },
+    { "bubbles", "lights rising slowly; aquarium, champagne, soda, dreamy or playful moods" },
+    { "comet", "a running tail of light; speed, racing, space, sci-fi, energy" },
+    { "lava", "slow warm plasma; fire, candles, cozy evenings, volcano, magic" },
+    { "breathe", "the whole room slowly fades from colour to colour; only for sleep, meditation, relaxing" },
+    { "static", "still colours, no motion; reading, work, focus" },
+    { "audio", "reacts to the music playing; party, club, concert, dancing" },
 };
 
 static int jstr(char *out, int cap, const char *s) {   // JSON string contents, escaped
@@ -70,8 +76,9 @@ static void junesc(const char *s, char *out, int cap) {
 // Small models like greys, browns and pastels, which look dirty or white on LEDs. Keep each colour's hue, but
 // give it at least some saturation and lift it to near full value (dimming is the brightness slider's job);
 // drop greys unless everything is grey (then the user asked for white light), and drop near-duplicates.
-static void led_fix(char cols[][8], int *nc) {
-    float h[6], s[6], v[6];
+// want > 0: the user asked for that many colours, so nothing is dropped below it (a kept grey stays white).
+static void led_fix(char cols[][8], int *nc, int want) {
+    float h[MOOD_MAX], s[MOOD_MAX], v[MOOD_MAX];
     int n = *nc, grey = 0;
     for (int i = 0; i < n; i++) {
         unsigned x = (unsigned)strtoul(cols[i] + 1, NULL, 16);
@@ -81,12 +88,12 @@ static void led_fix(char cols[][8], int *nc) {
         h[i] = d == 0 ? 0 : mx == r ? fmodf((g - b) / d + 6, 6) : mx == g ? (b - r) / d + 2 : (r - g) / d + 4;
         if (s[i] < .2f) grey++;
     }
-    char res[6][8];
-    int out = 0;
+    char res[MOOD_MAX][8];
+    int out = 0, drops = want ? max(n - want, 0) : n;
     for (int i = 0; i < n; i++) {
-        int keep_grey = grey == n;
-        if (s[i] < .2f && !keep_grey) continue;
-        float S = keep_grey ? s[i] : max(s[i], .5f), V = .8f + .2f * v[i];
+        int is_grey = s[i] < .2f && grey != n;
+        if (is_grey && drops) { drops--; continue; }
+        float S = grey == n || is_grey ? s[i] : max(s[i], .5f), V = .8f + .2f * v[i];
         int dup = 0;
         for (int j = 0; j < out; j++) {   // compare with what is kept so far (stored back as hex below)
             unsigned y = (unsigned)strtoul(res[j] + 1, NULL, 16);
@@ -96,14 +103,59 @@ static void led_fix(char cols[][8], int *nc) {
             float dh = fabsf(hj - h[i]); if (dh > 3) dh = 6 - dh;
             if (dh < .12f && fabsf((mx > 0 ? d / mx : 0) - S) < .2f) dup = 1;
         }
-        if (dup) continue;
+        if (dup && drops) { drops--; continue; }
         // HSV -> RGB
         float c = V * S, hh = h[i], x = c * (1 - fabsf(fmodf(hh, 2) - 1)), m = V - c, r, g, b;
         if (hh < 1) { r = c; g = x; b = 0; } else if (hh < 2) { r = x; g = c; b = 0; } else if (hh < 3) { r = 0; g = c; b = x; }
         else if (hh < 4) { r = 0; g = x; b = c; } else if (hh < 5) { r = x; g = 0; b = c; } else { r = c; g = 0; b = x; }
         snprintf(res[out++], 8, "#%02X%02X%02X", (int)((r + m) * 255 + .5f), (int)((g + m) * 255 + .5f), (int)((b + m) * 255 + .5f));
     }
-    if (out >= 2) { memcpy(cols, res, sizeof(res[0]) * out); *nc = out; }
+    if (want && out > want) out = want;
+    if (out >= (want ? 1 : 2)) { memcpy(cols, res, sizeof(res[0]) * out); *nc = out; }
+}
+
+// "only 3 colours", "в двух цветах", "3-colour": the number of colours the user asked for, or 0. The model is then
+// held to exactly that many through the answer's schema; left to itself it gives its usual 4 or 5.
+static int wanted_colors(const char *text) {
+    static const char *const NUM[][8] = {
+        { "one", "single", "один", "одна", "одного", "одним", "одном", "одну" },
+        { "two", "два", "две", "двух", "двумя" },
+        { "three", "три", "трех", "трёх", "тремя" },
+        { "four", "четыре", "четырех", "четырёх", "четырьмя" },
+        { "five", "пять", "пяти", "пятью" },
+        { "six", "шесть", "шести", "шестью" },
+        { "seven", "семь", "семи", "семью" },
+        { "eight", "восемь", "восьми", "восемью" },
+    };
+    char w[3][40] = { "", "", "" };   // the two words before the current one, and the current one
+    const unsigned char *p = (const unsigned char *)text;
+    for (;;) {
+        char cur[40]; int n = 0;
+        while (*p && !(isalnum(*p) || *p >= 0x80)) p++;   // separators: spaces, punctuation, '-'
+        if (!*p) break;
+        while (*p && (isalnum(*p) || *p >= 0x80)) {
+            unsigned char c = *p++;
+            if (c == 0xD0 && *p >= 0x90 && *p <= 0x9F) { c = 0xD0; if (n < 37) { cur[n++] = (char)c; cur[n++] = (char)(*p++ + 0x20); } else p++; continue; }
+            if (c == 0xD0 && *p >= 0xA0 && *p <= 0xAF) { if (n < 37) { cur[n++] = (char)0xD1; cur[n++] = (char)(*p++ - 0x20); } else p++; continue; }
+            if (c == 0xD0 && *p == 0x81) { if (n < 37) { cur[n++] = (char)0xD1; cur[n++] = (char)0x91; } p++; continue; }   // Ё
+            if (n < 38) cur[n++] = (char)tolower(c);
+        }
+        cur[n] = 0;
+        // colour(s), color(s), цвет(а/ов/ах/ами), but not colourful, цветной, цветы / цветок (flowers)
+        const char *ru = !strncmp(cur, "цвет", strlen("цвет")) ? cur + strlen("цвет") : NULL;
+        int is_col = (!strncmp(cur, "colo", 4) && !strstr(cur, "ful")) ||
+                     (ru && strncmp(ru, "н", strlen("н")) && strncmp(ru, "ы", strlen("ы")) && strncmp(ru, "ок", strlen("ок")) && strncmp(ru, "к", strlen("к")));
+        if (is_col) {
+            for (int k = 1; k >= 0; k--) {   // the word right before first: "3 different colours" also works
+                const char *x = w[k];
+                if (isdigit((unsigned char)x[0])) { int v = atoi(x); if (v >= 1 && v <= MOOD_MAX) return v; }
+                for (int i = 0; i < MOOD_MAX; i++)
+                    for (int j = 0; j < 8 && NUM[i][j]; j++) if (!strcmp(x, NUM[i][j])) return i + 1;
+            }
+        }
+        memcpy(w[0], w[1], sizeof(w[0])); snprintf(w[1], sizeof(w[1]), "%s", cur);
+    }
+    return 0;
 }
 
 // HTTP to Ollama with a long read timeout: the first answer may wait for the model to load.
@@ -153,34 +205,49 @@ static void finish(const char *e) {
 
 static unsigned __stdcall run(void *arg) {
     (void)arg;
-    static char buf[256 * 1024], body[8192], content[4096];
+    static char buf[256 * 1024], body[12288], content[4096];
     char mdl[96];
     int pm = pick_model(mdl, sizeof(mdl), buf, sizeof(buf));
     if (pm < 0) { finish("offline"); return 0; }
     if (!pm) { finish("nomodel"); return 0; }
 
-    char fx[1024] = "", txt[1300], mj[200];
+    // the system prompt as plain text first, JSON-escaped into the body below
+    static char sys[4096], sysj[5000];
+    int want = wanted_colors(req_text), n = 0;
+    char cnt[64];
+    if (want) snprintf(cnt, sizeof(cnt), "exactly %d colour%s", want, want > 1 ? "s" : "");
+    else snprintf(cnt, sizeof(cnt), "3 to 6 colours (4 or 5 is usually best)");
+    n += snprintf(sys + n, sizeof(sys) - n,
+        "You design lighting scenes for RGB lights: PC parts, LED strips, light panels and bulbs in a room. The user "
+        "describes a mood, place or theme in any language. Answer with JSON: name = a short title of 2 to 4 words in the "
+        "user's language; colors = %s as #RRGGBB, in the order they should follow each other. LEDs cannot show dark, grey "
+        "or brown colours (those look off or dirty): use clear, saturated colours and express darkness through deep hues "
+        "such as navy, violet or deep red; use white or pale colours only when the mood asks for them. Think like a "
+        "lighting designer: colours that belong together, not generic web colour names. effect = the motion that fits the "
+        "scene best:", cnt);
+    for (int i = 0; i < (int)(sizeof(FX) / sizeof(FX[0])); i++)
+        n += snprintf(sys + n, sizeof(sys) - n, "%s %s (%s)", i ? ";" : "", FX[i][0], FX[i][1]);
+    n += snprintf(sys + n, sizeof(sys) - n,
+        ". speed = 1 (very calm) to 10 (fast). If the user names colours, an effect or a speed, use exactly those. Examples: "
+        "northern lights -> {\"name\":\"Northern lights\",\"colors\":[\"#00FFA3\",\"#00C2FF\",\"#7A2BFF\",\"#FF2BD6\"],\"effect\":\"flow\",\"speed\":3}; "
+        "deep ocean -> {\"name\":\"Deep ocean\",\"colors\":[\"#0033FF\",\"#00B4FF\",\"#00FFD5\",\"#2200AA\"],\"effect\":\"caustic\",\"speed\":2}; "
+        "campfire -> {\"name\":\"Campfire\",\"colors\":[\"#FF3300\",\"#FF8800\",\"#FFC400\",\"#CC1100\"],\"effect\":\"lava\",\"speed\":4}");
+    jstr(sysj, sizeof(sysj), sys);
+
+    // the answer's shape: the effect from the list, and the colour count held to what the user asked for
+    char fxe[256] = "", txt[1300], mj[200];
     int fn = 0;
     for (int i = 0; i < (int)(sizeof(FX) / sizeof(FX[0])); i++)
-        fn += snprintf(fx + fn, sizeof(fx) - fn, "%s%s = %s", i ? "; " : "", FX[i][0], FX[i][1]);
+        fn += snprintf(fxe + fn, sizeof(fxe) - fn, "%s\"%s\"", i ? "," : "", FX[i][0]);
     jstr(txt, sizeof(txt), req_text);
     jstr(mj, sizeof(mj), mdl);
     snprintf(body, sizeof(body),
         "{\"model\":\"%s\",\"stream\":false,\"keep_alive\":\"1m\",\"options\":{\"temperature\":%s,\"seed\":%u},"
         "\"format\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},"
-        "\"colors\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"minItems\":3,\"maxItems\":6},"
-        "\"effect\":{\"type\":\"string\"},\"speed\":{\"type\":\"integer\"}},\"required\":[\"name\",\"colors\",\"effect\",\"speed\"]},"
-        "\"messages\":[{\"role\":\"system\",\"content\":\"You design lighting scenes for RGB lights: PC parts, LED strips, "
-        "light panels and bulbs in a room. The user describes a mood, place or theme in any language. Answer with JSON: "
-        "name = a short title of 2 to 4 words in the user's language; colors = 3 to 6 colours as #RRGGBB, in the order they "
-        "should follow each other. LEDs cannot show dark, grey or brown colours (those look off or dirty): use clear, saturated "
-        "colours and express darkness through deep hues such as navy, violet or deep red; use white or pale colours only when "
-        "the mood asks for them. Think like a lighting designer: 4 or 5 colours that belong together, not generic web "
-        "colour names. effect = one of: %s. speed = 1 (very calm) to 10 (fast). Pick what fits the feeling, not only the "
-        "literal words. Example: northern lights -> {\\\"name\\\":\\\"Northern lights\\\",\\\"colors\\\":[\\\"#00FFA3\\\","
-        "\\\"#00C2FF\\\",\\\"#7A2BFF\\\",\\\"#FF2BD6\\\"],\\\"effect\\\":\\\"flow\\\",\\\"speed\\\":3}\"},"
-        "{\"role\":\"user\",\"content\":\"%s%s\"}]}",
-        mj, req_again ? "1.1" : "0.7", (unsigned)GetTickCount(), fx, txt,
+        "\"colors\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"minItems\":%d,\"maxItems\":%d},"
+        "\"effect\":{\"type\":\"string\",\"enum\":[%s]},\"speed\":{\"type\":\"integer\"}},\"required\":[\"name\",\"colors\",\"effect\",\"speed\"]},"
+        "\"messages\":[{\"role\":\"system\",\"content\":\"%s\"},{\"role\":\"user\",\"content\":\"%s%s\"}]}",
+        mj, req_again ? "1.1" : "0.7", (unsigned)GetTickCount(), want ? want : 3, want ? want : 6, fxe, sysj, txt,
         req_again ? " (give a different variation from before)" : "");
 
     int st = ollama("POST", "/api/chat", body, buf, sizeof(buf));
@@ -191,13 +258,13 @@ static unsigned __stdcall run(void *arg) {
     if (!c || *c != '"') { logf_("mood: no answer text: %.200s", buf); finish("answer"); return 0; }
     junesc(c + 1, content, sizeof(content));
 
-    char nm[96] = "", ef[24] = "", cols[6][8]; int nc = 0;
+    char nm[96] = "", ef[24] = "", cols[MOOD_MAX][8]; int nc = 0;
     json_get_str(content, "name", nm, sizeof(nm));
     json_get_str(content, "effect", ef, sizeof(ef));
     int sp = (int)json_get_num(content, "speed", 5);
     const char *a = strstr(content, "\"colors\"");
     const char *e = a ? strchr(a, ']') : NULL;
-    for (const char *p = a; p && p < e && nc < 6; p++) {
+    for (const char *p = a; p && p < e && nc < MOOD_MAX; p++) {
         if (*p != '#') continue;
         int ok = 1;
         for (int i = 1; i <= 6; i++) if (!isxdigit((unsigned char)p[i])) ok = 0;
@@ -206,8 +273,8 @@ static unsigned __stdcall run(void *arg) {
         for (char *q = cols[nc]; *q; q++) *q = (char)toupper(*q);
         nc++;
     }
-    led_fix(cols, &nc);
-    if (nc < 2) { logf_("mood: unusable answer: %.300s", content); finish("answer"); return 0; }
+    led_fix(cols, &nc, want);
+    if (nc < (want == 1 ? 1 : 2)) { logf_("mood: unusable answer: %.300s", content); finish("answer"); return 0; }
     int known = 0;
     for (int i = 0; i < (int)(sizeof(FX) / sizeof(FX[0])); i++) if (!_stricmp(ef, FX[i][0])) known = 1;
     if (!known) strcpy_s(ef, sizeof(ef), "flow");
@@ -220,7 +287,7 @@ static unsigned __stdcall run(void *arg) {
     ncolors = nc;
     speed = sp < 1 ? 1 : sp > 10 ? 10 : sp;
     ReleaseSRWLockExclusive(&lk);
-    logf_("mood: %s, %d colours, speed %d (%s)", ef, nc, speed, mdl);
+    logf_("mood: %s, %d colours%s, speed %d (%s)", ef, nc, want ? " (as asked)" : "", speed, mdl);
     finish("");
     return 0;
 }
