@@ -138,6 +138,13 @@ int  remote_json(char *out, int cap);
 void app_remote_cmd(const char *json);   // runs a window command on the UI thread (main.c)
 void ui_dispatch(const char *json);      // ui_web.cpp: the window's command handler
 
+// ---- update.c (daily check for a newer GitHub release, [general] update_check)
+void update_start(void);
+void update_stop(void);
+void update_check_now(void);
+void update_open_page(void);
+int  update_json(char *out, int cap);
+
 // ---- net.c
 int  net_broadcasts(unsigned long *out, int max);   // directed broadcast address of every IPv4 interface (network order)
 int  net_addresses(unsigned long *out, int max);    // own IPv4 address of every interface (network order)

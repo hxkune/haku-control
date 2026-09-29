@@ -76,7 +76,9 @@ const STR = {
     'hotkeys': 'Hotkeys', 'hk.next': 'Next effect', 'hk.prev': 'Previous effect', 'hk.off': 'Lights off / on', 'hk.brighter': 'Brighter', 'hk.dimmer': 'Dimmer',
     'hk.none': 'not set', 'hk.press': 'Press a shortcut…', 'hk.hint': 'Click a shortcut and press a new one. Esc cancels, Backspace clears.',
     'files': 'Files', 'f.ini': 'Settings file', 'f.log': 'Log', 'f.folder': 'App folder',
-    'about1': 'v2.0 · PC, Nanoleaf and room light', 'about2': 'close the window — the light keeps running from the tray', 'quit': 'Quit haku control',
+    'about1': 'v{0} · PC, Nanoleaf and room light',
+    'upd': 'Check for updates', 'upd.note': 'Once a day asks GitHub for a new release. Nothing is installed by itself.',
+    'upd.avail': 'Version {0} is available', 'upd.get': 'Download {0}', 'upd.now': 'Check now', 'about2': 'close the window — the light keeps running from the tray', 'quit': 'Quit haku control',
 
     'pk.del': 'Remove colour', 'pk.ok': 'Done', 'add.colour': 'Add colour',
     'zone.effect': 'Effect', 'zone.own': 'own', 'zone.global': 'Main effect', 'zone.offfx': 'Off', 'zone.mode': 'Colour mode',
@@ -175,7 +177,9 @@ const STR = {
     'hotkeys': 'Горячие клавиши', 'hk.next': 'Следующий эффект', 'hk.prev': 'Предыдущий эффект', 'hk.off': 'Выключить / включить', 'hk.brighter': 'Ярче', 'hk.dimmer': 'Темнее',
     'hk.none': 'не задано', 'hk.press': 'Нажмите сочетание…', 'hk.hint': 'Нажмите на сочетание и введите новое. Esc — отмена, Backspace — убрать.',
     'files': 'Файлы', 'f.ini': 'Файл настроек', 'f.log': 'Журнал', 'f.folder': 'Папка программы',
-    'about1': 'v2.0 · свет ПК, Nanoleaf и комнаты', 'about2': 'окно можно закрыть — свет работает из трея', 'quit': 'Выйти из haku control',
+    'about1': 'v{0} · свет ПК, Nanoleaf и комнаты',
+    'upd': 'Проверять обновления', 'upd.note': 'Раз в день спрашивает GitHub о новой версии. Сама ничего не устанавливает.',
+    'upd.avail': 'Доступна версия {0}', 'upd.get': 'Скачать {0}', 'upd.now': 'Проверить сейчас', 'about2': 'окно можно закрыть — свет работает из трея', 'quit': 'Выйти из haku control',
 
     'pk.del': 'Убрать цвет', 'pk.ok': 'Готово', 'add.colour': 'Добавить цвет',
     'zone.effect': 'Эффект', 'zone.own': 'свой', 'zone.global': 'Общий эффект', 'zone.offfx': 'Выключено', 'zone.mode': 'Режим цвета',

@@ -457,6 +457,8 @@ static int status_body(char *out, int cap) {
     n += ext_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"remote\":");
     n += remote_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"update\":");
+    n += update_json(out + n, cap - n);
     return n;
 }
 
@@ -534,6 +536,7 @@ void app_open(const char *what) {
     if (!strcmp(what, "log")) { app_data_path(L"haku-control.log", p); open_in_editor(p); }
     else if (!strcmp(what, "ini")) open_in_editor(cfg_path());
     else if (!strcmp(what, "folder")) ShellExecuteW(NULL, L"open", data_dir, NULL, NULL, SW_SHOWNORMAL);
+    else if (!strcmp(what, "release")) update_open_page();
 }
 
 void app_remote_cmd(const char *json) {
@@ -776,6 +779,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     nano_start();
     ext_start();
     remote_apply();
+    update_start();
     hotspot_watch_start();
     sensors_init();
     load_config();
@@ -815,6 +819,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     nano_stop();
     ext_stop();
     remote_stop();
+    update_stop();
     hotspot_watch_stop();
     sensors_close();
     timeEndPeriod(1);

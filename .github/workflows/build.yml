@@ -17,6 +17,8 @@ jobs:
 
       - name: Build
         shell: cmd
+        env:
+          HAKU_REPO: ${{ github.repository }}   # the app checks this repo for new releases
         run: build.cmd
 
       - name: Package

@@ -873,8 +873,24 @@ $('#remote-on').addEventListener('change', e => { setCfg('remote', 'enabled', e.
 $('#remote-newpin').addEventListener('click', () => send({ cmd: 'remote_pin' }));
 $('#remote-forget').addEventListener('click', () => send({ cmd: 'remote_forget' }));
 
+function updateUpdate() {
+  const U = S.update || {};
+  $('#about1').textContent = t('about1', U.version || '');
+  $('#upd-row').classList.toggle('hidden', !U.repo);
+  $('#upd-btns').classList.toggle('hidden', !U.repo);
+  const on = cv('general', 'update_check', '1') !== '0';
+  $('#upd-on').checked = on;
+  $('#upd-status').textContent = U.latest ? t('upd.avail', U.latest) : t('upd.note');
+  $('#upd-get').classList.toggle('hidden', !U.latest);
+  $('#upd-get').textContent = t('upd.get', U.latest || '');
+}
+$('#upd-on').addEventListener('change', e => { setCfg('general', 'update_check', e.target.checked ? 1 : 0); updateUpdate(); });
+$('#upd-get').addEventListener('click', () => send({ cmd: 'open', what: 'release' }));
+$('#upd-now').addEventListener('click', () => send({ cmd: 'update_check' }));
+
 function updateSettings() {
   updateRemote();
+  updateUpdate();
   const a = $('#autostart');
   a.checked = S.autostart === 1; a.disabled = S.autostart < 0;
   $('#hotspot-auto').checked = cv('hotspot', 'auto', '0') !== '0';

@@ -63,8 +63,8 @@ The setup also updates an existing install (settings are kept) and can be remove
 `haku-control-setup.exe /extract <folder>` only unpacks the files. Without the installer, `scripts\install.ps1`
 does the same from a build folder.
 
-Settings, device keys and the log live in `%APPDATA%\haku-control`. To remove the app, run
-`scripts\uninstall.ps1` (add `-Purge` to delete the settings too).
+Settings, device keys and the log live in `%APPDATA%\haku-control`; removing the app asks whether to delete
+them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge` to delete the settings).
 
 ### Room lights
 
@@ -126,7 +126,7 @@ third_party WebView2 SDK loader, PawnIO SMBus module
 2. ~~First-start guide; network scan.~~
 3. ~~LAN / bridge lights: OpenRGB bridge, WLED, Philips Hue, Govee, LIFX, Yeelight.~~ Next: confirm them on real
    hardware, more Mystic Light boards and ENE versions in the own drivers.
-4. ~~Phone control from the local network.~~ Installer, signed builds, auto-update.
+4. ~~Phone control from the local network.~~ ~~Installer.~~ Signed builds, update check.
 
 ## License
 

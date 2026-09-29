@@ -7,7 +7,7 @@ window.chrome = { webview: {
 } };
 const panels = [[.83,.12,33],[.83,.5,33],[.83,.88,33],[.45,.69,33],[.45,.12,33],[.54,.99,34],[.36,.99,34],[.54,.44,34],[.36,.44,34]];
 const STATE = {
-  type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1,
+  type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
   nano: { configured: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', side: .45, pair: 0, panels },
