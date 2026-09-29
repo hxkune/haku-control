@@ -542,17 +542,25 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 
 .ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
   transition: --amb0 1.4s ease, --amb1 1.4s ease, --amb2 1.4s ease, --amb3 1.4s ease; }
-.ambient i { position: absolute; inset: -8%; will-change: transform; }
-.ambient .a { background:
-  radial-gradient(36vmax 26vmax at 28% 6%, var(--amb0), transparent 72%),
-  radial-gradient(40vmax 30vmax at 94% 12%, var(--amb2), transparent 72%);
-  animation: drift-a 42s ease-in-out infinite alternate; }
-.ambient .b { background:
-  radial-gradient(46vmax 24vmax at 55% 104%, var(--amb1), transparent 72%),
-  radial-gradient(36vmax 28vmax at 100% 88%, var(--amb3), transparent 72%);
-  animation: drift-b 54s ease-in-out infinite alternate; }
-@keyframes drift-a { to { transform: translate(-3%, 4%) scale(1.06); } }
-@keyframes drift-b { to { transform: translate(3%, -3%) scale(1.04); } }
+/* Each pool floats on its own: the outer element swings left-right, the inner one up-down, with periods that
+   never line up, so the path is an endless smooth loop (a Lissajous curve) and no two pools move together. */
+.ambient i {
+  position: absolute; left: calc(var(--x) - var(--w) / 2); top: calc(var(--y) - var(--h) / 2); width: var(--w); height: var(--h);
+  animation: amb-x var(--tx) ease-in-out infinite alternate; animation-delay: calc(var(--tx) * -.37);
+  will-change: transform;
+}
+.ambient i b {
+  display: block; width: 100%; height: 100%;
+  background: radial-gradient(closest-side, var(--c), color-mix(in srgb, var(--c) 45%, transparent) 45%, transparent);
+  animation: amb-y var(--ty) ease-in-out infinite alternate; animation-delay: calc(var(--ty) * -.61);
+  will-change: transform;
+}
+@keyframes amb-x { from { transform: translateX(calc(var(--ax) * -1)); } to { transform: translateX(var(--ax)); } }
+@keyframes amb-y { from { transform: translateY(calc(var(--ay) * -1)) scale(.94); } to { transform: translateY(var(--ay)) scale(1.06); } }
+.ambient .p0 { --c: var(--amb0); --x: 28%; --y: 6%;   --w: 72vmax; --h: 52vmax; --ax: 8vmax; --ay: 6vmax; --tx: 23s; --ty: 17s; }
+.ambient .p1 { --c: var(--amb1); --x: 55%; --y: 104%; --w: 92vmax; --h: 48vmax; --ax: 11vmax; --ay: 4vmax; --tx: 29s; --ty: 13s; }
+.ambient .p2 { --c: var(--amb2); --x: 94%; --y: 12%;  --w: 80vmax; --h: 60vmax; --ax: 7vmax; --ay: 7vmax; --tx: 19s; --ty: 26s; }
+.ambient .p3 { --c: var(--amb3); --x: 100%; --y: 88%; --w: 72vmax; --h: 56vmax; --ax: 9vmax; --ay: 6vmax; --tx: 31s; --ty: 21s; }
 
 .card { background-color: rgba(16, 16, 16, .86); }
 .fx { background-color: rgba(16, 16, 16, .82); }
