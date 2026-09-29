@@ -66,6 +66,45 @@ static void junesc(const char *s, char *out, int cap) {
     out[n] = 0;
 }
 
+// Small models like greys, browns and pastels, which look dirty or white on LEDs. Keep each colour's hue, but
+// give it at least some saturation and lift it to near full value (dimming is the brightness slider's job);
+// drop greys unless everything is grey (then the user asked for white light), and drop near-duplicates.
+static void led_fix(char cols[][8], int *nc) {
+    float h[6], s[6], v[6];
+    int n = *nc, grey = 0;
+    for (int i = 0; i < n; i++) {
+        unsigned x = (unsigned)strtoul(cols[i] + 1, NULL, 16);
+        float r = (x >> 16) / 255.f, g = (x >> 8 & 255) / 255.f, b = (x & 255) / 255.f;
+        float mx = max(r, max(g, b)), mn = min(r, min(g, b)), d = mx - mn;
+        v[i] = mx; s[i] = mx > 0 ? d / mx : 0;
+        h[i] = d == 0 ? 0 : mx == r ? fmodf((g - b) / d + 6, 6) : mx == g ? (b - r) / d + 2 : (r - g) / d + 4;
+        if (s[i] < .2f) grey++;
+    }
+    char res[6][8];
+    int out = 0;
+    for (int i = 0; i < n; i++) {
+        int keep_grey = grey == n;
+        if (s[i] < .2f && !keep_grey) continue;
+        float S = keep_grey ? s[i] : max(s[i], .5f), V = .8f + .2f * v[i];
+        int dup = 0;
+        for (int j = 0; j < out; j++) {   // compare with what is kept so far (stored back as hex below)
+            unsigned y = (unsigned)strtoul(res[j] + 1, NULL, 16);
+            float r = (y >> 16) / 255.f, g = (y >> 8 & 255) / 255.f, b = (y & 255) / 255.f;
+            float mx = max(r, max(g, b)), mn = min(r, min(g, b)), d = mx - mn;
+            float hj = d == 0 ? 0 : mx == r ? fmodf((g - b) / d + 6, 6) : mx == g ? (b - r) / d + 2 : (r - g) / d + 4;
+            float dh = fabsf(hj - h[i]); if (dh > 3) dh = 6 - dh;
+            if (dh < .12f && fabsf((mx > 0 ? d / mx : 0) - S) < .2f) dup = 1;
+        }
+        if (dup) continue;
+        // HSV -> RGB
+        float c = V * S, hh = h[i], x = c * (1 - fabsf(fmodf(hh, 2) - 1)), m = V - c, r, g, b;
+        if (hh < 1) { r = c; g = x; b = 0; } else if (hh < 2) { r = x; g = c; b = 0; } else if (hh < 3) { r = 0; g = c; b = x; }
+        else if (hh < 4) { r = 0; g = x; b = c; } else if (hh < 5) { r = x; g = 0; b = c; } else { r = c; g = 0; b = x; }
+        snprintf(res[out++], 8, "#%02X%02X%02X", (int)((r + m) * 255 + .5f), (int)((g + m) * 255 + .5f), (int)((b + m) * 255 + .5f));
+    }
+    if (out >= 2) { memcpy(cols, res, sizeof(res[0]) * out); *nc = out; }
+}
+
 // HTTP to Ollama with a long read timeout: the first answer may wait for the model to load.
 static int ollama(const char *method, const char *path, const char *body, char *buf, int cap) {
     buf[0] = 0;
@@ -135,8 +174,10 @@ static unsigned __stdcall run(void *arg) {
         "name = a short title of 2 to 4 words in the user's language; colors = 3 to 6 colours as #RRGGBB, in the order they "
         "should follow each other. LEDs cannot show dark, grey or brown colours (those look off or dirty): use clear, saturated "
         "colours and express darkness through deep hues such as navy, violet or deep red; use white or pale colours only when "
-        "the mood asks for them. effect = one of: %s. speed = 1 (very calm) to 10 (fast). Pick what fits the feeling, "
-        "not only the literal words.\"},"
+        "the mood asks for them. Think like a lighting designer: 4 or 5 colours that belong together, not generic web "
+        "colour names. effect = one of: %s. speed = 1 (very calm) to 10 (fast). Pick what fits the feeling, not only the "
+        "literal words. Example: northern lights -> {\\\"name\\\":\\\"Northern lights\\\",\\\"colors\\\":[\\\"#00FFA3\\\","
+        "\\\"#00C2FF\\\",\\\"#7A2BFF\\\",\\\"#FF2BD6\\\"],\\\"effect\\\":\\\"flow\\\",\\\"speed\\\":3}\"},"
         "{\"role\":\"user\",\"content\":\"%s%s\"}]}",
         mj, req_again ? "1.1" : "0.7", (unsigned)GetTickCount(), fx, txt,
         req_again ? " (give a different variation from before)" : "");
@@ -164,6 +205,7 @@ static unsigned __stdcall run(void *arg) {
         for (char *q = cols[nc]; *q; q++) *q = (char)toupper(*q);
         nc++;
     }
+    led_fix(cols, &nc);
     if (nc < 2) { logf_("mood: unusable answer: %.300s", content); finish("answer"); return 0; }
     int known = 0;
     for (int i = 0; i < (int)(sizeof(FX) / sizeof(FX[0])); i++) if (!_stricmp(ef, FX[i][0])) known = 1;
