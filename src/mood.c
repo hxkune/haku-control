@@ -29,7 +29,7 @@ static const char *const FX[][2] = {
     { "comet", "a running tail of light; speed, racing, space, sci-fi, energy" },
     { "lava", "slow warm plasma; fire, candles, cozy evenings, volcano, magic" },
     { "breathe", "the whole room slowly fades from colour to colour; only for sleep, meditation, relaxing" },
-    { "static", "still colours, no motion; reading, work, focus" },
+    { "static", "still colours, no motion" },
     { "audio", "reacts to the music playing; party, club, concert, dancing" },
 };
 
@@ -178,11 +178,13 @@ static int ollama(const char *method, const char *path, const char *body, char *
     return status;
 }
 
-// [mood] model, or the first installed model that can chat (embedding models can't)
+// [mood] model, or else the largest installed chat model up to ~12 GB (bigger ones answer too slowly; embedding
+// models can't chat): a bigger model picks noticeably better colours than a 4B one
 static int pick_model(char *out, int cap, char *buf, int bufcap) {
     const char *m = cfg_get("mood", "model", "");
     if (*m) { snprintf(out, cap, "%s", m); return 1; }
     if (ollama("GET", "/api/tags", NULL, buf, bufcap) != 200) return -1;
+    double best = -1, small = 0; char small_nm[96] = "";
     for (const char *p = buf; (p = strstr(p, "\"name\"")) != NULL; ) {
         p += 6;
         while (*p == ' ' || *p == ':') p++;
@@ -190,8 +192,38 @@ static int pick_model(char *out, int cap, char *buf, int bufcap) {
         char nm[96]; int i = 0;
         while (*p && *p != '"' && i < (int)sizeof(nm) - 1) nm[i++] = *p++;
         nm[i] = 0;
-        if (!strstr(nm, "embed")) { snprintf(out, cap, "%s", nm); return 1; }
+        if (strstr(nm, "embed")) continue;
+        const char *next = strstr(p, "\"name\""), *sz = strstr(p, "\"size\"");
+        double size = sz && (!next || sz < next) ? atof(sz + 7) : 0;
+        if (size <= 12e9 && size > best) { best = size; snprintf(out, cap, "%s", nm); }
+        if (!small_nm[0] || size < small) { small = size; snprintf(small_nm, sizeof(small_nm), "%s", nm); }
     }
+    if (best >= 0) return 1;
+    if (small_nm[0]) { snprintf(out, cap, "%s", small_nm); return 1; }
+    return 0;
+}
+
+// lower case for ASCII and Russian letters (UTF-8), for the keyword checks below
+static void lower_text(char *out, int cap, const char *s) {
+    const unsigned char *p = (const unsigned char *)s;
+    int n = 0;
+    while (*p && n < cap - 3) {
+        if (p[0] == 0xD0 && p[1] >= 0x90 && p[1] <= 0x9F) { out[n++] = (char)0xD0; out[n++] = (char)(p[1] + 0x20); p += 2; }
+        else if (p[0] == 0xD0 && p[1] >= 0xA0 && p[1] <= 0xAF) { out[n++] = (char)0xD1; out[n++] = (char)(p[1] - 0x20); p += 2; }
+        else if (p[0] == 0xD0 && p[1] == 0x81) { out[n++] = (char)0xD1; out[n++] = (char)0x91; p += 2; }   // Ё
+        else out[n++] = (char)tolower(*p++);
+    }
+    out[n] = 0;
+}
+
+// "static" is offered only when the user asks for still light: small models otherwise pick it for anything
+// they don't see motion in ("horror film")
+static int asks_still(const char *text) {
+    static const char *const W[] = { "static", "still", "solid", "no motion", "not moving", "статич", "статик",
+                                     "неподвиж", "без движ", "без анимац", "однотон", "постоянн" };
+    char t[600];
+    lower_text(t, sizeof(t), text);
+    for (int i = 0; i < (int)(sizeof(W) / sizeof(W[0])); i++) if (strstr(t, W[i])) return 1;
     return 0;
 }
 
@@ -225,8 +257,9 @@ static unsigned __stdcall run(void *arg) {
         "such as navy, violet or deep red; use white or pale colours only when the mood asks for them. Think like a "
         "lighting designer: colours that belong together, not generic web colour names. effect = the motion that fits the "
         "scene best:", cnt);
-    for (int i = 0; i < (int)(sizeof(FX) / sizeof(FX[0])); i++)
-        n += snprintf(sys + n, sizeof(sys) - n, "%s %s (%s)", i ? ";" : "", FX[i][0], FX[i][1]);
+    int still = asks_still(req_text);
+    for (int i = 0, k = 0; i < (int)(sizeof(FX) / sizeof(FX[0])); i++)
+        if (still || strcmp(FX[i][0], "static")) n += snprintf(sys + n, sizeof(sys) - n, "%s %s (%s)", k++ ? ";" : "", FX[i][0], FX[i][1]);
     n += snprintf(sys + n, sizeof(sys) - n,
         ". speed = 1 (very calm) to 10 (fast). If the user names colours, an effect or a speed, use exactly those. Examples: "
         "northern lights -> {\"name\":\"Northern lights\",\"colors\":[\"#00FFA3\",\"#00C2FF\",\"#7A2BFF\",\"#FF2BD6\"],\"effect\":\"flow\",\"speed\":3}; "
@@ -238,7 +271,7 @@ static unsigned __stdcall run(void *arg) {
     char fxe[256] = "", txt[1300], mj[200];
     int fn = 0;
     for (int i = 0; i < (int)(sizeof(FX) / sizeof(FX[0])); i++)
-        fn += snprintf(fxe + fn, sizeof(fxe) - fn, "%s\"%s\"", i ? "," : "", FX[i][0]);
+        if (still || strcmp(FX[i][0], "static")) fn += snprintf(fxe + fn, sizeof(fxe) - fn, "%s\"%s\"", fn ? "," : "", FX[i][0]);
     jstr(txt, sizeof(txt), req_text);
     jstr(mj, sizeof(mj), mdl);
     snprintf(body, sizeof(body),
