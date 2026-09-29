@@ -58,6 +58,11 @@ $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)
 Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger -Principal $principal `
     -Settings $settings -Description 'haku control - PC and room lighting' -Force | Out-Null
 
+# phone page and network scan answers: local network (and Tailscale) only
+Remove-NetFirewallRule -DisplayName 'haku control' -ErrorAction SilentlyContinue
+New-NetFirewallRule -DisplayName 'haku control' -Direction Inbound -Action Allow -Profile Any `
+    -Program "$dest\haku-control.exe" -RemoteAddress LocalSubnet, 100.64.0.0/10 | Out-Null
+
 if (-not (Test-Path "$env:ProgramFiles\PawnIO\PawnIOLib.dll")) {
     Write-Warning 'PawnIO is not installed: memory (SMBus) lighting stays off. Get it from https://pawnio.eu'
 }

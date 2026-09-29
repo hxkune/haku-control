@@ -37,6 +37,17 @@ static int run_wait(const wchar_t *exe, const wchar_t *args, DWORD ms) {
     return (int)code;
 }
 
+// Inbound rule for the phone page and for lights answering a network scan: only from the local network
+// (and Tailscale), only for haku-control.exe. The app itself also refuses anything else.
+static void firewall_rule(int add) {
+    run_wait(L"netsh.exe", L"advfirewall firewall delete rule name=\"haku control\"", 10000);
+    if (!add) return;
+    wchar_t args[MAX_PATH + 256];
+    swprintf(args, MAX_PATH + 256, L"advfirewall firewall add rule name=\"haku control\" dir=in action=allow enable=yes profile=any "
+             L"program=\"%s\\haku-control.exe\" remoteip=LocalSubnet,100.64.0.0/10", dest);
+    run_wait(L"netsh.exe", args, 10000);
+}
+
 static int exists(const wchar_t *p) { return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }
 
 static void delete_tree(const wchar_t *dir) {
@@ -291,6 +302,7 @@ static int install(void) {
     if (_wcsicmp(self, copy)) CopyFileW(self, copy, FALSE);
     int task = register_task(autostart);
     make_shortcut();
+    firewall_rule(1);
     register_uninstall(bytes);
     SetCursor(old);
 
@@ -320,6 +332,7 @@ static int uninstall(void) {
     run_wait(L"schtasks.exe", L"/Delete /TN haku-control /F", 10000);
     wchar_t lnk[MAX_PATH]; shortcut_path(lnk); DeleteFileW(lnk);
     RegDeleteKeyW(HKEY_LOCAL_MACHINE, UNINST_KEY);
+    firewall_rule(0);
     if (purge) {
         delete_tree(data_dir);
         wchar_t l[MAX_PATH]; ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\haku-control", l, MAX_PATH); delete_tree(l);

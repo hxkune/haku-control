@@ -4,6 +4,7 @@ param([switch]$Purge)
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'stop.ps1') | Out-Null
 Get-Process haku-control -ErrorAction SilentlyContinue | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+Remove-NetFirewallRule -DisplayName 'haku control' -ErrorAction SilentlyContinue
 if (Get-ScheduledTask -TaskName 'haku-control' -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName 'haku-control' -Confirm:$false
 }
