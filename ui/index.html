@@ -62,7 +62,10 @@
 
   <!-- ============ EFFECTS ============ -->
   <section class="tab active" id="tab-effects">
-    <div class="card hero"><canvas id="hero"></canvas></div>
+    <div class="card hero"><canvas id="hero"></canvas>
+      <button class="hero-edit" id="hero-edit" data-i18n-title="hero.edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
+      <div class="hero-menu hidden" id="hero-menu"></div>
+    </div>
     <div class="card mood" id="mood">
       <form class="mood-row" id="mood-form" autocomplete="off">
         <span class="mood-ic">✦</span>
@@ -329,6 +332,18 @@
 </main>
 
 <!-- first start: a short walk through what was found -->
+<!-- a device's settings, opened from the preview on the Effects tab -->
+<div class="sheet-wrap hidden" id="sheet">
+  <div class="card sheet" role="dialog" aria-modal="true">
+    <div class="sheet-head" id="sheet-head">
+      <span class="sheet-grip"></span>
+      <button class="btn small ghost" id="sheet-page"><span data-i18n="sheet.page">Open page</span></button>
+      <button class="sheet-x" id="sheet-x" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+</div>
+
 <div class="wizard hidden" id="wizard">
   <div class="card wiz">
     <section class="wz-step" data-step="0">

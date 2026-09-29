@@ -23,6 +23,7 @@ const WIDE = '"Segoe UI Variable Text", "Segoe UI", sans-serif';
 let S = { cfg: {}, effects: [], effect: 'flow', brightness: 100, bulbs: [], nano: {}, ext: { devs: [], found: [], kinds: [], scanning: 0 }, autostart: -1 };
 let F = { ram: [[], []], gpu: [], board: null, bulbs: [], nano: [], ext: {} };
 let tab = 'effects';
+const SHEET = { kind: null, moved: [], page: '' };   // the open device sheet (see openSheet)
 let dragging = false;
 
 // ------------------------------------------------------------------ config helpers
@@ -84,6 +85,7 @@ document.addEventListener('pointerup', () => { dragging = false; });
 
 // ------------------------------------------------------------------ navigation
 function showTab(t) {
+  closeSheet();
   tab = t;
   $('main').scrollTop = 0;
   $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
@@ -544,35 +546,154 @@ function drawExtAll(c, X, Y, W, H) {
   list.forEach(([d, k], i) => drawExt(c, X, Y + i * rh, W, rh, k));
 }
 
-function label(c, text, x, y) {
+function label(c, text, x, y, bright) {
   const d = devicePixelRatio;
-  c.fillStyle = '#4e4e4e'; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'center'; c.letterSpacing = `${3 * d}px`;
+  c.fillStyle = bright ? '#d8d8d8' : '#4e4e4e'; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'center'; c.letterSpacing = `${3 * d}px`;
   c.fillText(text.toUpperCase(), x, y);
 }
+
+// The preview is also the quick-access widget: every device drawn in it is a hit area (HERO.hits, canvas pixels)
+// that opens its settings in a floating sheet. [ui] hero_hide lists groups left out of the preview.
+const HERO = { hits: [], hover: '' };
+const heroGroups = () => {
+  const g = [['ram', 0.2], ['gpu', 0.38]];
+  if (S.nano.configured) g.push(['nano', 0.27]);
+  if (S.bulbs.length) g.push(['bulbs', 0.15]);
+  if (S.ext.devs.some(d => d.enabled && d.leds)) g.push(['ext', 0.3]);
+  return g;
+};
+const heroHidden = () => cv('ui', 'hero_hide', '').split(',').filter(Boolean);
+const groupName = k => ({ ram: t('pc.memory'), gpu: stripName(), nano: 'Nanoleaf', bulbs: t('nav.bulbs'), ext: t('nav.devices') })[k];
 
 function drawHero() {
   const cvs = $('#hero'); if (!cvs.width) return;
   const c = cvs.getContext('2d'), W = cvs.width, H = cvs.height, d = devicePixelRatio;
   c.clearRect(0, 0, W, H);
-  const hasN = S.nano.configured, hasB = S.bulbs.length > 0;
-  const cols = [['ram', 0.2], ['gpu', 0.38]];
-  if (hasN) cols.push(['nano', 0.27]);
-  if (hasB) cols.push(['bulbs', 0.15]);
-  if (S.ext.devs.some(d => d.enabled && d.leds)) cols.push(['ext', 0.3]);
+  const hide = heroHidden();
+  const cols = heroGroups().filter(([k]) => !hide.includes(k));
   const tot = cols.reduce((a, b) => a + b[1], 0);
+  const hits = [];
   let x = 0;
-  const names = { ram: t('pc.memory'), gpu: stripName(), nano: 'Nanoleaf', bulbs: t('nav.bulbs'), ext: t('nav.devices') };
   for (const [k, f] of cols) {
     const w = W * f / tot, top = 18 * d, h = H - 46 * d;
     if (k === 'ram') drawRam(c, x, top, w, h);
     if (k === 'gpu') drawGpu(c, x, top, w, h);
     if (k === 'nano') drawNano(c, x, top, w, h);
-    if (k === 'bulbs') drawBulbs(c, x, top, w, h);
-    if (k === 'ext') drawExtAll(c, x, top, w, h);
-    if (w > 64 * d) label(c, names[k], x + w / 2, H - 16 * d);
+    if (k === 'bulbs') {
+      drawBulbs(c, x, top, w, h);
+      const n = S.bulbs.length, r = Math.min(w * 0.3, h / (n * 2.6), 26 * d);   // same layout as drawBulbs
+      for (let i = 0; i < n; i++) {
+        const cy = top + h / 2 + (i - (n - 1) / 2) * r * 2.7;
+        hits.push({ key: 'bulb' + i, k: 'bulb', i, x: x + w / 2 - r * 1.8, y: cy - r * 1.35, w: r * 3.6, h: r * 2.7 });
+      }
+    }
+    if (k === 'ext') {
+      drawExtAll(c, x, top, w, h);
+      const list = S.ext.devs.map((dv, i) => [dv, i]).filter(([dv]) => dv.enabled && dv.leds).slice(0, 6), rh = h / Math.max(1, list.length);
+      list.forEach(([dv, i], j) => hits.push({ key: 'ext' + dv.id, k: 'ext', i, id: dv.id, x: x + 6 * d, y: top + j * rh, w: w - 12 * d, h: rh }));
+    }
+    if (k !== 'bulbs' && k !== 'ext') hits.push({ key: k, k, x: x + 6 * d, y: top - 8 * d, w: w - 12 * d, h: h + 16 * d });
+    if (w > 64 * d) label(c, groupName(k), x + w / 2, H - 16 * d, hits.some(h => h.key === HERO.hover && (h.k === k || h.k + 's' === k)));
     x += w;
   }
+  HERO.hits = hits;
+  const hv = hits.find(h => h.key === HERO.hover);
+  if (hv) {   // faceted frame around the device under the cursor
+    const cut = 8 * d, { x: hx, y: hy, w: hw, h: hh } = hv;
+    c.beginPath();
+    c.moveTo(hx + cut, hy); c.lineTo(hx + hw, hy); c.lineTo(hx + hw, hy + hh - cut); c.lineTo(hx + hw - cut, hy + hh);
+    c.lineTo(hx, hy + hh); c.lineTo(hx, hy + cut); c.closePath();
+    c.fillStyle = 'rgba(255,255,255,.035)'; c.fill();
+    c.strokeStyle = 'rgba(255,255,255,.28)'; c.lineWidth = d; c.stroke();
+  }
 }
+const heroHit = e => {
+  const cvs = $('#hero'), r = cvs.getBoundingClientRect(), d = devicePixelRatio;
+  const px = (e.clientX - r.left) * d, py = (e.clientY - r.top) * d;
+  return HERO.hits.find(h => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h);
+};
+$('#hero').addEventListener('pointermove', e => {
+  const h = heroHit(e), key = h ? h.key : '';
+  $('#hero').style.cursor = h ? 'pointer' : '';
+  if (key !== HERO.hover) { HERO.hover = key; drawHero(); }
+});
+$('#hero').addEventListener('pointerleave', () => { if (HERO.hover) { HERO.hover = ''; drawHero(); } });
+$('#hero').addEventListener('click', e => { const h = heroHit(e); if (h) openSheet(h, e.clientX, e.clientY); });
+
+// ---- device sheet: the real settings cards are moved in (placeholders mark their place) and back on close,
+// so everything keeps working exactly as on its own page
+function sheetCards(h) {
+  const pc = $$('#tab-pc .pc-grid > .card');
+  if (h.k === 'ram') return [[pc[0]], 'pc'];
+  if (h.k === 'gpu') return [[pc[1]], 'pc'];
+  if (h.k === 'nano') return [S.nano.configured ? $$('#nano-main > .card') : [$('#nano-empty')], 'nano'];
+  if (h.k === 'bulb') return [[$('#bulb-grid').children[h.i]], 'bulbs'];
+  if (h.k === 'ext') return [[$(`#dev-live-${h.id}`)?.closest('.card')], 'devices'];
+  return [[], ''];
+}
+function openSheet(h, cx, cy) {
+  closeSheet();
+  const [cards, page] = sheetCards(h);
+  if (!cards.length || !cards[0]) { showTab(page || 'effects'); return; }
+  const body = $('#sheet-body');
+  for (const el of cards) {
+    const ph = document.createComment('sheet');
+    el.before(ph); body.appendChild(el);
+    SHEET.moved.push([el, ph]);
+  }
+  SHEET.kind = h.k; SHEET.page = page;
+  const wrap = $('#sheet'), sh = wrap.querySelector('.sheet');
+  sh.style.removeProperty('--dx'); sh.style.removeProperty('--dy');
+  sh.classList.toggle('wide', h.k === 'nano' && !!S.nano.configured);
+  wrap.classList.remove('hidden');
+  const r = sh.getBoundingClientRect();   // grow out of the device that was clicked
+  sh.style.transformOrigin = `${cx - r.left}px ${cy - r.top}px`;
+  sh.classList.remove('in'); void sh.offsetWidth; sh.classList.add('in');
+  requestAnimationFrame(sizeCanvases);
+}
+function closeSheet() {
+  if (!SHEET.kind) return;
+  for (const [el, ph] of SHEET.moved) { if (ph.isConnected) ph.replaceWith(el); else el.remove(); }
+  SHEET.moved = []; SHEET.kind = null;
+  $('#sheet').classList.add('hidden');
+  requestAnimationFrame(sizeCanvases);
+}
+$('#sheet-x').addEventListener('click', closeSheet);
+$('#sheet').addEventListener('pointerdown', e => { if (e.target.id === 'sheet') closeSheet(); });
+$('#sheet-page').addEventListener('click', () => { const p = SHEET.page; closeSheet(); showTab(p); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && SHEET.kind && pk.classList.contains('hidden')) closeSheet(); });
+// drag it around by the top bar, like a small window
+$('#sheet-head').addEventListener('pointerdown', e => {
+  if (e.target.closest('button') || matchMedia('(max-width: 700px)').matches) return;
+  const sh = $('#sheet .sheet'), cs = getComputedStyle(sh);
+  const sx = e.clientX - (parseFloat(cs.getPropertyValue('--dx')) || 0), sy = e.clientY - (parseFloat(cs.getPropertyValue('--dy')) || 0);
+  const move = m => { sh.style.setProperty('--dx', (m.clientX - sx) + 'px'); sh.style.setProperty('--dy', (m.clientY - sy) + 'px'); };
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); sh.classList.remove('drag'); };
+  sh.classList.add('drag');
+  addEventListener('pointermove', move); addEventListener('pointerup', up);
+});
+
+// ---- customize the preview: which groups it shows, and a way to add devices
+function buildHeroMenu() {
+  const hide = heroHidden();
+  $('#hero-menu').innerHTML = `<div class="lbl"><span>${t('hero.show')}</span></div>` +
+    heroGroups().map(([k]) => `<label class="check"><input type="checkbox" data-hg="${k}" ${hide.includes(k) ? '' : 'checked'}><span></span><em>${groupName(k)}</em></label>`).join('') +
+    `<button class="btn small ghost" id="hero-add"><span>+ ${t('hero.add')}</span></button><p class="hint">${t('hero.hint')}</p>`;
+  $$('[data-hg]').forEach(i => i.addEventListener('change', () => {
+    const h = new Set(heroHidden()); i.checked ? h.delete(i.dataset.hg) : h.add(i.dataset.hg);
+    if (h.size >= heroGroups().length) { i.checked = true; return; }   // keep at least one
+    setCfg('ui', 'hero_hide', [...h].join(','));
+    drawHero();
+  }));
+  $('#hero-add').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); showTab('devices'); send({ cmd: 'scan' }); });
+}
+$('#hero-edit').addEventListener('click', e => {
+  e.stopPropagation();
+  const m = $('#hero-menu');
+  if (m.classList.contains('hidden')) buildHeroMenu();
+  m.classList.toggle('hidden');
+});
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#hero-menu, #hero-edit')) $('#hero-menu').classList.add('hidden'); });
 
 function drawCanvas(id, fn) {
   const cvs = $(id); if (!cvs || !cvs.width || !cvs.offsetParent) return;
@@ -582,11 +703,12 @@ function drawCanvas(id, fn) {
 }
 
 function drawAll() {
+  const sh = SHEET.kind;   // the device sheet shows live canvases from other tabs
   if (tab === 'effects') drawHero();
-  if (tab === 'pc') { drawCanvas('#live-ram', drawRam); drawCanvas('#live-gpu', drawGpu); }
-  if (tab === 'nano') drawCanvas('#live-nano', drawNano);
-  if (tab === 'devices') S.ext.devs.forEach((d, k) => drawCanvas('#dev-live-' + d.id, (c, x, y, w, h) => drawExt(c, x, y, w, h, k)));
-  if (tab === 'bulbs') S.bulbs.forEach((b, i) => {
+  if (tab === 'pc' || sh === 'ram' || sh === 'gpu') { drawCanvas('#live-ram', drawRam); drawCanvas('#live-gpu', drawGpu); }
+  if (tab === 'nano' || sh === 'nano') drawCanvas('#live-nano', drawNano);
+  if (tab === 'devices' || sh === 'ext') S.ext.devs.forEach((d, k) => drawCanvas('#dev-live-' + d.id, (c, x, y, w, h) => drawExt(c, x, y, w, h, k)));
+  if (tab === 'bulbs' || sh === 'bulb') S.bulbs.forEach((b, i) => {
     const o = $('#bulb-orb-' + i); if (!o) return;
     const col = F.bulbs[i], on = lit(col) && b.online;
     o.classList.toggle('off', !on);
@@ -692,6 +814,7 @@ function updateNano() {
 
 // bulbs
 function buildBulbs() {
+  if (SHEET.kind === 'bulb') closeSheet();
   const grid = $('#bulb-grid');
   grid.innerHTML = '';
   $('#bulbs-empty').classList.toggle('hidden', S.bulbs.length > 0);
@@ -731,6 +854,7 @@ function devStatus(d) {
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
 }
 function buildDevices() {
+  if (SHEET.kind === 'ext') closeSheet();
   const grid = $('#dev-grid');
   grid.innerHTML = '';
   $('#dev-empty').classList.toggle('hidden', S.ext.devs.length > 0);
