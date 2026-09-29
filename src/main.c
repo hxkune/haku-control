@@ -102,7 +102,7 @@ static float    brightness = 1.0f;
 static volatile LONG cfg_gen;         // bumps on every settings change (the Nanoleaf loop is baked again)
 static int      prev_effect = 0;
 static scene_t  scene;
-static int      gpu_leds = 8, gpu_rev, ram_rev, ram_swap, board_led = 1, ram_on = 1, gpu_on = 1, lights_on = 1, nano_on[NANO_MAX];
+static int      gpu_leds = 8, gpu_rev, ram_rev, ram_swap, board_led = 1, ram_on = 1, gpu_on = 1, lights_on = 1, nano_on[NANO_MAX], light_on[8];
 // Colour correction for the PWM-driven LEDs (RAM, GPU block, board): colours are sRGB-like, the LEDs are linear,
 // so they get a gamma curve; plus a per-device white balance ([calibration] ram_warmth / gpu_warmth, -100..100).
 enum { FIX_RAM, FIX_GPU };
@@ -164,6 +164,7 @@ static void build_scene(void) {
     gpu_on    = cfg_geti("layout", "gpu_enabled", 1);
     lights_on = cfg_geti("layout", "lights_enabled", 1);
     for (int k = 0; k < NANO_MAX; k++) { char key[32]; nano_key(k, key, sizeof(key)); nano_on[k] = cfg_geti("layout", key, 1); }
+    for (int i = 0; i < 8; i++) { char key[32]; snprintf(key, sizeof(key), "light%d_enabled", i + 1); light_on[i] = cfg_geti("layout", key, 1); }
     load_calibration();
     // disabled devices are left out of the scene, so effects span only what is lit
     int sticks = !ram_on ? 0 : have_ene ? ene_count() : 2;
@@ -191,6 +192,7 @@ static void build_scene(void) {
     // room bulbs: extra "LEDs" with their own path positions, spread across the palette
     int nl = lights_on ? lights_count() : 0;
     for (int i = 0; i < nl; i++) {
+        if (i < 8 && !light_on[i]) continue;   // switched off on its own: left out, gets black (off)
         led_t *l = &s.leds[s.count++];
         l->dev = DEV_LIGHT; l->index = i; l->zone = ZONE_LIGHT0 + i;
         l->x = nl > 1 ? 0.1f + 0.8f * i / (nl - 1) : 0.5f; l->y = 0.5f;
@@ -214,10 +216,13 @@ static void build_scene(void) {
     // LAN / bridge devices: strips as rows across the scene, separate lights spread like bulbs
     int ne = ext_count(), rows = 0;
     for (int k = 0; k < ne; k++) if (ext_slot_leds(k)) rows++;
+    // by type: floor lamps and light bars stand upright (bars: two of them, the LEDs split), a screen backlight runs
+    // around the screen (from the bottom left, clockwise)
     for (int k = 0, row = 0; k < ne; k++) {
         int n = ext_slot_leds(k), strip = ext_slot_strip(k);
         if (!n) continue;
-        float ry = rows > 1 ? 0.3f + 0.6f * row / (rows - 1) : 0.6f;
+        char ty[12]; ext_slot_type(k, ty, sizeof(ty));
+        float ry = rows > 1 ? 0.3f + 0.6f * row / (rows - 1) : 0.6f, rx = rows > 1 ? 0.15f + 0.7f * row / (rows - 1) : 0.5f;
         row++;
         for (int i = 0; i < n && s.count < MAX_LEDS - 1; i++) {
             led_t *l = &s.leds[s.count++];
@@ -225,6 +230,16 @@ static void build_scene(void) {
             l->dev = DEV_EXT; l->index = i; l->zone = ZONE_EXT0 + k;
             l->x = 0.1f + 0.8f * f; l->y = strip ? ry : 0.5f + 0.3f * sinf(f * 6.283f + k);
             l->fill = f; l->path = strip ? f : (float)i / n; l->zpath = f;
+            if (!strcmp(ty, "floor")) { l->x = rx; l->y = 0.9f - 0.8f * f; }
+            else if (!strcmp(ty, "bars")) {
+                int half = (n + 1) / 2, side = i >= half; float g = half > 1 ? (float)(side ? i - half : i) / (half - 1) : 0.5f;
+                l->x = rx + (side ? 0.08f : -0.08f); l->y = 0.9f - 0.8f * g; l->fill = g; l->zpath = g;
+            } else if (!strcmp(ty, "tv") && n >= 4) {
+                float p = f * 4, q = p - (int)p;   // 0..1 left edge up, 1..2 top, 2..3 right edge down, 3..4 bottom
+                int e = (int)p; if (e > 3) { e = 3; q = 1; }
+                l->x = e == 0 ? 0.1f : e == 1 ? 0.1f + 0.8f * q : e == 2 ? 0.9f : 0.9f - 0.8f * q;
+                l->y = e == 0 ? 0.9f - 0.8f * q : e == 1 ? 0.1f : e == 2 ? 0.1f + 0.8f * q : 0.9f;
+            }
         }
     }
     if (board_led) {
@@ -359,7 +374,7 @@ static unsigned __stdcall render_thread(void *p) {
         if (!gpu_on) gn = gpu_leds;
         if (!ram_on) for (int st = 0; st < 2 && st < ene_count(); st++) rn[st] = 8;
 
-        if (lights_count()) lights_submit(bulb, bulb_k, bn, lights_on);
+        if (lights_count()) { if (lights_on) bn = min(lights_count(), 8); lights_submit(bulb, bulb_k, bn, lights_on); }
         for (int k = 0; k < NANO_MAX; k++) {
             if (!nano_present(k)) continue;
             nano_submit(k, nano[k], nn[k], nano_on[k]);

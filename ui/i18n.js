@@ -67,6 +67,9 @@ const STR = {
     'pair.4': 'No controller found. Make sure the panels are on the same network as this PC.',
     'pair.5': 'Timed out — press Connect again',
     'pair.6': 'All 8 places for Nanoleaf controllers are taken: forget one first',
+    'fix.type': 'Type', 'fix.auto': 'Auto', 'fix.strip': 'LED strip', 'fix.tv': 'TV / monitor backlight', 'fix.bars': 'Light bars',
+    'fix.floor': 'Floor lamp', 'fix.lamp': 'Table lamp', 'fix.panels': 'Panels', 'fix.bulb': 'Bulb',
+    'power.dev.on': 'Switch on', 'power.dev.off': 'Switch off',
     'nano.add': 'Add a controller', 'nano.forget': 'Forget', 'nano.forget.ask': 'Forget {0}? Its panels get their own scene back; pair again to use them here.',
     'nano.streaming': 'streamed: this device does not take custom effects',
 
@@ -205,6 +208,9 @@ const STR = {
     'pair.4': 'Контроллер не найден. Проверьте, что панели в той же сети, что и ПК.',
     'pair.5': 'Время вышло — нажмите «Подключить» ещё раз',
     'pair.6': 'Все 8 мест для контроллеров Nanoleaf заняты: сначала забудьте один',
+    'fix.type': 'Тип', 'fix.auto': 'Авто', 'fix.strip': 'Светодиодная лента', 'fix.tv': 'Подсветка ТВ / монитора', 'fix.bars': 'Световые панели-стойки',
+    'fix.floor': 'Торшер', 'fix.lamp': 'Настольная лампа', 'fix.panels': 'Панели', 'fix.bulb': 'Лампочка',
+    'power.dev.on': 'Включить', 'power.dev.off': 'Выключить',
     'nano.add': 'Добавить контроллер', 'nano.forget': 'Забыть', 'nano.forget.ask': 'Забыть {0}? Панели вернутся к своей сцене; чтобы снова управлять ими отсюда, подключите заново.',
     'nano.streaming': 'трансляция: устройство не принимает свои эффекты',
 

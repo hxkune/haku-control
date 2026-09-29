@@ -295,6 +295,7 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .bulbs-head { margin-bottom: 20px; }
 .bulb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; align-items: start; }
 .bulb-top { display: flex; align-items: center; gap: 16px; }
+.bulb-top .switch { margin-left: auto; }
 .bulb-orb {
   width: 48px; height: 48px; border-radius: 50%; flex: none; position: relative;
   background: radial-gradient(circle at 50% 45%, #fff 0, var(--c, #333) 42%, transparent 72%);

@@ -21,7 +21,7 @@ static int     ndevs;
 
 // ---- shared (lock)
 static SRWLOCK lk = SRWLOCK_INIT;
-typedef struct { int id, nleds, per_led, online, enabled; char name[64], host[64], info[96], kind[16]; int sub; } slot_t;
+typedef struct { int id, nleds, per_led, online, enabled; char name[64], host[64], info[96], kind[16], type[12]; int sub; } slot_t;
 static slot_t  slots[EXT_MAX];
 static int     nslots;
 static rgbf    frame[EXT_MAX][EXT_MAX_LEDS];
@@ -40,6 +40,28 @@ static int leave_mode(void) {
     return !_stricmp(m, "keep") ? LEAVE_KEEP : !_stricmp(m, "restore") ? LEAVE_RESTORE : LEAVE_OFF;
 }
 
+// What the device is, for the preview icon and how effects lay out on it: [dev.N] type, or a guess from the name /
+// model ("Govee H6076" is a floor lamp). strip, tv (screen backlight), bars (light bars), floor (floor lamp),
+// lamp (table lamp), panels (hexagons...), bulb.
+static const char *const TYPES[] = { "strip", "tv", "bars", "floor", "lamp", "panels", "bulb" };
+static void device_type(const ext_dev *d, char *out, int cap) {
+    char sec[24]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    const char *t = cfg_get(sec, "type", "auto");
+    for (int i = 0; i < (int)(sizeof(TYPES) / sizeof(TYPES[0])); i++) if (!_stricmp(t, TYPES[i])) { snprintf(out, cap, "%s", TYPES[i]); return; }
+    static const char *const GUESS[][2] = {
+        { "floor", "floor" }, { "h6072", "floor" }, { "h6076", "floor" }, { "h607c", "floor" }, { "h6078", "floor" },
+        { "light bar", "bars" }, { "lightbar", "bars" }, { "h6046", "bars" }, { "h6047", "bars" }, { "h6056", "bars" }, { "h6057", "bars" },
+        { "sync box", "tv" }, { "backlight", "tv" }, { "dreamview", "tv" }, { "screen mirror", "tv" }, { "h6199", "tv" }, { "h6198", "tv" },
+        { "h605b", "tv" }, { "h605c", "tv" }, { "h6603", "tv" }, { "h6604", "tv" }, { "h6168", "tv" },
+        { "hexa", "panels" }, { "glide", "panels" }, { "h6061", "panels" }, { "h6065", "panels" }, { "h6066", "panels" }, { "h6067", "panels" }, { "h6069", "panels" },
+        { "table lamp", "lamp" }, { "h6022", "lamp" }, { "h6020", "lamp" },
+    };
+    char s[256]; snprintf(s, sizeof(s), "%s %s", d->name, d->info);
+    _strlwr_s(s, sizeof(s));
+    for (int i = 0; i < (int)(sizeof(GUESS) / sizeof(GUESS[0])); i++) if (strstr(s, GUESS[i][0])) { snprintf(out, cap, "%s", GUESS[i][1]); return; }
+    snprintf(out, cap, "%s", d->drv->per_led ? "strip" : "bulb");
+}
+
 static void publish_slots(void) {
     AcquireSRWLockExclusive(&lk);
     nslots = ndevs;
@@ -48,7 +70,9 @@ static void publish_slots(void) {
         int n = d->nleds > 0 ? d->nleds : d->cfg_leds;
         if (n > EXT_MAX_LEDS) n = EXT_MAX_LEDS;
         if (!d->drv->per_led && n < 1) n = 1;
-        if (s->id != d->id || s->nleds != n) InterlockedExchange(&layout_new, 1);
+        char ty[12]; device_type(d, ty, sizeof(ty));
+        if (s->id != d->id || s->nleds != n || strcmp(s->type, ty)) InterlockedExchange(&layout_new, 1);
+        strcpy_s(s->type, sizeof(s->type), ty);
         s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->enabled = d->enabled;
         s->sub = d->sub;
         strcpy_s(s->name, sizeof(s->name), d->name); strcpy_s(s->host, sizeof(s->host), d->host);
@@ -288,6 +312,12 @@ int ext_slot_strip(int k) {
     return s;
 }
 
+void ext_slot_type(int k, char *out, int cap) {
+    AcquireSRWLockShared(&lk);
+    snprintf(out, cap, "%s", k < nslots ? slots[k].type : "strip");
+    ReleaseSRWLockShared(&lk);
+}
+
 int ext_slot_id(int k) {
     AcquireSRWLockShared(&lk);
     int id = k < nslots ? slots[k].id : 0;
@@ -393,8 +423,8 @@ int ext_json(char *out, int cap) {
         json_escape_to(nm, sizeof(nm), s->name); json_escape_to(inf, sizeof(inf), s->info); json_escape_to(host, sizeof(host), s->host);
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"info\":\"%s\"}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, inf);
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"type\":\"%s\",\"info\":\"%s\"}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, s->type, inf);
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {

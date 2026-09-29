@@ -31,9 +31,11 @@ const STATE = {
   ] : []) },
   ext: {
     devs: [
-      { id: 1, kind: 'wled', title: 'WLED', name: 'Desk strip', host: '192.168.1.60', sub: -1, leds: 60, per_led: 1, online: 1, enabled: 1, info: 'WLED 0.14.4 · esp32' },
-      { id: 2, kind: 'openrgb', title: 'OpenRGB', name: 'Keyboard', host: '127.0.0.1', sub: 0, leds: 104, per_led: 1, online: 1, enabled: 1, info: 'OpenRGB · keyboard' },
-      { id: 3, kind: 'hue', title: 'Philips Hue', name: 'Living room', host: '192.168.1.20', sub: -1, leds: 3, per_led: 0, online: 0, enabled: 1, info: 'Press the link button on the Hue bridge' },
+      { id: 1, kind: 'wled', title: 'WLED', name: 'Desk strip', host: '192.168.1.60', sub: -1, leds: 60, per_led: 1, online: 1, enabled: 1, type: 'strip', info: 'WLED 0.14.4 · esp32' },
+      { id: 2, kind: 'openrgb', title: 'OpenRGB', name: 'Keyboard', host: '127.0.0.1', sub: 0, leds: 104, per_led: 1, online: 1, enabled: 1, type: 'bars', info: 'OpenRGB · keyboard' },
+      { id: 3, kind: 'hue', title: 'Philips Hue', name: 'Living room', host: '192.168.1.20', sub: -1, leds: 3, per_led: 0, online: 0, enabled: 1, type: 'bulb', info: 'Press the link button on the Hue bridge' },
+      { id: 4, kind: 'govee', title: 'Govee', name: 'Govee H6076', host: '192.168.1.71', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'floor', info: 'Govee H6076' },
+      { id: 5, kind: 'govee', title: 'Govee', name: 'TV backlight', host: '192.168.1.72', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 0, type: 'tv', info: 'Govee H6604' },
     ],
     found: [
       { kind: 'wled', title: 'WLED', host: '192.168.1.60', sub: -1, name: 'Desk strip', leds: 60, info: 'WLED 0.14.4', added: 1 },
@@ -63,5 +65,6 @@ setInterval(() => {
   for (let i = 0; i < 60; i++) l.push([100, i, hx(pc(i / 60 - t * .12))]);
   for (let i = 0; i < 52; i++) l.push([101, i, hx(pc(i / 52 + .3 - t * .12))]);
   for (let i = 0; i < 3; i++) l.push([102, i, hx(pc(i / 3 - t * .12))]);
+  l.push([103, 0, hx(pc(.6 - t * .12))]);
   emit({ type: 'frame', l });
 }, 50);

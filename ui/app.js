@@ -631,7 +631,7 @@ function nanoPath(c, cx, cy, p, k, shrink) {
 function drawNano(c, X, Y, W, H, N) {
   const d = devicePixelRatio;
   if (!N) {
-    const L = nanoCtls().filter(n => (n.panels || []).length && cv('layout', nanoKey(n.slot), '1') !== '0'), hits = [];
+    const L = nanoCtls().filter(n => (n.panels || []).length), hits = [];
     if (L.length < 2) {
       const n = L[0] || curNano();
       drawNano(c, X, Y, W, H, n || {});
@@ -677,43 +677,96 @@ function drawBulbs(c, X, Y, W, H) {
   const r = Math.min(W * 0.3, H / (Math.max(n, 1) * 2.6), 26 * d), hits = [];
   let acc = 0;
   for (let i = 0; i < v.length; i++) {
-    const cx = X + W / 2, cy = Y + H / 2 + (acc + v[i] / 2 - n / 2) * r * 2.7, col = F.bulbs[i], rr = r * (.4 + .6 * v[i]);
+    const cx = X + W / 2, cy = Y + H / 2 + (acc + v[i] / 2 - n / 2) * r * 2.7, col = F.bulbs[i];
     acc += v[i];
-    const on = lit(col) && S.bulbs[i].online;
-    const g = c.createRadialGradient(cx, cy - rr * 0.1, 0, cx, cy, rr * 1.7);
-    if (on) { g.addColorStop(0, '#fff'); g.addColorStop(0.28, col); g.addColorStop(1, 'rgba(0,0,0,0)'); }
-    else { g.addColorStop(0, '#262626'); g.addColorStop(0.5, '#161616'); g.addColorStop(1, 'rgba(0,0,0,0)'); }
+    const on = lit(col) && S.bulbs[i].online, box = { x: cx - r * 1.8, y: cy - r * 1.35, w: r * 3.6, h: r * 2.7 };
     c.save(); c.globalAlpha *= v[i];
-    c.beginPath(); c.arc(cx, cy, rr * 1.7, 0, 7); c.fillStyle = g; c.fill();
+    drawFixture(c, box.x, box.y, box.w, box.h, bulbType(i), [on ? col : OFF], on);
     c.restore();
-    hits.push({ key: 'bulb' + i, k: 'bulb', i, x: cx - r * 1.8, y: cy - r * 1.35, w: r * 3.6, h: r * 2.7 });
+    hits.push({ key: 'bulb' + i, k: 'bulb', i, ...box });
   }
   return hits;
 }
 
-// A LAN device: a strip (light bar) or separate lights (orbs), from the thinned-out live frame.
-function drawExt(c, X, Y, W, H, k) {
-  const d = S.ext.devs[k], dp = devicePixelRatio;
-  if (!d) return;
-  const cols = F.ext[k] || [];
-  if (d.per_led) {
-    const n = Math.max(cols.length, 2), bw = Math.min(W * 0.92, 560 * dp), bh = Math.min(H * 0.34, 14 * dp);
-    lightBar(c, X + (W - bw) / 2, Y + (H - bh) / 2, bw, bh, [...Array(n)].map((_, i) => d.online ? cols[i] || OFF : OFF), false);
-  } else {
-    const n = Math.max(1, d.leds), r = Math.min(H * 0.28, W / (n * 3.2), 24 * dp);
-    for (let i = 0; i < n; i++) {
-      const cx = X + W / 2 + (i - (n - 1) / 2) * r * 3.2, cy = Y + H / 2, col = cols[i], on = lit(col) && d.online;
-      const g = c.createRadialGradient(cx, cy, 0, cx, cy, r * 1.6);
-      if (on) { g.addColorStop(0, '#fff'); g.addColorStop(0.3, col); g.addColorStop(1, 'rgba(0,0,0,0)'); }
-      else { g.addColorStop(0, '#262626'); g.addColorStop(0.5, '#161616'); g.addColorStop(1, 'rgba(0,0,0,0)'); }
-      c.beginPath(); c.arc(cx, cy, r * 1.6, 0, 7); c.fillStyle = g; c.fill();
+// What a light is, for its picture in the preview (and, for LAN devices, how effects lay out on it; see
+// device_type in devices.c). LAN devices get it from the core (chosen, or guessed from the model); bulbs: [zone.lightN] type.
+const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb'];
+const bulbType = i => { const v = cv('zone.light' + (i + 1), 'type', 'bulb'); return FIXTURES.includes(v) ? v : 'bulb'; };
+
+// One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
+function drawFixture(c, X, Y, W, H, type, cols, on) {
+  const dp = devicePixelRatio, n = cols.length, cx = X + W / 2, cy = Y + H / 2;
+  const col = i => (on && cols[i]) || OFF, glow = on ? avgColor(cols) : null;
+  const metal = (x, y, w, h) => { rr(c, x, y, w, h, 1.5 * dp); c.fillStyle = '#1c1c1c'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.07)'; c.lineWidth = dp; c.stroke(); };
+  const orb = (x, y, r, k) => {
+    const g = c.createRadialGradient(x, y - r * 0.1, 0, x, y, r * 1.7), on1 = on && lit(k);
+    if (on1) { g.addColorStop(0, '#fff'); g.addColorStop(0.28, k); g.addColorStop(1, 'rgba(0,0,0,0)'); }
+    else { g.addColorStop(0, '#262626'); g.addColorStop(0.5, '#161616'); g.addColorStop(1, 'rgba(0,0,0,0)'); }
+    c.beginPath(); c.arc(x, y, r * 1.7, 0, 7); c.fillStyle = g; c.fill();
+  };
+  const seg = (a, b) => { const s = cols.slice(a, b).map((k, i) => col(a + i)); return s.length ? s : [col(0)]; };
+  if (type === 'strip') {
+    const bw = Math.min(W * 0.92, 560 * dp), bh = Math.min(H * 0.34, 14 * dp);
+    lightBar(c, cx - bw / 2, cy - bh / 2, bw, bh, n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], false);
+  } else if (type === 'bulb') {
+    const m = Math.max(1, n), r = Math.min(H * 0.28, W / (m * 3.2), 24 * dp);
+    for (let i = 0; i < m; i++) orb(cx + (i - (m - 1) / 2) * r * 3.2, cy, r, col(i));
+  } else if (type === 'floor') {   // floor lamp: a tall glowing tube on a thin stand
+    const h = H * 0.9, tw = Math.max(3 * dp, Math.min(h * 0.07, 9 * dp)), top = cy - h / 2;
+    metal(cx - tw * 1.6, top + h - 3 * dp, tw * 3.2, 3 * dp);
+    metal(cx - dp, top + h * 0.72, 2 * dp, h * 0.28);
+    lightBar(c, cx - tw / 2, top, tw, h * 0.72, n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], true);
+  } else if (type === 'bars') {   // two light bars side by side, the LEDs split between them
+    const h = H * 0.8, bw = Math.max(3 * dp, Math.min(h * 0.08, 8 * dp)), gap = Math.min(W * 0.28, h * 0.45), half = Math.ceil(n / 2);
+    [seg(0, half), seg(half, n)].forEach((s, j) => {
+      const x = cx + (j ? gap / 2 : -gap / 2) - bw / 2;
+      lightBar(c, x, cy - h / 2, bw, h * 0.9, s.length > 1 ? s : [s[0], s[0]], true);
+      metal(x - bw * 0.6, cy + h / 2 - 2 * dp, bw * 2.2, 2.5 * dp);
+    });
+  } else if (type === 'tv') {   // a screen with the light around it (left edge up, top, right edge down, bottom)
+    const sw = Math.min(W * 0.72, H * 0.8 * 16 / 9), sh = sw * 9 / 16, x = cx - sw / 2, y = cy - sh / 2, t = Math.max(2 * dp, sh * 0.05);
+    const q = Math.max(1, Math.floor(n / 4)), edges = n >= 4 ? [seg(0, q), seg(q, 2 * q), seg(2 * q, 3 * q), seg(3 * q, n)] : [[col(0)], [col(0)], [col(0)], [col(0)]];
+    const two = s => s.length > 1 ? s : [s[0], s[0]];
+    lightBar(c, x - t * 1.6, y, t, sh, two(edges[0]), true);
+    lightBar(c, x, y - t * 1.6, sw, t, two(edges[1]), false);
+    lightBar(c, x + sw + t * 0.6, y, t, sh, two([...edges[2]].reverse()), true);
+    lightBar(c, x, y + sh + t * 0.6, sw, t, two([...edges[3]].reverse()), false);
+    rr(c, x, y, sw, sh, 2 * dp); c.fillStyle = '#0c0c0c'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.1)'; c.lineWidth = dp; c.stroke();
+  } else if (type === 'lamp') {   // table lamp: the shade glows
+    const h = Math.min(H * 0.85, W * 0.9), top = cy - h / 2, sw = h * 0.62, g = glow || 'rgb(40,40,40)';
+    metal(cx - h * 0.2, top + h - 3 * dp, h * 0.4, 3 * dp);
+    metal(cx - dp, top + h * 0.5, 2 * dp, h * 0.5);
+    c.save();
+    if (glow) { c.shadowColor = glow; c.shadowBlur = 30 * dp; }
+    c.beginPath(); c.moveTo(cx - sw * 0.32, top); c.lineTo(cx + sw * 0.32, top); c.lineTo(cx + sw / 2, top + h * 0.5); c.lineTo(cx - sw / 2, top + h * 0.5); c.closePath();
+    const lg = c.createLinearGradient(0, top, 0, top + h * 0.5);
+    lg.addColorStop(0, glow ? g : '#1a1a1a'); lg.addColorStop(1, glow ? '#fff' : '#222');
+    c.fillStyle = lg; c.fill(); c.restore();
+  } else if (type === 'panels') {   // a honeycomb of hexagons, the LEDs spread over them
+    const m = Math.min(Math.max(n, 3), 7), R = Math.min(W / (m * 1.9 + 1), H * 0.3);
+    for (let i = 0; i < m; i++) {
+      const x = cx + (i - (m - 1) / 2) * R * 1.75, y = cy + (i % 2 ? R * 0.5 : -R * 0.5), k = col(Math.floor(i * Math.max(n, 1) / m));
+      c.save();
+      if (on && lit(k)) { c.shadowColor = k; c.shadowBlur = 22 * dp; }
+      c.beginPath();
+      for (let v = 0; v < 6; v++) { const a = Math.PI / 6 + v * Math.PI / 3; c[v ? 'lineTo' : 'moveTo'](x + Math.cos(a) * R * 0.92, y + Math.sin(a) * R * 0.92); }
+      c.closePath(); c.fillStyle = k; c.fill(); c.restore();
+      c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; c.stroke();
     }
   }
+}
+
+// A LAN device, drawn as its type, from the thinned-out live frame.
+function drawExt(c, X, Y, W, H, k) {
+  const d = S.ext.devs[k];
+  if (!d) return;
+  const cols = F.ext[k] || [], on = d.online && d.enabled, n = Math.max(1, cols.length || Math.min(d.leds || 1, 60));
+  drawFixture(c, X, Y, W, H, d.type || (d.per_led ? 'strip' : 'bulb'), [...Array(n)].map((_, i) => cols[i] || OFF), on);
 }
 // All LAN devices as rows; row heights follow the appear animation, like the bulbs. Returns the hit areas.
 const HERO_EXT_MAX = 12;
 function drawExtAll(c, X, Y, W, H) {
-  const list = S.ext.devs.map((dv, k) => [dv, k, heroAnim('ext' + dv.id, dv.enabled && dv.leds ? 1 : 0)])
+  const list = S.ext.devs.map((dv, k) => [dv, k, heroAnim('ext' + dv.id, 1)])
     .filter(([, , v]) => v > .001).slice(0, HERO_EXT_MAX);
   const tot = list.reduce((a, [, , v]) => a + v, 0), d = devicePixelRatio, hits = [];
   let y = Y;
@@ -736,10 +789,10 @@ function label(c, text, x, y, bright) {
 
 // The preview is also the quick-access widget: every device drawn in it is a hit area (HERO.hits, canvas pixels)
 // that opens its settings in a floating sheet. [ui] hero_hide lists groups left out of the preview.
-const HERO = { hits: [], hover: '', anim: {}, t: 0, k: 1, moving: false, raf: 0 };
+const HERO = { hits: [], hover: '', hoverPw: '', anim: {}, t: 0, k: 1, moving: false, raf: 0 };
 const HERO_GROUPS = [['ram', 0.2], ['gpu', 0.38], ['nano', 0.27], ['bulbs', 0.15], ['ext', 0.3]];
 const heroGroups = () => HERO_GROUPS.filter(([k]) => (k === 'ram' && S.sticks) || (k === 'gpu' && S.msi) || (k === 'nano' && nanoOn()) ||
-  (k === 'bulbs' && S.bulbs.length) || (k === 'ext' && S.ext.devs.some(d => d.enabled && d.leds)));
+  (k === 'bulbs' && S.bulbs.length) || (k === 'ext' && S.ext.devs.length));
 const heroHidden = () => cv('ui', 'hero_hide', '').split(',').filter(Boolean);
 const groupName = k => ({ ram: t('pc.memory'), gpu: stripName(), nano: 'Nanoleaf', bulbs: t('nav.bulbs'), ext: t('nav.devices') })[k];
 
@@ -758,7 +811,7 @@ function heroAnim(key, target) {
 function heroHeight() {
   const hide = heroHidden(), phone = matchMedia('(max-width: 700px)').matches;
   const rows = Math.max(hide.includes('bulbs') ? 0 : S.bulbs.length,
-    hide.includes('ext') ? 0 : Math.min(HERO_EXT_MAX, S.ext.devs.filter(d => d.enabled && d.leds).length));
+    hide.includes('ext') ? 0 : Math.min(HERO_EXT_MAX, S.ext.devs.length));
   const h = Math.min((phone ? 180 : 240) + Math.max(0, rows - 3) * (phone ? 40 : 52), phone ? 400 : 520);
   const el = $('#tab-effects .hero');
   if (+el.dataset.h !== h) { el.dataset.h = h; el.style.height = h + 'px'; }
@@ -773,7 +826,7 @@ function drawHero() {
   const c = cvs.getContext('2d'), W = cvs.width, H = cvs.height, d = devicePixelRatio;
   c.clearRect(0, 0, W, H);
   const hide = heroHidden(), present = heroGroups().map(g => g[0]);
-  const nNano = nanoCtls().filter(n => (n.panels || []).length && cv('layout', nanoKey(n.slot), '1') !== '0').length;
+  const nNano = nanoCtls().filter(n => (n.panels || []).length).length;
   const cols = HERO_GROUPS.map(([k, f]) => [k, k === 'nano' ? f * Math.min(2.2, 1 + Math.max(0, nNano - 1) * .6) : f, heroAnim('g:' + k, present.includes(k) && !hide.includes(k) ? 1 : 0)])
     .filter(g => g[2] > .001);
   const tot = cols.reduce((a, [, f, v]) => a + f * v, 0);
@@ -803,6 +856,7 @@ function drawHero() {
     c.fillText('+  ' + t('hero.empty'), W / 2, H / 2);
     hits.push({ key: 'add', k: 'add', x: W * .3, y: H * .3, w: W * .4, h: H * .4 });
   }
+  hits.forEach(h => heroPowerButton(c, h));
   HERO.hits = hits;
   const hv = hits.find(h => h.key === HERO.hover);
   if (hv) {   // faceted frame around the device under the cursor
@@ -822,18 +876,69 @@ new ResizeObserver(() => {
   cvs.style.height = h + 'px'; cvs.width = w * devicePixelRatio; cvs.height = h * devicePixelRatio;
   drawHero();
 }).observe($('#tab-effects .hero'));
+const heroXY = e => { const r = $('#hero').getBoundingClientRect(), d = devicePixelRatio; return [(e.clientX - r.left) * d, (e.clientY - r.top) * d]; };
 const heroHit = e => {
-  const cvs = $('#hero'), r = cvs.getBoundingClientRect(), d = devicePixelRatio;
-  const px = (e.clientX - r.left) * d, py = (e.clientY - r.top) * d;
+  const [px, py] = heroXY(e);
   return HERO.hits.find(h => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h);
 };
+// the power button of the device under the pointer, if the pointer is on it
+const heroOnPower = (h, e) => { if (!h || !h.pw) return false; const [px, py] = heroXY(e); return Math.hypot(px - h.pw.x, py - h.pw.y) <= h.pw.r * 1.5; };
 $('#hero').addEventListener('pointermove', e => {
-  const h = heroHit(e), key = h ? h.key : '';
+  const h = heroHit(e), key = h ? h.key : '', pw = heroOnPower(h, e) ? key : '';
   $('#hero').style.cursor = h ? 'pointer' : '';
-  if (key !== HERO.hover) { HERO.hover = key; drawHero(); }
+  $('#hero').title = pw ? t(h.pw.on ? 'power.dev.off' : 'power.dev.on') : '';
+  if (key !== HERO.hover || pw !== HERO.hoverPw) { HERO.hover = key; HERO.hoverPw = pw; drawHero(); }
 });
-$('#hero').addEventListener('pointerleave', () => { if (HERO.hover) { HERO.hover = ''; drawHero(); } });
-$('#hero').addEventListener('click', e => { const h = heroHit(e); if (h) openSheet(h, e.clientX, e.clientY); });
+$('#hero').addEventListener('pointerleave', () => { if (HERO.hover) { HERO.hover = HERO.hoverPw = ''; drawHero(); } });
+$('#hero').addEventListener('click', e => {
+  const h = heroHit(e);
+  if (!h) return;
+  if (heroOnPower(h, e)) { togglePower(h); drawHero(); } else openSheet(h, e.clientX, e.clientY);
+});
+
+// ---- one power button per device in the preview: memory, the ARGB strip, each Nanoleaf controller, each bulb,
+// each LAN device. The same switches as on their own pages ([layout] ..._enabled, [dev.N] enabled).
+function devicePower(h) {
+  const L = k => cv('layout', k, '1') !== '0';
+  if (h.k === 'ram') return { on: L('ram_enabled'), keys: ['ram_enabled'] };
+  if (h.k === 'gpu') return { on: L('gpu_enabled'), keys: ['gpu_enabled'] };
+  if (h.k === 'nano' && h.slot) return { on: L(nanoKey(h.slot)), keys: [nanoKey(h.slot)] };
+  if (h.k === 'bulb') return { on: L('lights_enabled') && L(`light${h.i + 1}_enabled`), keys: [`light${h.i + 1}_enabled`] };
+  if (h.k === 'ext') { const d = S.ext.devs[h.i]; return d ? { on: !!d.enabled, dev: d } : null; }
+  return null;
+}
+function togglePower(h) {
+  const p = devicePower(h); if (!p) return;
+  if (p.dev) {
+    p.dev.enabled = p.on ? 0 : 1;
+    setCfg('dev.' + p.dev.id, 'enabled', p.dev.enabled);
+    updateDevices(); $$(`#dev-grid .dev-on`).forEach((el, i) => { if (S.ext.devs[i]) el.checked = !!S.ext.devs[i].enabled; });
+    return;
+  }
+  // a bulb while all bulbs are off: all bulbs back on, this one included
+  if (h.k === 'bulb' && cv('layout', 'lights_enabled', '1') === '0') {
+    setCfgLocal('layout', 'lights_enabled', '1'); send({ cmd: 'toggle', k: 'lights_enabled' });
+    if (cv('layout', p.keys[0], '1') !== '0') { syncToggles(); return; }
+  }
+  const k = p.keys[0], v = cv('layout', k, '1') !== '0' ? '0' : '1';
+  setCfgLocal('layout', k, v); send({ cmd: 'toggle', k });
+  syncToggles();
+}
+function heroPowerButton(c, h) {
+  const p = devicePower(h);
+  if (!p) { h.pw = null; return; }
+  const d = devicePixelRatio, r = 8.5 * d, x = h.x + h.w - r - 4 * d, y = h.y + r + 4 * d;
+  h.pw = { x, y, r, on: p.on };
+  const hot = HERO.hoverPw === h.key, show = hot ? 1 : HERO.hover === h.key ? .85 : p.on ? .28 : .7;
+  c.save(); c.globalAlpha = show;
+  c.beginPath(); c.arc(x, y, r, 0, 7);
+  c.fillStyle = hot ? 'rgba(255,255,255,.14)' : 'rgba(10,10,10,.75)'; c.fill();
+  c.strokeStyle = p.on ? 'rgba(255,255,255,.45)' : 'rgba(255,255,255,.18)'; c.lineWidth = d; c.stroke();
+  c.strokeStyle = p.on ? '#e8e8e8' : '#6a6a6a'; c.lineWidth = 1.4 * d; c.lineCap = 'round';
+  c.beginPath(); c.arc(x, y, r * 0.48, -Math.PI / 2 + 0.75, -Math.PI / 2 - 0.75 + 2 * Math.PI); c.stroke();
+  c.beginPath(); c.moveTo(x, y - r * 0.62); c.lineTo(x, y - r * 0.08); c.stroke();
+  c.restore();
+}
 
 // ---- device sheet: the real settings cards are moved in (placeholders mark their place) and back on close,
 // so everything keeps working exactly as on its own page
@@ -1068,10 +1173,16 @@ function buildBulbs() {
     d.className = 'card';
     const short = (b.name.split(' ').pop() || b.name);
     d.innerHTML = `<div class="bulb-top"><div class="bulb-orb off" id="bulb-orb-${i}"></div>
-      <div><h3>${t('bulb', i + 1)}</h3><p class="muted" id="bulb-st-${i}"></p></div></div>
-      <div class="zone" data-zone="zone.light${i + 1}"></div>`;
+      <div><h3>${t('bulb', i + 1)}</h3><p class="muted" id="bulb-st-${i}"></p></div>
+      <label class="switch"><input type="checkbox" data-toggle="light${i + 1}_enabled"><span></span></label></div>
+      <div class="zone" data-zone="zone.light${i + 1}"></div>
+      <div class="opts"><label class="num"><span>${t('fix.type')}</span><select class="select bulb-type">${typeOptions(bulbType(i), null, ['bulb', 'lamp', 'floor', 'strip'])}</select></label></div>`;
     d.title = b.name;
     grid.appendChild(d);
+    const sw = d.querySelector('[data-toggle]');
+    sw.checked = cv('layout', sw.dataset.toggle, '1') !== '0';
+    sw.addEventListener('change', () => { setCfgLocal('layout', sw.dataset.toggle, sw.checked ? '1' : '0'); send({ cmd: 'toggle', k: sw.dataset.toggle }); });
+    d.querySelector('.bulb-type').addEventListener('change', e => { setCfg('zone.light' + (i + 1), 'type', e.target.value); drawAll(); });
     renderZone(d.querySelector('.zone'));
     d.querySelector('.muted').dataset.short = short;
   });
@@ -1089,6 +1200,13 @@ function updateBulbs() {
 }
 $('#bulb-smooth').addEventListener('input', e => { const v = (e.target.value / 100).toFixed(2); $('#smooth-val').textContent = v + t('sec'); setCfgSoon('lights', 'smooth', v); });
 $('#bulb-rate').addEventListener('input', e => { $('#rate-val').textContent = e.target.value; setCfgSoon('lights', 'rate', e.target.value); });
+
+// "Type" choices: auto (the core's guess, named) or one of FIXTURES; bulbs offer only the ones a bulb can be in
+function typeOptions(cur, guess, only) {
+  const list = only || FIXTURES;
+  return (only ? '' : `<option value="auto"${FIXTURES.includes(cur) ? '' : ' selected'}>${t('fix.auto')}${guess ? ' · ' + t('fix.' + guess) : ''}</option>`) +
+    list.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${t('fix.' + v)}</option>`).join('');
+}
 
 // LAN / bridge devices
 let devSig = '';
@@ -1117,6 +1235,7 @@ function buildDevices() {
         <label class="num"><span>${t('strip.name')}</span><input type="text" class="dev-name" maxlength="40" spellcheck="false" value="${esc(cv(sec, 'name', d.name))}"></label>
         ${d.per_led ? `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
+        <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
     grid.appendChild(el);
@@ -1127,6 +1246,7 @@ function buildDevices() {
       setCfg(sec, 'name', v); el.querySelector('h3').textContent = v; d.name = v; renderOwnList();
     });
     el.querySelector('.dev-rev')?.addEventListener('change', e => setCfg(sec, 'reverse', e.target.checked ? 1 : 0));
+    el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => {
       const n = Math.max(1, Math.min(512, +(cv(sec, 'leds', 0) > 0 ? cv(sec, 'leds') : d.leds) + +b.dataset.d));
       setCfg(sec, 'leds', n); el.querySelector('.dev-leds').textContent = n;
@@ -1411,7 +1531,7 @@ function applyStatus(m) {
   const effectChanged = m.effect !== S.effect;
   Object.assign(S, m);
   S.ext = S.ext || { devs: [], found: [], kinds: [], scanning: 0 };
-  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name]));
+  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type]));
   if (!dragging) { setRange($('#bright'), S.brightness); $('#bright-val').textContent = S.brightness + '%'; }
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();

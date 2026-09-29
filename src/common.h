@@ -133,6 +133,7 @@ int  ext_count(void);                     // configured devices ("slots")
 int  ext_slot_leds(int k);                // LEDs of slot k in the scene (0: disabled / not known yet)
 int  ext_slot_id(int k);                  // N of its [dev.N] section
 int  ext_slot_strip(int k);               // 1: addressable strip, 0: separate lights
+void ext_slot_type(int k, char *out, int cap);   // strip, tv, bars, floor, lamp, panels, bulb
 int  ext_layout_changed(void);            // 1 once after a device appeared / changed its LED count
 void ext_submit(int k, const rgbf *c, int n);
 void ext_scan(void);                      // look for devices on the LAN (background)
