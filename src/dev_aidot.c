@@ -208,6 +208,7 @@ static void connect_bulb(bulb_t *b) {
 // "attr" object of any message mentioning an effect is logged once per change, to learn how to start effects
 // locally. [lights] probe=1 also asks the bulbs for all attributes every 5 s while they are switched off in the app.
 static void log_effect_attrs(bulb_t *b, const char *js) {
+    if (!cfg_geti("lights", "probe", 0)) return;
     if (!strstr(js, "Effect") && !strstr(js, "effect") && !strstr(js, "Script") && !strstr(js, "Mode")) return;
     const char *a = strstr(js, "\"attr\"");
     a = a ? strchr(a, '{') : NULL;
