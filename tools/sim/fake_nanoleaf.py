@@ -2,7 +2,7 @@
 
 Four Shapes triangles. Checks every custom animation it gets (panel count, frames, colour values, fade times)
 and counts extControl UDP frames, so you can see whether the app streams or lets the panels play the loop.
-    python tools/sim/fake_nanoleaf.py
+    python tools/sim/fake_nanoleaf.py [--keep-open]
 Test build: put {"ip": "127.0.0.1", "token": "test"} into %APPDATA%\\haku-control-dev\\nanoleaf.json.
 """
 import json
@@ -13,6 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 H = 134 * 3 ** 0.5 / 2
 PANELS = [(11, 67, H / 3, 60), (12, 134, 2 * H / 3, 0), (13, 201, H / 3, 60), (14, 268, 2 * H / 3, 0)]
+import sys
+KEEP_OPEN = "--keep-open" in sys.argv   # like the real controller: ignores "Connection: close"
 state = {"on": True, "brightness": 80, "select": "Northern Lights", "udp": 0, "writes": 0}
 
 
@@ -56,7 +58,8 @@ class Api(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Connection", "close")
+        if not KEEP_OPEN:
+            self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 

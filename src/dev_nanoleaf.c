@@ -73,12 +73,28 @@ static int http(const char *ip, const char *method, const char *path, const char
         if (r <= 0) { closesocket(s); return 0; }
         off += r;
     }
-    int got = 0;
+    // Read until the whole answer is in: the controller keeps the connection open despite "Connection: close",
+    // so waiting for it to close would cost the full receive timeout (3 s) on every request.
+    int got = 0, want = -1;
     for (;;) {
         int r = recv(s, buf + got, cap - 1 - got, 0);
         if (r <= 0) break;
         got += r;
+        buf[got] = 0;
         if (got >= cap - 1) break;
+        if (want < 0) {
+            char *he = strstr(buf, "\r\n\r\n");
+            if (!he) continue;
+            int hl = (int)(he + 4 - buf), st = 0, clen = -1;
+            sscanf_s(buf, "HTTP/1.%*d %d", &st);
+            for (char *p = buf; p < he; p = strstr(p, "\r\n") + 2) {
+                if (!_strnicmp(p, "Content-Length:", 15)) { clen = atoi(p + 15); break; }
+                if (!strstr(p, "\r\n")) break;
+            }
+            if (st == 204 || st == 304 || (st >= 100 && st < 200)) clen = 0;
+            if (clen >= 0) want = hl + clen;
+        }
+        if (want >= 0 && got >= want) break;
     }
     closesocket(s);
     buf[got] = 0;
@@ -317,8 +333,7 @@ static int write_anim(void) {
     snprintf(anim_body + n, sizeof(anim_body) - n, "\"}}");
     int st = api("PUT", "/effects", anim_body);
     if (st / 100 != 2) { logf_("nanoleaf: animation refused (%d): %.160s", st, http_buf); return 0; }
-    anim_sel[0] = 0;
-    if (api("GET", "/effects/select", NULL) == 200) snprintf(anim_sel, sizeof(anim_sel), "%s", http_buf);
+    anim_sel[0] = 0;   // what the controller calls our loop is learnt at the next check
     logf_("nanoleaf: playing a %d-frame loop on the panels (%.1f s per frame)", nf, T / 10.0);
     return 1;
 }
@@ -459,7 +474,14 @@ static unsigned __stdcall thread_fn(void *p) {
             if (jnum(http_buf, "value", 1)) {
                 api("GET", "/effects/select", NULL);
                 if (live && !strstr(http_buf, "*ExtControl*")) { start_stream(); last_n = -1; }
-                if (!live && !write_due && strcmp(http_buf, anim_sel)) write_due = 1;   // our loop was replaced: play it again
+                // our loop was replaced (a scene picked in the Nanoleaf app): play it again
+                if (!live && !write_due) {
+                    if (!anim_sel[0]) snprintf(anim_sel, sizeof(anim_sel), "%s", http_buf);
+                    else if (strcmp(http_buf, anim_sel)) {
+                        logf_("nanoleaf: scene changed to %.60s, playing our effect again", http_buf);
+                        write_due = 1;
+                    }
+                }
             }
         }
 

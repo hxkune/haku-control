@@ -354,7 +354,9 @@ static unsigned __stdcall render_thread(void *p) {
             static int b_fx = -2, b_on = -1; static float b_br = -1; static LONG b_gen = -1; static DWORD b_due;
             DWORD tnow = GetTickCount();
             if (fx != b_fx || br != b_br || nano_on != b_on || cfg_gen != b_gen) {
-                b_fx = fx; b_br = br; b_on = nano_on; b_gen = cfg_gen; b_due = (tnow + 400) | 1;
+                // a new effect goes out at once; sliders (brightness, speed, colours) wait until they rest
+                b_due = fx != b_fx || nano_on != b_on ? tnow | 1 : (tnow + 300) | 1;
+                b_fx = fx; b_br = br; b_on = nano_on; b_gen = cfg_gen;
             }
             if (nano_bake_wanted()) b_due = tnow | 1;
             if (b_due && nano_on && (int)(tnow - b_due) >= 0) {   // switched off: the driver turns the panels off
