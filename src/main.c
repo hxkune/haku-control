@@ -98,6 +98,7 @@ static CRITICAL_SECTION cs;
 static volatile LONG running = 1, need_reinit, need_reload;
 static int      cur_effect;
 static float    brightness = 1.0f;
+static volatile LONG cfg_gen;         // bumps on every settings change (the Nanoleaf loop is baked again)
 static int      prev_effect = 0;
 static scene_t  scene;
 static int      gpu_leds = 8, gpu_rev, ram_rev, ram_swap, board_led = 1, ram_on = 1, gpu_on = 1, lights_on = 1, nano_on = 1;
@@ -280,6 +281,7 @@ static unsigned __stdcall render_thread(void *p) {
         if (InterlockedExchange(&need_reload, 0) ||
             (GetTickCount() - last_cfg_check > 1000 && (last_cfg_check = GetTickCount(), cfg_changed_on_disk()))) {
             load_config();
+            InterlockedIncrement(&cfg_gen);
             logf_("config reloaded, effect=%s", g_effects[cur_effect].id);
             PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
         }
@@ -345,7 +347,28 @@ static unsigned __stdcall render_thread(void *p) {
         if (!ram_on) for (int st = 0; st < 2 && st < ene_count(); st++) rn[st] = 8;
 
         if (lights_count()) lights_submit(bulb, bulb_k, bn, lights_on);
-        if (nano_configured()) nano_submit(nano, nn, nano_on);
+        if (nano_configured()) {
+            nano_submit(nano, nn, nano_on);
+            // the panels play the effect themselves: bake a new loop when what they show changed (debounced, so a
+            // dragged slider sends one animation, not dozens), or when the driver asks after (re)connecting
+            static int b_fx = -2, b_on = -1; static float b_br = -1; static LONG b_gen = -1; static DWORD b_due;
+            DWORD tnow = GetTickCount();
+            if (fx != b_fx || br != b_br || nano_on != b_on || cfg_gen != b_gen) {
+                b_fx = fx; b_br = br; b_on = nano_on; b_gen = cfg_gen; b_due = (tnow + 400) | 1;
+            }
+            if (nano_bake_wanted()) b_due = tnow | 1;
+            if (b_due && nano_on && (int)(tnow - b_due) >= 0) {   // switched off: the driver turns the panels off
+                static rgbf frames[NANO_MAX_FRAMES * NANO_MAX_PANELS];
+                float step = 1; int nf = 0;
+                b_due = 0;
+                if (nano_on_device() && nn > 0) {
+                    int maxf = 720 / nn; if (maxf > NANO_MAX_FRAMES) maxf = NANO_MAX_FRAMES; if (maxf < 4) maxf = 4;
+                    EnterCriticalSection(&cs); nf = effects_bake(fx, &sc, DEV_NANO, maxf, NANO_MAX_PANELS, frames, &step); LeaveCriticalSection(&cs);
+                    for (int i = 0; i < nf * NANO_MAX_PANELS; i++) frames[i] = scalec(frames[i], br);
+                }
+                nano_upload(frames, nf, nn, step);
+            }
+        }
         for (int k = 0; k < EXT_SLOTS; k++) if (en[k]) ext_submit(k, ext[k], en[k]);
 
         // "animating" = any LED of the scene changed (not only the PC hardware: a setup may be LAN lights only)
@@ -409,6 +432,7 @@ static void set_brightness(float b) { set_brightness_ex(b, 1); ui_refresh(); }
 void  app_set_effect(int fx) { set_effect(fx); }
 void  app_set_brightness(float b, int save_now) { set_brightness_ex(b, save_now); }
 void  app_config_changed(int layout) {
+    InterlockedIncrement(&cfg_gen);
     EnterCriticalSection(&cs); effects_reset(); LeaveCriticalSection(&cs);
     if (layout) build_scene();
 }

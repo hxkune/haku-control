@@ -69,6 +69,7 @@ int  effect_index(const char *id);
 const wchar_t *effect_title(int i);   // in the chosen language
 void effects_render(int effect, const scene_t *sc, const sensors_t *sn, double dt, rgbf *out);
 void effects_reset(void);
+int  effects_bake(int effect, const scene_t *sc, int dev, int max_frames, int stride, rgbf *out, float *step);   // a device's loop, see effects.c
 void zone_section(int zone, char *out, int cap);
 int  effects_need_gpu_temp(void);
 int  effects_need_audio(void);
@@ -107,6 +108,11 @@ int  nano_count(void);
 int  nano_layout_changed(void);   // 1 once after the panel layout was (re)read
 void nano_panel(int i, float *x, float *y, float *path);
 void nano_submit(const rgbf *c, int n, int enable);
+#define NANO_MAX_PANELS 64
+#define NANO_MAX_FRAMES 60
+int  nano_on_device(void);        // effects play on the panels themselves ([nanoleaf] mode != stream)
+int  nano_bake_wanted(void);      // 1 once when the panels need their animation (again)
+void nano_upload(const rgbf *frames, int nframes, int npanels, float step);   // frames[f * NANO_MAX_PANELS + panel]; 0 frames: stream
 void nano_stop(void);
 void nano_pair_start(void);       // find a controller and wait for its power button (runs in background)
 void nano_relayout(void);

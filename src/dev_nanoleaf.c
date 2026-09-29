@@ -1,6 +1,8 @@
 // Nanoleaf (Blocks / Shapes / Canvas...) via the local OpenAPI:
-//   HTTP :16021 for layout, state and switching to extControl,
-//   UDP :60222 for streaming colours (extControl v2), at most `rate` frames per second.
+//   HTTP :16021 for layout, state and effects,
+//   usually: the effect is precomputed (effects_bake) and written once as a looping custom animation that the
+//   controller plays itself, so nothing flows over Wi-Fi until the effect, colours, speed or brightness change;
+//   live effects (temperature, audio) or [nanoleaf] mode=stream: UDP :60222 extControl v2, at most `rate` frames/s.
 // IP and auth token live in %APPDATA%\haku-control\nanoleaf.json. Pairing (holding the power button)
 // can be started from the settings window: nano_pair_start().
 // The panels' own state (scene / colour / brightness) is captured on connect and restored on exit or when disabled.
@@ -11,7 +13,7 @@
 #include <stdlib.h>
 #include <process.h>
 
-#define MAX_PANELS 32
+#define MAX_PANELS NANO_MAX_PANELS
 
 typedef struct { int id, shape; float x, y, path, o; } panel_t;   // o: drawing angle on screen, degrees clockwise
 typedef struct { char ip[32], token[64]; } addr_t;
@@ -27,6 +29,11 @@ static volatile LONG layout_new;
 static SRWLOCK lk = SRWLOCK_INIT;
 static rgbf    target[MAX_PANELS];
 static int     ntarget, enabled = 1, have_target;
+// the baked animation (render thread -> streaming thread)
+static rgbf    anim[NANO_MAX_FRAMES * NANO_MAX_PANELS];
+static int     anim_frames, anim_panels;
+static float   anim_step;
+static volatile LONG anim_new, bake_wanted = 1;
 static volatile LONG run_thread;
 static HANDLE  th, pair_th;
 static volatile LONG pair_state;       // PAIR_*
@@ -56,11 +63,16 @@ static int http(const char *ip, const char *method, const char *path, const char
     nb = 0; ioctlsocket(s, FIONBIO, &nb);
     DWORD to = 3000; setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char *)&to, sizeof(to));
 
-    char req[1024];
+    char req[512];
     int bl = body ? (int)strlen(body) : 0;
     int n = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\nHost: %s:16021\r\nContent-Type: application/json\r\n"
-                     "Content-Length: %d\r\nConnection: close\r\n\r\n%s", method, path, ip, bl, body ? body : "");
+                     "Content-Length: %d\r\nConnection: close\r\n\r\n", method, path, ip, bl);
     if (send(s, req, n, 0) != n) { closesocket(s); return 0; }
+    for (int off = 0; off < bl;) {   // bodies can be large (animations)
+        int r = send(s, body + off, bl - off, 0);
+        if (r <= 0) { closesocket(s); return 0; }
+        off += r;
+    }
     int got = 0;
     for (;;) {
         int r = recv(s, buf + got, cap - 1 - got, 0);
@@ -262,7 +274,53 @@ static int connect_panels(void) {
     AcquireSRWLockExclusive(&lk); strcpy_s(dev_name, sizeof(dev_name), nm); ReleaseSRWLockExclusive(&lk);
     parse_layout(http_buf);
     if (!saved) save_state(http_buf);
-    return npanels && start_stream();
+    if (!npanels) return 0;
+    if (!nano_on_device()) return start_stream();
+    power(1);
+    InterlockedExchange(&bake_wanted, 1);   // the render thread bakes the current effect, then write_anim()
+    return 1;
+}
+
+// ---------------------------------------------------------------- the effect on the panels themselves
+int nano_on_device(void) { return _stricmp(cfg_get("nanoleaf", "mode", "device"), "stream") != 0; }
+int nano_bake_wanted(void) { return InterlockedExchange(&bake_wanted, 0) != 0; }
+
+void nano_upload(const rgbf *frames, int nf, int np, float step) {
+    if (nf > NANO_MAX_FRAMES) nf = NANO_MAX_FRAMES;
+    if (np > NANO_MAX_PANELS) np = NANO_MAX_PANELS;
+    AcquireSRWLockExclusive(&lk);
+    if (nf > 0) memcpy(anim, frames, sizeof(rgbf) * NANO_MAX_PANELS * nf);
+    anim_frames = nf; anim_panels = np; anim_step = step;
+    ReleaseSRWLockExclusive(&lk);
+    InterlockedExchange(&anim_new, 1);
+}
+
+// The baked loop as a custom animation the controller keeps playing:
+// animData = "numPanels  panelId numFrames  R G B W T  R G B W T ...", T = fade time into the frame, in 0.1 s.
+static char anim_body[64 * 1024], anim_sel[96];
+static int write_anim(void) {
+    AcquireSRWLockShared(&lk);
+    int nf = anim_frames, np = anim_panels < npanels ? anim_panels : npanels, T = (int)(anim_step * 10 + 0.5f), cap = sizeof(anim_body) - 64;
+    if (T < 1) T = 1;
+    int n = snprintf(anim_body, sizeof(anim_body), "{\"write\":{\"command\":\"display\",\"animType\":\"custom\",\"loop\":true,"
+                     "\"palette\":[],\"animData\":\"%d", np);
+    for (int p = 0; p < np && n < cap; p++) {
+        n += snprintf(anim_body + n, sizeof(anim_body) - n, " %d %d", panels[p].id, nf);
+        for (int f = 0; f < nf && n < cap; f++) {
+            rgbf c = anim[f * NANO_MAX_PANELS + p];
+            n += snprintf(anim_body + n, sizeof(anim_body) - n, " %d %d %d 0 %d", (int)(clampf(c.r, 0, 1) * 255 + .5f),
+                          (int)(clampf(c.g, 0, 1) * 255 + .5f), (int)(clampf(c.b, 0, 1) * 255 + .5f), nf == 1 ? 5 : T);
+        }
+    }
+    ReleaseSRWLockShared(&lk);
+    if (n >= cap) { logf_("nanoleaf: animation too large"); return 0; }
+    snprintf(anim_body + n, sizeof(anim_body) - n, "\"}}");
+    int st = api("PUT", "/effects", anim_body);
+    if (st / 100 != 2) { logf_("nanoleaf: animation refused (%d): %.160s", st, http_buf); return 0; }
+    anim_sel[0] = 0;
+    if (api("GET", "/effects/select", NULL) == 200) snprintf(anim_sel, sizeof(anim_sel), "%s", http_buf);
+    logf_("nanoleaf: playing a %d-frame loop on the panels (%.1f s per frame)", nf, T / 10.0);
+    return 1;
 }
 
 // ---------------------------------------------------------------- finding a controller on the local networks
@@ -334,7 +392,7 @@ static unsigned __stdcall thread_fn(void *p) {
     SOCKET u = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     unsigned char last[2 + MAX_PANELS * 8]; int last_n = -1;
     DWORD retry_at = 0, last_send = 0, last_check = 0;
-    int fails = 0, streaming = 0, off_done = 0;
+    int fails = 0, streaming = 0, off_done = 0, live = 0, write_due = 0;
 
     while (run_thread) {
         DWORD now = GetTickCount();
@@ -368,7 +426,11 @@ static unsigned __stdcall thread_fn(void *p) {
 
         if (!streaming) {
             if (now < retry_at) { Sleep(100); continue; }
-            if (connect_panels()) { streaming = online = 1; fails = 0; last_n = -1; last_check = now; logf_("nanoleaf: streaming to %s", cur.ip); }
+            if (connect_panels()) {
+                streaming = online = 1; fails = 0; last_n = -1; last_check = now;
+                live = !nano_on_device(); write_due = 0;
+                logf_("nanoleaf: connected to %s (%s)", cur.ip, live ? "streaming" : "effects on the panels");
+            }
             else {
                 online = 0;
                 if (++fails % 3 == 0 && rescan()) continue;
@@ -377,7 +439,17 @@ static unsigned __stdcall thread_fn(void *p) {
             continue;
         }
 
-        if (InterlockedExchange(&want_relayout, 0) && api("GET", "/", NULL) == 200) parse_layout(http_buf);
+        if (InterlockedExchange(&want_relayout, 0) && api("GET", "/", NULL) == 200) { parse_layout(http_buf); InterlockedExchange(&bake_wanted, 1); }
+
+        // a new baked loop (or none: the effect is live, or streaming was chosen)
+        if (InterlockedExchange(&anim_new, 0)) {
+            int nf; AcquireSRWLockShared(&lk); nf = anim_frames; ReleaseSRWLockShared(&lk);
+            if (nf > 0 && nano_on_device()) { live = 0; write_due = 1; }
+            else if (!live) { live = 1; start_stream(); last_n = -1; logf_("nanoleaf: streaming"); }
+        }
+        if (write_due && now >= retry_at) {
+            if (write_anim()) write_due = 0; else retry_at = now + 5000;
+        }
 
         // someone switched a scene in the Nanoleaf app / on the controller, or the panels vanished
         if (now - last_check > 15000) {
@@ -386,9 +458,12 @@ static unsigned __stdcall thread_fn(void *p) {
             if (st != 200) { streaming = online = 0; retry_at = now + 3000; logf_("nanoleaf: lost connection"); continue; }
             if (jnum(http_buf, "value", 1)) {
                 api("GET", "/effects/select", NULL);
-                if (!strstr(http_buf, "*ExtControl*")) { start_stream(); last_n = -1; }
+                if (live && !strstr(http_buf, "*ExtControl*")) { start_stream(); last_n = -1; }
+                if (!live && !write_due && strcmp(http_buf, anim_sel)) write_due = 1;   // our loop was replaced: play it again
             }
         }
+
+        if (!live) { Sleep(50); continue; }   // the panels play the loop themselves
 
         float rate = cfg_getf("nanoleaf", "rate", 10);
         if (rate < 1) rate = 1; if (rate > 10) rate = 10;

@@ -190,9 +190,14 @@
       <div class="card">
         <h3 data-i18n="colour">Colour</h3>
         <div class="zone" data-zone="zone.nanoleaf"></div>
+        <div class="set-row nano-mode">
+          <div><b data-i18n="nano.device">Play effects on the panels</b><p class="muted" data-i18n="nano.device.note"></p></div>
+          <label class="switch"><input type="checkbox" id="nano-device"><span></span></label>
+        </div>
         <div class="field">
           <div class="lbl"><span data-i18n="nano.rate">Update rate</span><b id="nano-rate-val">10/s</b></div>
           <input type="range" class="range" id="nano-rate" min="2" max="10" value="10">
+          <p class="hint" id="nano-rate-note"></p>
         </div>
       </div>
     </div>

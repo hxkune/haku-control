@@ -112,7 +112,7 @@ Output goes to `bin\`. `build.cmd dev` makes a test build in `bin-dev\`: it keep
 `%APPDATA%\haku-control-dev`, runs without admin rights and never touches the motherboard or memory, so it
 can run next to the installed app. Stop it with `scripts\stop.ps1 -Dev`. `python tools/sim/fake_devices.py` starts
 simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue devices on this PC for it to talk to, and
-`python tools/sim/fake_ollama.py` a stand-in for Ollama.
+`python tools/sim/fake_ollama.py` / `fake_nanoleaf.py` stand-ins for Ollama and a Nanoleaf controller.
 
 For UI work without the app, serve `ui\` with any static server and open
 `index.html?mock`, for example `python -m http.server -d ui 8766`. The mock fakes the core with sample data.

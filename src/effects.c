@@ -137,6 +137,83 @@ static float caustic_n(float x, float y, float t) {
     return n * n;
 }
 
+// One LED's colour for the effect clocks clk[] and a bubble list: the live ones, or local ones when baking ahead.
+static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *bb, int nb) {
+    float x = l->x, y = l->y;
+    rgbf c = { 0, 0, 0 };
+    int z = l->zone >= 0 && l->zone < MAX_ZONES ? l->zone : ZONE_GPU;
+    int e = fx == FX_OFF ? FX_OFF : zone_fx(z);
+    if (e != FX_OFF && zmode[z] == ZMODE_WHITE) return scalec(kelvin_rgb(zkelvin[z]), zlevel[z]);
+    if (e != FX_OFF && zmode[z] == ZMODE_STATIC) return scalec(zpal[z][0], zlevel[z]);
+    if (zmode[z] == ZMODE_PALETTE) { pal = zpal[z]; npal = znpal[z]; } else { pal = fx_pal[e]; npal = fx_npal[e]; }
+
+    // own effect / no sync: position inside the device and a per-device clock offset
+    int solo = zeffect[z] >= 0 || !sync_all;
+    float path = solo ? l->zpath : l->path;
+    float t = (float)clk[e] + (solo ? z * 2.37f : 0);
+
+    switch (e) {
+    case FX_FLOW:
+    case FX_PUMP:
+        c = palc(path - t * 0.12f);
+        break;
+    case FX_CAUSTIC:
+        c = scalec(palc(x * 0.6f + t * 0.03f), 0.25f + 0.75f * caustic_n(x, y, t));
+        break;
+    case FX_BUBBLES: {
+        c = scalec(pal[0], 0.12f);
+        for (int k = 0; k < nb; k++) {
+            if (fabsf(bb[k].x - x) > 0.01f) continue;
+            float d = (bb[k].y - y) / (l->dev == DEV_GPU || l->dev == DEV_EXT ? 0.12f : l->dev == DEV_NANO ? 0.18f : 0.07f);
+            c = addc(c, scalec(palc(bb[k].c), expf(-d * d)));
+        }
+        break;
+    }
+    case FX_COMET: {
+        float head = fractf(t * 0.2f) * 1.35f, d = head - path;
+        c = scalec(pal[npal > 2 ? 2 : npal - 1], 0.05f);
+        if (d >= 0 && d < 0.3f) {
+            float k = 1 - d / 0.3f;
+            c = addc(c, scalec(mixc(pal[0], pal[npal > 1 ? 1 : 0], d / 0.3f), k * k));
+        }
+        break;
+    }
+    case FX_LAVA: {
+        float v = sinf(x * 6 + t * 0.8f) + sinf(y * 5 - t * 0.6f) + sinf((x + y) * 4 + t * 0.4f);
+        c = palc(v / 6 + t * 0.02f);
+        break;
+    }
+    case FX_BREATHE: {
+        // fades colour -> next colour -> ... (never through black)
+        float ph = t * 0.35f;
+        int k = (int)floorf(ph);
+        c = mixc(pal[k % npal], pal[(k + 1) % npal], smooth01(ph - k));
+        break;
+    }
+    case FX_TEMP: {
+        float p = isnan(temp_smooth) ? 0 : (temp_smooth - param_cold) / (param_hot - param_cold);
+        c = scalec(grad(p), 0.8f + 0.2f * caustic_n(x, y, t * 0.5f));
+        break;
+    }
+    case FX_AUDIO: {
+        // VU: RAM fills bottom->top, GPU from the centre outwards; bass lifts brightness
+        float pos = l->dev == DEV_GPU || l->dev == DEV_EXT ? fabsf(l->fill - 0.5f) * 2 : l->fill;
+        float lit = smooth01((level_smooth * 1.15f - pos) / 0.12f + 0.5f);
+        c = scalec(grad(pos * 0.7f + bass_smooth * 0.3f), 0.1f + 0.9f * lit * (0.6f + 0.4f * bass_smooth));
+        break;
+    }
+    case FX_STATIC:
+        c = pal[0];
+        break;
+    case FX_OFF:
+    default:
+        break;
+    }
+    c = scalec(c, zlevel[z]);
+    c.r = clampf(c.r, 0, 1); c.g = clampf(c.g, 0, 1); c.b = clampf(c.b, 0, 1);
+    return c;
+}
+
 void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, rgbf *out) {
     if (!loaded || fx != last_fx) { load_params(); if (fx != last_fx) nbub = 0; }
     last_fx = fx;
@@ -180,79 +257,69 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
         for (int i = 0; i < nbub;) if (bub[i].y < -0.2f) bub[i] = bub[--nbub]; else i++;
     }
 
+    for (int i = 0; i < sc->count; i++) out[i] = led_color(fx, &sc->leds[i], fx_t, bub, nbub);
+}
+
+// Precomputes one device's LEDs as a looping animation the device plays on its own (Nanoleaf), so nothing has to
+// be streamed. Periodic effects loop over exactly one period (seamless); the others over ~24 s, where the device's
+// fade hides the seam. Frames are 0.3..1 s apart, in whole tenths (the device's time unit); the live clocks are
+// not touched. out[frame * stride + led index]; returns the frame count, 0 when the device shows something live
+// (temperature, audio) that has to be streamed.
+int effects_bake(int fx, const scene_t *sc, int dev, int max_frames, int stride, rgbf *out, float *step_s) {
+    if (!loaded) load_params();
+    int idx[MAX_LEDS], n = 0, e0 = -1, mixed = 0, z0 = 0;
     for (int i = 0; i < sc->count; i++) {
         const led_t *l = &sc->leds[i];
-        float x = l->x, y = l->y;
-        rgbf c = { 0, 0, 0 };
-        int z = l->zone >= 0 && l->zone < MAX_ZONES ? l->zone : ZONE_GPU;
-        int e = fx == FX_OFF ? FX_OFF : zone_fx(z);
-        if (e != FX_OFF && zmode[z] == ZMODE_WHITE) { out[i] = scalec(kelvin_rgb(zkelvin[z]), zlevel[z]); continue; }
-        if (e != FX_OFF && zmode[z] == ZMODE_STATIC) { out[i] = scalec(zpal[z][0], zlevel[z]); continue; }
-        if (zmode[z] == ZMODE_PALETTE) { pal = zpal[z]; npal = znpal[z]; } else { pal = fx_pal[e]; npal = fx_npal[e]; }
-
-        // own effect / no sync: position inside the device and a per-device clock offset
-        int solo = zeffect[z] >= 0 || !sync_all;
-        float path = solo ? l->zpath : l->path;
-        float t = (float)fx_t[e] + (solo ? z * 2.37f : 0);
-
-        switch (e) {
-        case FX_FLOW:
-        case FX_PUMP:
-            c = palc(path - t * 0.12f);
-            break;
-        case FX_CAUSTIC:
-            c = scalec(palc(x * 0.6f + t * 0.03f), 0.25f + 0.75f * caustic_n(x, y, t));
-            break;
-        case FX_BUBBLES: {
-            c = scalec(pal[0], 0.12f);
-            for (int k = 0; k < nbub; k++) {
-                if (fabsf(bub[k].x - x) > 0.01f) continue;
-                float d = (bub[k].y - y) / (l->dev == DEV_GPU || l->dev == DEV_EXT ? 0.12f : l->dev == DEV_NANO ? 0.18f : 0.07f);
-                c = addc(c, scalec(palc(bub[k].c), expf(-d * d)));
-            }
-            break;
-        }
-        case FX_COMET: {
-            float head = fractf(t * 0.2f) * 1.35f, d = head - path;
-            c = scalec(pal[npal > 2 ? 2 : npal - 1], 0.05f);
-            if (d >= 0 && d < 0.3f) {
-                float k = 1 - d / 0.3f;
-                c = addc(c, scalec(mixc(pal[0], pal[npal > 1 ? 1 : 0], d / 0.3f), k * k));
-            }
-            break;
-        }
-        case FX_LAVA: {
-            float v = sinf(x * 6 + t * 0.8f) + sinf(y * 5 - t * 0.6f) + sinf((x + y) * 4 + t * 0.4f);
-            c = palc(v / 6 + t * 0.02f);
-            break;
-        }
-        case FX_BREATHE: {
-            // fades colour -> next colour -> ... (never through black)
-            float ph = t * 0.35f;
-            int k = (int)floorf(ph);
-            c = mixc(pal[k % npal], pal[(k + 1) % npal], smooth01(ph - k));
-            break;
-        }
-        case FX_TEMP: {
-            float p = isnan(temp_smooth) ? 0 : (temp_smooth - param_cold) / (param_hot - param_cold);
-            c = scalec(grad(p), 0.8f + 0.2f * caustic_n(x, y, t * 0.5f));
-            break;
-        }
-        case FX_AUDIO: {
-            // VU: RAM fills bottom->top, GPU from the centre outwards; bass lifts brightness
-            float pos = l->dev == DEV_GPU || l->dev == DEV_EXT ? fabsf(l->fill - 0.5f) * 2 : l->fill;
-            float lit = smooth01((level_smooth * 1.15f - pos) / 0.12f + 0.5f);
-            c = scalec(grad(pos * 0.7f + bass_smooth * 0.3f), 0.1f + 0.9f * lit * (0.6f + 0.4f * bass_smooth));
-            break;
-        }
-        case FX_STATIC:
-            c = pal[0];
-            break;
-        case FX_OFF:
-        default:
-            break;
-        }
-        c = scalec(c, zlevel[z]);
-        out[i].r = clampf(c.r, 0, 1); out[i].g = clampf(c.g, 0, 1); out[i].b = clampf(c.b, 0, 1);
+        if (l->dev != dev || l->index >= stride) continue;
+        int z = l->zone >= 0 && l->zone < MAX_ZONES ? l->zone : ZONE_GPU, e = fx == FX_OFF ? FX_OFF : zone_fx(z);
+        if (e == FX_TEMP || e == FX_AUDIO) return 0;
+        if (e0 < 0) { e0 = e; z0 = z; } else if (e != e0) mixed = 1;
+        idx[n++] = i;
     }
+    if (!n) return 0;
+
+    float spd = fx_speed[e0] > 0.05f ? fx_speed[e0] : 0.05f;
+    int np = zmode[z0] == ZMODE_PALETTE ? znpal[z0] : fx_npal[e0];
+    double period;   // in effect-clock units
+    switch (e0) {
+    case FX_FLOW: case FX_PUMP: period = 1 / 0.12; break;
+    case FX_COMET:   period = 5; break;
+    case FX_BREATHE: period = (np > 0 ? np : 1) / 0.35; break;
+    case FX_LAVA:    period = 2 * 3.14159265 / 0.2; break;   // the waves repeat; the slow palette drift makes a soft seam
+    default:         period = 24 * spd; break;
+    }
+    if (mixed) period = 24 * spd;
+    double secs = period / spd;
+    if (secs < 2) secs = 2; if (secs > 60) secs = 60;
+    int still = e0 == FX_OFF || e0 == FX_STATIC || zmode[z0] == ZMODE_WHITE || zmode[z0] == ZMODE_STATIC;
+    int nf = still && !mixed ? 1 : (int)(secs / 0.5 + 0.5);
+    if (nf > max_frames) nf = max_frames;
+    if (nf < 1) nf = 1;
+    float step = nf == 1 ? 1.0f : (float)((int)(secs / nf * 10 + 0.5)) / 10;
+    if (step < 0.1f) step = 0.1f;
+    if (nf > 1) { int f2 = (int)(secs / step + 0.5); if (f2 >= 2 && f2 <= max_frames) nf = f2; }
+
+    // bubbles: a local swarm over this device's lanes, warmed up for 3 s so the loop starts full
+    bubble lb[64]; int nlb = 0;
+    double clk[FX_N];
+    const double sub = 0.05;
+    for (double t = -3; t < (nf - 1) * step + 1e-6; t += sub) {
+        if (e0 == FX_BUBBLES || mixed) {
+            float bs = fx_speed[FX_BUBBLES];
+            if (nlb < 64 && (float)rand() / RAND_MAX < sub * bs * 4) {
+                const led_t *l = &sc->leds[idx[rand() % n]];
+                bubble b = { l->x, 1.15f, 0.25f + 0.2f * rand() / RAND_MAX, 0.33f + 0.5f * rand() / RAND_MAX };
+                lb[nlb++] = b;
+            }
+            for (int i = 0; i < nlb; i++) lb[i].y -= lb[i].v * (float)sub * bs;
+            for (int i = 0; i < nlb;) if (lb[i].y < -0.2f) lb[i] = lb[--nlb]; else i++;
+        }
+        if (t < -1e-6) continue;
+        int f = (int)(t / step + 0.5);
+        if (fabs(t - f * step) > sub / 2 + 1e-6 || f >= nf) continue;
+        for (int e = 0; e < FX_N; e++) clk[e] = fx_t[e] + f * step * fx_speed[e];
+        for (int k = 0; k < n; k++) out[f * stride + sc->leds[idx[k]].index] = led_color(fx, &sc->leds[idx[k]], clk, lb, nlb);
+    }
+    *step_s = step;
+    return nf;
 }

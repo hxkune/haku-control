@@ -921,7 +921,11 @@ function updateNano() {
   $$('[data-pair-msg]').forEach(p => p.textContent = n.pair ? t('pair.' + n.pair) : '');
   $$('[data-pair]').forEach(b => b.disabled = n.pair === 1 || n.pair === 2);
   const r = +cv('nanoleaf', 'rate', 10); setRange($('#nano-rate'), r); $('#nano-rate-val').textContent = r + t('per.s');
+  const dev = cv('nanoleaf', 'mode', 'device') !== 'stream';
+  $('#nano-device').checked = dev;
+  $('#nano-rate-note').textContent = t(dev ? 'nano.rate.live' : 'nano.rate.stream');
 }
+$('#nano-device').addEventListener('change', e => { setCfg('nanoleaf', 'mode', e.target.checked ? 'device' : 'stream'); updateNano(); });
 
 // bulbs
 function buildBulbs() {
