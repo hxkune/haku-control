@@ -9,6 +9,7 @@ Every fake prints what it receives (frames per second, a sample colour), so a de
     OpenRGB  127.0.0.1       (port 6742, two controllers)
     Govee    127.0.0.1       (scan answers on UDP 4002, commands on 4003)
     LIFX     127.0.0.1       (UDP 56700)
+    WiZ      127.0.0.1       (UDP 38899)
     Yeelight 127.0.0.1       (TCP 55443, music mode)
     Hue      127.0.0.1:8081  (pairing succeeds on the second try, 3 colour lights)
 """
@@ -209,6 +210,26 @@ def lifx():
         elif typ == 117: log('lifx', f'power {struct.unpack("<H", p[:2])[0]}')
         else: log('lifx', f'type {typ}')
 
+# ------------------------------------------------------------------ WiZ
+def wiz():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(('', 38899))
+    pilot = {'mac': 'a8bb50c0ffee', 'rssi': -50, 'state': True, 'sceneId': 11, 'speed': 100, 'temp': 2700, 'dimming': 60}
+    r = Rate('wiz')
+    while True:
+        d, addr = s.recvfrom(1500)
+        try: js = json.loads(d)
+        except ValueError: continue
+        m, p = js.get('method'), js.get('params', {})
+        def out(res): s.sendto(json.dumps({'method': m, 'env': 'pro', 'result': res}).encode(), addr)
+        if m == 'registration': out({'mac': pilot['mac'], 'success': True}); log('wiz', f'registration from {addr[0]}')
+        elif m == 'getSystemConfig': out({'mac': pilot['mac'], 'moduleName': 'ESP01_SHRGB_03', 'fwVersion': '1.25.0', 'homeId': 1})
+        elif m == 'getPilot': out(pilot); log('wiz', 'getPilot')
+        elif m == 'setPilot':
+            out({'success': True})
+            if 'r' in p: r.hit(f"rgb {p['r']} {p['g']} {p['b']} dim {p['dimming']}")
+            else: log('wiz', f'setPilot {p}')
+
 # ------------------------------------------------------------------ Yeelight
 def yeelight():
     ssdp = mcast_socket('239.255.255.250', 1982)
@@ -293,7 +314,7 @@ def serve(cls, port, tag):
 FAKES = {
     'wled': lambda: [threading.Thread(target=serve, args=(WledHttp, 8080, 'wled'), daemon=True).start(),
                      threading.Thread(target=serve, args=(WledHttp, 80, 'wled'), daemon=True).start(), wled_udp()],
-    'openrgb': openrgb, 'govee': govee, 'lifx': lifx, 'yeelight': yeelight,
+    'openrgb': openrgb, 'govee': govee, 'lifx': lifx, 'yeelight': yeelight, 'wiz': wiz,
     'hue': lambda: serve(HueHttp, 8081, 'hue'),
     'mdns': lambda: mdns_responder([b'_wled', b'_hue']),
 }

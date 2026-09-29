@@ -6,7 +6,7 @@
 #include <process.h>
 #include <stdlib.h>
 
-static const ext_driver *drivers[] = { &drv_wled, &drv_openrgb, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue };
+static const ext_driver *drivers[] = { &drv_wled, &drv_openrgb, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz };
 #define NDRV (int)(sizeof(drivers) / sizeof(drivers[0]))
 
 const ext_driver *ext_driver_by_kind(const char *kind) {
@@ -54,6 +54,43 @@ static void publish_slots(void) {
         strcpy_s(s->info, sizeof(s->info), d->info); strcpy_s(s->kind, sizeof(s->kind), d->drv->kind);
     }
     ReleaseSRWLockExclusive(&lk);
+}
+
+// ---- connecting happens on short-lived threads, on a copy of the device, so one light that is off or unplugged
+// (connect timeouts of a second or more) never holds up the frames of the others. The worker takes the result
+// over on its next round, if the device is still there and unchanged; otherwise the connection is closed.
+typedef struct { ext_dev d; int ok; volatile LONG done; } opener_t;
+static opener_t *openers[EXT_MAX];
+static volatile LONG openers_running;
+
+static unsigned __stdcall opener_fn(void *p) {
+    opener_t *o = p;
+    net_init();
+    o->ok = o->d.drv->open(&o->d);
+    InterlockedExchange(&o->done, 1);
+    InterlockedDecrement(&openers_running);
+    return 0;
+}
+
+static int opening(int id) {
+    for (int i = 0; i < EXT_MAX; i++) if (openers[i] && openers[i]->d.id == id) return 1;
+    return 0;
+}
+
+static void start_open(ext_dev *d) {
+    for (int i = 0; i < EXT_MAX; i++) {
+        if (openers[i]) continue;
+        opener_t *o = calloc(1, sizeof(opener_t));
+        if (!o) return;
+        o->d = *d;
+        o->d.sock = INVALID_SOCKET; o->d.priv = NULL;
+        InterlockedIncrement(&openers_running);
+        HANDLE t = (HANDLE)_beginthreadex(NULL, 0, opener_fn, o, 0, NULL);
+        if (!t) { InterlockedDecrement(&openers_running); free(o); return; }
+        CloseHandle(t);
+        openers[i] = o;
+        return;
+    }
 }
 
 static void let_go(ext_dev *d, int how) {
@@ -129,6 +166,33 @@ static unsigned __stdcall worker(void *p) {
         }
         DWORD now = GetTickCount();
         int changed_state = 0;
+        // finished connection attempts
+        for (int i = 0; i < EXT_MAX; i++) {
+            opener_t *o = openers[i];
+            if (!o || !o->done) continue;
+            openers[i] = NULL;
+            ext_dev *d = NULL;
+            for (int k = 0; k < ndevs; k++)
+                if (devs[k].id == o->d.id && devs[k].drv == o->d.drv && !strcmp(devs[k].host, o->d.host) && devs[k].sub == o->d.sub && !devs[k].online) d = &devs[k];
+            if (o->ok && d && d->enabled) {
+                int k = (int)(d - devs);
+                d->sock = o->d.sock; d->priv = o->d.priv; d->nleds = o->d.nleds;
+                strcpy_s(d->info, sizeof(d->info), o->d.info); strcpy_s(d->key, sizeof(d->key), o->d.key);
+                d->online = 1; d->fails = 0; seen[k] = 0;
+                memset(last8[k], 0, sizeof(last8[k]));
+                if (d->cfg_leds > 0 && d->drv->per_led) d->nleds = min(d->cfg_leds, d->nleds > 0 ? d->nleds : d->cfg_leds);
+                if (d->nleds > EXT_MAX_LEDS) d->nleds = EXT_MAX_LEDS;
+                logf_("dev.%d (%s %s): online, %d LEDs %s", d->id, d->drv->kind, d->host, d->nleds, d->info);
+            } else if (o->ok) {
+                o->d.drv->close(&o->d);   // removed, changed or switched off meanwhile
+            } else if (d) {
+                d->fails++;
+                d->next_try = now + (d->fails < 3 ? 3000 : d->fails < 10 ? 10000 : 30000);
+                if (d->fails == 1) logf_("dev.%d (%s %s): not reachable, retrying", d->id, d->drv->kind, d->host);
+            }
+            free(o);
+            changed_state = 1;   // online state / info text for the UI
+        }
         for (int k = 0; k < ndevs; k++) {
             ext_dev *d = &devs[k];
             if (!d->enabled) {
@@ -136,21 +200,7 @@ static unsigned __stdcall worker(void *p) {
                 continue;
             }
             if (!d->online) {
-                if ((int)(now - d->next_try) < 0) continue;
-                int prev_leds = d->nleds;
-                if (d->drv->open(d)) {
-                    d->online = 1; d->fails = 0; seen[k] = 0;
-                    memset(last8[k], 0, sizeof(last8[k]));
-                    if (d->cfg_leds > 0 && d->drv->per_led) d->nleds = min(d->cfg_leds, d->nleds > 0 ? d->nleds : d->cfg_leds);
-                    if (d->nleds > EXT_MAX_LEDS) d->nleds = EXT_MAX_LEDS;
-                    logf_("dev.%d (%s %s): online, %d LEDs %s", d->id, d->drv->kind, d->host, d->nleds, d->info);
-                } else {
-                    d->fails++;
-                    d->next_try = now + (d->fails < 3 ? 3000 : d->fails < 10 ? 10000 : 30000);
-                    if (d->fails == 1) logf_("dev.%d (%s %s): not reachable, retrying", d->id, d->drv->kind, d->host);
-                }
-                (void)prev_leds;
-                changed_state = 1;   // online state / info text for the UI
+                if ((int)(now - d->next_try) >= 0 && !opening(d->id)) start_open(d);
                 continue;
             }
             // frame from the render thread
@@ -183,6 +233,12 @@ static unsigned __stdcall worker(void *p) {
     }
     int how = leave_mode();
     for (int k = 0; k < ndevs; k++) let_go(&devs[k], how);
+    // connection attempts still running: wait a little, close what connected, leave the rest to the process exit
+    for (int w = 0; w < 30 && openers_running > 0; w++) Sleep(100);
+    for (int i = 0; i < EXT_MAX; i++) if (openers[i] && openers[i]->done) {
+        if (openers[i]->ok) openers[i]->d.drv->close(&openers[i]->d);
+        free(openers[i]); openers[i] = NULL;
+    }
     return 0;
 }
 
