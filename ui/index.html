@@ -168,6 +168,11 @@
       <p class="pair-msg" data-pair-msg></p>
     </div>
     <div id="nano-main" class="nano-grid">
+      <div class="nano-ctls" id="nano-ctls">
+        <div class="seg" id="nano-pick"></div>
+        <span class="grow"></span>
+        <button class="btn small ghost" data-pair><span data-i18n="nano.add">Add a controller</span></button>
+      </div>
       <div class="card nano-wall">
         <div class="card-head">
           <div><h3 id="nano-name">Nanoleaf</h3><p class="muted" id="nano-status"></p></div>
@@ -182,14 +187,14 @@
           <button class="btn ghost" id="nano-flip">
             <svg viewBox="0 0 24 24"><path d="M12 3v18M16 7l4 5-4 5zM8 7l-4 5 4 5z"/></svg><span data-i18n="flip">Mirror</span></button>
           <span class="grow"></span>
-          <button class="btn ghost" data-pair data-i18n="reconnect">Reconnect</button>
+          <button class="btn ghost" id="nano-forget" data-i18n="nano.forget">Forget</button>
         </div>
         <p class="pair-msg" data-pair-msg></p>
         <p class="hint" data-i18n="nano.hint"></p>
       </div>
       <div class="card">
         <h3 data-i18n="colour">Colour</h3>
-        <div class="zone" data-zone="zone.nanoleaf"></div>
+        <div class="zone" id="nano-zone" data-zone="zone.nanoleaf"></div>
         <div class="set-row nano-mode">
           <div><b data-i18n="nano.device">Play effects on the panels</b><p class="muted" data-i18n="nano.device.note"></p></div>
           <label class="switch"><input type="checkbox" id="nano-device"><span></span></label>

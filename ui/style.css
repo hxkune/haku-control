@@ -275,6 +275,11 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .pc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
 .nano-grid { display: grid; grid-template-columns: 1fr 330px; gap: 20px; align-items: start; }
 .tools { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+/* several Nanoleaf controllers: one button each above the page; the add button is always there */
+.nano-ctls { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.nano-ctls .seg { margin-top: 0; flex-wrap: wrap; }
+.nano-ctls .seg:empty { display: none; }
+.nano-ctls .seg .dot { display: inline-block; margin-right: 7px; vertical-align: 1px; }
 .pair-msg { margin-top: 12px; font-size: 13px; color: var(--text); }
 .pair-msg::before { content: "> "; color: var(--muted); }
 .pair-msg:empty { display: none; }

@@ -35,7 +35,9 @@ device runs its own effect.
 
 | Device | How | Status |
 | --- | --- | --- |
-| Nanoleaf Blocks / Shapes / Canvas / Lines | official OpenAPI + UDP streaming | Blocks verified |
+| Nanoleaf Blocks / Shapes / Canvas / Lines / Elements, several controllers | official OpenAPI + UDP streaming, each controller its own device | Blocks verified; several controllers tested against a simulator |
+| Secretlab MAGRGB (Smart Lighting Edition, by Nanoleaf) | Nanoleaf OpenAPI, streamed | tested against a simulator |
+| Nanoleaf Pegboard Desk Dock, PC Screen Mirror Lightstrip (USB) | Nanoleaf's USB HID protocol | **experimental: not tested yet** |
 | WLED (ESP8266 / ESP32 LED controllers) | UDP realtime (DNRGB), found via mDNS | tested against a simulator |
 | Philips Hue (bridge) | local REST API, link-button pairing | tested against a simulator |
 | Govee (lights with *LAN Control*) | official LAN API | tested against a simulator |
@@ -76,7 +78,11 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
   OpenRGB drives the same MSI board or memory as haku control's own drivers, set `[devices] msi=0` / `ene=0`.
 
 - **Nanoleaf:** *Devices → Sign-ins and pairing → Connect Nanoleaf*, then hold the controller's power button for
-  5–7 s.
+  5–7 s. Every controller becomes its own device (own map, colours and switch); *Add a controller* on the Nanoleaf
+  page pairs the next one. **Secretlab MAGRGB:** first turn the strip's API on in Nanoleaf Desktop (select the strip →
+  *Enable API*), press *Connect* here, then *Connect to API* in Nanoleaf Desktop within 30 s.
+- **Nanoleaf Pegboard / Screen Mirror Lightstrip (USB):** *Devices → Scan* finds them on USB; quit Nanoleaf Desktop
+  first, or both apps drive the lights at once.
 - **AiDot bulbs:** *Devices → Sign-ins and pairing → Sign in* with your AiDot app account, once. The password goes
   only to AiDot (RSA-encrypted, like their app does it) and is not stored; only each bulb's local key is saved.
   After that, everything runs locally. (`scripts\aidot-setup.ps1` does the same from PowerShell 7.)

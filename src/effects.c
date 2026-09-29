@@ -74,7 +74,7 @@ int effects_need_audio(void) { return used_audio; }
 void zone_section(int zone, char *out, int cap) {
     if (zone == ZONE_RAM) snprintf(out, cap, "zone.ram");
     else if (zone == ZONE_GPU) snprintf(out, cap, "zone.gpu");
-    else if (zone == ZONE_NANO) snprintf(out, cap, "zone.nanoleaf");
+    else if (zone >= ZONE_NANO0 && zone < ZONE_NANO0 + NANO_MAX) { if (zone == ZONE_NANO0) snprintf(out, cap, "zone.nanoleaf"); else snprintf(out, cap, "zone.nanoleaf%d", zone - ZONE_NANO0 + 1); }
     else if (zone >= ZONE_EXT0) snprintf(out, cap, "zone.dev%d", ext_slot_id(zone - ZONE_EXT0));
     else snprintf(out, cap, "zone.light%d", zone - ZONE_LIGHT0 + 1);
 }
@@ -266,12 +266,12 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
 // fade hides the seam. Frames are 0.3..1 s apart, in whole tenths (the device's time unit); the live clocks are
 // not touched. out[frame * stride + led index]; returns the frame count, 0 when the device shows something live
 // (temperature, audio) that has to be streamed.
-int effects_bake(int fx, const scene_t *sc, int dev, int max_frames, int stride, rgbf *out, float *step_s) {
+int effects_bake(int fx, const scene_t *sc, int dev, int zone, int max_frames, int stride, rgbf *out, float *step_s) {
     if (!loaded) load_params();
     int idx[MAX_LEDS], n = 0, e0 = -1, mixed = 0, z0 = 0;
     for (int i = 0; i < sc->count; i++) {
         const led_t *l = &sc->leds[i];
-        if (l->dev != dev || l->index >= stride) continue;
+        if (l->dev != dev || (zone >= 0 && l->zone != zone) || l->index >= stride) continue;
         int z = l->zone >= 0 && l->zone < MAX_ZONES ? l->zone : ZONE_GPU, e = fx == FX_OFF ? FX_OFF : zone_fx(z);
         if (e == FX_TEMP || e == FX_AUDIO) return 0;
         if (e0 < 0) { e0 = e; z0 = z; } else if (e != e0) mixed = 1;

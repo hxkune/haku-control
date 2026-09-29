@@ -18,13 +18,17 @@ window.chrome = { webview: {
   postMessage(s) { const o = JSON.parse(s); console.log('->', o); if (o.cmd === 'hello') setTimeout(() => emit(STATE), 30); },
   addEventListener(t, f) { L.push(f); },
 } };
-const LAY = LAYOUTS[location.hash.slice(1)];
+const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
 const panels = LAY ? LAY.panels : [[.83,.12,33],[.83,.5,33],[.83,.88,33],[.45,.69,33],[.45,.12,33],[.54,.99,34],[.36,.99,34],[.54,.44,34],[.36,.44,34]];
 const STATE = {
   type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
-  nano: { configured: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', side: .45, unit: LAY ? LAY.unit : 0, pair: 0, panels },
+  // #multi: a second controller (Shapes hexagons) and a Secretlab MAGRGB strip next to the Blocks
+  nano: { pair: 0, max: 8, ctls: [{ slot: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', model: 'NL81', side: .45, unit: LAY ? LAY.unit : 0, stream: 0, panels }].concat(MULTI ? [
+    { slot: 2, online: 1, ip: '192.168.1.41', name: 'Shapes 77C1', model: 'NL42', side: .3, unit: LAYOUTS.hex.unit, stream: 0, panels: LAYOUTS.hex.panels },
+    { slot: 3, online: 1, ip: '192.168.1.42', name: 'Secretlab MAGRGB', model: 'NL72S2', side: .02, unit: 0, stream: 1, panels: Array.from({ length: 41 }, (_, i) => [(40 - i) / 40, .5, 0, 0]) },
+  ] : []) },
   ext: {
     devs: [
       { id: 1, kind: 'wled', title: 'WLED', name: 'Desk strip', host: '192.168.1.60', sub: -1, leds: 60, per_led: 1, online: 1, enabled: 1, info: 'WLED 0.14.4 · esp32' },
@@ -54,7 +58,7 @@ setInterval(() => {
   for (let s = 0; s < 2; s++) for (let i = 0; i < 8; i++) l.push([s, i, hx(pc((s * 8 + i) / 36 - t * .12))]);
   for (let i = 0; i < 8; i++) l.push([2, i, hx(pc((16 + i) / 36 - t * .12))]);
   for (let i = 0; i < 3; i++) l.push([4, i, i === 0 ? 'ffd0a0' : hx(pc(i / 3 - t * .12))]);
-  panels.forEach((p, i) => l.push([5, i, hx(pc(p[1] * .6 + .4 - t * .12))]));
+  STATE.nano.ctls.forEach(c => c.panels.forEach((p, i) => l.push([200 + c.slot - 1, i, hx(pc(p[1] * .6 + p[0] * .3 + .4 - t * .12 + c.slot * .3))])));
   l.push([3, 0, hx(pc(.5 - t * .12))]);
   for (let i = 0; i < 60; i++) l.push([100, i, hx(pc(i / 60 - t * .12))]);
   for (let i = 0; i < 52; i++) l.push([101, i, hx(pc(i / 52 + .3 - t * .12))]);

@@ -9,17 +9,18 @@
 #define MAX_LEDS     2048   // whole scene (LAN strips can be long)
 #define EXT_SLOTS    16     // LAN / bridge devices (devices.c)
 #define MAX_PALETTE  8
+#define NANO_MAX     8      // Nanoleaf controllers
 
 typedef struct { float r, g, b; } rgbf;
 
-typedef enum { DEV_RAM0, DEV_RAM1, DEV_GPU, DEV_BOARD, DEV_LIGHT, DEV_NANO, DEV_EXT, DEV_COUNT } dev_id;   // DEV_EXT: slot = zone - ZONE_EXT0
+typedef enum { DEV_RAM0, DEV_RAM1, DEV_GPU, DEV_BOARD, DEV_LIGHT, DEV_NANO, DEV_EXT, DEV_COUNT } dev_id;   // DEV_EXT: slot = zone - ZONE_EXT0, DEV_NANO: zone - ZONE_NANO0
 
 // One physical LED with its position in a shared "scene" space.
 //   x, y  : 0..1 (y = 0 at top)
 //   path  : 0..1 position along the chain RAM0 -> RAM1 -> GPU (used by flowing effects)
 //   fill  : 0..1 position inside its own device (bottom->top for RAM, left->right for GPU)
 // Colour zones: each can follow the effect, use its own palette, or hold a fixed colour.
-enum { ZONE_RAM, ZONE_GPU, ZONE_NANO, ZONE_LIGHT0, ZONE_EXT0 = ZONE_LIGHT0 + 8, MAX_ZONES = ZONE_EXT0 + EXT_SLOTS };
+enum { ZONE_RAM, ZONE_GPU, ZONE_NANO0, ZONE_LIGHT0 = ZONE_NANO0 + NANO_MAX, ZONE_EXT0 = ZONE_LIGHT0 + 8, MAX_ZONES = ZONE_EXT0 + EXT_SLOTS };
 
 typedef struct {
     dev_id dev;
@@ -70,7 +71,7 @@ int  effect_index(const char *id);
 const wchar_t *effect_title(int i);   // in the chosen language
 void effects_render(int effect, const scene_t *sc, const sensors_t *sn, double dt, rgbf *out);
 void effects_reset(void);
-int  effects_bake(int effect, const scene_t *sc, int dev, int max_frames, int stride, rgbf *out, float *step);   // a device's loop, see effects.c
+int  effects_bake(int effect, const scene_t *sc, int dev, int zone, int max_frames, int stride, rgbf *out, float *step);   // a device's loop, see effects.c
 void zone_section(int zone, char *out, int cap);
 int  effects_need_gpu_temp(void);
 int  effects_need_audio(void);
@@ -101,23 +102,26 @@ void lights_suspend(int sleeping);   // PC sleep / resume
 int  lights_changed(void);        // 1 once after the key file was reloaded
 const char *lights_ip(int i);
 
-// ---- dev_nanoleaf.c (Nanoleaf panels, local OpenAPI + UDP extControl, own thread)
+// ---- dev_nanoleaf.c (Nanoleaf controllers, local OpenAPI + UDP extControl, a thread each)
+// k = slot - 1 (0..NANO_MAX-1): the first controller is [nanoleaf] / zone.nanoleaf, the others [nanoleafN] / zone.nanoleafN
 int  nano_start(void);
-int  nano_configured(void);
-int  nano_online(void);
-int  nano_count(void);
-int  nano_layout_changed(void);   // 1 once after the panel layout was (re)read
-void nano_panel(int i, float *x, float *y, float *path);
-void nano_submit(const rgbf *c, int n, int enable);
+int  nano_configured(void);       // any controller paired
+int  nano_present(int k);
+int  nano_count(int k);
+int  nano_layout_changed(void);   // 1 once after a panel layout was (re)read or a controller came / went
+void nano_panel(int k, int i, float *x, float *y, float *path);
+void nano_title(int k, char *out, int cap);
+void nano_submit(int k, const rgbf *c, int n, int enable);
 #define NANO_MAX_PANELS 64
 #define NANO_MAX_FRAMES 60
-int  nano_on_device(void);        // effects play on the panels themselves ([nanoleaf] mode != stream)
-int  nano_bake_wanted(void);      // 1 once when the panels need their animation (again)
-void nano_upload(const rgbf *frames, int nframes, int npanels, float step);   // frames[f * NANO_MAX_PANELS + panel]; 0 frames: stream
+int  nano_on_device(int k);       // effects play on the panels themselves ([nanoleaf] mode != stream, custom animations work)
+int  nano_bake_wanted(int k);     // 1 once when the panels need their animation (again)
+void nano_upload(int k, const rgbf *frames, int nframes, int npanels, float step);   // frames[f * NANO_MAX_PANELS + panel]; 0 frames: stream
 void nano_stop(void);
-void nano_pair_start(void);       // find a controller and wait for its power button (runs in background)
-void nano_relayout(void);
-void nano_suspend(int sleeping);  // PC sleep / resume         // re-read the layout (after rotate / flip changed)
+void nano_pair_start(void);       // find a new controller and wait for its power button (runs in background)
+void nano_forget(int slot);
+void nano_relayout(void);         // re-read the layouts (after rotate / flip changed)
+void nano_suspend(int sleeping);  // PC sleep / resume
 int  nano_json(char *out, int cap);
 
 // ---- devices.c (LAN / bridge lights: WLED, OpenRGB, Govee, LIFX, Yeelight, Hue; own worker thread)

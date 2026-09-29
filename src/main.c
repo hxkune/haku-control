@@ -25,7 +25,7 @@
 #define ID_RAM_ON    1205
 #define ID_GPU_ON    1206
 #define ID_LIGHTS_ON 1207
-#define ID_NANO_ON   1208
+#define ID_NANO_ON   1300   // + controller 0..NANO_MAX-1
 #define WM_REHOTKEY  (WM_APP + 2)
 #define WM_REMOTE_CMD (WM_APP + 3)
 #define SAVE_TIMER   1
@@ -102,7 +102,7 @@ static float    brightness = 1.0f;
 static volatile LONG cfg_gen;         // bumps on every settings change (the Nanoleaf loop is baked again)
 static int      prev_effect = 0;
 static scene_t  scene;
-static int      gpu_leds = 8, gpu_rev, ram_rev, ram_swap, board_led = 1, ram_on = 1, gpu_on = 1, lights_on = 1, nano_on = 1;
+static int      gpu_leds = 8, gpu_rev, ram_rev, ram_swap, board_led = 1, ram_on = 1, gpu_on = 1, lights_on = 1, nano_on[NANO_MAX];
 // Colour correction for the PWM-driven LEDs (RAM, GPU block, board): colours are sRGB-like, the LEDs are linear,
 // so they get a gamma curve; plus a per-device white balance ([calibration] ram_warmth / gpu_warmth, -100..100).
 enum { FIX_RAM, FIX_GPU };
@@ -149,6 +149,9 @@ void logf_(const char *fmt, ...) {
     fputc('\n', logfile); fflush(logfile);
 }
 
+// [layout] switch of Nanoleaf controller k: nanoleaf_enabled, nanoleaf2_enabled...
+static void nano_key(int k, char *out, int cap) { if (k) snprintf(out, cap, "nanoleaf%d_enabled", k + 1); else snprintf(out, cap, "nanoleaf_enabled"); }
+
 // ---- scene layout: RAM0 bottom->top, RAM1 bottom->top, then GPU left->right
 static void build_scene(void) {
     gpu_leds  = cfg_geti("layout", "gpu_leds", 8);
@@ -160,7 +163,7 @@ static void build_scene(void) {
     ram_on    = cfg_geti("layout", "ram_enabled", 1);
     gpu_on    = cfg_geti("layout", "gpu_enabled", 1);
     lights_on = cfg_geti("layout", "lights_enabled", 1);
-    nano_on   = cfg_geti("layout", "nanoleaf_enabled", 1);
+    for (int k = 0; k < NANO_MAX; k++) { char key[32]; nano_key(k, key, sizeof(key)); nano_on[k] = cfg_geti("layout", key, 1); }
     load_calibration();
     // disabled devices are left out of the scene, so effects span only what is lit
     int sticks = !ram_on ? 0 : have_ene ? ene_count() : 2;
@@ -193,13 +196,20 @@ static void build_scene(void) {
         l->x = nl > 1 ? 0.1f + 0.8f * i / (nl - 1) : 0.5f; l->y = 0.5f;
         l->fill = nl > 1 ? (float)i / (nl - 1) : 0.5f; l->path = (float)i / nl; l->zpath = 0;
     }
-    // Nanoleaf panels: real wall positions (from the controller's layout), placed in the middle of the scene
-    int nn = nano_on ? nano_count() : 0;
-    for (int i = 0; i < nn && s.count < MAX_LEDS - 1; i++) {
-        led_t *l = &s.leds[s.count++];
-        float x, y, path; nano_panel(i, &x, &y, &path);
-        l->dev = DEV_NANO; l->index = i; l->zone = ZONE_NANO;
-        l->x = 0.1f + 0.8f * x; l->y = 0.1f + 0.8f * y; l->fill = path; l->path = path; l->zpath = path;
+    // Nanoleaf panels: real wall positions (from each controller's layout), several controllers side by side
+    int nctl = 0, ci = 0;
+    for (int k = 0; k < NANO_MAX; k++) if (nano_on[k] && nano_count(k)) nctl++;
+    for (int k = 0; k < NANO_MAX; k++) {
+        int nn = nano_on[k] ? nano_count(k) : 0;
+        if (!nn) continue;
+        float x0 = 0.1f + 0.8f * ci / nctl, w = 0.8f / nctl;
+        for (int i = 0; i < nn && s.count < MAX_LEDS - 1; i++) {
+            led_t *l = &s.leds[s.count++];
+            float x = 0.5f, y = 0.5f, path = 0; nano_panel(k, i, &x, &y, &path);
+            l->dev = DEV_NANO; l->index = i; l->zone = ZONE_NANO0 + k;
+            l->x = x0 + w * x; l->y = 0.1f + 0.8f * y; l->fill = path; l->path = (ci + path) / nctl; l->zpath = path;
+        }
+        ci++;
     }
     // LAN / bridge devices: strips as rows across the scene, separate lights spread like bulbs
     int ne = ext_count(), rows = 0;
@@ -304,7 +314,8 @@ static unsigned __stdcall render_thread(void *p) {
             if (sc.leds[i].dev == DEV_LIGHT && sc.leds[i].index < 8) effects_zone_white(sc.leds[i].zone, &bulb_k[sc.leds[i].index]);
         LeaveCriticalSection(&cs);
 
-        rgbf gpu[40] = { 0 }, board = { 0, 0, 0 }, ram[2][8] = { 0 }, bulb[8] = { 0 }, nano[MAX_LEDS] = { 0 }; int rn[2] = { 0, 0 }, gn = 0, bn = 0, nn = 0;
+        rgbf gpu[40] = { 0 }, board = { 0, 0, 0 }, ram[2][8] = { 0 }, bulb[8] = { 0 }; int rn[2] = { 0, 0 }, gn = 0, bn = 0;
+        static rgbf nano[NANO_MAX][NANO_MAX_PANELS]; int nn[NANO_MAX] = { 0 };
         static rgbf ext[EXT_SLOTS][512]; int en[EXT_SLOTS] = { 0 };
         for (int i = 0; i < sc.count; i++) {
             rgbf c = scalec(out[i], br);
@@ -321,10 +332,11 @@ static unsigned __stdcall render_thread(void *p) {
                     if (l->index >= bn) bn = l->index + 1;
                 }
                 break;
-            case DEV_NANO:
-                nano[l->index] = c;
-                if (l->index >= nn) nn = l->index + 1;
+            case DEV_NANO: {
+                int k = l->zone - ZONE_NANO0;
+                if (k >= 0 && k < NANO_MAX && l->index < NANO_MAX_PANELS) { nano[k][l->index] = c; if (l->index >= nn[k]) nn[k] = l->index + 1; }
                 break;
+            }
             case DEV_EXT: {
                 int k = l->zone - ZONE_EXT0;
                 if (k >= 0 && k < EXT_SLOTS && l->index < 512) { ext[k][l->index] = c; if (l->index >= en[k]) en[k] = l->index + 1; }
@@ -348,28 +360,30 @@ static unsigned __stdcall render_thread(void *p) {
         if (!ram_on) for (int st = 0; st < 2 && st < ene_count(); st++) rn[st] = 8;
 
         if (lights_count()) lights_submit(bulb, bulb_k, bn, lights_on);
-        if (nano_configured()) {
-            nano_submit(nano, nn, nano_on);
+        for (int k = 0; k < NANO_MAX; k++) {
+            if (!nano_present(k)) continue;
+            nano_submit(k, nano[k], nn[k], nano_on[k]);
             // the panels play the effect themselves: bake a new loop when what they show changed (debounced, so a
             // dragged slider sends one animation, not dozens), or when the driver asks after (re)connecting
-            static int b_fx = -2, b_on = -1; static float b_br = -1; static LONG b_gen = -1; static DWORD b_due;
+            static int b_fx[NANO_MAX], b_on[NANO_MAX], b_init; static float b_br[NANO_MAX]; static LONG b_gen[NANO_MAX]; static DWORD b_due[NANO_MAX];
+            if (!b_init) { for (int j = 0; j < NANO_MAX; j++) { b_fx[j] = -2; b_on[j] = -1; b_br[j] = -1; b_gen[j] = -1; } b_init = 1; }
             DWORD tnow = GetTickCount();
-            if (fx != b_fx || br != b_br || nano_on != b_on || cfg_gen != b_gen) {
+            if (fx != b_fx[k] || br != b_br[k] || nano_on[k] != b_on[k] || cfg_gen != b_gen[k]) {
                 // a new effect goes out at once; sliders (brightness, speed, colours) wait until they rest
-                b_due = fx != b_fx || nano_on != b_on ? tnow | 1 : (tnow + 300) | 1;
-                b_fx = fx; b_br = br; b_on = nano_on; b_gen = cfg_gen;
+                b_due[k] = fx != b_fx[k] || nano_on[k] != b_on[k] ? tnow | 1 : (tnow + 300) | 1;
+                b_fx[k] = fx; b_br[k] = br; b_on[k] = nano_on[k]; b_gen[k] = cfg_gen;
             }
-            if (nano_bake_wanted()) b_due = tnow | 1;
-            if (b_due && nano_on && (int)(tnow - b_due) >= 0) {   // switched off: the driver turns the panels off
+            if (nano_bake_wanted(k)) b_due[k] = tnow | 1;
+            if (b_due[k] && nano_on[k] && (int)(tnow - b_due[k]) >= 0) {   // switched off: the driver turns the panels off
                 static rgbf frames[NANO_MAX_FRAMES * NANO_MAX_PANELS];
                 float step = 1; int nf = 0;
-                b_due = 0;
-                if (nano_on_device() && nn > 0) {
-                    int maxf = 720 / nn; if (maxf > NANO_MAX_FRAMES) maxf = NANO_MAX_FRAMES; if (maxf < 4) maxf = 4;
-                    EnterCriticalSection(&cs); nf = effects_bake(fx, &sc, DEV_NANO, maxf, NANO_MAX_PANELS, frames, &step); LeaveCriticalSection(&cs);
+                b_due[k] = 0;
+                if (nano_on_device(k) && nn[k] > 0) {
+                    int maxf = 720 / nn[k]; if (maxf > NANO_MAX_FRAMES) maxf = NANO_MAX_FRAMES; if (maxf < 4) maxf = 4;
+                    EnterCriticalSection(&cs); nf = effects_bake(fx, &sc, DEV_NANO, ZONE_NANO0 + k, maxf, NANO_MAX_PANELS, frames, &step); LeaveCriticalSection(&cs);
                     for (int i = 0; i < nf * NANO_MAX_PANELS; i++) frames[i] = scalec(frames[i], br);
                 }
-                nano_upload(frames, nf, nn, step);
+                nano_upload(k, frames, nf, nn[k], step);
             }
         }
         for (int k = 0; k < EXT_SLOTS; k++) if (en[k]) ext_submit(k, ext[k], en[k]);
@@ -535,7 +549,7 @@ int app_frame_json(char *out, int cap) {
                 idx /= step;
             }
             dev = 100 + k;
-        }
+        } else if (dev == DEV_NANO) dev = 200 + sc.leds[i].zone - ZONE_NANO0;
         n += snprintf(out + n, cap - n, "%s[%d,%d,\"%02x%02x%02x\"]", first ? "" : ",", dev, idx,
                       (int)(clampf(c[i].r, 0, 1) * 255 + .5f), (int)(clampf(c[i].g, 0, 1) * 255 + .5f), (int)(clampf(c[i].b, 0, 1) * 255 + .5f));
         first = 0;
@@ -549,7 +563,7 @@ void app_set(const char *s, const char *k, const char *v) {
     SetTimer(hwnd, SAVE_TIMER, 500, NULL);
     if (!_stricmp(s, "general") && !_stricmp(k, "fps")) { int f = atoi(v); fps = f < 5 ? 5 : f > 60 ? 60 : f; }
     if (!_stricmp(s, "hotkeys") || !_stricmp(s, "general")) PostMessageW(hwnd, WM_REHOTKEY, 0, 0);   // also refreshes the tray tip (language)
-    if (!_stricmp(s, "nanoleaf") && (!_stricmp(k, "rotate") || !_stricmp(k, "flip"))) nano_relayout();
+    if (!_strnicmp(s, "nanoleaf", 8) && (!_stricmp(k, "rotate") || !_stricmp(k, "flip"))) nano_relayout();
     if (!_strnicmp(s, "dev.", 4)) { cfg_save_if_dirty(); ext_reload(); }
     if (!_stricmp(s, "remote")) { cfg_save_if_dirty(); remote_apply(); }
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
@@ -629,7 +643,11 @@ static void show_menu(void) {
     AppendMenuW(m, MF_STRING | (ram_on ? MF_CHECKED : 0), ID_RAM_ON, TR(L"Memory lighting", L"Подсветка памяти"));
     AppendMenuW(m, MF_STRING | (gpu_on ? MF_CHECKED : 0), ID_GPU_ON, TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты"));
     if (lights_count()) AppendMenuW(m, MF_STRING | (lights_on ? MF_CHECKED : 0), ID_LIGHTS_ON, TR(L"AiDot bulbs", L"Лампочки AiDot"));
-    if (nano_configured()) AppendMenuW(m, MF_STRING | (nano_on ? MF_CHECKED : 0), ID_NANO_ON, L"Nanoleaf");
+    for (int k = 0; k < NANO_MAX; k++) if (nano_present(k)) {
+        char t[64]; wchar_t w[64]; nano_title(k, t, sizeof(t));
+        MultiByteToWideChar(CP_UTF8, 0, t, -1, w, 64);
+        AppendMenuW(m, MF_STRING | (nano_on[k] ? MF_CHECKED : 0), ID_NANO_ON + k, w);
+    }
     AppendMenuW(m, MF_STRING, ID_SETTINGS, TR(L"Settings file", L"Файл настроек"));
     AppendMenuW(m, MF_STRING, ID_LOG, TR(L"Log", L"Журнал"));
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
@@ -722,7 +740,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (id == ID_RAM_ON) app_toggle_device("ram_enabled");
         else if (id == ID_GPU_ON) app_toggle_device("gpu_enabled");
         else if (id == ID_LIGHTS_ON) app_toggle_device("lights_enabled");
-        else if (id == ID_NANO_ON) app_toggle_device("nanoleaf_enabled");
+        else if (id >= ID_NANO_ON && id < ID_NANO_ON + NANO_MAX) { char key[32]; nano_key(id - ID_NANO_ON, key, sizeof(key)); app_toggle_device(key); }
         else if (id == ID_SETTINGS) open_in_editor(cfg_path());
         else if (id == ID_LOG) app_open("log");
         else if (id == ID_EXIT) DestroyWindow(h);
