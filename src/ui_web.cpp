@@ -105,6 +105,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "autostart") { app_autostart(atoi(field(js, "v").c_str())); post_state(); }
     else if (cmd == "open") app_open(field(js, "what").c_str());
     else if (cmd == "update_check") update_check_now();
+    else if (cmd == "mood") { mood_request(field(js, "text").c_str(), field(js, "again") == "1"); post_status(); }
     else if (cmd == "quit") app_quit();
     else if (cmd == "close") DestroyWindow(wnd);
 }

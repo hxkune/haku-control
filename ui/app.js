@@ -945,6 +945,49 @@ $('#upd-on').addEventListener('change', e => { setCfg('general', 'update_check',
 $('#upd-get').addEventListener('click', () => send({ cmd: 'open', what: 'release' }));
 $('#upd-now').addEventListener('click', () => send({ cmd: 'update_check' }));
 
+// ------------------------------------------------------------------ mood: describe it, a local model picks the colours
+const MOOD = { base: 0, pending: false, err: '', applied: false, text: '' };
+function askMood(again) {
+  const text = again ? MOOD.text : $('#mood-in').value.trim();
+  if (!text || (S.mood || {}).busy) return;
+  MOOD.text = text; MOOD.base = (S.mood || {}).seq || 0; MOOD.pending = true; MOOD.err = ''; MOOD.applied = false;
+  send({ cmd: 'mood', text, again: again ? '1' : '0' });
+  updateMood();
+}
+function updateMood() {
+  const M = S.mood || {};
+  if (MOOD.pending && M.seq > MOOD.base && !M.busy) { MOOD.pending = false; MOOD.err = M.err || ''; }
+  const busy = !!M.busy || MOOD.pending;
+  $('#mood-in').placeholder = t('mood.ph');
+  $('#mood').classList.toggle('busy', busy);
+  $('#mood-go').disabled = $('#mood-again').disabled = $('#mood-apply').disabled = busy;
+  const has = (M.colors || []).length > 1;
+  $('#mood-out').classList.toggle('hidden', !has);
+  if (has) {
+    const pal = M.colors.join();
+    if ($('#mood-pal').dataset.pal !== pal) {
+      $('#mood-pal').dataset.pal = pal;
+      $('#mood-pal').innerHTML = M.colors.map(c => `<i style="background:${c}"></i>`).join('');
+    }
+    const fx = (S.effects.find(e => e.id === M.effect) || {}).title || M.effect;
+    $('#mood-name').textContent = M.name || fx;
+    $('#mood-fx').textContent = `${fx} · ${t('speed').toLowerCase()} ${M.speed}`;
+  }
+  $('#mood-msg').textContent = busy ? t('mood.busy') : MOOD.err ? t('mood.' + MOOD.err) : MOOD.applied ? t('mood.applied') : '';
+}
+$('#mood-form').addEventListener('submit', e => { e.preventDefault(); askMood(false); });
+$('#mood-again').addEventListener('click', () => askMood(true));
+$('#mood-apply').addEventListener('click', () => {
+  const M = S.mood || {};
+  if (!(M.colors || []).length) return;
+  setCfg(M.effect, 'palette', palStr(M.colors));
+  setCfg(M.effect, 'speed', M.speed);
+  S.effect = M.effect;
+  send({ cmd: 'effect', id: M.effect });
+  MOOD.applied = true;
+  renderEffectSide(); markEffect(); drawAll(); updateMood();
+});
+
 function updateSettings() {
   updateRemote();
   updateUpdate();
@@ -1003,7 +1046,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings(); updateWizard();
+  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood();
   if (nanoLayoutChanged) drawAll();
 }
 

@@ -459,6 +459,8 @@ static int status_body(char *out, int cap) {
     n += remote_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"update\":");
     n += update_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"mood\":");
+    n += mood_json(out + n, cap - n);
     return n;
 }
 

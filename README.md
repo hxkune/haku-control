@@ -83,7 +83,8 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
 ### Phone
 
 *Settings → Phone → Control from your phone* serves the same interface on your home network (port 8723).
-Open the address it shows on the phone, enter the PIN from the PC once, and add the page to the home screen.
+Scan the QR code it shows with the phone camera (or open the address and type the PIN), then add the page to
+the home screen.
 Only private network addresses are served (and Tailscale's, for control from outside through your own tailnet);
 Windows asks once whether to allow the app on the network. Siri Shortcuts or scripts can send commands too:
 
@@ -91,6 +92,13 @@ Windows asks once whether to allow the app on the network. Siri Shortcuts or scr
 POST http://<pc>:8723/api/cmd   header X-Haku-Token: <token from pairing>
 {"cmd":"power"}   {"cmd":"effect","id":"lava"}   {"cmd":"brightness","v":40}
 ```
+
+### Describe a mood
+
+Type something like *"sunset on the beach"* or *"cosy evening with a book"* above the effects, and a language
+model picks the colours, the effect and its speed; *Apply* sets them on all lights. It runs on your PC through
+[Ollama](https://ollama.com) (free, offline, nothing is sent anywhere): install it and run `ollama pull gemma3:4b`
+once. Any chat model Ollama has works; `[mood] model=` picks one. Works from the phone page too.
 
 ## Build
 
@@ -103,7 +111,8 @@ build.cmd
 Output goes to `bin\`. `build.cmd dev` makes a test build in `bin-dev\`: it keeps its settings in
 `%APPDATA%\haku-control-dev`, runs without admin rights and never touches the motherboard or memory, so it
 can run next to the installed app. Stop it with `scripts\stop.ps1 -Dev`. `python tools/sim/fake_devices.py` starts
-simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue devices on this PC for it to talk to.
+simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue devices on this PC for it to talk to, and
+`python tools/sim/fake_ollama.py` a stand-in for Ollama.
 
 For UI work without the app, serve `ui\` with any static server and open
 `index.html?mock`, for example `python -m http.server -d ui 8766`. The mock fakes the core with sample data.

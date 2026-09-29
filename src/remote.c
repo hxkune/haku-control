@@ -198,7 +198,7 @@ static void handle(SOCKET c) {
     }
     if (!strcmp(method, "POST") && !strcmp(path, "/api/cmd")) {
         char cmd[32] = ""; json_get_str(body, "cmd", cmd, sizeof(cmd));
-        static const char *allowed[] = { "effect", "brightness", "set", "toggle", "power", "pair", "scan", "dev_add", "dev_remove" };
+        static const char *allowed[] = { "effect", "brightness", "set", "toggle", "power", "pair", "scan", "dev_add", "dev_remove", "mood" };
         int ok = 0;
         for (int i = 0; i < (int)(sizeof(allowed) / sizeof(allowed[0])); i++) if (!strcmp(cmd, allowed[i])) ok = 1;
         if (!ok) { reply_json(c, 400, "{\"error\":\"cmd\"}"); return; }

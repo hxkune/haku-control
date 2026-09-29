@@ -63,6 +63,20 @@
   <!-- ============ EFFECTS ============ -->
   <section class="tab active" id="tab-effects">
     <div class="card hero"><canvas id="hero"></canvas></div>
+    <div class="card mood" id="mood">
+      <form class="mood-row" id="mood-form" autocomplete="off">
+        <span class="mood-ic">✦</span>
+        <input type="text" id="mood-in" maxlength="300">
+        <button class="btn primary small" id="mood-go" type="submit"><span data-i18n="mood.go">Pick colours</span></button>
+      </form>
+      <div class="mood-out hidden" id="mood-out">
+        <div class="mood-pal" id="mood-pal"></div>
+        <div class="mood-info"><b id="mood-name"></b><small id="mood-fx"></small></div>
+        <button class="btn small ghost" id="mood-again" type="button"><span data-i18n="mood.again">Another</span></button>
+        <button class="btn small primary" id="mood-apply" type="button"><span data-i18n="mood.apply">Apply</span></button>
+      </div>
+      <p class="mood-msg" id="mood-msg"></p>
+    </div>
     <div class="fx-layout">
       <div class="fx-grid" id="fx-grid"></div>
       <div class="card fx-side">
