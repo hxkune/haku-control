@@ -706,3 +706,5 @@ body.calm .sheet.in, body.calm .sheet-wrap { animation: none; }
   .sheet-head { cursor: default; }
 }
 .hero { overflow: visible; }   /* the customize menu may reach below it */
+.hero { transition: height .45s cubic-bezier(.2, .8, .25, 1); }
+body.calm .hero { transition: none; }

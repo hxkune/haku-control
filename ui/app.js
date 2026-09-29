@@ -403,7 +403,7 @@ function sizeCanvases() {
 }
 new ResizeObserver(sizeCanvases).observe($('main'));   // also follows the sidebar sliding in / out
 
-function rr(c, x, y, w, h, r) { c.beginPath(); c.roundRect(x, y, w, h, r); }
+function rr(c, x, y, w, h, r) { c.beginPath(); c.roundRect(x, y, Math.max(0, w), Math.max(0, h), Math.max(0, r)); }
 const lit = col => col && col !== OFF;
 function avgColor(list) {
   const on = list.filter(lit);
@@ -507,18 +507,27 @@ function drawNano(c, X, Y, W, H) {
   });
 }
 
+// Bulbs stacked in a column. Each one's share of the column is its appear animation value (0..1), so a new bulb
+// grows in and the others make room. Returns the hit areas.
 function drawBulbs(c, X, Y, W, H) {
-  const n = S.bulbs.length, d = devicePixelRatio;
-  if (!n) return;
-  const r = Math.min(W * 0.3, H / (n * 2.6), 26 * d);
-  for (let i = 0; i < n; i++) {
-    const cx = X + W / 2, cy = Y + H / 2 + (i - (n - 1) / 2) * r * 2.7, col = F.bulbs[i];
+  const d = devicePixelRatio, v = S.bulbs.map((_, i) => heroAnim('bulb' + i, 1));
+  const n = v.reduce((a, b) => a + b, 0);
+  if (!n) return [];
+  const r = Math.min(W * 0.3, H / (Math.max(n, 1) * 2.6), 26 * d), hits = [];
+  let acc = 0;
+  for (let i = 0; i < v.length; i++) {
+    const cx = X + W / 2, cy = Y + H / 2 + (acc + v[i] / 2 - n / 2) * r * 2.7, col = F.bulbs[i], rr = r * (.4 + .6 * v[i]);
+    acc += v[i];
     const on = lit(col) && S.bulbs[i].online;
-    const g = c.createRadialGradient(cx, cy - r * 0.1, 0, cx, cy, r * 1.7);
+    const g = c.createRadialGradient(cx, cy - rr * 0.1, 0, cx, cy, rr * 1.7);
     if (on) { g.addColorStop(0, '#fff'); g.addColorStop(0.28, col); g.addColorStop(1, 'rgba(0,0,0,0)'); }
     else { g.addColorStop(0, '#262626'); g.addColorStop(0.5, '#161616'); g.addColorStop(1, 'rgba(0,0,0,0)'); }
-    c.beginPath(); c.arc(cx, cy, r * 1.7, 0, 7); c.fillStyle = g; c.fill();
+    c.save(); c.globalAlpha *= v[i];
+    c.beginPath(); c.arc(cx, cy, rr * 1.7, 0, 7); c.fillStyle = g; c.fill();
+    c.restore();
+    hits.push({ key: 'bulb' + i, k: 'bulb', i, x: cx - r * 1.8, y: cy - r * 1.35, w: r * 3.6, h: r * 2.7 });
   }
+  return hits;
 }
 
 // A LAN device: a strip (light bar) or separate lights (orbs), from the thinned-out live frame.
@@ -540,10 +549,22 @@ function drawExt(c, X, Y, W, H, k) {
     }
   }
 }
+// All LAN devices as rows; row heights follow the appear animation, like the bulbs. Returns the hit areas.
+const HERO_EXT_MAX = 12;
 function drawExtAll(c, X, Y, W, H) {
-  const list = S.ext.devs.map((d, k) => [d, k]).filter(([d]) => d.enabled && d.leds).slice(0, 6);
-  const rh = H / Math.max(1, list.length);
-  list.forEach(([d, k], i) => drawExt(c, X, Y + i * rh, W, rh, k));
+  const list = S.ext.devs.map((dv, k) => [dv, k, heroAnim('ext' + dv.id, dv.enabled && dv.leds ? 1 : 0)])
+    .filter(([, , v]) => v > .001).slice(0, HERO_EXT_MAX);
+  const tot = list.reduce((a, [, , v]) => a + v, 0), d = devicePixelRatio, hits = [];
+  let y = Y;
+  for (const [dv, k, v] of list) {
+    const rh = H * v / Math.max(tot, 1);
+    c.save(); c.globalAlpha *= v;
+    drawExt(c, X, y, W, rh, k);
+    c.restore();
+    hits.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, x: X + 6 * d, y, w: W - 12 * d, h: rh });
+    y += rh;
+  }
+  return hits;
 }
 
 function label(c, text, x, y, bright) {
@@ -554,46 +575,65 @@ function label(c, text, x, y, bright) {
 
 // The preview is also the quick-access widget: every device drawn in it is a hit area (HERO.hits, canvas pixels)
 // that opens its settings in a floating sheet. [ui] hero_hide lists groups left out of the preview.
-const HERO = { hits: [], hover: '' };
-const heroGroups = () => {
-  const g = [['ram', 0.2], ['gpu', 0.38]];
-  if (S.nano.configured) g.push(['nano', 0.27]);
-  if (S.bulbs.length) g.push(['bulbs', 0.15]);
-  if (S.ext.devs.some(d => d.enabled && d.leds)) g.push(['ext', 0.3]);
-  return g;
-};
+const HERO = { hits: [], hover: '', anim: {}, t: 0, k: 1, moving: false, raf: 0 };
+const HERO_GROUPS = [['ram', 0.2], ['gpu', 0.38], ['nano', 0.27], ['bulbs', 0.15], ['ext', 0.3]];
+const heroGroups = () => HERO_GROUPS.filter(([k]) => k === 'ram' || k === 'gpu' || (k === 'nano' && S.nano.configured) ||
+  (k === 'bulbs' && S.bulbs.length) || (k === 'ext' && S.ext.devs.some(d => d.enabled && d.leds)));
 const heroHidden = () => cv('ui', 'hero_hide', '').split(',').filter(Boolean);
 const groupName = k => ({ ram: t('pc.memory'), gpu: stripName(), nano: 'Nanoleaf', bulbs: t('nav.bulbs'), ext: t('nav.devices') })[k];
 
+// Eased 0..1 value per preview item (a group, a bulb, a LAN device): every draw moves it part of the way to its
+// target, frame-rate independent. While anything is still moving, drawHero keeps itself going.
+function heroAnim(key, target) {
+  let v = HERO.anim[key] ?? 0;
+  if (document.body.classList.contains('calm')) v = target;
+  else { v += (target - v) * HERO.k; if (Math.abs(target - v) < .004) v = target; }
+  HERO.anim[key] = v;
+  if (v !== target) HERO.moving = true;
+  return v;
+}
+
+// The preview grows taller when bulbs or LAN devices stack up (CSS animates the height).
+function heroHeight() {
+  const hide = heroHidden(), phone = matchMedia('(max-width: 700px)').matches;
+  const rows = Math.max(hide.includes('bulbs') ? 0 : S.bulbs.length,
+    hide.includes('ext') ? 0 : Math.min(HERO_EXT_MAX, S.ext.devs.filter(d => d.enabled && d.leds).length));
+  const h = Math.min((phone ? 180 : 240) + Math.max(0, rows - 3) * (phone ? 40 : 52), phone ? 400 : 520);
+  const el = $('#tab-effects .hero');
+  if (+el.dataset.h !== h) { el.dataset.h = h; el.style.height = h + 'px'; }
+}
+
 function drawHero() {
   const cvs = $('#hero'); if (!cvs.width) return;
+  const now = performance.now();
+  HERO.k = 1 - Math.exp(-Math.min(100, now - (HERO.t || now - 16)) / 120);
+  HERO.t = now; HERO.moving = false;
+  heroHeight();
   const c = cvs.getContext('2d'), W = cvs.width, H = cvs.height, d = devicePixelRatio;
   c.clearRect(0, 0, W, H);
-  const hide = heroHidden();
-  const cols = heroGroups().filter(([k]) => !hide.includes(k));
-  const tot = cols.reduce((a, b) => a + b[1], 0);
+  const hide = heroHidden(), present = heroGroups().map(g => g[0]);
+  const cols = HERO_GROUPS.map(([k, f]) => [k, f, heroAnim('g:' + k, present.includes(k) && !hide.includes(k) ? 1 : 0)])
+    .filter(g => g[2] > .001);
+  const tot = cols.reduce((a, [, f, v]) => a + f * v, 0);
   const hits = [];
   let x = 0;
-  for (const [k, f] of cols) {
-    const w = W * f / tot, top = 18 * d, h = H - 46 * d;
-    if (k === 'ram') drawRam(c, x, top, w, h);
-    if (k === 'gpu') drawGpu(c, x, top, w, h);
-    if (k === 'nano') drawNano(c, x, top, w, h);
-    if (k === 'bulbs') {
-      drawBulbs(c, x, top, w, h);
-      const n = S.bulbs.length, r = Math.min(w * 0.3, h / (n * 2.6), 26 * d);   // same layout as drawBulbs
-      for (let i = 0; i < n; i++) {
-        const cy = top + h / 2 + (i - (n - 1) / 2) * r * 2.7;
-        hits.push({ key: 'bulb' + i, k: 'bulb', i, x: x + w / 2 - r * 1.8, y: cy - r * 1.35, w: r * 3.6, h: r * 2.7 });
-      }
+  for (const [k, f, v] of cols) {
+    const w = W * f * v / tot, top = 18 * d, h = H - 46 * d;
+    if (w > 14 * d) {
+      c.save();
+      c.beginPath(); c.rect(x, 0, w, H); c.clip();   // a growing group never draws over its neighbours
+      c.globalAlpha = v;
+      try {   // one group failing to draw must not take the whole preview down
+        if (k === 'ram') drawRam(c, x, top, w, h);
+        if (k === 'gpu') drawGpu(c, x, top, w, h);
+        if (k === 'nano') drawNano(c, x, top, w, h);
+        if (k === 'bulbs') hits.push(...drawBulbs(c, x, top, w, h));
+        if (k === 'ext') hits.push(...drawExtAll(c, x, top, w, h));
+        if (k !== 'bulbs' && k !== 'ext') hits.push({ key: k, k, x: x + 6 * d, y: top - 8 * d, w: w - 12 * d, h: h + 16 * d });
+        if (w > 64 * d) label(c, groupName(k), x + w / 2, H - 16 * d, hits.some(h => h.key === HERO.hover && (h.k === k || h.k + 's' === k)));
+      } catch (e) { console.warn('preview', k, e); }
+      c.restore();
     }
-    if (k === 'ext') {
-      drawExtAll(c, x, top, w, h);
-      const list = S.ext.devs.map((dv, i) => [dv, i]).filter(([dv]) => dv.enabled && dv.leds).slice(0, 6), rh = h / Math.max(1, list.length);
-      list.forEach(([dv, i], j) => hits.push({ key: 'ext' + dv.id, k: 'ext', i, id: dv.id, x: x + 6 * d, y: top + j * rh, w: w - 12 * d, h: rh }));
-    }
-    if (k !== 'bulbs' && k !== 'ext') hits.push({ key: k, k, x: x + 6 * d, y: top - 8 * d, w: w - 12 * d, h: h + 16 * d });
-    if (w > 64 * d) label(c, groupName(k), x + w / 2, H - 16 * d, hits.some(h => h.key === HERO.hover && (h.k === k || h.k + 's' === k)));
     x += w;
   }
   HERO.hits = hits;
@@ -606,7 +646,15 @@ function drawHero() {
     c.fillStyle = 'rgba(255,255,255,.035)'; c.fill();
     c.strokeStyle = 'rgba(255,255,255,.28)'; c.lineWidth = d; c.stroke();
   }
+  if (HERO.moving && !HERO.raf) HERO.raf = requestAnimationFrame(() => { HERO.raf = 0; if (tab === 'effects') drawHero(); });
 }
+// the canvas follows the card while its height animates
+new ResizeObserver(() => {
+  const cvs = $('#hero'), h = cvs.parentElement.clientHeight, w = cvs.clientWidth;
+  if (!w || !h || (cvs.height === Math.round(h * devicePixelRatio) && cvs.width === Math.round(w * devicePixelRatio))) return;
+  cvs.style.height = h + 'px'; cvs.width = w * devicePixelRatio; cvs.height = h * devicePixelRatio;
+  drawHero();
+}).observe($('#tab-effects .hero'));
 const heroHit = e => {
   const cvs = $('#hero'), r = cvs.getBoundingClientRect(), d = devicePixelRatio;
   const px = (e.clientX - r.left) * d, py = (e.clientY - r.top) * d;
