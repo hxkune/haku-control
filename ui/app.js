@@ -95,10 +95,47 @@ function updateNav() {
     b.tabIndex = show ? 0 : -1;
     if (show) b.querySelector('i').textContent = String(++n).padStart(2, '0');
   });
-  $('[data-go="nano"]').classList.toggle('hidden', !!NAV_NEED.nano());
-  $('[data-go="bulbs"]').classList.toggle('hidden', !!NAV_NEED.bulbs());
-  $('#more-lights').classList.toggle('hidden', !!NAV_NEED.nano() && !!NAV_NEED.bulbs());
+  updateAccounts();
 }
+
+// ---- sign-ins and pairing (Devices tab): AiDot hands out its bulbs' local keys only to its own account
+const ACC = { shown: false, pending: false };
+function updateAccounts() {
+  const A = (S.accounts || {}).aidot || {}, nb = S.bulbs.length, N = S.nano || {};
+  $('#acc-nano').textContent = N.configured ? t(N.online ? 'acc.nano.on' : 'acc.nano.off') : t('acc.nano.none');
+  $('[data-go="nano"]').classList.toggle('hidden', !!N.configured);
+  $('#acc-aidot').textContent = nb ? t('acc.aidot.ok', nb) : t('acc.aidot.none');
+  $('#aidot-open-t').textContent = t(nb ? 'acc.signin.again' : 'acc.signin');
+  const cc = $('#aidot-cc');
+  if (!cc.options.length && A.countries) {
+    cc.innerHTML = A.countries.map(([c, n]) => `<option value="${c}">${n}</option>`).join('');
+    cc.value = cv('aidot', 'country', 'FR');
+  }
+  const busy = A.state === 1;
+  $('#aidot-go').disabled = busy;
+  if (ACC.pending && !busy && (A.state === 2 || A.state === 3)) {
+    ACC.pending = false;
+    if (A.state === 2) { ACC.shown = false; $('#aidot-email').value = ''; }
+  }
+  $('#aidot-form').classList.toggle('hidden', !ACC.shown);
+  $('#aidot-open').classList.toggle('hidden', ACC.shown);
+  const m = $('#aidot-msg'), known = A.msg && t('acc.err.' + A.msg) !== 'acc.err.' + A.msg;
+  m.textContent = busy ? t('acc.busy') : A.state === 2 ? t('acc.aidot.done', A.found) :
+    A.state === 3 ? (known ? t('acc.err.' + A.msg) : t('acc.err.vendor', A.msg)) : '';
+  m.classList.toggle('bad', A.state === 3);
+}
+$('#aidot-open').addEventListener('click', () => { ACC.shown = true; updateAccounts(); setTimeout(() => $('#aidot-email').focus(), 30); });
+$('#aidot-cancel').addEventListener('click', () => { ACC.shown = false; $('#aidot-pass').value = ''; updateAccounts(); });
+$('#aidot-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const email = $('#aidot-email').value.trim(), password = $('#aidot-pass').value, country = $('#aidot-cc').value;
+  if (!email || !password) return;
+  $('#aidot-pass').value = '';   // the password is not kept anywhere in the page either
+  setCfg('aidot', 'country', country);
+  ACC.pending = true;
+  send({ cmd: 'aidot_login', country, email, password });
+  updateAccounts();
+});
 
 function showTab(t) {
   closeSheet();

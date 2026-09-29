@@ -201,6 +201,10 @@ static void handle(SOCKET c) {
         static const char *allowed[] = { "effect", "brightness", "set", "toggle", "power", "pair", "scan", "dev_add", "dev_remove", "mood" };
         int ok = 0;
         for (int i = 0; i < (int)(sizeof(allowed) / sizeof(allowed[0])); i++) if (!strcmp(cmd, allowed[i])) ok = 1;
+#ifdef HAKU_DEV
+        // test builds (loopback only by default): the account sign-in can be driven from a browser for tests
+        if (!strcmp(cmd, "aidot_login")) ok = 1;
+#endif
         if (!ok) { reply_json(c, 400, "{\"error\":\"cmd\"}"); return; }
         app_remote_cmd(body);
         reply_json(c, 200, "{\"ok\":1}");

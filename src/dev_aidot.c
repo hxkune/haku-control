@@ -121,7 +121,7 @@ static int load_keys(void) {
     key_time = key_file_time();
     nbulbs = 0;
     FILE *f = _wfopen(p, L"rb");
-    if (!f) { logf_("aidot: no key file %ls (errno %d) - run aidot-setup.ps1", p, errno); return 0; }
+    if (!f) { logf_("aidot: no key file %ls (errno %d) - sign in under Devices, Sign-ins and pairing", p, errno); return 0; }
     static char buf[64 * 1024];
     size_t n = fread(buf, 1, sizeof(buf) - 1, f); fclose(f); buf[n] = 0;
     char *s = buf; if ((unsigned char)s[0] == 0xEF) s += 3;   // BOM
@@ -239,7 +239,7 @@ static void process_rx(bulb_t *b) {
         memmove(b->rx, b->rx + 8 + len, b->rxn - 8 - len);
         b->rxn -= 8 + len;
         if (n < 0) {
-            if (!b->warned) { b->warned = 1; logf_("aidot: %s reply cannot be decrypted — keys changed? run aidot-setup.ps1", b->mac); }
+            if (!b->warned) { b->warned = 1; logf_("aidot: %s reply cannot be decrypted — keys changed? sign in to AiDot again (Devices)", b->mac); }
             continue;
         }
         const char *js = (const char *)body;

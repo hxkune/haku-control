@@ -717,11 +717,29 @@ nav button, nav button.gone {
   transition-timing-function: cubic-bezier(.25, .8, .3, 1);
 }
 nav button.gone { max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: -4px; opacity: 0; pointer-events: none; border-width: 0; }
-.more-lights { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 20px; }
-.more-lights .btn-row { margin-top: 0; }
 @media (max-width: 700px) {
   nav button { max-height: none; max-width: 30%; }
   nav button, nav button.gone { transition-property: color, opacity, max-width, flex-grow; transition-duration: .38s; }
   nav button.gone { max-width: 0; flex-grow: 0; margin-top: 0; padding: 0; }
 }
 body.calm nav button { transition: none; }
+
+/* ---------------- sign-ins and pairing */
+.accounts { margin-top: 20px; }
+.acc-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.accounts > .muted { margin-bottom: 12px; }
+.acc-row b { display: block; font-weight: 600; }
+.acc-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.acc-form { padding: 14px 0 4px; border-top: 1px solid var(--line); animation: pop .18s ease; }
+.acc-fields { display: grid; grid-template-columns: 190px 1fr 1fr; gap: 12px; align-items: end; }
+.acc-fields input[type=password] { background-color: transparent; border: 1px solid var(--line2); color: var(--text); padding: 8px 14px;
+  font: 13px var(--font); outline: none; width: 100%;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.acc-fields input[type=password]:focus { border-color: #fff; }
+.acc-form .note { color: var(--faint); font-size: 12px; margin-top: 12px; }
+.acc-msg { font-size: 12.5px; color: var(--text); margin-top: 10px; }
+.acc-msg:empty { display: none; }
+.acc-msg.bad { color: #ff8a8a; }
+.remote-only { display: none; }
+.remote .remote-only { display: block; }
+@media (max-width: 760px) { .acc-fields { grid-template-columns: 1fr; } }

@@ -247,12 +247,32 @@
         <p class="note" id="man-note"></p>
       </details>
     </div>
-    <div class="card more-lights" id="more-lights">
-      <div><h3 data-i18n="dev.more">Nanoleaf and AiDot</h3><p class="muted" data-i18n="dev.more.text"></p></div>
-      <div class="btn-row">
-        <button class="btn ghost" data-go="nano"><span data-i18n="dev.more.nano">Connect Nanoleaf</span></button>
-        <button class="btn ghost" data-go="bulbs"><span data-i18n="dev.more.aidot">Set up AiDot bulbs</span></button>
+    <!-- lights that need a pairing or a one-time sign-in to their vendor's account for their local keys -->
+    <div class="card accounts" id="accounts">
+      <h3 data-i18n="acc.title">Sign-ins and pairing</h3>
+      <p class="muted" data-i18n="acc.note"></p>
+      <div class="acc-row">
+        <div><b>Nanoleaf</b><small id="acc-nano"></small></div>
+        <button class="btn small ghost" data-go="nano"><span data-i18n="dev.more.nano">Connect Nanoleaf</span></button>
       </div>
+      <div class="acc-row">
+        <div><b>AiDot / Linkind</b><small id="acc-aidot"></small></div>
+        <button class="btn small ghost pc-only" id="aidot-open"><span id="aidot-open-t"></span></button>
+      </div>
+      <form class="acc-form hidden pc-only" id="aidot-form" autocomplete="off">
+        <div class="acc-fields">
+          <label class="num"><span data-i18n="acc.country">Account country</span><select class="select" id="aidot-cc"></select></label>
+          <label class="num"><span data-i18n="acc.email">E-mail</span><input type="text" id="aidot-email" spellcheck="false" autocomplete="username"></label>
+          <label class="num"><span data-i18n="acc.password">Password</span><input type="password" id="aidot-pass" autocomplete="current-password"></label>
+        </div>
+        <p class="note" data-i18n="acc.aidot.privacy"></p>
+        <div class="btn-row">
+          <button class="btn primary" type="submit" id="aidot-go"><span data-i18n="acc.signin">Sign in</span></button>
+          <button class="btn ghost" type="button" id="aidot-cancel"><span data-i18n="cancel">Cancel</span></button>
+        </div>
+      </form>
+      <p class="acc-msg" id="aidot-msg"></p>
+      <p class="hint remote-only" data-i18n="acc.phone"></p>
     </div>
     <div class="bulb-grid dev-grid" id="dev-grid"></div>
     <div class="card empty hidden" id="dev-empty">

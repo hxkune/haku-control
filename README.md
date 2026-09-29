@@ -73,10 +73,11 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
 - **OpenRGB:** start OpenRGB with *SDK Server* on, then *Devices → Scan network* lists its controllers. If
   OpenRGB drives the same MSI board or memory as haku control's own drivers, set `[devices] msi=0` / `ene=0`.
 
-- **Nanoleaf:** open the Nanoleaf tab, press *Pair*, then hold the controller's power button for 5–7 s.
-- **AiDot bulbs:** run `pwsh -File "C:\Program Files\haku-control\aidot-setup.ps1"` once. It logs in to your
-  AiDot account (the password goes only to AiDot and is not stored) and saves each bulb's local key. After that,
-  everything runs locally.
+- **Nanoleaf:** *Devices → Sign-ins and pairing → Connect Nanoleaf*, then hold the controller's power button for
+  5–7 s.
+- **AiDot bulbs:** *Devices → Sign-ins and pairing → Sign in* with your AiDot app account, once. The password goes
+  only to AiDot (RSA-encrypted, like their app does it) and is not stored; only each bulb's local key is saved.
+  After that, everything runs locally. (`scripts\aidot-setup.ps1` does the same from PowerShell 7.)
 - **Lights on the PC's own Wi-Fi (optional):** *Settings → Windows hotspot* keeps the Windows Mobile Hotspot
   running, so lights can join a network that exists whenever the PC is on.
 
@@ -112,7 +113,7 @@ Output goes to `bin\`. `build.cmd dev` makes a test build in `bin-dev\`: it keep
 `%APPDATA%\haku-control-dev`, runs without admin rights and never touches the motherboard or memory, so it
 can run next to the installed app. Stop it with `scripts\stop.ps1 -Dev`. `python tools/sim/fake_devices.py` starts
 simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue devices on this PC for it to talk to, and
-`python tools/sim/fake_ollama.py` / `fake_nanoleaf.py` stand-ins for Ollama and a Nanoleaf controller.
+`python tools/sim/fake_ollama.py` / `fake_nanoleaf.py` / `fake_aidot.py` stand-ins for Ollama, a Nanoleaf controller and the AiDot cloud.
 
 For UI work without the app, serve `ui\` with any static server and open
 `index.html?mock`, for example `python -m http.server -d ui 8766`. The mock fakes the core with sample data.
