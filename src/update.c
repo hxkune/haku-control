@@ -8,6 +8,7 @@
 #include <winhttp.h>
 #include <process.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #ifndef HAKU_REPO
 #define HAKU_REPO ""   // "owner/name", set by build.cmd from the HAKU_REPO environment variable (CI: the GitHub repo)
