@@ -12,6 +12,10 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      # releases are code-signed through SignPath (free for open source, see SIGNING.md) once the project is set up
+      # there; without the token everything is built unsigned, as before
+      SIGN: ${{ secrets.SIGNPATH_API_TOKEN != '' && github.ref_type == 'tag' }}
     steps:
       - uses: actions/checkout@v5
 
@@ -30,6 +34,74 @@ jobs:
             $bad | Select-Object -First 10 | ForEach-Object { "::error title=build::$_" }
             exit 1
           }
+          $v = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0' }
+          "VERSION=$v" >> $env:GITHUB_ENV
+
+      # ---- signing, step 1: the program's own executables (they go into the installer afterwards)
+      - name: Upload the executables for signing
+        if: env.SIGN == 'true'
+        id: unsigned-program
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-program
+          path: |
+            bin/haku-control.exe
+            bin/haku-control-open.exe
+            bin/haku-control-hotspot.exe
+
+      - name: Sign the executables
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: program
+          github-artifact-id: ${{ steps.unsigned-program.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600   # every release is approved by hand
+          output-artifact-directory: signed-program
+          parameters: |
+            version: "${{ env.VERSION }}"
+
+      - name: Build the installer from the signed executables
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          Copy-Item signed-program\*.exe bin -Force
+          cmd /c build.cmd setup
+          if ($LASTEXITCODE) { exit 1 }
+
+      # ---- signing, step 2: the installer
+      - name: Upload the installer for signing
+        if: env.SIGN == 'true'
+        id: unsigned-setup
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-setup
+          path: dist/haku-control-setup.exe
+
+      - name: Sign the installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-setup
+          parameters: |
+            version: "${{ env.VERSION }}"
+
+      - name: Take the signed installer
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: Copy-Item signed-setup\haku-control-setup.exe dist -Force
 
       - name: Package
         shell: pwsh
@@ -44,14 +116,14 @@ jobs:
           Compress-Archive -Path "$pkg\*" -DestinationPath "$pkg.zip"
           "PKG=$pkg" >> $env:GITHUB_ENV
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.PKG }}
           path: |
             ${{ env.PKG }}.zip
             dist/haku-control-setup.exe
 
-      - name: Draft release
+      - name: Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:

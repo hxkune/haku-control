@@ -24,6 +24,7 @@ call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 rem C++/WinRT (hotspot helper): C++20 coroutines; the old Windows SDK next to VS 2019 only has the pre-C++20 ones
 set "WINRT_STD=/std:c++20"
 if "%VisualStudioVersion%"=="16.0" set "WINRT_STD=/std:c++17"
+if /i "%~1"=="setup" goto setup
 if not exist %OUT% mkdir %OUT%
 if not exist %OBJ% mkdir %OBJ%
 rem icons + version info
@@ -38,7 +39,7 @@ cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE
    advapi32.lib ole32.lib third_party\webview2\WebView2LoaderStatic.lib %OBJ%\haku-control.res || exit /b 1
 rem helper that switches the Windows Mobile Hotspot on (WinRT), started only when needed
 cl /nologo /utf-8 /O2 /GS /W3 /MT %WINRT_STD% /EHsc /Fo%OBJ%\ src\hotspot.cpp /Fe:%OUT%\haku-control-hotspot.exe ^
-   /link /SUBSYSTEM:CONSOLE || exit /b 1
+   /link /SUBSYSTEM:CONSOLE %OBJ%\haku-control.res || exit /b 1
 rem the settings page (HTML/CSS/JS), loaded by the window from .\ui
 if exist %OUT%\ui rmdir /s /q %OUT%\ui
 xcopy /e /i /y /q ui %OUT%\ui >nul
@@ -49,7 +50,9 @@ rem Start menu launcher: shows the window without a UAC prompt
 cl /nologo /utf-8 /O2 /GS /W3 /MT /DUNICODE /D_UNICODE /Fo%OBJ%\ src\launcher.c /Fe:%OUT%\haku-control-open.exe ^
    /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib %OBJ%\haku-control.res || exit /b 1
 if "%OUT%"=="bin-dev" goto done
-rem the installer: the whole program packed into one exe
+:setup
+rem the installer: the whole program packed into one exe (build.cmd setup: only this, from the files already in
+rem bin, e.g. after CI replaced them with signed ones)
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\pack.ps1 || exit /b 1
 rc /nologo /c65001 /i res /fo %OBJ%\setup.res res\setup.rc || exit /b 1
 if not exist dist mkdir dist

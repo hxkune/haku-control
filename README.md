@@ -138,7 +138,28 @@ third_party WebView2 SDK loader, PawnIO SMBus module
 2. ~~First-start guide; network scan.~~
 3. ~~LAN / bridge lights: OpenRGB bridge, WLED, Philips Hue, Govee, LIFX, Yeelight.~~ Next: confirm them on real
    hardware, more Mystic Light boards and ENE versions in the own drivers.
-4. ~~Phone control from the local network.~~ ~~Installer.~~ Signed builds, update check.
+4. ~~Phone control from the local network.~~ ~~Installer.~~ ~~Update check.~~ Signed builds (SignPath, see SIGNING.md).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+Only release builds made by GitHub Actions from this repository are signed, each one approved by hand; see [SIGNING.md](SIGNING.md).
+
+- Committers and reviewers: [hxkune](https://github.com/hxkune)
+- Approvers: [hxkune](https://github.com/hxkune)
+
+## Privacy policy
+
+haku control collects no personal data and sends no usage statistics. It connects to other systems only for these
+purposes:
+
+- **Update check:** once a day it asks the GitHub API for the latest release of this repository (no data about
+  you or your PC is sent). *Settings → Check for updates* turns it off.
+- **Your lights:** it talks to the lights you added, on your local network.
+- **Sign-ins you start:** AiDot or Tuya receive the sign-in data you enter, once, to hand out your lights' local
+  keys. Nothing is sent to them otherwise.
+- **Describe a mood:** the text goes to Ollama on your own PC, if you use it.
+- **Phone control:** off by default; when on, it serves the settings page on your local network only.
 
 ## License
 
