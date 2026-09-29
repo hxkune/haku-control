@@ -21,6 +21,9 @@ if not defined VSDIR for %%y in (2022 2019) do for %%e in (BuildTools Community 
 if not defined VSDIR echo Visual Studio with the C++ tools not found& exit /b 1
 call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 :have_vs
+rem C++/WinRT (hotspot helper): C++20 coroutines; the old Windows SDK next to VS 2019 only has the pre-C++20 ones
+set "WINRT_STD=/std:c++20"
+if "%VisualStudioVersion%"=="16.0" set "WINRT_STD=/std:c++17"
 if not exist %OUT% mkdir %OUT%
 if not exist %OBJ% mkdir %OBJ%
 rem icons + version info
@@ -34,7 +37,7 @@ cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE
    user32.lib shell32.lib gdi32.lib setupapi.lib hid.lib winmm.lib comctl32.lib comdlg32.lib ws2_32.lib bcrypt.lib iphlpapi.lib winhttp.lib ^
    advapi32.lib ole32.lib third_party\webview2\WebView2LoaderStatic.lib %OBJ%\haku-control.res || exit /b 1
 rem helper that switches the Windows Mobile Hotspot on (WinRT), started only when needed
-cl /nologo /utf-8 /O2 /GS /W3 /MT /std:c++17 /EHsc /Fo%OBJ%\ src\hotspot.cpp /Fe:%OUT%\haku-control-hotspot.exe ^
+cl /nologo /utf-8 /O2 /GS /W3 /MT %WINRT_STD% /EHsc /Fo%OBJ%\ src\hotspot.cpp /Fe:%OUT%\haku-control-hotspot.exe ^
    /link /SUBSYSTEM:CONSOLE || exit /b 1
 rem the settings page (HTML/CSS/JS), loaded by the window from .\ui
 if exist %OUT%\ui rmdir /s /q %OUT%\ui

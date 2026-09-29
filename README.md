@@ -54,7 +54,7 @@ flash or changes SMBus addresses, and it restores each device's own effect when 
 Requirements: Windows 10/11 x64, [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
 (built into Windows 11), and [PawnIO](https://pawnio.eu) for memory lighting.
 
-1. Download `haku-control-setup.exe` from the latest release and run it. Windows asks for administrator rights:
+1. Download `haku-control-setup.exe` from the [latest release](https://github.com/hxkune/haku-control/releases/latest) and run it. Windows asks for administrator rights:
    the app talks to the motherboard and memory, so it starts at sign-in through an elevated task.
 2. The app appears in the tray and in the Start menu. On the first start, a short guide shows what was found and
    scans the network for lights.
