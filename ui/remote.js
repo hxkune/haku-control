@@ -63,6 +63,9 @@
   }
 
   // ---- pairing
+  // the QR code on the PC links to /#pin=123456: pair with it straight away, and drop it from the address bar
+  let linkPin = (/[#&]pin=(\d{6})/.exec(location.hash) || [])[1] || '';
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   let pinBox;
   function askPin() {
     if (pinBox) { pinBox.classList.remove('hidden'); return; }
@@ -95,6 +98,7 @@
     };
     pinBox.querySelector('.pin-go').addEventListener('click', go);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
-    setTimeout(() => input.focus(), 50);
+    if (linkPin) { input.value = linkPin; linkPin = ''; go(); }
+    else setTimeout(() => input.focus(), 50);
   }
 })();

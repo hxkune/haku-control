@@ -7,7 +7,7 @@ window.chrome = { webview: {
 } };
 const panels = [[.83,.12,33],[.83,.5,33],[.83,.88,33],[.45,.69,33],[.45,.12,33],[.54,.99,34],[.36,.99,34],[.54,.44,34],[.36,.44,34]];
 const STATE = {
-  type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/' },
+  type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
   nano: { configured: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', side: .45, pair: 0, panels },
@@ -25,7 +25,7 @@ const STATE = {
     scanning: 0,
     kinds: ['wled:WLED:1', 'openrgb:OpenRGB:1', 'govee:Govee:0', 'lifx:LIFX:0', 'yeelight:Yeelight:0', 'hue:Philips Hue:0'].map(x => { const [kind, title, p] = x.split(':'); return { kind, title, per_led: +p }; }),
   },
-  cfg: { general: { palette: '#00C8FF, #7A3CFF, #FF2D95', speed: '5', fps: '30' }, layout: { gpu_leds: '8', board_led: '1', ram_enabled: '1', gpu_enabled: '1', lights_enabled: '1', nanoleaf_enabled: '1' },
+  cfg: { remote: { enabled: '1' }, general: { palette: '#00C8FF, #7A3CFF, #FF2D95', speed: '5', fps: '30' }, layout: { gpu_leds: '8', board_led: '1', ram_enabled: '1', gpu_enabled: '1', lights_enabled: '1', nanoleaf_enabled: '1' },
     caustic: { palette: '#00E5FF, #0060FF, #00FFB0' }, bubbles: { palette: '#001830, #00E5FF, #FFFFFF' }, comet: { palette: '#FFFFFF, #00C8FF, #7A3CFF' },
     lava: { palette: '#FF2D00, #FF9000, #B0006A', speed: '3' }, breathe: { palette: '#00C8FF, #FF2D95', speed: '3' },
     temperature: { palette: '#0050FF, #00FF80, #FFB000, #FF0020', cold: '35', hot: '75' }, static: { palette: '#7A3CFF' },

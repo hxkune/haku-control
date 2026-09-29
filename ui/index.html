@@ -241,7 +241,14 @@
           <label class="switch"><input type="checkbox" id="remote-on"><span></span></label>
         </div>
         <div id="remote-info" class="hidden">
-          <div class="set-row"><div><b data-i18n="phone.open">Open on the phone</b><p class="muted phone-urls" id="remote-urls"></p></div></div>
+          <div class="phone-qr">
+            <div class="qr" id="remote-qr"></div>
+            <div>
+              <b data-i18n="phone.scan">Scan with the phone camera</b>
+              <p class="muted" data-i18n="phone.scan.note"></p>
+              <div class="addr-list" id="remote-urls"></div>
+            </div>
+          </div>
           <div class="set-row"><div><b data-i18n="phone.pin">PIN</b><p class="muted" id="remote-paired"></p></div><b class="pin" id="remote-pin"></b></div>
           <div class="btn-row">
             <button class="btn small ghost" id="remote-newpin"><span data-i18n="phone.newpin">New PIN</span></button>
@@ -363,6 +370,7 @@
   if (location.search === "?mock") document.write('<script src="mock.js"><\/script>');
   else if (!(window.chrome && window.chrome.webview)) document.write('<script src="remote.js"><\/script>');</script>
 <script src="i18n.js"></script>
+<script src="qr.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

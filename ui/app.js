@@ -861,11 +861,23 @@ function buildHotkeys() {
   });
 }
 
+let qrUrl = '';   // the address the QR code points at (the PC may be on several networks)
 function updateRemote() {
   const R = S.remote || {};
   $('#remote-on').checked = cv('remote', 'enabled', '0') === '1';
   $('#remote-info').classList.toggle('hidden', !(cv('remote', 'enabled', '0') === '1'));
-  $('#remote-urls').textContent = R.on ? (R.urls || []).join('   ') : t('phone.off');
+  const urls = R.on ? R.urls || [] : [];
+  if (!urls.includes(qrUrl)) qrUrl = urls[0] || '';
+  const list = $('#remote-urls'), sig = urls.join() + '|' + qrUrl;
+  if (list.dataset.sig !== sig) {   // rebuilt only when something changed, so a click is not lost
+    list.dataset.sig = sig;
+    list.innerHTML = R.on ? urls.map(u => `<button class="addr${u === qrUrl ? ' on' : ''}" data-u="${u}">${u.replace('http://', '')}</button>`).join('')
+                          : `<p class="muted">${t('phone.off')}</p>`;
+    list.querySelectorAll('.addr').forEach(b => b.addEventListener('click', () => { qrUrl = b.dataset.u; updateRemote(); }));
+  }
+  const link = R.on && qrUrl && R.pin ? `${qrUrl}/#pin=${R.pin}` : '';
+  const qr = $('#remote-qr');
+  if (qr.dataset.link !== link) { qr.dataset.link = link; qr.innerHTML = link ? qrSvg(link) : ''; }
   $('#remote-pin').textContent = R.on ? R.pin : '';
   $('#remote-paired').textContent = t('phone.paired', R.paired || 0);
 }
