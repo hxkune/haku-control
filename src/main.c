@@ -1146,6 +1146,15 @@ static void show_blocked(void) {
     if (MessageBoxW(NULL, m, L"haku control", MB_YESNO | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND) == IDYES && !wcsncmp(u, L"https://", 8))
         ShellExecuteW(NULL, L"open", u, NULL, NULL, SW_SHOWNORMAL);
 }
+// a notice from the tray icon (Windows shows it as a notification); from any thread
+void app_notify(const wchar_t *title, const wchar_t *text) {
+    NOTIFYICONDATAW n = { sizeof(n) };
+    n.hWnd = hwnd; n.uID = 1; n.uFlags = NIF_INFO; n.dwInfoFlags = NIIF_INFO | NIIF_RESPECT_QUIET_TIME;
+    wcsncpy_s(n.szInfoTitle, 64, title, _TRUNCATE);
+    wcsncpy_s(n.szInfo, 256, text, _TRUNCATE);
+    Shell_NotifyIconW(NIM_MODIFY, &n);
+}
+
 void app_blocked(const char *msg, const char *url) {
     snprintf(blocked_msg, sizeof(blocked_msg), "%s", msg);
     snprintf(blocked_url, sizeof(blocked_url), "%s", url);

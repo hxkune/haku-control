@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Updates: once a day asks GitHub for the latest release of the repo the build came from and tells the settings
-// window when it is newer (off with [general] update_check=0). "Update" downloads that release's
+// Updates are not optional: a minute after start and then every 6 hours this asks GitHub for the latest release of
+// the repo the build came from, and a newer one is installed by itself (after a tray notice), only not while a
+// full-screen game or a presentation runs: then it waits and tries again every 10 minutes. "Update" in the window
+// does the same at once. An update downloads that release's
 // haku-control-setup.exe, checks it (the size and SHA-256 GitHub lists for it; once releases are signed, and this
 // exe is, the signature too) and runs it with /update: it installs without questions, keeps autostart as it was,
 // closes this app and starts the new one.
@@ -81,7 +83,7 @@ static int https_get(const wchar_t *host, const wchar_t *path, char *out, int ca
 // policy/policy.txt in the official repository, signed with the author's key (tools/policy/sign.ps1): a version
 // below "min", or one named in "blocked", lets go of the lights, shows the author's message with a download link
 // and quits. Read at start from the copy kept at the last check (so it holds offline too) and online a minute after
-// start and then daily. Unlike the update check it is not switched off by update_check and does not follow
+// start and then with every update check (every 6 hours). Unlike the update check it does not follow
 // update_repo. A missing file (404) lifts an earlier block; an unsigned or wrongly signed one changes nothing.
 #define POLICY_HOST L"raw.githubusercontent.com"
 #define POLICY_PATH L"/hxkune/haku-control/main/policy/policy.txt"
@@ -211,6 +213,34 @@ static void check(void) {
     logf_("update: latest release %s%s", tag, newer ? " (newer)" : "");
 }
 
+// A newer release found: installed now, unless the user is in a full-screen game or a presentation (then later).
+// Returns 1 when it has to wait.
+static int auto_install(void) {
+    AcquireSRWLockShared(&lk);
+    int have = latest[0] && asset_url[0];
+    char ver[32]; snprintf(ver, sizeof(ver), "%s", latest);
+    ReleaseSRWLockShared(&lk);
+    LONG s = inst_state;
+    if (!have || s == INST_DOWNLOAD || s == INST_VERIFY || s == INST_RUN) return 0;
+#ifdef HAKU_DEV
+    if (!cfg_get("general", "update_fake_version", NULL)) return 0;   // test builds: only when pretending to be older
+#endif
+    QUERY_USER_NOTIFICATION_STATE q = QUNS_ACCEPTS_NOTIFICATIONS;
+    if (SHQueryUserNotificationState(&q) == S_OK && (q == QUNS_BUSY || q == QUNS_RUNNING_D3D_FULL_SCREEN || q == QUNS_PRESENTATION_MODE)) {
+        logf_("update: %s waits, a full-screen app runs", ver);
+        return 1;
+    }
+    wchar_t t[160], w[40]; MultiByteToWideChar(CP_UTF8, 0, ver, -1, w, 40);
+    swprintf(t, 160, TR(L"Updating haku control to %s. The lights come back in a few seconds.",
+                        L"Обновляю haku control до %s. Подсветка вернётся через несколько секунд.",
+                        L"Mise à jour de haku control vers %s. L'éclairage revient dans quelques secondes."), w);
+    app_notify(L"haku control", t);
+    logf_("update: installing %s by itself", ver);
+    Sleep(4000);   // the notice is read first
+    update_install();
+    return 0;
+}
+
 static unsigned __stdcall run(void *arg) {
     (void)arg;
     HANDLE ev[2] = { stop_ev, now_ev };
@@ -218,9 +248,9 @@ static unsigned __stdcall run(void *arg) {
     for (;;) {
         DWORD r = WaitForMultipleObjects(2, ev, FALSE, wait);
         if (r == WAIT_OBJECT_0) break;
-        if (r == WAIT_TIMEOUT) policy_check();   // a minute after start, then daily, whatever update_check says
-        if (r == WAIT_OBJECT_0 + 1 || atoi(cfg_get("general", "update_check", "1"))) check();   // asked for, or daily
-        if (r == WAIT_TIMEOUT) wait = 24 * 3600 * 1000;
+        if (r == WAIT_TIMEOUT) policy_check();   // a minute after start, then with every check
+        check();
+        wait = auto_install() ? 10 * 60 * 1000 : 6 * 3600 * 1000;
     }
     return 0;
 }

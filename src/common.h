@@ -155,11 +155,12 @@ int  remote_json(char *out, int cap);
 void app_remote_cmd(const char *json);   // runs a window command on the UI thread (main.c)
 void ui_dispatch(const char *json);      // ui_web.cpp: the window's command handler
 
-// ---- update.c (daily check for a newer GitHub release, [general] update_check)
+// ---- update.c (a newer GitHub release installed by itself, checked every 6 hours)
 void update_start(void);
 void update_stop(void);
 void update_check_now(void);
 void update_open_page(void);
+void app_notify(const wchar_t *title, const wchar_t *text);   // a notice from the tray icon (main.c)
 int  policy_blocked(char *msg, int mcap, char *url, int ucap);   // this version stopped by its author (update.c)
 void app_blocked(const char *msg, const char *url);               // (main.c) let go of the lights, say so, quit
 int  update_json(char *out, int cap);

@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.15',
+    en: ['Updates install by themselves: haku checks every few hours and updates when a new version is out, after a notice from the tray (never during a full-screen game or a presentation).'],
+    ru: ['Обновления ставятся сами: haku проверяет каждые несколько часов и обновляется, когда выходит новая версия, предупредив уведомлением из трея (никогда во время полноэкранной игры или презентации).'],
+    fr: ['Les mises à jour s\'installent toutes seules : haku vérifie toutes les quelques heures et se met à jour quand une nouvelle version sort, après une notification (jamais pendant un jeu en plein écran ou une présentation).'] },
   { v: '0.3.14',
     en: ['Device settings show only what the device can do: an Elgato Key Light or Ring Light gets its colour temperature (2900–7000 K) and brightness, no effects or palettes.',
       'A Govee sync box in its own screen-sync mode shows just how to switch it to haku\'s colours.',

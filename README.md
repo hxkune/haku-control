@@ -176,9 +176,10 @@ Only release builds made by GitHub Actions from this repository are signed, each
 haku control collects no personal data and sends no usage statistics. It connects to other systems only for these
 purposes:
 
-- **Update check:** once a day it asks the GitHub API for the latest release of this repository (no data about
-  you or your PC is sent). *Settings → Check for updates* turns it off. *Update* downloads that release's installer
-  from GitHub, only when you press it.
+- **Updates:** a minute after start and then every 6 hours it asks the GitHub API for the latest release of this
+  repository (no data about you or your PC is sent). A newer release's installer is downloaded from GitHub, checked
+  (its SHA-256 as GitHub lists it) and installed by itself, after a notice from the tray; not while a full-screen
+  game or a presentation runs.
 - **Supported versions:** at start and once a day it reads `policy/policy.txt` from this repository (nothing about
   you or your PC is sent). It is a list, signed with the author's key, of versions the author has stopped supporting:
   a version on it lets go of the lights, shows the author's message with a download link and closes. Nothing is
