@@ -192,7 +192,7 @@ and must keep the copyright notices. It comes without any warranty.
 
 Versions up to and including 0.2.0 were published under the MIT license; everything after that is GPL-3.0.
 
-The **haku** name and logo (`art/`, `ui/haku.png`, `ui/mark.svg`, `ui/icon-256.png`, `res/*.ico`) are not covered by
+The **haku** name and logo (`art/`, `ui/haku.svg`, `ui/mark.svg`, `ui/icon-256.png`, `res/*.ico`) are not covered by
 the license. Forks must use their own name and logo, so nobody mistakes them for the official app.
 Official builds come only from [github.com/hxkune/haku-control/releases](https://github.com/hxkune/haku-control/releases).
 Third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

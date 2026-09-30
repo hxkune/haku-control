@@ -47,9 +47,9 @@ h3::before { content: "✦"; margin-right: 9px; font-size: 10px; color: var(--mu
 
 /* haku watermark: the user's logo, huge and barely there */
 .watermark {
-  position: fixed; right: -60px; bottom: -40px; width: 760px; aspect-ratio: 1518 / 911;
+  position: fixed; right: -60px; bottom: -40px; width: 760px; aspect-ratio: 1540 / 903;
   background: #fff; opacity: .022; pointer-events: none; z-index: 0;
-  -webkit-mask: url(haku.png) center / contain no-repeat; mask: url(haku.png) center / contain no-repeat;
+  -webkit-mask: url(haku.svg) center / contain no-repeat; mask: url(haku.svg) center / contain no-repeat;
   transform: rotate(-8deg);
 }
 
@@ -66,8 +66,8 @@ h3::before { content: "✦"; margin-right: 9px; font-size: 10px; color: var(--mu
 }
 .brand { padding: 0 8px 30px; }
 .brand .logo {
-  width: clamp(150px, 6.29vw + 70px, 190px); aspect-ratio: 1518 / 911; background: #fff;
-  -webkit-mask: url(haku.png) left center / contain no-repeat; mask: url(haku.png) left center / contain no-repeat;
+  width: clamp(150px, 6.29vw + 70px, 190px); aspect-ratio: 1540 / 903; background: #fff;
+  -webkit-mask: url(haku.svg) left center / contain no-repeat; mask: url(haku.svg) left center / contain no-repeat;
 }
 .brand .word { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 4px; font: 600 11px var(--display); letter-spacing: .3em; color: var(--muted); }
 .brand .word::after { content: ""; flex: 1; height: 1px; background: var(--line2); }
