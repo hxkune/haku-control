@@ -95,7 +95,8 @@
         <button class="btn small ghost" id="mood-save" type="button"><span data-i18n="mood.save">Save as preset</span></button>
         <button class="btn small primary" id="mood-apply" type="button"><span data-i18n="mood.apply">Apply</span></button>
       </div>
-      <p class="mood-msg" id="mood-msg"></p>
+      <div class="mood-foot"><p class="mood-msg" id="mood-msg"></p>
+        <button class="btn small primary pc-only hidden" id="mood-setup" type="button"><span data-i18n="ai.go">Download and set up</span></button></div>
     </div>
     <div class="fx-layout">
       <div class="fx-grid" id="fx-grid"></div>
@@ -412,6 +413,16 @@
         <div class="field">
           <div class="lbl"><span data-i18n="fps">Frames per second</span><b id="fps-val">30</b></div>
           <input type="range" class="range" id="fps" min="10" max="60" step="5" value="30">
+        </div>
+      </div>
+      <div class="card pc-only" id="ai-card">
+        <h3 data-i18n="ai">Colours from a description</h3>
+        <p class="muted" id="ai-status"></p>
+        <div class="ai-bar hidden" id="ai-bar"><i></i></div>
+        <div class="btn-row"><button class="btn small primary hidden" id="ai-setup" type="button"><span data-i18n="ai.go">Download and set up</span></button></div>
+        <div class="set-row">
+          <div><b data-i18n="ai.demand">Ollama only when needed</b><p class="muted" id="ai-demand-note"></p></div>
+          <label class="switch"><input type="checkbox" id="ai-demand"><span></span></label>
         </div>
       </div>
       <div class="card">

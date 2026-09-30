@@ -7,7 +7,7 @@
 #include <process.h>
 #include <stdlib.h>
 
-static const ext_driver *drivers[] = { &drv_wled, &drv_openrgb, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz, &drv_tuya, &drv_nlusb, &drv_goveecloud, &drv_elgato, &drv_wooting };
+static const ext_driver *drivers[] = { &drv_wled, &drv_openrgb, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz, &drv_tuya, &drv_nlusb, &drv_goveecloud, &drv_elgato, &drv_wooting, &drv_divoom };
 #define NDRV (int)(sizeof(drivers) / sizeof(drivers[0]))
 
 const ext_driver *ext_driver_by_kind(const char *kind) {
@@ -43,7 +43,7 @@ static int leave_mode(void) {
 // What the device is, for the preview icon and how effects lay out on it: [dev.N] type, or a guess from the name /
 // model ("Govee H6076" is a floor lamp). strip, tv (screen backlight), bars (light bars), floor (floor lamp),
 // lamp (table lamp), panels (hexagons...), bulb.
-static const char *const TYPES[] = { "strip", "tv", "bars", "floor", "lamp", "panels", "bulb", "gpu", "ram", "board", "fan", "keyboard", "mouse", "keylight" };
+static const char *const TYPES[] = { "strip", "tv", "bars", "floor", "lamp", "panels", "bulb", "gpu", "ram", "board", "fan", "keyboard", "mouse", "keylight", "gate" };
 static void device_type(const ext_dev *d, char *out, int cap) {
     char sec[24]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
     const char *t = cfg_get(sec, "type", "auto");
@@ -55,7 +55,7 @@ static void device_type(const ext_dev *d, char *out, int cap) {
         { "h605b", "tv" }, { "h605c", "tv" }, { "h6603", "tv" }, { "h6604", "tv" }, { "h6168", "tv" },
         { "hexa", "panels" }, { "glide", "panels" }, { "h6061", "panels" }, { "h6065", "panels" }, { "h6066", "panels" }, { "h6067", "panels" }, { "h6069", "panels" },
         { "table lamp", "lamp" }, { "h6022", "lamp" }, { "h6020", "lamp" },
-        { "light strip", "strip" }, { "key light", "keylight" }, { "ring light", "keylight" }, { "elgato", "keylight" },
+        { "times gate", "gate" }, { "divoom", "gate" }, { "light strip", "strip" }, { "key light", "keylight" }, { "ring light", "keylight" }, { "elgato", "keylight" },
         // PC hardware through OpenRGB ("OpenRGB · <name> · <type>")
         { "· graphics card", "gpu" }, { "· memory", "ram" }, { "· motherboard", "board" }, { "· cooler", "fan" },
         { "· keyboard", "keyboard" }, { "· keypad", "keyboard" }, { "· mouse", "mouse" },
@@ -148,11 +148,12 @@ static void load_config(void) {
         d->enabled = cfg_geti(sec, "enabled", 1);
         strcpy_s(d->key, sizeof(d->key), cfg_get(sec, "key", ""));
     }
-    // keep connections of devices whose address did not change
+    // keep connections of devices whose address (and key) did not change
     for (int i = 0; i < nn; i++) {
         for (int k = 0; k < ndevs; k++) {
             ext_dev *o = &devs[k];
-            if (o->id == nd[i].id && o->drv == nd[i].drv && !strcmp(o->host, nd[i].host) && o->sub == nd[i].sub && o->cfg_leds == nd[i].cfg_leds) {
+            if (o->id == nd[i].id && o->drv == nd[i].drv && !strcmp(o->host, nd[i].host) && o->sub == nd[i].sub && o->cfg_leds == nd[i].cfg_leds &&
+                !strcmp(o->key, nd[i].key)) {
                 ext_dev keep = *o;
                 keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled;
                 strcpy_s(keep.name, sizeof(keep.name), nd[i].name);
@@ -215,6 +216,7 @@ static unsigned __stdcall worker(void *p) {
             } else if (o->ok) {
                 o->d.drv->close(&o->d);   // removed, changed or switched off meanwhile
             } else if (d) {
+                if (o->d.info[0]) strcpy_s(d->info, sizeof(d->info), o->d.info);   // why, if the driver says (e.g. a missing key)
                 d->fails++;
                 d->next_try = now + (d->fails < 3 ? 3000 : d->fails < 10 ? 10000 : 30000);
                 if (d->fails == 1) logf_("dev.%d (%s %s): not reachable, retrying", d->id, d->drv->kind, d->host);

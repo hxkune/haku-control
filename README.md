@@ -47,6 +47,7 @@ device runs its own effect.
 | LIFX | official LAN protocol | tested against a simulator |
 | Yeelight (with *LAN Control*) | LAN JSON protocol, music mode | tested against a simulator |
 | Philips WiZ | local UDP JSON protocol, no keys | tested against a simulator |
+| Divoom Times Gate (its RGB lights; the screens stay the Divoom app's) | local HTTP API with the LocalToken from the Divoom app; the light behind the screens follows the effect | **experimental: written from community notes, not tested yet** |
 | Wooting keyboards (One, Two, 60HE, 80HE, UwU; USB) | Wooting's HID protocol (as in their open RGB SDK), found on USB; effects run across the columns | verified on a 60HE v2; the others follow the SDK |
 | Elgato Key Light / Key Light Air / Mini, Ring Light (white), Light Strip (colour) | local HTTP API (port 9123), found by mDNS, no keys; Key Lights start in the White mode | **tested against a simulator only** |
 | Tuya / Smart Life colour lights (Lidl, Gosund, Nous, Teckin…) | local protocol 3.3 / 3.4 / 3.5, keys from your own Tuya cloud project | **experimental: not tested yet** |
@@ -119,8 +120,11 @@ POST http://<pc>:8723/api/cmd   header X-Haku-Token: <token from pairing>
 
 Type something like *"sunset on the beach"* or *"cosy evening with a book"* above the effects, and a language
 model picks the colours, the effect and its speed; *Apply* sets them on all lights. It runs on your PC through
-[Ollama](https://ollama.com) (free, offline, nothing is sent anywhere): install it and run `ollama pull gemma3:4b`
-once. Any chat model Ollama has works; `[mood] model=` picks one. Works from the phone page too.
+[Ollama](https://ollama.com) (free, offline, nothing is sent anywhere). *Settings → Colours from a description →
+Download and set up* installs Ollama (its installer from ollama.com, checked for Ollama's signature) and the model
+(`gemma3:4b`, 3.3 GB). The model is in memory only while it picks colours; *Ollama only when needed* also keeps
+Ollama itself out of Windows startup: haku control starts it for a request and closes it half a minute later.
+Any chat model Ollama has works; `[mood] model=` picks one. Works from the phone page too.
 
 ## Build
 

@@ -14,6 +14,7 @@ Every fake prints what it receives (frames per second, a sample colour), so a de
     Yeelight 127.0.0.1       (TCP 55443, music mode)
     Hue      127.0.0.1:8081  (pairing succeeds on the second try, 3 colour lights)
     Elgato   127.0.0.1       (Key Light, HTTP 9123, found by mDNS) and 127.0.0.1:9124 (Light Strip, colour)
+    Divoom   127.0.0.1:8082  (Times Gate, LocalToken 1234)
 """
 import json, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -338,6 +339,28 @@ def elgato_http(product, colour):
             self.reply({'numberOfLights': 1, 'lights': [state]})
     return H
 
+# ------------------------------------------------------------------ Divoom Times Gate (hardware 400: POST /post)
+DIVOOM_TOKEN = 1234
+DIVOOM_RATE = Rate('divoom')
+
+class DivoomHttp(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def reply(self, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(200); self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
+        if self.path != '/post': self.send_error(404); return
+        if body.get('LocalToken') != DIVOOM_TOKEN: log('divoom', f"refused {body.get('Command')}: token {body.get('LocalToken')}"); self.reply({'error_code': 'DeviceToken is err'}); return
+        c = body.get('Command')
+        if c == 'Channel/GetAllConf':
+            self.reply({'error_code': 0, 'Brightness': 80, 'RotationFlag': 0, 'ClockTime': 60, 'GalleryTime': 60, 'LightSwitch': 1})
+        elif c == 'Channel/SetRGBInfo':
+            DIVOOM_RATE.hit(f"on={body['OnOff']} {body['Color']} bri={body['Brightness']} zone={body['SelectLightIndex']} fx={[x['SelectEffect'] for x in body['LightList']]}")
+            self.reply({'error_code': 0})
+        else: self.reply({'error_code': 1})
+
 def serve(cls, port, tag):
     try:
         ThreadingHTTPServer(('', port), cls).serve_forever()
@@ -351,6 +374,7 @@ FAKES = {
     'hue': lambda: serve(HueHttp, 8081, 'hue'),
     'elgato': lambda: [threading.Thread(target=serve, args=(elgato_http('Elgato Light Strip', True), 9124, 'elgato'), daemon=True).start(),
                        serve(elgato_http('Elgato Key Light Air', False), 9123, 'elgato')],
+    'divoom': lambda: serve(DivoomHttp, 8082, 'divoom'),
     'mdns': lambda: mdns_responder([b'_wled', b'_hue', b'_elg']),
 }
 

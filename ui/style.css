@@ -866,3 +866,15 @@ body.calm nav button { transition: none; }
 .prof-save .plus { font-size: 16px; line-height: 1; }
 .prof-menu > .hint { margin: 6px 4px 2px; }
 @media (max-width: 700px) { .prof { margin: 0 0 10px; } .prof-btn { flex: 1; } .prof-btn .chev { margin-left: auto; } .prof-menu { width: 100%; } }
+
+/* ---- the local model for the mood: setup progress */
+.mood-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mood-foot .mood-msg { flex: 1; min-width: 200px; }
+.mood-foot .btn { margin: 0; }
+.ai-bar { height: 4px; margin: 12px 0 4px; background: var(--line); overflow: hidden; }
+.ai-bar i { display: block; height: 100%; width: 0; background: var(--chrome); transition: width .4s ease; }
+.ai-bar.busy i { width: 30%; animation: ai-slide 1.4s ease-in-out infinite; }
+@keyframes ai-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+#ai-card .btn-row { margin-top: 12px; }
+#ai-card .btn-row .btn { margin-top: 0; }
+#ai-status.bad { color: #ff8a8a; }

@@ -805,6 +805,8 @@ static int status_body(char *out, int cap) {
     n += accounts_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"mood\":");
     n += mood_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"ollama\":");
+    n += ollama_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"diag\":");
     n += diag_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",");
@@ -1186,6 +1188,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     if (wcsstr(GetCommandLineW(), L"--settings")) ui_open(inst);
     if (wcsstr(GetCommandLineW(), L"--scan")) ext_scan();   // look for LAN lights right away (results in the log)
     orgb_check_start();   // OpenRGB on this PC: the PC page offers what it has
+    ollama_init();
 
     ram_event = CreateEventW(NULL, FALSE, FALSE, NULL);
     th_ram = (HANDLE)_beginthreadex(NULL, 0, ram_thread, NULL, 0, NULL);

@@ -968,7 +968,7 @@ function drawNano(c, X, Y, W, H, N) {
 
 // What a light is, for its picture in the preview (and, for LAN devices, how effects lay out on it; see
 // device_type in devices.c). LAN devices get it from the core (chosen, or guessed from the model); bulbs: [zone.lightN] type.
-const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse', 'keylight'];
+const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse', 'keylight', 'gate'];
 const bulbType = i => { const v = cv('zone.light' + (i + 1), 'type', 'bulb'); return FIXTURES.includes(v) ? v : 'bulb'; };
 
 // One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
@@ -1064,6 +1064,14 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
       rr(c, x + 3 * dp + k * kw + kw * 0.1, y + 3 * dp + r * kh + kh * 0.12, kw * 0.8, kh * 0.76, 1.5 * dp);
       c.fillStyle = on && lit(kc) ? kc : '#1d1d1d'; c.fill();
     }
+  } else if (type === 'gate') {   // Divoom Times Gate: five screens in a cross, its light glowing behind them
+    const u = Math.min(W / 3.6, H / 3.6), k = col(0), on1 = on && lit(k);
+    if (on1) { const g = c.createRadialGradient(cx, cy, 0, cx, cy, u * 2.6); g.addColorStop(0, k); g.addColorStop(1, 'rgba(0,0,0,0)'); c.globalAlpha = .55; c.fillStyle = g; c.fillRect(cx - u * 2.6, cy - u * 2.6, u * 5.2, u * 5.2); c.globalAlpha = 1; }
+    [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]].forEach(([dx, dy]) => {
+      const x = cx + dx * u * 1.08 - u / 2, y = cy + dy * u * 1.08 - u / 2;
+      rr(c, x, y, u, u, 2 * dp); c.fillStyle = '#101010'; c.fill();
+      c.strokeStyle = on1 ? k : 'rgba(255,255,255,.1)'; c.lineWidth = dp; c.stroke();
+    });
   } else if (type === 'keylight') {   // a key light: a flat glowing panel on a pole, tilted a little towards you
     const h = H * 0.86, pw = Math.min(W * 0.62, h * 0.9), ph = pw * 0.62, top = cy - h / 2;
     metal(cx - dp, top + ph * 0.8, 2 * dp, h - ph * 0.8 - 3 * dp);
@@ -1136,7 +1144,7 @@ function heroAnim(key, target) {
 // controller, each bulb, each LAN device), laid out in rows; a row that is full wraps to the next one. Full rows
 // stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
 // animates the height) and tiles glide to their new places when something is added or removed.
-const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1 };
+const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1, gate: 1.2 };
 function heroItems(all) {
   const hide = all ? [] : heroHidden(), items = [];
   if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
@@ -1777,7 +1785,7 @@ let devSig = '';
 const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).title;
 function devStatus(d) {
   if (!d.enabled) return t('dev.off');
-  if (!d.online) return d.info && /button|reach|forgot|colour/i.test(d.info) ? d.info : t('dev.offline');
+  if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
 }
 function buildDevices() {
@@ -1802,6 +1810,8 @@ function buildDevices() {
         ${d.kind === 'goveecloud' ? `<label class="num"><span>${t('gc.mode')}</span><select class="select dev-mode">${['auto', 'sync', 'colour'].map(v =>
           `<option value="${v}"${cv(sec, 'mode', 'auto') === v ? ' selected' : ''}>${t('gc.' + v)}</option>`).join('')}</select></label>
           <p class="hint dev-mode-note">${t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour')}</p>` : ''}
+        ${d.kind === 'divoom' ? `<label class="num"><span>LocalToken</span><input type="text" class="dev-token" inputmode="numeric" maxlength="16" spellcheck="false" value="${esc(cv(sec, 'key', ''))}"></label>
+          <p class="hint">${t('dv.token')}</p>` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
@@ -1813,6 +1823,7 @@ function buildDevices() {
       setCfg(sec, 'name', v); el.querySelector('h3').textContent = v; d.name = v; renderOwnList();
     });
     el.querySelector('.dev-rev')?.addEventListener('change', e => setCfg(sec, 'reverse', e.target.checked ? 1 : 0));
+    el.querySelector('.dev-token')?.addEventListener('change', e => { const v = e.target.value.replace(/\D/g, ''); e.target.value = v; setCfg(sec, 'key', v); });
     el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-mode')?.addEventListener('change', e => {
       setCfg(sec, 'mode', e.target.value);
@@ -2090,6 +2101,34 @@ function updateMood() {
   }
   $('#mood-msg').textContent = busy ? t('mood.busy') : MOOD.err ? t('mood.' + MOOD.err) : MOOD.applied ? t('mood.applied') : '';
 }
+// ---- the local model: set up from here (Ollama's installer, then the model), and kept out of memory
+const AI_BUSY = [1, 2, 3, 4, 5];
+function updateAi() {
+  const A = S.ollama || {}, st = A.stage || 0, busy = AI_BUSY.includes(st), ready = A.exe && A.model;
+  $('#ai-status').textContent = busy ? t('ai.st.' + st, A.pct || 0) : st === 7 ? t('ai.err.' + A.err) : st === 6 ? t('ai.st.6') :
+    ready ? t('ai.ready') : A.exe ? t('ai.nomodel') : t('ai.none');
+  $('#ai-status').classList.toggle('bad', st === 7);
+  const bar = $('#ai-bar'), known = st === 1 || st === 5;
+  bar.classList.toggle('hidden', !busy);
+  bar.classList.toggle('busy', busy && !known);
+  bar.firstElementChild.style.width = known ? (A.pct || 0) + '%' : '';
+  const b = $('#ai-setup');
+  b.classList.toggle('hidden', !!ready && st !== 7);
+  b.disabled = busy;
+  b.querySelector('span').textContent = st === 7 ? t('ai.retry') : t('ai.go');
+  $('#ai-demand').checked = !!A.on_demand;
+  $('#ai-demand').disabled = !A.exe;
+  $('#ai-demand-note').textContent = t('ai.demand.note') + (A.ours ? ' ' + t('ai.demand.running') : '');
+  // the mood card offers the same button while the model is missing
+  const ms = $('#mood-setup');
+  ms.classList.toggle('hidden', !!ready || !S.ollama);
+  ms.disabled = busy;
+  ms.querySelector('span').textContent = busy ? t('ai.st.' + st, A.pct || 0) : t('ai.go');
+}
+function aiSetup() { S.ollama = { ...(S.ollama || {}), stage: 4, pct: 0, err: '' }; updateAi(); send({ cmd: 'ai_setup' }); }
+$('#ai-setup').addEventListener('click', aiSetup);
+$('#mood-setup').addEventListener('click', aiSetup);
+$('#ai-demand').addEventListener('change', e => send({ cmd: 'ai_on_demand', v: e.target.checked ? '1' : '0' }));
 $('#mood-form').addEventListener('submit', e => { e.preventDefault(); askMood(false); });
 $('#mood-again').addEventListener('click', () => askMood(true));
 $('#mood-save').addEventListener('click', () => { $('#mood-apply').click(); presetDialog(0, (S.mood || {}).name || ''); });
@@ -2166,7 +2205,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateNav();
+  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav();
   if (nanoLayoutChanged) drawAll();
 }
 

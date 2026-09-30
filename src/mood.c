@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Mood: "sunset on the beach" -> palette + effect + speed, picked by a local language model through Ollama
 // (https://ollama.com, http://127.0.0.1:11434). Nothing leaves the PC. The model is [mood] model=, or the first
-// chat model Ollama has installed. One request at a time on its own thread; the result is part of the status
+// chat model Ollama has installed. Ollama is started for the request if it is not running, and the model leaves
+// memory right after the answer (ollama.c). One request at a time on its own thread; the result is part of the status
 // JSON ("mood"), so the window and the phone page both see it and apply it with the usual commands.
 #include "common.h"
 #include "devices.h"
@@ -14,7 +15,7 @@
 static SRWLOCK lk = SRWLOCK_INIT;
 static volatile LONG busy;
 static int  seq;                    // bumps with every finished request, so the page knows a result is new
-static char err[16];                // "", "offline", "nomodel", "answer"
+static char err[16];                // "", "noollama" (not installed), "offline", "nomodel", "answer"
 static char name[96], effect[24], model[96], colors[MOOD_MAX][8];
 static int  ncolors, speed;
 static char req_text[600];
@@ -235,7 +236,7 @@ static void finish(const char *e) {
     InterlockedExchange(&busy, 0);
 }
 
-static unsigned __stdcall run(void *arg) {
+static unsigned __stdcall ask(void *arg) {
     (void)arg;
     static char buf[256 * 1024], body[12288], content[4096];
     char mdl[96];
@@ -275,7 +276,7 @@ static unsigned __stdcall run(void *arg) {
     jstr(txt, sizeof(txt), req_text);
     jstr(mj, sizeof(mj), mdl);
     snprintf(body, sizeof(body),
-        "{\"model\":\"%s\",\"stream\":false,\"keep_alive\":\"1m\",\"options\":{\"temperature\":%s,\"seed\":%u},"
+        "{\"model\":\"%s\",\"stream\":false,\"keep_alive\":0,\"options\":{\"temperature\":%s,\"seed\":%u},"
         "\"format\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},"
         "\"colors\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"minItems\":%d,\"maxItems\":%d},"
         "\"effect\":{\"type\":\"string\",\"enum\":[%s]},\"speed\":{\"type\":\"integer\"}},\"required\":[\"name\",\"colors\",\"effect\",\"speed\"]},"
@@ -322,6 +323,14 @@ static unsigned __stdcall run(void *arg) {
     ReleaseSRWLockExclusive(&lk);
     logf_("mood: %s, %d colours%s, speed %d (%s)", ef, nc, want ? " (as asked)" : "", speed, mdl);
     finish("");
+    return 0;
+}
+
+// Ollama up for the request (started if needed) and let go of afterwards
+static unsigned __stdcall run(void *arg) {
+    if (!ollama_acquire()) { finish(ollama_installed() ? "offline" : "noollama"); return 0; }
+    ask(arg);
+    ollama_release();
     return 0;
 }
 

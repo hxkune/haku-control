@@ -164,6 +164,14 @@ int  update_json(char *out, int cap);
 // ---- mood.c (describe a mood -> palette, effect, speed through a local Ollama model)
 void mood_request(const char *text, int again);
 int  mood_json(char *out, int cap);
+// ---- ollama.c (the local model for the mood: started only for requests, set up from the window)
+int  ollama_acquire(void);          // 1: Ollama answers (started if needed); then ollama_release()
+void ollama_release(void);
+int  ollama_installed(void);
+void ollama_init(void);             // at start: keeps it out of Windows startup if [mood] ollama_on_demand=1
+void ollama_set_on_demand(int on);
+void ollama_setup(void);            // installs Ollama (if missing) and pulls the model, in the background
+int  ollama_json(char *out, int cap);
 
 // ---- accounts.c (one-time vendor sign-ins that hand out local-control keys)
 void accounts_aidot_login(const char *country, const char *email, const char *password);
