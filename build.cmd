@@ -35,7 +35,7 @@ cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE
    src\ui_web.cpp src\audio.cpp ^
    /Fe:%OUT%\haku-control.exe ^
    /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='%UAC%' uiAccess='false'" ^
-   user32.lib shell32.lib gdi32.lib setupapi.lib hid.lib winmm.lib comctl32.lib comdlg32.lib ws2_32.lib bcrypt.lib iphlpapi.lib winhttp.lib crypt32.lib ^
+   user32.lib shell32.lib gdi32.lib setupapi.lib hid.lib winmm.lib comctl32.lib comdlg32.lib ws2_32.lib bcrypt.lib iphlpapi.lib winhttp.lib crypt32.lib wintrust.lib ^
    advapi32.lib ole32.lib third_party\webview2\WebView2LoaderStatic.lib %OBJ%\haku-control.res || exit /b 1
 rem helper that switches the Windows Mobile Hotspot on (WinRT), started only when needed
 cl /nologo /utf-8 /O2 /GS /W3 /MT %WINRT_STD% /EHsc /Fo%OBJ%\ src\hotspot.cpp /Fe:%OUT%\haku-control-hotspot.exe ^

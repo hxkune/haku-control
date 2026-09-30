@@ -266,16 +266,17 @@ static void info(const wchar_t *main, const wchar_t *text, PCWSTR icon) {
 }
 
 // ---------------------------------------------------------------- install / uninstall
-static int install(void) {
+// quiet: started by the app itself for an update (/update): no questions, no "done" message, autostart as it was
+static int install(int quiet, int quiet_autostart) {
     wchar_t exe[MAX_PATH]; swprintf(exe, MAX_PATH, L"%s\\haku-control.exe", dest);
     int update = exists(exe);
-    BOOL autostart = TRUE;
+    BOOL autostart = quiet ? quiet_autostart : TRUE;
     wchar_t footer[512] = L"";
     wchar_t pawn[MAX_PATH]; ExpandEnvironmentStringsW(L"%ProgramFiles%\\PawnIO\\PawnIOLib.dll", pawn, MAX_PATH);
     if (!exists(pawn))
         wcscpy_s(footer, 512, TR(L"Memory (RAM) lighting needs <a href=\"https://pawnio.eu\">PawnIO</a>. Everything else works without it.",
                                  L"Для подсветки памяти нужен <a href=\"https://pawnio.eu\">PawnIO</a>. Всё остальное работает без него."));
-    if (!ask(update ? TR(L"Update haku control", L"Обновить haku control") : TR(L"Install haku control", L"Установить haku control"),
+    if (!quiet && !ask(update ? TR(L"Update haku control", L"Обновить haku control") : TR(L"Install haku control", L"Установить haku control"),
              TR(L"One lighting scene for your PC and your room.\n\nInstalls to Program Files and starts at sign-in with administrator rights "
                 L"(needed for the motherboard and memory lighting). Your settings stay in %APPDATA%\\haku-control.",
                 L"Одна сцена света для ПК и комнаты.\n\nУстанавливается в Program Files и запускается при входе с правами администратора "
@@ -313,6 +314,7 @@ static int install(void) {
         STARTUPINFOW si = { sizeof(si) }; PROCESS_INFORMATION pi;
         if (CreateProcessW(exe, NULL, NULL, NULL, FALSE, 0, NULL, dest, &si, &pi)) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
     }
+    if (quiet) return 0;
     info(update ? TR(L"haku control is updated", L"haku control обновлён") : TR(L"haku control is installed", L"haku control установлен"),
          webview2_installed()
              ? TR(L"It is running in the notification area (tray). Click its icon to open the window; it is also in the Start menu.",
@@ -377,7 +379,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
         CoUninitialize();
         return (int)code;
     }
-    int rc = wcsstr(cmd, L"/uninstall") ? uninstall() : install();
+    const wchar_t *as = wcsstr(cmd, L"/autostart=");
+    int rc = wcsstr(cmd, L"/uninstall") ? uninstall() : install(wcsstr(cmd, L"/update") != NULL, as ? as[11] != L'0' : 1);
     CoUninitialize();
     return rc;
 }

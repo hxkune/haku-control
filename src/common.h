@@ -211,6 +211,7 @@ void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled
 // settings window (ui_web.cpp) <-> core
 int   app_state_json(char *out, int cap);    // effects, config, devices
 int   app_status_json(char *out, int cap);   // devices only (polled)
+void  update_install(void);                 // download, check and run the latest release's installer (update.c)
 void  diag_save(void);                      // diagnostics report to Downloads, in the background (diag.c)
 int   diag_json(char *out, int cap);
 int   app_frame_json(char *out, int cap);    // live LED colours

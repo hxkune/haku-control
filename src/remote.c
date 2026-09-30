@@ -204,7 +204,7 @@ static void handle(SOCKET c) {
         for (int i = 0; i < (int)(sizeof(allowed) / sizeof(allowed[0])); i++) if (!strcmp(cmd, allowed[i])) ok = 1;
 #ifdef HAKU_DEV
         // test builds (loopback only by default): the account sign-in can be driven from a browser for tests
-        if (!strcmp(cmd, "aidot_login") || !strcmp(cmd, "tuya_login") || !strcmp(cmd, "govee_login") || !strcmp(cmd, "diag")) ok = 1;
+        if (!strcmp(cmd, "aidot_login") || !strcmp(cmd, "tuya_login") || !strcmp(cmd, "govee_login") || !strcmp(cmd, "diag") || !strcmp(cmd, "update_check") || !strcmp(cmd, "update_install")) ok = 1;
 #endif
         if (!ok) { reply_json(c, 400, "{\"error\":\"cmd\"}"); return; }
         app_remote_cmd(body);

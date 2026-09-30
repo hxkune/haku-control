@@ -1551,10 +1551,17 @@ function updateUpdate() {
   $('#upd-btns').classList.toggle('hidden', !U.repo);
   const on = cv('general', 'update_check', '1') !== '0';
   $('#upd-on').checked = on;
-  $('#upd-status').textContent = U.latest ? t('upd.avail', U.latest) : t('upd.note');
+  const st = U.inst || 0, busy = st >= 1 && st <= 3;
+  $('#upd-status').textContent = st === 1 ? t('upd.dl', U.pct || 0) : st === 2 ? t('upd.verify') : st === 3 ? t('upd.run') :
+    st === 4 ? t('upd.err.' + U.err) : U.latest ? t('upd.avail', U.latest) : t('upd.note');
+  $('#upd-status').classList.toggle('bad', st === 4);
+  $('#upd-install').classList.toggle('hidden', !U.latest || !U.can);
+  $('#upd-install').textContent = st === 4 ? t('upd.retry') : t('upd.install', U.latest || '');
+  $('#upd-install').disabled = busy;
   $('#upd-get').classList.toggle('hidden', !U.latest);
-  $('#upd-get').textContent = t('upd.get', U.latest || '');
+  $('#upd-get').textContent = t('upd.notes');
 }
+$('#upd-install').addEventListener('click', () => { S.update = { ...S.update, inst: 1, pct: 0 }; updateUpdate(); send({ cmd: 'update_install' }); });
 $('#upd-on').addEventListener('change', e => { setCfg('general', 'update_check', e.target.checked ? 1 : 0); updateUpdate(); });
 $('#upd-get').addEventListener('click', () => send({ cmd: 'open', what: 'release' }));
 $('#upd-now').addEventListener('click', () => send({ cmd: 'update_check' }));
