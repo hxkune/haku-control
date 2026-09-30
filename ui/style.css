@@ -53,30 +53,33 @@ h3::before { content: "✦"; margin-right: 9px; font-size: 10px; color: var(--mu
   transform: rotate(-8deg);
 }
 
-/* ---------------- sidebar */
+/* ---------------- sidebar: grows a little with the window (220px, up to 290px on a full-screen 1080p window);
+   its text, logo and spacing grow along */
+:root { --side-w: clamp(220px, 11vw + 80px, 290px); }   /* the others follow the same window widths (1273..1909px) */
 .side {
   position: relative; z-index: 2;
-  width: 220px; flex: none;
+  width: var(--side-w); flex: none;
   display: flex; flex-direction: column;
-  padding: 26px 16px 20px;
+  padding: clamp(26px, 1.258vw + 10px, 34px) clamp(16px, .943vw + 4px, 22px) 20px;
   border-right: 1px solid var(--line);
   background: var(--bg);
 }
 .brand { padding: 0 8px 30px; }
 .brand .logo {
-  width: 150px; aspect-ratio: 1518 / 911; background: #fff;
+  width: clamp(150px, 6.29vw + 70px, 190px); aspect-ratio: 1518 / 911; background: #fff;
   -webkit-mask: url(haku.png) left center / contain no-repeat; mask: url(haku.png) left center / contain no-repeat;
 }
 .brand .word { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 4px; font: 600 11px var(--display); letter-spacing: .3em; color: var(--muted); }
 .brand .word::after { content: ""; flex: 1; height: 1px; background: var(--line2); }
-nav { display: flex; flex-direction: column; gap: 4px; }
+nav { display: flex; flex-direction: column; gap: clamp(4px, .3145vw, 6px); }
 nav button {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px; border: 1px solid transparent; border-radius: 999px;
+  display: flex; align-items: center; gap: clamp(12px, .3145vw + 8px, 14px);
+  padding: clamp(10px, .4717vw + 4px, 13px) clamp(14px, .629vw + 6px, 18px); border: 1px solid transparent; border-radius: 999px;
   background-color: transparent; color: var(--muted); text-align: left;
   transition: background-color .15s, color .15s, border-color .15s;
 }
-nav button span { font-size: 13.5px; font-weight: 500; }
+nav button span { font-size: clamp(13.5px, .2358vw + 10.5px, 15px); font-weight: 500; }
+nav button svg { width: clamp(16px, .3145vw + 12px, 18px); height: clamp(16px, .3145vw + 12px, 18px); }
 nav button i { margin-left: auto; font: normal 10.5px var(--mono); color: var(--faint); letter-spacing: 0; }
 nav button:hover { color: var(--text); border-color: var(--line); }
 nav button.active { background: var(--chrome); color: #000; }
@@ -437,9 +440,9 @@ nav button.active, .btn.primary, .seg button.on, .power.off, .kbd.rec {
 
 /* ================= collapsible sidebar ================= */
 .side { transition: margin-left .32s cubic-bezier(.4, 0, .2, 1); }
-body.collapsed .side { margin-left: -220px; }
+body.collapsed .side { margin-left: calc(-1 * var(--side-w)); }
 .side-toggle {
-  position: fixed; z-index: 5; top: 50%; left: 219px; transform: translateY(-50%);
+  position: fixed; z-index: 5; top: 50%; left: calc(var(--side-w) - 1px); transform: translateY(-50%);
   width: 24px; height: 96px; padding: 0; border: 0; background: none; cursor: pointer;
   transition: left .32s cubic-bezier(.4, 0, .2, 1);
 }
