@@ -3,7 +3,12 @@
 // a GPU, a fan hub...) becomes one haku device: host = the OpenRGB server, sub = controller index.
 // The protocol is used at version 0 (the client never announces a newer one), so the controller data
 // always comes in the simplest, stable layout.
+// OpenRGB is also the way in for PC hardware haku has no driver of its own for (graphics cards, other boards, RAM,
+// coolers of any brand): orgb_check_start() looks for the SDK server on this PC and the PC page lists what it has.
+// OpenRGB numbers its controllers in the order it finds them, and that order can change (a device unplugged, a
+// new one): [dev.N] match keeps the controller's name, and a device is looked up by it when the number no longer fits.
 #include "devices.h"
+#include <process.h>
 #include <stdlib.h>
 
 #define ORGB_PORT 6742
@@ -16,7 +21,7 @@ enum {
     PKT_SETCUSTOMMODE            = 1100,
 };
 
-typedef struct { unsigned int orig[EXT_MAX_LEDS]; int norig; } orgb_t;
+typedef struct { unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; } orgb_t;
 
 static int send_pkt(SOCKET s, unsigned dev, unsigned id, const void *data, unsigned len) {
     unsigned char h[16] = { 'O', 'R', 'G', 'B' };
@@ -122,14 +127,25 @@ static int orgb_open(ext_dev *d) {
     SOCKET s = orgb_connect(d->host, &count);
     if (s == INVALID_SOCKET) return 0;
     ctrl_t *c = malloc(sizeof(ctrl_t));
-    if (!c || d->sub < 0 || (unsigned)d->sub >= count || !read_ctrl(s, (unsigned)d->sub, c)) { free(c); closesocket(s); return 0; }
+    char sec[16], want[64]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    snprintf(want, sizeof(want), "%s", cfg_get(sec, "match", ""));
+    // the controller: number sub, unless it has another name than the one it was added with
+    int idx = d->sub >= 0 && (unsigned)d->sub < count && c && read_ctrl(s, (unsigned)d->sub, c) ? d->sub : -1;
+    if (c && want[0] && (idx < 0 || strcmp(c->name, want))) {
+        idx = -1;
+        for (unsigned i = 0; i < count && i < 64 && idx < 0; i++) if (read_ctrl(s, i, c) && !strcmp(c->name, want)) idx = (int)i;
+        if (idx >= 0) logf_("dev.%d (openrgb): '%s' is now number %d", d->id, want, idx);
+    }
+    if (idx < 0) { free(c); closesocket(s); return 0; }
+    if (!want[0]) { cfg_set(sec, "match", c->name); cfg_save_if_dirty(); }
     d->nleds = c->nleds > EXT_MAX_LEDS ? EXT_MAX_LEDS : c->nleds;
     snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s", c->name, type_name(c->type));
     orgb_t *o = calloc(1, sizeof(orgb_t));
-    memcpy(o->orig, c->colors, sizeof(unsigned) * c->ncolors); o->norig = c->ncolors;
+    if (!o) { free(c); closesocket(s); return 0; }
+    memcpy(o->orig, c->colors, sizeof(unsigned) * c->ncolors); o->norig = c->ncolors; o->idx = (unsigned)idx;
     free(c);
     d->priv = o; d->sock = s;
-    send_pkt(s, (unsigned)d->sub, PKT_SETCUSTOMMODE, NULL, 0);   // direct / custom mode
+    send_pkt(s, o->idx, PKT_SETCUSTOMMODE, NULL, 0);   // direct / custom mode
     return 1;
 }
 
@@ -138,7 +154,7 @@ static int send_colors(ext_dev *d, const unsigned *col, int n) {
     unsigned size = 6 + n * 4;
     unsigned short nn = (unsigned short)n;
     memcpy(buf, &size, 4); memcpy(buf + 4, &nn, 2); memcpy(buf + 6, col, n * 4);
-    return send_pkt(d->sock, (unsigned)d->sub, PKT_UPDATELEDS, buf, size);
+    return send_pkt(d->sock, ((orgb_t *)d->priv)->idx, PKT_UPDATELEDS, buf, size);
 }
 
 static int orgb_send(ext_dev *d, const rgbf *c, int n) {
@@ -187,6 +203,66 @@ static void orgb_discover(int ms, void (*found)(const disc_t *)) {
     }
     free(c);
     closesocket(s);
+}
+
+// ---- what OpenRGB on this PC has, for the PC page and the diagnostics
+int orgb_list(orgb_ctl *out, int max) {
+    unsigned count = 0;
+    SOCKET s = orgb_connect("127.0.0.1", &count);
+    if (s == INVALID_SOCKET) return -1;
+    ctrl_t *c = malloc(sizeof(ctrl_t));
+    int n = 0;
+    for (unsigned i = 0; c && i < count && n < max; i++) {
+        if (!read_ctrl(s, i, c)) continue;
+        orgb_ctl *o = &out[n++];
+        o->idx = (int)i; o->type = c->type; o->leds = c->nleds;
+        snprintf(o->name, sizeof(o->name), "%s", c->name);
+        snprintf(o->kind, sizeof(o->kind), "%s", type_name(c->type));
+    }
+    free(c);
+    closesocket(s);
+    return n;
+}
+
+static SRWLOCK chk_lk = SRWLOCK_INIT;
+static orgb_ctl chk[48];
+static int chk_n, chk_state;   // 0 not looked yet, 1 looking, 2 OpenRGB answers, 3 no OpenRGB on this PC
+static volatile LONG chk_busy;
+
+static unsigned __stdcall check_fn(void *p) {
+    (void)p;
+    net_init();
+    static orgb_ctl tmp[48];
+    int n = orgb_list(tmp, 48);
+    AcquireSRWLockExclusive(&chk_lk);
+    chk_state = n < 0 ? 3 : 2; chk_n = n < 0 ? 0 : n;
+    memcpy(chk, tmp, sizeof(orgb_ctl) * chk_n);
+    ReleaseSRWLockExclusive(&chk_lk);
+    logf_("openrgb: %s", n < 0 ? "no SDK server on this PC" : "SDK server answers");
+    InterlockedExchange(&chk_busy, 0);
+    ui_refresh();
+    return 0;
+}
+
+void orgb_check_start(void) {
+    if (InterlockedCompareExchange(&chk_busy, 1, 0)) return;
+    AcquireSRWLockExclusive(&chk_lk); if (chk_state != 2) chk_state = 1; ReleaseSRWLockExclusive(&chk_lk);
+    HANDLE t = (HANDLE)_beginthreadex(NULL, 0, check_fn, NULL, 0, NULL);
+    if (t) CloseHandle(t); else InterlockedExchange(&chk_busy, 0);
+}
+
+// "orgb":{"state":2,"ctls":[{"i":0,"type":2,"kind":"graphics card","name":"...","leds":8}]}
+int orgb_json(char *out, int cap) {
+    AcquireSRWLockShared(&chk_lk);
+    int n = snprintf(out, cap, "\"orgb\":{\"state\":%d,\"ctls\":[", chk_state);
+    for (int i = 0; i < chk_n && n < cap - 300; i++) {
+        n += snprintf(out + n, cap - n, "%s{\"i\":%d,\"type\":%d,\"kind\":\"%s\",\"leds\":%d,\"name\":\"", i ? "," : "", chk[i].idx, chk[i].type, chk[i].kind, chk[i].leds);
+        n += json_escape_to(out + n, cap - n, chk[i].name);
+        n += snprintf(out + n, cap - n, "\"}");
+    }
+    n += snprintf(out + n, cap - n, "]}");
+    ReleaseSRWLockShared(&chk_lk);
+    return n;
 }
 
 const ext_driver drv_openrgb = { "openrgb", "OpenRGB", 30, 1, orgb_open, orgb_send, orgb_leave, orgb_close, orgb_discover };

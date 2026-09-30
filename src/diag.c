@@ -169,6 +169,8 @@ static unsigned __stdcall run(void *arg) {
         if (p) { p += 7; while (*p && *p != '"') *p++ = '*'; }
         put(&b, "%s\r\n", st);
     }
+    section(&b, "hardware");
+    { char *hw = malloc(64 * 1024); if (hw) { hw_inventory(hw, 64 * 1024); put(&b, "%s", hw); free(hw); } }
     section(&b, "settings.ini");
     add_settings(&b);
     section(&b, "key files");

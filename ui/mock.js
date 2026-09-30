@@ -24,7 +24,8 @@ window.chrome = { webview: {
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
 const panels = (LAY || LAYOUTS.blocks).panels;
 const STATE = {
-  type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/', can: 1, inst: 0, pct: 0, err: '' },
+  type: 'state', orgb: { state: 2, ctls: [{ i: 0, type: 5, kind: 'keyboard', leds: 104, name: 'Keyboard' }, { i: 1, type: 3, kind: 'cooler', leds: 16, name: 'Fan hub' },
+    { i: 2, type: 2, kind: 'graphics card', leds: 8, name: 'ASUS TUF RTX 4070' }, { i: 6, type: 1, kind: 'memory', leds: 8, name: 'ENE DRAM' }, { i: 7, type: 2, kind: 'graphics card', leds: 3, name: 'MSI RTX 3060 Ventus' }] }, autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/', can: 1, inst: 0, pct: 0, err: '' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
   // #multi: a second controller (Shapes hexagons) and a Secretlab MAGRGB strip next to the Blocks
@@ -35,10 +36,15 @@ const STATE = {
   ext: {
     devs: [
       { id: 1, kind: 'wled', title: 'WLED', name: 'Desk strip', host: '192.168.1.60', sub: -1, leds: 60, per_led: 1, online: 1, enabled: 1, type: 'strip', info: 'WLED 0.14.4 · esp32' },
-      { id: 2, kind: 'openrgb', title: 'OpenRGB', name: 'Keyboard', host: '127.0.0.1', sub: 0, leds: 104, per_led: 1, online: 1, enabled: 1, type: 'bars', info: 'OpenRGB · keyboard' },
+      { id: 2, kind: 'openrgb', title: 'OpenRGB', name: 'Keyboard', host: '127.0.0.1', sub: 0, leds: 104, per_led: 1, online: 1, enabled: 1, type: 'keyboard', info: 'OpenRGB · keyboard' },
       { id: 3, kind: 'hue', title: 'Philips Hue', name: 'Living room', host: '192.168.1.20', sub: -1, leds: 3, per_led: 0, online: 0, enabled: 1, type: 'bulb', info: 'Press the link button on the Hue bridge' },
       { id: 4, kind: 'govee', title: 'Govee', name: 'Govee H6076', host: '192.168.1.71', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'floor', info: 'Govee H6076' },
       { id: 5, kind: 'goveecloud', title: 'Govee (cloud)', name: 'AI Sync Box 2', host: 'AA:BB:CC:DD:EE:FF:00:01', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 0, type: 'tv', info: 'Govee H6604 · cloud · screen sync' },
+      { id: 6, kind: 'openrgb', title: 'OpenRGB', name: 'ASUS TUF RTX 4070', host: '127.0.0.1', sub: 2, leds: 8, per_led: 1, online: 1, enabled: 1, type: 'gpu', info: 'OpenRGB · ASUS TUF RTX 4070 · graphics card' },
+      { id: 7, kind: 'openrgb', title: 'OpenRGB', name: 'Vengeance RGB', host: '127.0.0.1', sub: 3, leds: 10, per_led: 1, online: 1, enabled: 1, type: 'ram', info: 'OpenRGB · Corsair Vengeance RGB Pro · memory' },
+      { id: 8, kind: 'openrgb', title: 'OpenRGB', name: 'B550-F', host: '127.0.0.1', sub: 4, leds: 12, per_led: 1, online: 1, enabled: 1, type: 'board', info: 'OpenRGB · ASUS ROG STRIX B550-F GAMING · motherboard' },
+      { id: 9, kind: 'openrgb', title: 'OpenRGB', name: 'Front fans', host: '127.0.0.1', sub: 1, leds: 16, per_led: 1, online: 1, enabled: 1, type: 'fan', info: 'OpenRGB · Fan hub · cooler' },
+      { id: 10, kind: 'openrgb', title: 'OpenRGB', name: 'Mouse', host: '127.0.0.1', sub: 5, leds: 3, per_led: 1, online: 1, enabled: 1, type: 'mouse', info: 'OpenRGB · Mouse · mouse' },
     ],
     found: [
       { kind: 'wled', title: 'WLED', host: '192.168.1.60', sub: -1, name: 'Desk strip', leds: 60, info: 'WLED 0.14.4', added: 1 },
@@ -71,5 +77,6 @@ setInterval(() => {
   for (let i = 0; i < 52; i++) l.push([101, i, hx(pc(i / 52 + .3 - t * .12))]);
   for (let i = 0; i < 3; i++) l.push([102, i, hx(pc(i / 3 - t * .12))]);
   l.push([103, 0, hx(pc(.6 - t * .12))]);
+  [[105, 8], [106, 10], [107, 12], [108, 16], [109, 3]].forEach(([k, n], j) => { for (let i = 0; i < n; i++) l.push([k, i, hx(pc(i / n + j * .2 - t * .12))]); });   // PC hardware through OpenRGB
   emit({ type: 'frame', l });
 }, 50);

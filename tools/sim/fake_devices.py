@@ -7,7 +7,7 @@
 Every fake prints what it receives (frames per second, a sample colour), so a dev build of haku control
 (build.cmd dev) can be pointed at them. Addresses to add in the app:
     WLED     127.0.0.1:8080  (real WLED uses port 80; mDNS answers point there when port 80 is free)
-    OpenRGB  127.0.0.1       (port 6742, two controllers)
+    OpenRGB  127.0.0.1       (port 6742: keyboard, fan hub, graphics card, memory, board; --orgb-shuffle reverses them)
     Govee    127.0.0.1       (scan answers on UDP 4002, commands on 4003)
     LIFX     127.0.0.1       (UDP 56700)
     WiZ      127.0.0.1       (UDP 38899)
@@ -127,7 +127,12 @@ def orgb_controller(name, ctype, nleds, matrix):
     body += struct.pack('<H', nleds) + b''.join(struct.pack('<I', 0x00FF8000) for _ in range(nleds))
     return struct.pack('<I', 4 + len(body)) + body
 
-ORGB_CTRL = [orgb_controller('Fake Keyboard', 5, 24, (4, 5)), orgb_controller('Fake Fan Hub', 3, 12, None)]
+ORGB_CTRL = [orgb_controller('Fake Keyboard', 5, 24, (4, 5)), orgb_controller('Fake Fan Hub', 3, 12, None),
+             orgb_controller('ASUS TUF RTX 4070', 2, 8, None), orgb_controller('Corsair Vengeance RGB Pro', 1, 10, None),
+             orgb_controller('ASUS ROG STRIX B550-F GAMING', 0, 12, None)]
+if '--orgb-shuffle' in sys.argv:   # OpenRGB found its devices in another order: haku finds them again by name
+    ORGB_CTRL.reverse()
+    sys.argv.remove('--orgb-shuffle')
 
 def orgb_client(c, addr):
     rates = {}

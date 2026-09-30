@@ -43,7 +43,7 @@ static int leave_mode(void) {
 // What the device is, for the preview icon and how effects lay out on it: [dev.N] type, or a guess from the name /
 // model ("Govee H6076" is a floor lamp). strip, tv (screen backlight), bars (light bars), floor (floor lamp),
 // lamp (table lamp), panels (hexagons...), bulb.
-static const char *const TYPES[] = { "strip", "tv", "bars", "floor", "lamp", "panels", "bulb" };
+static const char *const TYPES[] = { "strip", "tv", "bars", "floor", "lamp", "panels", "bulb", "gpu", "ram", "board", "fan", "keyboard", "mouse" };
 static void device_type(const ext_dev *d, char *out, int cap) {
     char sec[24]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
     const char *t = cfg_get(sec, "type", "auto");
@@ -55,6 +55,9 @@ static void device_type(const ext_dev *d, char *out, int cap) {
         { "h605b", "tv" }, { "h605c", "tv" }, { "h6603", "tv" }, { "h6604", "tv" }, { "h6168", "tv" },
         { "hexa", "panels" }, { "glide", "panels" }, { "h6061", "panels" }, { "h6065", "panels" }, { "h6066", "panels" }, { "h6067", "panels" }, { "h6069", "panels" },
         { "table lamp", "lamp" }, { "h6022", "lamp" }, { "h6020", "lamp" },
+        // PC hardware through OpenRGB ("OpenRGB · <name> · <type>")
+        { "· graphics card", "gpu" }, { "· memory", "ram" }, { "· motherboard", "board" }, { "· cooler", "fan" },
+        { "· keyboard", "keyboard" }, { "· keypad", "keyboard" }, { "· mouse", "mouse" },
     };
     char s[256]; snprintf(s, sizeof(s), "%s %s", d->name, d->info);
     _strlwr_s(s, sizeof(s));

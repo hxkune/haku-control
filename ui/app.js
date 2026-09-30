@@ -884,7 +884,7 @@ function drawNano(c, X, Y, W, H, N) {
 
 // What a light is, for its picture in the preview (and, for LAN devices, how effects lay out on it; see
 // device_type in devices.c). LAN devices get it from the core (chosen, or guessed from the model); bulbs: [zone.lightN] type.
-const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb'];
+const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse'];
 const bulbType = i => { const v = cv('zone.light' + (i + 1), 'type', 'bulb'); return FIXTURES.includes(v) ? v : 'bulb'; };
 
 // One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
@@ -936,6 +936,58 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
     const lg = c.createLinearGradient(0, top, 0, top + h * 0.5);
     lg.addColorStop(0, glow ? g : '#1a1a1a'); lg.addColorStop(1, glow ? '#fff' : '#222');
     c.fillStyle = lg; c.fill(); c.restore();
+  } else if (type === 'gpu') {   // a graphics card: shroud with fans, the light along its top edge
+    const w = Math.min(W * 0.92, H * 2.6), h = w * 0.36, x = cx - w / 2, y = cy - h / 2 + h * 0.08;
+    rr(c, x, y, w, h, 4 * dp); c.fillStyle = '#161616'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.09)'; c.lineWidth = dp; c.stroke();
+    const fr = h * 0.36;
+    for (let i = 0; i < 3; i++) {
+      const fx = x + w * (0.2 + i * 0.3), fy = y + h * 0.56;
+      c.beginPath(); c.arc(fx, fy, fr, 0, 7); c.fillStyle = '#0d0d0d'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.08)'; c.stroke();
+      c.beginPath(); c.arc(fx, fy, fr * 0.28, 0, 7); c.fillStyle = '#1e1e1e'; c.fill();
+    }
+    lightBar(c, x + w * 0.05, y - Math.max(2 * dp, h * 0.07) - dp, w * 0.9, Math.max(2 * dp, h * 0.07), n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], false);
+  } else if (type === 'ram') {   // a memory stick standing up, lit along its top
+    const h = H * 0.9, w = Math.max(6 * dp, Math.min(h * 0.16, W * 0.3)), x = cx - w / 2, y = cy - h / 2;
+    metal(x, y + h * 0.3, w, h * 0.7);
+    lightBar(c, x + w * 0.12, y, w * 0.76, h * 0.34, n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], true);
+  } else if (type === 'board') {   // a motherboard: the board, a socket, slots, and its light down one edge
+    const s = Math.min(W * 0.8, H * 0.9), x = cx - s / 2, y = cy - s / 2;
+    rr(c, x, y, s, s, 3 * dp); c.fillStyle = '#131313'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; c.stroke();
+    metal(x + s * 0.3, y + s * 0.14, s * 0.3, s * 0.3);
+    for (let i = 0; i < 2; i++) metal(x + s * 0.12, y + s * (0.62 + i * 0.14), s * 0.62, s * 0.05);
+    lightBar(c, x + s * 0.86, y + s * 0.1, Math.max(2 * dp, s * 0.04), s * 0.8, n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], true);
+  } else if (type === 'fan') {   // a fan: its ring lit around, the LEDs going round
+    const r = Math.min(W, H) * 0.4, m = Math.max(n, 8);
+    c.save();
+    if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; }
+    c.lineWidth = Math.max(3 * dp, r * 0.16);
+    for (let i = 0; i < m; i++) {
+      c.beginPath(); c.arc(cx, cy, r, -Math.PI / 2 + i / m * Math.PI * 2, -Math.PI / 2 + (i + 1.05) / m * Math.PI * 2);
+      c.strokeStyle = col(Math.floor(i * Math.max(n, 1) / m)); c.stroke();
+    }
+    c.restore();
+    c.beginPath(); c.arc(cx, cy, r * 0.8, 0, 7); c.fillStyle = '#0e0e0e'; c.fill();
+    c.strokeStyle = 'rgba(255,255,255,.06)'; c.lineWidth = dp;
+    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; c.beginPath(); c.moveTo(cx + Math.cos(a) * r * 0.22, cy + Math.sin(a) * r * 0.22); c.quadraticCurveTo(cx + Math.cos(a + .5) * r * 0.6, cy + Math.sin(a + .5) * r * 0.6, cx + Math.cos(a + .9) * r * 0.76, cy + Math.sin(a + .9) * r * 0.76); c.stroke(); }
+    c.beginPath(); c.arc(cx, cy, r * 0.22, 0, 7); c.fillStyle = '#1c1c1c'; c.fill();
+  } else if (type === 'keyboard') {   // a keyboard: rows of keys, the LEDs spread over the columns
+    const w = Math.min(W * 0.95, H * 3.2), h = w * 0.33, x = cx - w / 2, y = cy - h / 2, cols_ = 15, rows = 5;
+    rr(c, x, y, w, h, 4 * dp); c.fillStyle = '#121212'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; c.stroke();
+    const kw = (w - 6 * dp) / cols_, kh = (h - 6 * dp) / rows;
+    for (let r = 0; r < rows; r++) for (let k = 0; k < cols_; k++) {
+      const i = Math.floor((r * cols_ + k) * Math.max(n, 1) / (rows * cols_)), kc = col(i);
+      rr(c, x + 3 * dp + k * kw + kw * 0.1, y + 3 * dp + r * kh + kh * 0.12, kw * 0.8, kh * 0.76, 1.5 * dp);
+      c.fillStyle = on && lit(kc) ? kc : '#1d1d1d'; c.fill();
+    }
+  } else if (type === 'mouse') {   // a mouse from above, its logo and side light
+    const h = Math.min(H * 0.85, W * 1.2), w = h * 0.58, x = cx - w / 2, y = cy - h / 2;
+    c.save();
+    if (glow) { c.shadowColor = glow; c.shadowBlur = 20 * dp; }
+    rr(c, x, y, w, h, w * 0.5); c.fillStyle = '#151515'; c.fill();
+    c.restore();
+    c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; rr(c, x, y, w, h, w * 0.5); c.stroke();
+    c.beginPath(); c.moveTo(cx, y); c.lineTo(cx, y + h * 0.36); c.stroke();
+    orb(cx, y + h * 0.68, w * 0.12, col(Math.floor(n / 2)));
   } else if (type === 'panels') {   // a honeycomb of hexagons, the LEDs spread over them
     const m = Math.min(Math.max(n, 3), 7), R = Math.min(W / (m * 1.9 + 1), H * 0.3);
     for (let i = 0; i < m; i++) {
@@ -987,7 +1039,7 @@ function heroAnim(key, target) {
 // controller, each bulb, each LAN device), laid out in rows; a row that is full wraps to the next one. Full rows
 // stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
 // animates the height) and tiles glide to their new places when something is added or removed.
-const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7 };
+const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8 };
 function heroItems(all) {
   const hide = all ? [] : heroHidden(), items = [];
   if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
@@ -1686,6 +1738,39 @@ function buildDevices() {
   updateDevices();
   requestAnimationFrame(sizeCanvases);
 }
+// ---- other PC hardware: what OpenRGB on this PC offers (S.orgb: state 0 not looked, 1 looking, 2 answers, 3 none).
+// Hardware haku drives itself (the MSI board, ENE memory) is shown but not offered, so two programs never fight.
+const ORGB_TYPES = { 0: 'board', 1: 'ram', 2: 'gpu', 3: 'fan', 4: 'strip', 5: 'keyboard', 6: 'mouse', 18: 'keyboard' };
+const orgbOwn = c => (c.type === 1 && S.sticks > 0) || (c.type === 0 && S.msi && /msi|mystic/i.test(c.name));
+const orgbAdded = c => S.ext.devs.some(d => d.kind === 'openrgb' && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(d.host) &&
+  (cv('dev.' + d.id, 'match', '') ? cv('dev.' + d.id, 'match', '') === c.name : d.sub === c.i));
+const orgbAdd = c => send({ cmd: 'dev_add', kind: 'openrgb', host: '127.0.0.1', sub: c.i, name: c.name, leds: 0 });
+function updateOrgb() {
+  const O = S.orgb || { state: 0, ctls: [] }, ctls = O.ctls || [];
+  $('#orgb-status').textContent = t('orgb.st' + O.state, ctls.length);
+  $('#orgb-check').disabled = O.state === 1;
+  $('#orgb-guide').classList.toggle('hidden', O.state !== 3);
+  $('#orgb-note').classList.toggle('hidden', !ctls.length);
+  const free = ctls.filter(c => !orgbOwn(c) && !orgbAdded(c));
+  $('#orgb-all-row').classList.toggle('hidden', free.length < 2);
+  const html = ctls.map(c => {
+    const own = orgbOwn(c), added = orgbAdded(c);
+    return `<div class="found-row"><span class="kind">${t('fix.' + (ORGB_TYPES[c.type] || 'strip'))}</span>
+      <div class="what"><b>${esc(c.name)}</b><small>${t('dev.leds', c.leds)}${own ? ' · ' + t('orgb.own') : ''}</small></div>
+      ${added ? `<span class="added">${t('dev.added')}</span>` : own ? '' : `<button class="btn small" data-orgb="${c.i}">${t('dev.add')}</button>`}</div>`;
+  }).join('');
+  const list = $('#orgb-list');
+  if (list.dataset.html !== html) {
+    list.dataset.html = html; list.innerHTML = html;
+    list.querySelectorAll('[data-orgb]').forEach(b => b.addEventListener('click', () => {
+      const c = ctls.find(x => x.i === +b.dataset.orgb); if (!c) return;
+      b.disabled = true; orgbAdd(c);
+    }));
+  }
+}
+$('#orgb-check').addEventListener('click', () => { S.orgb = Object.assign({}, S.orgb, { state: 1 }); updateOrgb(); send({ cmd: 'orgb_check' }); });
+$('#orgb-all').addEventListener('click', () => { (S.orgb.ctls || []).filter(c => !orgbOwn(c) && !orgbAdded(c)).forEach(orgbAdd); $('#orgb-all').disabled = true; setTimeout(() => { $('#orgb-all').disabled = false; }, 3000); });
+
 function updateDevices() {
   const E = S.ext;
   E.devs.forEach(d => {
@@ -1961,6 +2046,7 @@ function updateChips() {
   if (ed.length) { const on = ed.filter(d => d.online).length; h.push(chip(on === ed.length ? 'on' : on ? 'warn' : 'off', `${t('chip.devs')} <b>${on}/${ed.length}</b>`)); }
   $('#chips').innerHTML = h.join('');
   $('#ram-status').textContent = S.sticks ? t('ram.status', S.sticks) : t('ram.none');
+  updateOrgb();
   $('#gpu-status').textContent = S.msi ? t('gpu.status') : t('gpu.none');
   $('#strip-title').textContent = stripName();
   const sn = $('#strip-name'); if (document.activeElement !== sn) sn.value = cv('layout', 'strip_name', '');

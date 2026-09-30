@@ -106,7 +106,8 @@ static void on_message(const std::string &js) {
     }
     else if (cmd == "preset_delete") { app_preset_delete(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "nano_forget") { nano_forget(atoi(field(js, "slot").c_str())); post_state(); }
-    else if (cmd == "scan") { ext_scan(); post_status(); }
+    else if (cmd == "scan") { ext_scan(); orgb_check_start(); post_status(); }
+    else if (cmd == "orgb_check") { orgb_check_start(); post_status(); }
     else if (cmd == "dev_add") {
         ext_add(field(js, "kind").c_str(), field(js, "host").c_str(), atoi(field(js, "sub").c_str()),
                 field(js, "name").c_str(), atoi(field(js, "leds").c_str()));

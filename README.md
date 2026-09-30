@@ -26,7 +26,7 @@ device runs its own effect.
 
 | Device | How | Status |
 | --- | --- | --- |
-| Anything [OpenRGB](https://openrgb.org) supports (hundreds of boards, RAM, GPUs, keyboards, mice, fans…) | OpenRGB SDK server, every controller becomes a device | protocol tested against a simulator |
+| Anything [OpenRGB](https://openrgb.org) supports (graphics cards, boards and RAM of any brand, keyboards, mice, fans…) | OpenRGB SDK server on this PC, listed under *PC → Other PC hardware*; every controller becomes a device, found again by name when OpenRGB renumbers them | protocol tested against a simulator |
 | MSI Mystic Light: onboard LED + JRAINBOW1 ARGB header | own driver, USB HID, 185-byte protocol | verified on MPG B650I EDGE WIFI (MS-7D73); other boards are not touched |
 | ENE DRAM RGB, controller `AUDA0-E6K5-0101` (e.g. G.Skill Trident Z5 RGB) | own driver, SMBus via [PawnIO](https://pawnio.eu), AMD chipsets | verified; other controllers are detected and left alone |
 | NVIDIA GPU temperature (for the temperature effect) | NVML | verified |
@@ -75,8 +75,12 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
 
 - **WLED, Hue, Govee, LIFX, Yeelight:** *Devices → Scan network*, then *Add*. Govee and Yeelight need
   *LAN Control* switched on in their apps. Hue asks you to press the bridge's link button after adding.
-- **OpenRGB:** start OpenRGB with *SDK Server* on, then *Devices → Scan network* lists its controllers. If
-  OpenRGB drives the same MSI board or memory as haku control's own drivers, set `[devices] msi=0` / `ene=0`.
+- **OpenRGB (graphics cards, other boards, RAM, coolers):** install OpenRGB, tick *Start at login*, *Start minimized*
+  and *Start server* in its general settings, then *PC → Other PC hardware* lists its controllers (*Add* / *Add all*).
+  Hardware haku control drives itself (the MSI board, ENE memory) is not offered there. If OpenRGB still drives
+  the same MSI board or memory as haku control's own drivers, set `[devices] msi=0` / `ene=0`.
+- **Diagnostics** (*Settings → Files*) list the PC's hardware (board, BIOS, memory sticks, graphics cards and their
+  maker, SMBus controller, USB devices of RGB makers, what OpenRGB sees): send it to ask for support of a device.
 
 - **Nanoleaf:** *Devices → Sign-ins and pairing → Connect Nanoleaf*, then hold the controller's power button for
   5–7 s. Every controller becomes its own device (own map, colours and switch); *Add a controller* on the Nanoleaf

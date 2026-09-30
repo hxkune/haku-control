@@ -156,6 +156,25 @@
           <label class="check"><input type="checkbox" data-layout="board_led"><span></span><em data-i18n="boardled">Motherboard LED</em></label>
         </div>
       </div>
+      <!-- graphics cards, other boards, RAM, coolers: through OpenRGB on this PC -->
+      <div class="card pc-more">
+        <div class="card-head">
+          <div><h3 data-i18n="pc.more">Other PC hardware</h3><p class="muted" id="orgb-status"></p></div>
+          <button class="btn small ghost" id="orgb-check"><span data-i18n="orgb.check">Check again</span></button>
+        </div>
+        <p class="note" data-i18n="pc.more.text">Graphics cards, motherboards, RAM and coolers of any brand come in through OpenRGB (free). haku then lights them together with everything else.</p>
+        <div class="orgb-guide hidden" id="orgb-guide">
+          <ol>
+            <li data-i18n="orgb.g1">Install OpenRGB and start it once: it finds the hardware by itself.</li>
+            <li data-i18n="orgb.g2">In OpenRGB: Settings → General settings → tick "Start at login", "Start minimized" and "Start server".</li>
+            <li data-i18n="orgb.g3">On the "SDK Server" tab press "Start server", then "Check again" here.</li>
+          </ol>
+          <button class="btn small" data-open="openrgb"><span data-i18n="orgb.get">Get OpenRGB</span></button>
+        </div>
+        <div class="found orgb-list" id="orgb-list"></div>
+        <div class="btn-row hidden" id="orgb-all-row"><button class="btn small primary" id="orgb-all"><span data-i18n="orgb.all">Add all</span></button></div>
+        <p class="hint hidden" id="orgb-note" data-i18n="orgb.note">Hardware haku drives by itself is not offered again, so two programs never fight over it. Close effects running in OpenRGB: haku takes over the lights.</p>
+      </div>
     </div>
   </section>
 
