@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.19',
+    en: ['Divoom Times Frame connects (it was wrongly told its LocalToken was wrong).',
+      'Divoom devices are found more reliably when Divoom\'s service misses them for a moment.'],
+    ru: ['Divoom Times Frame подключается (раньше haku ошибочно писала, что LocalToken неверный).',
+      'Устройства Divoom находятся надёжнее, когда сервис Divoom на миг их не видит.'],
+    fr: ['La Divoom Times Frame se connecte (haku disait à tort que son LocalToken était faux).',
+      'Les appareils Divoom sont trouvés plus sûrement quand le service de Divoom les rate un instant.'] },
   { v: '0.3.18',
     en: ['Divoom Times Gate: the side lights follow haku too. Its card says which lights take haku\'s colours (back and sides, back only, sides only…).',
       'Divoom Times Gate keeps its connection when it misses an answer now and then.',
