@@ -14,8 +14,8 @@ DEVICES = [
     {"sku": "H6604", "device": "AA:BB:CC:DD:EE:FF:00:01", "deviceName": "AI Sync Box 2", "type": "devices.types.light",
      "capabilities": [{"type": "devices.capabilities.on_off", "instance": "powerSwitch"},
                       {"type": "devices.capabilities.range", "instance": "brightness"},
-                      {"type": "devices.capabilities.toggle", "instance": "dreamViewToggle"},
-                      {"type": "devices.capabilities.color_setting", "instance": "colorRgb"}]},
+                      {"type": "devices.capabilities.toggle", "instance": "dreamViewToggle"}] +
+                     ([] if "--box-no-colour" in __import__("sys").argv else [{"type": "devices.capabilities.color_setting", "instance": "colorRgb"}])},
     {"sku": "H6076", "device": "AA:BB:CC:DD:EE:FF:00:02", "deviceName": "Floor lamp", "type": "devices.types.light",
      "capabilities": [{"type": "devices.capabilities.on_off", "instance": "powerSwitch"},
                       {"type": "devices.capabilities.range", "instance": "brightness"},
@@ -52,9 +52,14 @@ class H(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         if not self.authed():
             return
+        p = body["payload"]
+        dev = next((d for d in DEVICES if d["device"] == p["device"]), None)
+        if self.path == "/router/api/v1/device/state":
+            return self.out(200, {"requestId": body["requestId"], "msg": "success", "code": 200, "payload": {"sku": p["sku"], "device": p["device"],
+                "capabilities": [{"type": c["type"], "instance": c["instance"], "state": {"value": 1 if c["instance"] != "colorRgb" else 16711680}}
+                                 for c in dev["capabilities"]]}})
         if self.path != "/router/api/v1/device/control":
             return self.out(404, {})
-        p = body["payload"]
         now = time.time()
         t = [x for x in recent.get(p["device"], []) if now - x < 1] + [now]
         recent[p["device"]] = t
@@ -62,6 +67,9 @@ class H(BaseHTTPRequestHandler):
         if len(t) > 2:
             print(time.strftime("%H:%M:%S"), p["sku"], "429 too many", flush=True)
             return self.out(429, {"code": 429, "message": "Too many requests"})
+        if not any(x["instance"] == c["instance"] for x in dev["capabilities"]):   # like the real service: HTTP 200, error inside
+            print(time.strftime("%H:%M:%S"), p["sku"], c["instance"], "not supported", flush=True)
+            return self.out(200, {"requestId": body["requestId"], "msg": "Unsupported capability", "code": 400})
         v = c["value"]
         shown = f"#{v:06X}" if c["instance"] == "colorRgb" else v
         print(time.strftime("%H:%M:%S"), p["sku"], c["instance"], shown, flush=True)

@@ -21,6 +21,7 @@ typedef struct {
     int  leave;                               // -1, or LEAVE_* to do before the thread ends
     int  sent_on, sent_rgb, sent_bri;         // what Govee has (thread only)
     DWORD last_call;
+    char logged[256];   // commands whose first success is logged
     char id[64];
 } gcloud_t;
 
@@ -47,19 +48,84 @@ static int load(gcloud_t *g, const char *device) {
     return 1;
 }
 
-// One capability command; returns the HTTP status (0: no answer). Govee takes 2 commands per second per device.
-static int control(gcloud_t *g, const char *type, const char *instance, int value) {
-    char head[160], body[512], ans[2048];
+// A request to the Govee cloud, paced: Govee takes 2 commands per second per device. Returns the HTTP status.
+static int govee_call(gcloud_t *g, const char *method, const char *path, const char *body, char *ans, int cap) {
+    char head[160];
     DWORD since = GetTickCount() - g->last_call;
     if (g->last_call && since < 600) Sleep(600 - since);
     snprintf(head, sizeof(head), "Govee-API-Key: %s\r\nContent-Type: application/json\r\n", g->key);
-    snprintf(body, sizeof(body), "{\"requestId\":\"haku-%lu\",\"payload\":{\"sku\":\"%s\",\"device\":\"%s\",\"capability\":"
-             "{\"type\":\"devices.capabilities.%s\",\"instance\":\"%s\",\"value\":%d}}}", GetTickCount(), g->sku, g->dev, type, instance, value);
-    int st = acc_https("govee", "POST", "openapi.api.govee.com", "/router/api/v1/device/control", head, body, ans, sizeof(ans));
+    int st = acc_https("govee", method, "openapi.api.govee.com", path, head, body, ans, cap);
     g->last_call = GetTickCount();
     SecureZeroMemory(head, sizeof(head));
-    if (st != 200) logf_("govee cloud %s: %s=%d refused (%d) %.120s", g->sku, instance, value, st, ans);
     return st;
+}
+
+// One capability command; returns 200 when Govee took it. Govee may answer HTTP 200 with an error inside
+// ({"code":400,"msg":"..."}), so the body's own code counts; every answer that is not a plain success is logged,
+// and the first success of each command too (so a log shows what reached the device).
+static int control(gcloud_t *g, const char *type, const char *instance, int value) {
+    char body[512], ans[2048];
+    snprintf(body, sizeof(body), "{\"requestId\":\"haku-%lu\",\"payload\":{\"sku\":\"%s\",\"device\":\"%s\",\"capability\":"
+             "{\"type\":\"devices.capabilities.%s\",\"instance\":\"%s\",\"value\":%d}}}", GetTickCount(), g->sku, g->dev, type, instance, value);
+    int st = govee_call(g, "POST", "/router/api/v1/device/control", body, ans, sizeof(ans));
+    int code = (int)json_get_num(ans, "code", st);
+    if (st == 200 && code != 200) st = code > 0 ? code : 400;
+    if (st != 200) logf_("govee cloud %s: %s=%d refused (%d) %.200s", g->sku, instance, value, st, ans);
+    else {
+        char key[40]; snprintf(key, sizeof(key), ",%s,", instance);
+        if (!strstr(g->logged, key) && strlen(g->logged) + strlen(key) < sizeof(g->logged)) {
+            strcat_s(g->logged, sizeof(g->logged), key);
+            logf_("govee cloud %s: %s=%d taken", g->sku, instance, value);
+        }
+    }
+    return st;
+}
+
+// "key": "text" / "key": 12 inside [p, end): the value's start and length (strings without their quotes); NULL if absent
+static const char *jval(const char *p, const char *end, const char *key, int *len) {
+    char pat[40]; snprintf(pat, sizeof(pat), "\"%s\"", key);
+    for (const char *k = p; (k = strstr(k, pat)) != NULL && (!end || k < end); k += strlen(pat)) {
+        const char *v = k + strlen(pat);
+        while (*v == ' ' || *v == '\t' || *v == '\r' || *v == '\n') v++;
+        if (*v != ':') continue;
+        v++;
+        while (*v == ' ' || *v == '\t' || *v == '\r' || *v == '\n') v++;
+        if (*v == '"') { const char *q = strchr(v + 1, '"'); if (!q) return NULL; *len = (int)(q - v - 1); return v + 1; }
+        int n = 0; while (v[n] && v[n] != ',' && v[n] != '}' && v[n] != ']' && n < 40) n++;
+        *len = n; return v;
+    }
+    return NULL;
+}
+
+// What the device can do and what it shows now, into the log once (for looking into "it does not react"):
+// the capability names from the device list, then the state Govee reports.
+static void log_device(gcloud_t *g) {
+    static char ans[64 * 1024];
+    int l;
+    if (govee_call(g, "GET", "/router/api/v1/user/devices", NULL, ans, sizeof(ans)) == 200) {
+        char pat[80]; snprintf(pat, sizeof(pat), "\"%s\"", g->dev);
+        const char *d = strstr(ans, pat), *e = d ? strstr(d + strlen(pat), "\"device\"") : NULL;   // the next device starts there
+        char caps[600] = ""; int n = 0;
+        for (const char *p = d, *v; p && (v = jval(p, e, "instance", &l)) != NULL; p = v + l) {
+            if (n + l + 2 >= (int)sizeof(caps)) break;
+            n += snprintf(caps + n, sizeof(caps) - n, "%s%.*s", n ? "," : "", l, v);
+        }
+        logf_("govee cloud %s: can do %s", g->sku, caps[0] ? caps : "(not listed)");
+        if (caps[0] && !strstr(caps, "colorRgb")) logf_("govee cloud %s: Govee offers no colour command for it: only its own modes will work", g->sku);
+    }
+    char body[256];
+    snprintf(body, sizeof(body), "{\"requestId\":\"haku-%lu\",\"payload\":{\"sku\":\"%s\",\"device\":\"%s\"}}", GetTickCount(), g->sku, g->dev);
+    if (govee_call(g, "POST", "/router/api/v1/device/state", body, ans, sizeof(ans)) == 200) {
+        char st[600] = ""; int n = 0;
+        for (const char *p = ans, *v; (v = jval(p, NULL, "instance", &l)) != NULL; p = v + l) {
+            const char *nx = strstr(v + l, "\"instance\""); int vl;
+            const char *s2 = jval(v + l, nx, "value", &vl);
+            if (!s2) continue;
+            if (n + l + vl + 3 >= (int)sizeof(st)) break;
+            n += snprintf(st + n, sizeof(st) - n, "%s%.*s=%.*s", n ? " " : "", l, v, vl, s2);
+        }
+        logf_("govee cloud %s: now %s", g->sku, st[0] ? st : "(no state)");
+    }
 }
 
 static int mode_sync(const gcloud_t *g, const char *sec) {
@@ -84,6 +150,7 @@ static unsigned __stdcall worker(void *arg) {
         int sync = mode_sync(g, sec);
         if (sync != g->sync) {   // mode changed in the window: back to screen sync, or colours from now on
             g->sync = sync; g->sent_rgb = g->sent_bri = -1; g->dream_off = 0;
+            logf_("govee cloud %s: mode %s", g->sku, sync ? "own (screen sync)" : "colours from haku");
             if (sync && g->sent_on == 1) control(g, "toggle", "dreamViewToggle", 1);
         }
         if (!have || (int)(GetTickCount() - next) < 0) continue;
@@ -110,6 +177,8 @@ static int gc_open(ext_dev *d) {
     char sec[24]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
     snprintf(g->id, sizeof(g->id), "%d", d->id);
     g->sync = mode_sync(g, sec);
+    log_device(g);
+    logf_("govee cloud %s: mode %s", g->sku, g->sync ? "own (screen sync), haku only switches it on / off" : "colours from haku");
     InitializeSRWLock(&g->lk);
     g->sent_on = g->sent_rgb = g->sent_bri = -1; g->leave = -1; g->run = 1;
     // sync: on at once and screen sync on (the device's own mode); colour: waits for the first frame
