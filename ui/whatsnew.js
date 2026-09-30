@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.18',
+    en: ['Divoom Times Gate: the side lights follow haku too. Its card says which lights take haku\'s colours (back and sides, back only, sides only…).',
+      'Divoom Times Gate keeps its connection when it misses an answer now and then.',
+      'Divoom Times Frame: found and connected, with its own type. Its lights are still being found out: if they stay dark, send the diagnostics.'],
+    ru: ['Divoom Times Gate: боковая подсветка тоже следует за haku. В карточке можно выбрать, какая подсветка берёт цвета haku (задняя и боковая, только задняя, только боковая…).',
+      'Divoom Times Gate больше не отваливается, когда изредка не отвечает.',
+      'Divoom Times Frame находится и подключается, у него свой тип. Его подсветку ещё изучаем: если она не загорается, пришлите диагностику.'],
+    fr: ['Divoom Times Gate : l\'éclairage latéral suit haku lui aussi. Sa carte indique quels éclairages prennent les couleurs de haku (arrière et côtés, arrière seul, côtés seuls…).',
+      'La Divoom Times Gate garde sa connexion quand elle manque une réponse de temps en temps.',
+      'Divoom Times Frame : trouvé et connecté, avec son propre type. Son éclairage est encore à l\'étude : s\'il reste éteint, envoyez le diagnostic.'] },
   { v: '0.3.17',
     en: ['Divoom: a scan finds them (through Divoom\'s own service, like the Divoom app), and a device can be added by its Device ID as well as by its IP. The LocalToken is still needed.',
       'Hidden themes play their animations even when Windows\' animation effects are off (haku\'s own Animations switch still stops them).'],
