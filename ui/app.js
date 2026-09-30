@@ -779,26 +779,6 @@ function drawNano(c, X, Y, W, H, N) {
   return [];
 }
 
-// Bulbs stacked in a column. Each one's share of the column is its appear animation value (0..1), so a new bulb
-// grows in and the others make room. Returns the hit areas.
-function drawBulbs(c, X, Y, W, H) {
-  const d = devicePixelRatio, v = S.bulbs.map((_, i) => heroAnim('bulb' + i, 1));
-  const n = v.reduce((a, b) => a + b, 0);
-  if (!n) return [];
-  const r = Math.min(W * 0.3, H / (Math.max(n, 1) * 2.6), 26 * d), hits = [];
-  let acc = 0;
-  for (let i = 0; i < v.length; i++) {
-    const cx = X + W / 2, cy = Y + H / 2 + (acc + v[i] / 2 - n / 2) * r * 2.7, col = F.bulbs[i];
-    acc += v[i];
-    const on = lit(col) && S.bulbs[i].online, box = { x: cx - r * 1.8, y: cy - r * 1.35, w: r * 3.6, h: r * 2.7 };
-    c.save(); c.globalAlpha *= v[i];
-    drawFixture(c, box.x, box.y, box.w, box.h, bulbType(i), [on ? col : OFF], on);
-    c.restore();
-    hits.push({ key: 'bulb' + i, k: 'bulb', i, ...box });
-  }
-  return hits;
-}
-
 // What a light is, for its picture in the preview (and, for LAN devices, how effects lay out on it; see
 // device_type in devices.c). LAN devices get it from the core (chosen, or guessed from the model); bulbs: [zone.lightN] type.
 const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb'];
@@ -874,24 +854,6 @@ function drawExt(c, X, Y, W, H, k) {
   const cols = F.ext[k] || [], on = d.online && d.enabled, n = Math.max(1, cols.length || Math.min(d.leds || 1, 60));
   drawFixture(c, X, Y, W, H, d.type || (d.per_led ? 'strip' : 'bulb'), [...Array(n)].map((_, i) => cols[i] || OFF), on);
 }
-// All LAN devices as rows; row heights follow the appear animation, like the bulbs. Returns the hit areas.
-const HERO_EXT_MAX = 12;
-function drawExtAll(c, X, Y, W, H) {
-  const list = S.ext.devs.map((dv, k) => [dv, k, heroAnim('ext' + dv.id, 1)])
-    .filter(([, , v]) => v > .001).slice(0, HERO_EXT_MAX);
-  const tot = list.reduce((a, [, , v]) => a + v, 0), d = devicePixelRatio, hits = [];
-  let y = Y;
-  for (const [dv, k, v] of list) {
-    const rh = H * v / Math.max(tot, 1);
-    c.save(); c.globalAlpha *= v;
-    drawExt(c, X, y, W, rh, k);
-    c.restore();
-    hits.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, x: X + 6 * d, y, w: W - 12 * d, h: rh });
-    y += rh;
-  }
-  return hits;
-}
-
 function label(c, text, x, y, bright) {
   const d = devicePixelRatio;
   c.fillStyle = bright ? '#d8d8d8' : '#4e4e4e'; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'center'; c.letterSpacing = `${3 * d}px`;
@@ -918,14 +880,70 @@ function heroAnim(key, target) {
   return v;
 }
 
-// The preview grows taller when bulbs or LAN devices stack up (CSS animates the height).
+// ---- the preview as tiles: every device is a tile of its own, in reading order (memory, strip, each Nanoleaf
+// controller, each bulb, each LAN device), laid out in rows; a row that is full wraps to the next one. Full rows
+// stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
+// animates the height) and tiles glide to their new places when something is added or removed.
+const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7 };
+function heroItems() {
+  const hide = heroHidden(), items = [];
+  if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
+  if (S.msi && !hide.includes('gpu')) items.push({ key: 'gpu', k: 'gpu', w: 2.4, name: stripName(), draw: drawGpu });
+  if (!hide.includes('nano')) nanoCtls().forEach(n => {
+    const P = n.panels || [], xs = P.map(p => p[0]), ys = P.map(p => p[1]), sd = n.side || .2;
+    const a = P.length ? (Math.max(...xs) - Math.min(...xs) + sd) / (Math.max(...ys) - Math.min(...ys) + sd) : 1;
+    items.push({ key: 'nano' + n.slot, k: 'nano', slot: n.slot, w: Math.max(1.1, Math.min(3, a * 1.25)), name: nanoCtls().length > 1 ? nanoName(n) : 'Nanoleaf',
+      draw: (c, x, y, w, h) => drawNano(c, x, y, w, h, n) });
+  });
+  if (!hide.includes('bulbs')) S.bulbs.forEach((b, i) => items.push({ key: 'bulb' + i, k: 'bulb', i, w: .85, name: t('bulb', i + 1),
+    draw: (c, x, y, w, h) => { const col = F.bulbs[i], on = lit(col) && b.online; drawFixture(c, x, y, w, h, bulbType(i), [on ? col : OFF], on); } }));
+  if (!hide.includes('ext')) S.ext.devs.forEach((dv, k) => {
+    const ty = dv.type || (dv.per_led ? 'strip' : 'bulb');
+    items.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, name: dv.name,
+      w: HERO_EXT_W[ty] || Math.min(2.4, .55 + .35 * Math.max(1, dv.leds || 1)), draw: (c, x, y, w, h) => drawExt(c, x, y, w, h, k) });
+  });
+  return items;
+}
+// Tile rectangles in CSS pixels for a preview W wide; returns { tiles: [{ it, x, y, w, h }], height }.
+function heroLayout(W) {
+  const phone = matchMedia('(max-width: 700px)').matches;
+  const U = phone ? 70 : 92, RH = phone ? 118 : 144, G = 10, P = 14, inner = Math.max(40, W - P * 2);
+  const rows = []; let row = [], used = 0;
+  for (const it of heroItems()) {
+    const w = Math.min(it.w * U, inner);
+    if (row.length && used + G + w > inner) { rows.push(row); row = []; used = 0; }
+    used += (row.length ? G : 0) + w; row.push({ it, w });
+  }
+  if (row.length) rows.push(row);
+  const tiles = [];
+  rows.forEach((r, ri) => {
+    // the last row leaves the bottom-right corner to the preview's settings button (#hero-edit)
+    const last = ri === rows.length - 1, avail = inner - (last ? 40 : 0);
+    const sum = r.reduce((a, x) => a + x.w, 0), gaps = G * (r.length - 1);
+    const f = !last || rows.length === 1 ? Math.min(1.7, (avail - gaps) / sum) : Math.min(1.7, (avail - gaps) / sum, tiles.length ? tiles[0].f : 1.7);
+    let x = P;
+    for (const { it, w } of r) { tiles.push({ it, x, y: P + ri * (RH + G), w: w * f, h: RH, f }); x += w * f + G; }
+  });
+  return { tiles, height: rows.length ? P * 2 + rows.length * RH + (rows.length - 1) * G : (phone ? 150 : 180) };
+}
 function heroHeight() {
-  const hide = heroHidden(), phone = matchMedia('(max-width: 700px)').matches;
-  const rows = Math.max(hide.includes('bulbs') ? 0 : S.bulbs.length,
-    hide.includes('ext') ? 0 : Math.min(HERO_EXT_MAX, S.ext.devs.length));
-  const h = Math.min((phone ? 180 : 240) + Math.max(0, rows - 3) * (phone ? 40 : 52), phone ? 400 : 520);
-  const el = $('#tab-effects .hero');
+  const el = $('#tab-effects .hero'), h = Math.round(heroLayout($('#hero').clientWidth || el.clientWidth).height);
   if (+el.dataset.h !== h) { el.dataset.h = h; el.style.height = h + 'px'; }
+}
+// a tile's outline: faceted like the cards (top-left and bottom-right corners cut)
+function tilePath(c, x, y, w, h, cut) {
+  c.beginPath();
+  c.moveTo(x + cut, y); c.lineTo(x + w, y); c.lineTo(x + w, y + h - cut); c.lineTo(x + w - cut, y + h);
+  c.lineTo(x, y + h); c.lineTo(x, y + cut); c.closePath();
+}
+function tileLabel(c, text, x, y, w, bright) {
+  const d = devicePixelRatio;
+  c.font = `${9 * d}px ${WIDE}`; c.letterSpacing = `${2 * d}px`; c.textAlign = 'center';
+  c.fillStyle = bright ? '#d8d8d8' : '#5a5a5a';
+  let s = text.toUpperCase();
+  if (c.measureText(s).width > w) { while (s.length > 1 && c.measureText(s + '…').width > w) s = s.slice(0, -1); s += '…'; }
+  c.fillText(s, x + w / 2, y);
+  c.letterSpacing = '0px';
 }
 
 function drawHero() {
@@ -936,48 +954,41 @@ function drawHero() {
   heroHeight();
   const c = cvs.getContext('2d'), W = cvs.width, H = cvs.height, d = devicePixelRatio;
   c.clearRect(0, 0, W, H);
-  const hide = heroHidden(), present = heroGroups().map(g => g[0]);
-  const nNano = nanoCtls().filter(n => (n.panels || []).length).length;
-  const cols = HERO_GROUPS.map(([k, f]) => [k, k === 'nano' ? f * Math.min(2.2, 1 + Math.max(0, nNano - 1) * .6) : f, heroAnim('g:' + k, present.includes(k) && !hide.includes(k) ? 1 : 0)])
-    .filter(g => g[2] > .001);
-  const tot = cols.reduce((a, [, f, v]) => a + f * v, 0);
-  const hits = [];
-  let x = 0;
-  for (const [k, f, v] of cols) {
-    const w = W * f * v / tot, top = 18 * d, h = H - 46 * d;
-    if (w > 14 * d) {
-      c.save();
-      c.beginPath(); c.rect(x, 0, w, H); c.clip();   // a growing group never draws over its neighbours
-      c.globalAlpha = v;
-      try {   // one group failing to draw must not take the whole preview down
-        if (k === 'ram') drawRam(c, x, top, w, h);
-        if (k === 'gpu') drawGpu(c, x, top, w, h);
-        if (k === 'nano') hits.push(...drawNano(c, x, top, w, h));
-        if (k === 'bulbs') hits.push(...drawBulbs(c, x, top, w, h));
-        if (k === 'ext') hits.push(...drawExtAll(c, x, top, w, h));
-        if (k !== 'bulbs' && k !== 'ext' && k !== 'nano') hits.push({ key: k, k, x: x + 6 * d, y: top - 8 * d, w: w - 12 * d, h: h + 16 * d });
-        if (w > 64 * d) label(c, groupName(k), x + w / 2, H - 16 * d, hits.some(h => h.key === HERO.hover && (h.k === k || h.k + 's' === k)));
-      } catch (e) { console.warn('preview', k, e); }
-      c.restore();
+  const { tiles } = heroLayout(W / d), calm = document.body.classList.contains('calm'), hits = [];
+  HERO.pos = HERO.pos || {};
+  const seen = new Set();
+  for (const T of tiles) {
+    const { it } = T; seen.add(it.key);
+    // glide from where the tile was (a new tile starts in place and fades / grows in)
+    let p = HERO.pos[it.key];
+    if (!p) p = HERO.pos[it.key] = { x: T.x, y: T.y, w: T.w };
+    for (const k of ['x', 'y', 'w']) {
+      const tgt = T[k];
+      if (calm || Math.abs(tgt - p[k]) < .5) p[k] = tgt; else { p[k] += (tgt - p[k]) * HERO.k; HERO.moving = true; }
     }
-    x += w;
+    const v = heroAnim('a:' + it.key, 1);
+    const x = p.x * d, y = p.y * d, w = p.w * d, h = T.h * d, hot = HERO.hover === it.key;
+    c.save();
+    c.globalAlpha = v;
+    const sc = .92 + .08 * v; c.translate(x + w / 2, y + h / 2); c.scale(sc, sc); c.translate(-x - w / 2, -y - h / 2);
+    tilePath(c, x, y, w, h, 8 * d);
+    c.fillStyle = hot ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.015)'; c.fill();
+    c.strokeStyle = hot ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.06)'; c.lineWidth = d; c.stroke();
+    c.save(); tilePath(c, x, y, w, h, 8 * d); c.clip();   // a device never draws outside its tile
+    try { it.draw(c, x + 8 * d, y + 22 * d, w - 16 * d, h - 50 * d); } catch (e) { console.warn('preview', it.key, e); }
+    c.restore();
+    tileLabel(c, it.name, x + 8 * d, y + h - 12 * d, w - 16 * d, hot);
+    c.restore();
+    hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, x, y, w, h });
   }
-  if (!cols.length && S.effects.length) {   // nothing to show yet: the whole preview invites to add a device
+  for (const k of Object.keys(HERO.pos)) if (!seen.has(k)) { delete HERO.pos[k]; delete HERO.anim['a:' + k]; }
+  if (!tiles.length && S.effects.length) {   // nothing to show yet: the whole preview invites to add a device
     c.fillStyle = HERO.hover === 'add' ? '#d8d8d8' : '#6a6a6a'; c.font = `${13 * d}px ${WIDE}`; c.textAlign = 'center';
     c.fillText('+  ' + t('hero.empty'), W / 2, H / 2);
     hits.push({ key: 'add', k: 'add', x: W * .3, y: H * .3, w: W * .4, h: H * .4 });
   }
   hits.forEach(h => heroPowerButton(c, h));
   HERO.hits = hits;
-  const hv = hits.find(h => h.key === HERO.hover);
-  if (hv) {   // faceted frame around the device under the cursor
-    const cut = 8 * d, { x: hx, y: hy, w: hw, h: hh } = hv;
-    c.beginPath();
-    c.moveTo(hx + cut, hy); c.lineTo(hx + hw, hy); c.lineTo(hx + hw, hy + hh - cut); c.lineTo(hx + hw - cut, hy + hh);
-    c.lineTo(hx, hy + hh); c.lineTo(hx, hy + cut); c.closePath();
-    c.fillStyle = 'rgba(255,255,255,.035)'; c.fill();
-    c.strokeStyle = 'rgba(255,255,255,.28)'; c.lineWidth = d; c.stroke();
-  }
   if (HERO.moving && !HERO.raf) HERO.raf = requestAnimationFrame(() => { HERO.raf = 0; if (tab === 'effects') drawHero(); });
 }
 // the canvas follows the card while its height animates
@@ -1038,7 +1049,7 @@ function togglePower(h) {
 function heroPowerButton(c, h) {
   const p = devicePower(h);
   if (!p) { h.pw = null; return; }
-  const d = devicePixelRatio, r = 8.5 * d, x = h.x + h.w - r - 4 * d, y = h.y + r + 4 * d;
+  const d = devicePixelRatio, r = 8 * d, x = h.x + h.w - r - 7 * d, y = h.y + r + 7 * d;
   h.pw = { x, y, r, on: p.on };
   const hot = HERO.hoverPw === h.key, show = hot ? 1 : HERO.hover === h.key ? .85 : p.on ? .28 : .7;
   c.save(); c.globalAlpha = show;

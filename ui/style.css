@@ -225,6 +225,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .hero::before, .hero::after, .corners::before, .corners::after { content: ""; position: absolute; width: 12px; height: 12px; border: 0 solid var(--line3); pointer-events: none; }
 .hero::before { left: 12px; top: 12px; border-left-width: 1px; border-top-width: 1px; }
 .hero::after { right: 12px; bottom: 12px; border-right-width: 1px; border-bottom-width: 1px; }
+.hero::before, .hero::after { display: none; }   /* the tiles have their own frames */
 .fx-layout { display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
 .fx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 .fx {
@@ -679,7 +680,7 @@ body.calm .btn.primary, body.calm .power.off { transition: none; }
 
 /* ---------------- quick access: the preview opens a device's settings in a floating sheet */
 .hero-edit {
-  position: absolute; top: 10px; right: 10px; z-index: 2; width: 30px; height: 30px; padding: 0;
+  position: absolute; bottom: 12px; right: 12px; z-index: 2; width: 30px; height: 30px; padding: 0;
   display: grid; place-items: center; border: 1px solid var(--line2); background: rgba(10, 10, 10, .6); color: var(--muted);
   opacity: 0; transition: opacity .2s, color .2s, border-color .2s;
   clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
@@ -689,7 +690,7 @@ body.calm .btn.primary, body.calm .power.off { transition: none; }
 .hero-edit:hover { color: #fff; border-color: var(--line3); }
 @media (hover: none) { .hero-edit { opacity: .8; } }
 .hero-menu {
-  position: absolute; top: 46px; right: 10px; z-index: 3; width: 240px; padding: 14px 16px;
+  position: absolute; bottom: 48px; right: 12px; z-index: 3; width: 240px; padding: 14px 16px;
   display: flex; flex-direction: column; gap: 10px; background: #121212; border: 1px solid var(--line2);
   box-shadow: 0 24px 50px -12px rgba(0, 0, 0, .8); animation: pop .14s ease;
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
