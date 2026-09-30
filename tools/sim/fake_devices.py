@@ -365,11 +365,10 @@ class DivoomHttp(BaseHTTPRequestHandler):
             self.reply({'error_code': 0})
         else: self.reply({'error_code': 1})
 
-# A stand-in so haku's search for the Times Frame's light command can be tested: the real command is not known.
-FRAME_LIGHT_CMD = os.environ.get('FAKE_FRAME_LIGHT_CMD', 'Device/SetLightInfo')
+# Divoom Times Frame: POST or GET with the JSON as its body, answers {"ReturnCode": ...} pretty-printed with tabs;
+# its light (the DIVOOM letters and the bars under them) takes Channel/SetAmbientLight, as a real one did
+FRAME_LIGHT = {'Brightness': 0, 'ColorCycle': 0, 'EqOnOff': 0, 'Color': '#000000', 'SelectEffect': 0}
 
-# Divoom Times Frame: GET with the JSON as its body, answers {"ReturnCode": ...}; its lights' command is unknown,
-# so it refuses SetRGBInfo the way it refuses any command it lacks
 class DivoomFrameHttp(DivoomHttp):
     def reply(self, obj):   # pretty-printed with tabs, as the real one answers
         b = json.dumps(obj, indent='\t', separators=(',', ':\t')).encode()
@@ -380,12 +379,15 @@ class DivoomFrameHttp(DivoomHttp):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
         if self.path != '/divoom_api': self.send_error(404); return
         c = body.get('Command')
-        log('divoom-frame', f"{c}")
-        if c == 'Channel/GetAllConf': self.reply({'Command': c, 'DeviceId': 300256986, 'PacketFlag': 1788914207, 'DeviceType': 'Frame', 'ReturnCode': 0, 'ReturnMessage': ''})
-        elif c == FRAME_LIGHT_CMD:
-            DIVOOM_RATE.hit(f"frame {c} on={body.get('OnOff')} {body.get('Color')} bri={body.get('Brightness')}")
-            self.reply({'ReturnCode': 0, 'ReturnMessage': ''})
-        else: self.reply({'ReturnCode': 1, 'ReturnMessage': 'Only accept JSON parameters'})
+        head = {'Command': c, 'DeviceId': 300256986, 'PacketFlag': 1788914207, 'DeviceType': 'Frame', 'ReturnCode': 0, 'ReturnMessage': ''}
+        if c == 'Channel/GetAllConf': self.reply(head)
+        elif c == 'Channel/GetAmbientLight': self.reply({**head, **FRAME_LIGHT})
+        elif c == 'Channel/SetAmbientLight':
+            for k in FRAME_LIGHT:
+                if k in body: FRAME_LIGHT[k] = body[k]
+            DIVOOM_RATE.hit(f"frame fx={FRAME_LIGHT['SelectEffect']} {FRAME_LIGHT['Color']} bri={FRAME_LIGHT['Brightness']}")
+            self.reply(head)
+        else: log('divoom-frame', f"unknown {c}"); self.reply({'ReturnCode': 1, 'ReturnMessage': 'Only accept JSON parameters'})
 
 def serve(cls, port, tag):
     try:

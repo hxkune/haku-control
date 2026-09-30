@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Divoom Times Gate (and, being found out, Times Frame) over their local HTTP APIs: JSON commands to
-// http://<ip>/post (Times Gate hardware 400) or http://<ip>:9000/divoom_api (hardware 402 as a POST; the Times
-// Frame, a Linux box, as a GET with the JSON as its body, answering {"ReturnCode":0}). The Times Gate wants the
+// Divoom Times Gate and Times Frame over their local HTTP APIs: JSON commands to http://<ip>/post (Times Gate
+// hardware 400) or http://<ip>:9000/divoom_api (hardware 402; the Times Frame, a Linux box, which answers
+// {"ReturnCode":0,"DeviceType":"Frame"} pretty-printed, to a POST or a GET with the JSON as its body). The Times Gate wants the
 // LocalToken the Divoom app shows in the device's settings ([dev.N] key=), else it answers "DeviceToken is err".
 // The Times Gate's RGB lighting follows the effect through Channel/SetRGBInfo. It has two zones, the backlight
 // behind the screens and the edge light on the sides, and every call sets both: one zone (the "primary") takes a
 // full effect with our colour, the other only one of a few themes of its own; or both take the same effect.
 // [dev.N] lights= picks which (see LIGHTS). Brightness is shared. The screens are left alone.
-// The Times Frame's lights are not documented: it is sent the same command and what it answers is logged.
+// The Times Frame's light takes Channel/SetAmbientLight ([dev.N] frame_fx= picks its effect); see dv_open.
 // Written after the community's notes (github.com/averhaegen/hacs-divoom-times-gate-dev, MIT;
 // github.com/mfmseth/divoom for the Times Frame) without a device: every answer is logged, for the diagnostics.
 // Finding them: Divoom's own service lists the Divoom devices behind the same internet address as the PC, with
@@ -91,7 +91,8 @@ static const struct { int port; const char *path, *method; } EP[] = {
 
 typedef struct {
     char ip[64]; int port, ep, have_token; long token;
-    char cmd[40];   // the light command: Channel/SetRGBInfo, or what the Times Frame took ([dev.N] frame_cmd)
+    char cmd[40];   // the light command: Channel/SetRGBInfo, or the Times Frame's Channel/SetAmbientLight
+    int frame, fx, had, had_bri, had_cycle, had_eq, had_fx; char had_col[16];   // the Frame: its effect, what it had
     int lights, frame_dark, sent_on, sent_bri, have_sent, fails, lost; char sent_col[8]; DWORD sent_at;
 } dv_t;
 
@@ -128,7 +129,20 @@ static int lights_of(int id) {
     return 0;
 }
 
-static void rgb_fields(dv_t *v, int on, const char *col, int bri, char *f, int cap) {
+// [dev.N] frame_fx=: the Times Frame's light effect (SelectEffect; its numbers have no names yet)
+static int frame_fx_of(int id) {
+    char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", id);
+    int fx = cfg_geti(sec, "frame_fx", 0);
+    return fx < 0 || fx > 99 ? 0 : fx;
+}
+
+static void rgb_fields(dv_t *v, int id, int on, const char *col, int bri, char *f, int cap) {
+    if (v->frame) {
+        v->fx = frame_fx_of(id);
+        snprintf(f, cap, "\"Command\":\"%s\",\"Brightness\":%d,\"Color\":\"%s\",\"ColorCycle\":0,\"EqOnOff\":0,\"SelectEffect\":%d",
+                 v->cmd, on ? bri : 0, col, v->fx);
+        return;
+    }
     int l = v->lights;
     snprintf(f, cap, "\"Command\":\"%s\",\"OnOff\":%d,\"Color\":\"%s\",\"ColorCycle\":0,\"Brightness\":%d,"
              "\"SelectLightIndex\":%d,\"LightList\":[{\"SelectEffect\":%d},{\"SelectEffect\":%d},{\"SelectEffect\":%d}]",
@@ -190,49 +204,27 @@ static int dv_open(ext_dev *d) {
     }
     snprintf(v->cmd, sizeof(v->cmd), "Channel/SetRGBInfo");
     if (frame) {
-        // The Times Frame's light command is documented nowhere, and it refuses the Times Gate's ("Only accept JSON
-        // parameters" is its word for an unknown command). Once per run it is asked a few likely names: readers
-        // first (harmless, and their answer would name the fields), then setters with the Times Gate's fields.
-        // Every answer is logged; a setter it takes is kept ([dev.N] frame_cmd) and used for the colours.
-        static const char *const GETS[] = { "Channel/GetRGBInfo", "Device/GetRGBInfo", "Channel/GetLightInfo", "Device/GetLightInfo",
-            "Device/GetLedInfo", "Channel/GetAmbientLight", "Device/GetAmbientLight", "Device/GetRGBLight", "Device/GetLightEffect",
-            "Device/GetAllConf", "Sys/GetConf" };
-        static const char *const SETS[] = { "Device/SetRGBInfo", "Channel/SetLightInfo", "Device/SetLightInfo", "Channel/SetAmbientLight",
-            "Device/SetAmbientLight", "Channel/SetRGBLight", "Device/SetRGBLight", "Device/SetLightColor", "Device/SetLightEffect",
-            "Device/SetLedInfo" };
-        static int probed[EXT_MAX + 1];
-        char f[400], ans[1024];
-        const char *kept = cfg_get(sec, "frame_cmd", "");
-        int took = 0;
-        if (*kept && strlen(kept) < sizeof(v->cmd) && !strpbrk(kept, "\"\\")) {
-            snprintf(v->cmd, sizeof(v->cmd), "%s", kept);
-            rgb_fields(v, 1, "#FFFFFF", 50, f, sizeof(f));
-            int s2 = call(v, f, ans, sizeof(ans));
-            took = s2 == 200 && answer_ok(ans);
-            if (!d->fails) logf_("dev.%d (divoom frame): %s (kept) answered %d: %.200s", d->id, v->cmd, s2, ans);
+        // The Times Frame's light (the DIVOOM letters on its side and the bars under them) takes
+        // Channel/SetAmbientLight with Brightness, Color, ColorCycle, EqOnOff and SelectEffect, the fields
+        // Channel/GetAmbientLight answers with (found by trying names: this is documented nowhere). What it had
+        // is read first, to give back when haku lets go.
+        char ans[1024];
+        int s2 = call(v, "\"Command\":\"Channel/GetAmbientLight\"", ans, sizeof(ans));
+        if (s2 == 200 && answer_ok(ans)) {
+            v->had = 1;
+            v->had_bri = (int)json_get_num(ans, "Brightness", 100); v->had_cycle = (int)json_get_num(ans, "ColorCycle", 0);
+            v->had_eq = (int)json_get_num(ans, "EqOnOff", 0); v->had_fx = (int)json_get_num(ans, "SelectEffect", 0);
+            json_get_str(ans, "Color", v->had_col, sizeof(v->had_col));
+            if (!d->fails) logf_("dev.%d (divoom frame): its light had effect %d, %s, brightness %d, cycle %d, eq %d", d->id,
+                                 v->had_fx, v->had_col, v->had_bri, v->had_cycle, v->had_eq);
         }
-        if (!took && d->id >= 0 && d->id <= EXT_MAX && !probed[d->id]) {
-            probed[d->id] = 1;
-            char line[1200] = ""; int k = 0;
-            for (int i = 0; i < (int)(sizeof(GETS) / sizeof(GETS[0])); i++) {
-                char c[80]; snprintf(c, sizeof(c), "\"Command\":\"%s\"", GETS[i]);
-                int s2 = call(v, c, ans, sizeof(ans));
-                if (s2 == 200 && answer_ok(ans)) logf_("dev.%d (divoom frame): %s answers: %.400s", d->id, GETS[i], ans);
-                else k += snprintf(line + k, sizeof(line) - k, "%s%s %d", k ? ", " : "", GETS[i], s2);
-            }
-            for (int i = 0; i < (int)(sizeof(SETS) / sizeof(SETS[0])) && !took; i++) {
-                snprintf(v->cmd, sizeof(v->cmd), "%s", SETS[i]);
-                rgb_fields(v, 1, "#FFFFFF", 50, f, sizeof(f));
-                int s2 = call(v, f, ans, sizeof(ans));
-                if (s2 == 200 && answer_ok(ans)) {
-                    took = 1; cfg_set(sec, "frame_cmd", SETS[i]); cfg_save_if_dirty();
-                    logf_("dev.%d (divoom frame): %s is taken: %.200s", d->id, SETS[i], ans);
-                } else k += snprintf(line + k, sizeof(line) - k, "%s%s %d", k ? ", " : "", SETS[i], s2);
-            }
-            logf_("dev.%d (divoom frame): unknown to it (HTTP 200 = \"Only accept JSON parameters\"): %s", d->id, line);
-        }
-        v->frame_dark = !took;
-        snprintf(d->info, sizeof(d->info), "%s", v->frame_dark ? "Times Frame · its lights don't take haku's colours yet (see the log)" : "Times Frame · lights");
+        v->frame = 1;
+        snprintf(v->cmd, sizeof(v->cmd), "Channel/SetAmbientLight");
+        char f[400]; rgb_fields(v, d->id, 1, "#FFFFFF", 50, f, sizeof(f));
+        s2 = call(v, f, ans, sizeof(ans));
+        v->frame_dark = !(s2 == 200 && answer_ok(ans));
+        if (v->frame_dark && !d->fails) logf_("dev.%d (divoom frame): Channel/SetAmbientLight answered %d: %.200s", d->id, s2, ans);
+        snprintf(d->info, sizeof(d->info), "%s", v->frame_dark ? "Times Frame · its light refused haku's colours (see the log)" : "Times Frame · light");
     } else {
         snprintf(d->info, sizeof(d->info), "Divoom · %s%s", v->ep == EP_402 ? "hardware 402" : "hardware 400",
                  strstr(buf, "LightSwitch") ? " · lights" : "");
@@ -245,7 +237,7 @@ static int dv_open(ext_dev *d) {
 static int set_rgb(ext_dev *d, int on, const char *col, int bri) {
     dv_t *v = d->priv;
     char f[400], buf[1024];
-    rgb_fields(v, on, col, bri, f, sizeof(f));
+    rgb_fields(v, d->id, on, col, bri, f, sizeof(f));
     int st = call(v, f, buf, sizeof(buf));
     if (st != 200 || !answer_ok(buf)) {
         if (!v->fails++ || v->fails % 50 == 0) logf_("dev.%d (divoom): SetRGBInfo answered %d: %.200s", d->id, st, buf);
@@ -267,6 +259,7 @@ static int dv_send(ext_dev *d, const rgbf *c, int n) {
     DWORD now = GetTickCount();
     int l = lights_of(d->id);
     if (l != v->lights) { v->lights = l; v->have_sent = 0; }
+    if (v->frame && frame_fx_of(d->id) != v->fx) v->have_sent = 0;
     if (v->have_sent && v->sent_on == on && (!on || (abs(v->sent_bri - bri) < 2 && !strcmp(v->sent_col, col))) && now - v->sent_at < 10000) return 1;
     if (!set_rgb(d, on, col, on ? bri : 0)) {
         // the Times Gate's little web server now and then takes no connection: lost only after 3 in a row
@@ -279,8 +272,16 @@ static int dv_send(ext_dev *d, const rgbf *c, int n) {
 
 static void dv_leave(ext_dev *d, int how) {
     dv_t *v = d->priv;
-    if (how == LEAVE_OFF && !v->frame_dark) set_rgb(d, 0, "#000000", 0);
-    // LEAVE_RESTORE: the device's own light effect can't be read back over this API, so it keeps the last colour
+    if (v->frame_dark) return;
+    if (how == LEAVE_OFF) set_rgb(d, 0, "#000000", 0);
+    else if (how == LEAVE_RESTORE && v->frame && v->had && !strpbrk(v->had_col, "\"\\")) {
+        // the Times Frame gets back the light it had
+        char f[300], buf[512];
+        snprintf(f, sizeof(f), "\"Command\":\"Channel/SetAmbientLight\",\"Brightness\":%d,\"Color\":\"%s\",\"ColorCycle\":%d,\"EqOnOff\":%d,\"SelectEffect\":%d",
+                 v->had_bri, v->had_col, v->had_cycle, v->had_eq, v->had_fx);
+        call(v, f, buf, sizeof(buf));
+    }
+    // LEAVE_RESTORE on the Times Gate: its light effect can't be read back over this API, so it keeps the last colour
 }
 
 static void dv_close(ext_dev *d) { free(d->priv); d->priv = NULL; }

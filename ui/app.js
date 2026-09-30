@@ -1974,9 +1974,11 @@ function buildDevices() {
           <p class="hint dev-mode-note">${t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour')}</p>` : ''}
         ${d.kind === 'divoom' ? `<label class="num"><span>LocalToken</span><input type="text" class="dev-token" inputmode="numeric" maxlength="16" spellcheck="false" value="${esc(cv(sec, 'key', ''))}"></label>
           <p class="hint">${t('dv.token')}</p>
-          <label class="num"><span>${t('dv.lights')}</span><select class="select dev-lights">${['both', 'back', 'sides', 'back_cycle', 'back_rainbow'].map(v =>
+          ${d.type === 'frame' ? `<label class="num"><span>${t('dv.fx')}</span><select class="select dev-fx">${Array.from({ length: 16 }, (_, v) =>
+            `<option value="${v}"${+cv(sec, 'frame_fx', 0) === v ? ' selected' : ''}>${t('dv.fx.n', v)}</option>`).join('')}</select></label>
+          <p class="hint">${t('dv.fx.note')}</p>` : `<label class="num"><span>${t('dv.lights')}</span><select class="select dev-lights">${['both', 'back', 'sides', 'back_cycle', 'back_rainbow'].map(v =>
             `<option value="${v}"${cv(sec, 'lights', 'both') === v ? ' selected' : ''}>${t('dv.l.' + v)}</option>`).join('')}</select></label>
-          <p class="hint">${t('dv.lights.note')}</p>` : ''}
+          <p class="hint">${t('dv.lights.note')}</p>`}` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
@@ -1991,6 +1993,7 @@ function buildDevices() {
     el.querySelector('.dev-token')?.addEventListener('change', e => { const v = e.target.value.replace(/\D/g, ''); e.target.value = v; setCfg(sec, 'key', v); });
     el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
+    el.querySelector('.dev-fx')?.addEventListener('change', e => setCfg(sec, 'frame_fx', e.target.value));
     el.querySelector('.dev-mode')?.addEventListener('change', e => {
       setCfg(sec, 'mode', e.target.value);
       el.querySelector('.dev-mode-note').textContent = t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour');
