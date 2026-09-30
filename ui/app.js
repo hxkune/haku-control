@@ -101,12 +101,24 @@ function groupNew() {
 }
 
 // ---- themes: [general] theme = dark (default) | grey | light, as html[data-theme]; the canvas takes the page's
-// colours for its frames, labels and tooltip (the hardware it draws stays dark, like the real thing)
+// colours for its frames, labels and tooltip (the hardware it draws stays dark, like the real thing).
+// Hidden themes are opened with a code typed next to the switch ([general] unlocked = their names); the codes
+// are kept as hashes so the source does not give them away.
 const THEMES = ['dark', 'grey', 'light'];
+const CODES = { '9kr8dk': 'verity' };
 const THEME = { ink: '255, 255, 255', hi: '#d8d8d8', mid: '#8a8a8a', lo: '#4e4e4e', tip: '#121212' };
 const inkA = a => `rgba(${THEME.ink}, ${a})`;
+const unlocked = () => cv('general', 'unlocked', '').split(',').filter(v => Object.values(CODES).includes(v));
+function codeHash(s) {
+  let h = 5381;
+  for (const c of s) h = (h * 33 + c.charCodeAt(0)) >>> 0;
+  return h.toString(36);
+}
 function applyTheme() {
-  const th = THEMES.includes(cv('general', 'theme', 'dark')) ? cv('general', 'theme', 'dark') : 'dark';
+  const open = THEMES.concat(unlocked()), want = cv('general', 'theme', 'dark');
+  const th = open.includes(want) ? want : 'dark';
+  $$('#theme button').forEach(b => b.classList.toggle('hidden', !open.includes(b.dataset.v)));
+  $('#code-in').placeholder = t('code.ph');
   if (th === 'dark') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = th;
   const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
   Object.assign(THEME, { ink: g('--ink'), hi: g('--text'), mid: g('--muted'), lo: g('--faint'), tip: g('--menu') });
@@ -2041,7 +2053,32 @@ $$('#wz-lang button').forEach(b => b.addEventListener('click', () => $$('#lang b
 // settings
 $('#autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.target.checked ? 1 : 0 }));
 $('#ui-motion').addEventListener('change', e => { setCfg('general', 'ui_motion', e.target.checked ? 1 : 0); updateSettings(); });
-$$('#theme button').forEach(b => b.addEventListener('click', () => { setCfg('general', 'theme', b.dataset.v); applyTheme(); send({ cmd: 'theme', v: b.dataset.v }); drawAll(); }));
+function setTheme(v) { setCfg('general', 'theme', v); applyTheme(); send({ cmd: 'theme', v }); drawAll(); }
+$$('#theme button').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.v)));
+// the code field: a right code opens its theme and switches to it (with a little burst), a wrong one shakes
+$('#code').addEventListener('submit', e => {
+  e.preventDefault();
+  const inp = $('#code-in'), th = CODES[codeHash(inp.value.trim().toLowerCase())];
+  inp.classList.remove('bad', 'ok'); void inp.offsetWidth;
+  if (!th) { if (inp.value.trim()) inp.classList.add('bad'); return; }
+  if (!unlocked().includes(th)) setCfg('general', 'unlocked', unlocked().concat(th).join(','));
+  inp.value = ''; inp.classList.add('ok'); inp.blur();
+  setTheme(th);
+  if (!document.body.classList.contains('calm')) burst($('#code'));
+});
+function burst(at) {
+  const r = at.getBoundingClientRect(), bits = ['✨', '💖', '⭐', '💜', '🌈', '💫'];
+  for (let i = 0; i < 28; i++) {
+    const s = document.createElement('span');
+    s.className = 'burst'; s.textContent = bits[i % bits.length];
+    const a = Math.random() * Math.PI * 2, d = 60 + Math.random() * 140;
+    s.style.left = r.left + r.width / 2 + 'px'; s.style.top = r.top + r.height / 2 + 'px';
+    s.style.setProperty('--dx', Math.cos(a) * d + 'px'); s.style.setProperty('--dy', Math.sin(a) * d - 40 + 'px');
+    s.style.setProperty('--rot', (Math.random() * 720 - 360) + 'deg');
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 1300);
+  }
+}
 $('#hotspot-auto').addEventListener('change', e => setCfg('hotspot', 'auto', e.target.checked ? 1 : 0));
 $('#fps').addEventListener('input', e => { $('#fps-val').textContent = e.target.value; setCfgSoon('general', 'fps', e.target.value); });
 $$('[data-open]').forEach(b => b.addEventListener('click', () => send({ cmd: 'open', what: b.dataset.open })));
@@ -2252,7 +2289,7 @@ $$('#lang button').forEach(b => b.addEventListener('click', () => {
   if (LANG === b.dataset.v) return;
   LANG = b.dataset.v;
   setCfg('general', 'lang', LANG);
-  applyI18n(); buildEffects(); buildHotkeys(); buildBulbs(); buildDevices(); renderEffectSide();
+  applyI18n(); applyTheme(); buildEffects(); buildHotkeys(); buildBulbs(); buildDevices(); renderEffectSide();
   showTab(tab); updateNano(); updateChips(); updateSettings(); drawAll();
   if (!$('#wizard').classList.contains('hidden')) wzGo(wzStep);
 }));

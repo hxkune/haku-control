@@ -42,6 +42,16 @@
   --chrome: linear-gradient(180deg, #2c2c2c 0%, #0f0f0f 55%, #232323 100%);
   color-scheme: light;
 }
+/* verity (hidden, opened with its code): a meme — midnight purple, bubblegum pink, a rainbow that never stops,
+   Comic Sans in the headings and sparkles everywhere (the rest is at the end of this file) */
+:root[data-theme="verity"] {
+  --bg: #1a0b2e; --panel: #241040; --panel2: #2d1450; --menu: #2b1348; --glass: 38, 16, 66; --scrim: 12, 4, 24;
+  --ink: 255, 170, 235; --strong: #ff5fd2; --on-strong: #1a0b2e; --on-strong-dim: #6b3b77; --sel: #ff9be6;
+  --line: rgba(255, 140, 225, .12); --line2: rgba(255, 140, 225, .24); --line3: rgba(255, 140, 225, .45);
+  --text: #ffe9fb; --muted: #d99ad3; --faint: #8f5c9c;
+  --chrome: linear-gradient(90deg, #ff5fd2, #ffb35f, #fff35f, #5fffb0, #5fc8ff, #b07bff, #ff5fd2);
+  --display: "Comic Sans MS", "Segoe Print", "Segoe UI", cursive;
+}
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -916,3 +926,44 @@ body.calm nav button { transition: none; }
 .wn-list h4 { margin: 0 0 8px; font: 600 11px var(--font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .wn-list ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; }
 .wn-list li::marker { color: var(--faint); }
+
+/* ---- theme switch with the secret-code field beside it */
+.theme-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.theme-ctl .seg { margin-top: 0; }
+.code { display: flex; align-items: center; width: 150px; }
+.code input[type=text] { height: 32px; padding: 0 30px 0 10px; font-size: 12px; letter-spacing: .04em; }
+.code button { margin-left: -30px; width: 30px; height: 32px; padding: 0; display: grid; place-items: center; border: 0; background: none; color: var(--muted); }
+.code button:hover { color: var(--strong); }
+.code input.bad { animation: code-shake .4s ease; border-color: #ff8a8a; }
+.code input.ok { animation: code-ok 1s ease; }
+@keyframes code-shake { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+@keyframes code-ok { from { border-color: var(--strong); box-shadow: 0 0 14px rgba(var(--ink), .6); } }
+.burst { position: fixed; z-index: 99; pointer-events: none; font-size: 18px; transform: translate(-50%, -50%);
+  animation: burst 1.2s cubic-bezier(.2, .7, .3, 1) forwards; }
+@keyframes burst { to { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 80px)) rotate(var(--rot)) scale(.6); opacity: 0; } }
+
+/* ---- verity: the meme part */
+:root[data-theme="verity"] body {
+  background: radial-gradient(900px circle at 85% 110%, rgba(255, 95, 210, .16), transparent 60%),
+              radial-gradient(700px circle at 10% -10%, rgba(95, 200, 255, .12), transparent 60%), var(--bg);
+}
+:root[data-theme="verity"] h3::before { content: "✨"; font-size: 12px; }
+:root[data-theme="verity"] header h1::after { content: " ✨"; }
+:root[data-theme="verity"] .seg button.on, :root[data-theme="verity"] .btn.primary, :root[data-theme="verity"] .brand .logo {
+  background-size: 300% 100%; animation: verity-rainbow 6s linear infinite;
+}
+:root[data-theme="verity"] .brand .logo { background: var(--chrome); background-size: 300% 100%; }
+:root[data-theme="verity"] .brand .word { color: var(--strong); }
+:root[data-theme="verity"] .watermark {
+  -webkit-mask: none; mask: none; background: none; opacity: .07; width: auto; aspect-ratio: auto; right: -30px; bottom: -20px;
+  font: 700 190px/1 "Comic Sans MS", cursive; color: var(--strong); white-space: nowrap;
+}
+:root[data-theme="verity"] .watermark::before { content: "verity ✨"; }
+:root[data-theme="verity"] #theme button[data-v="verity"]:not(.on) { color: var(--strong); }
+:root[data-theme="verity"] #theme button[data-v="verity"].on { animation: verity-rainbow 6s linear infinite, verity-wiggle 2.4s ease-in-out infinite; }
+:root[data-theme="verity"] .fx.on canvas { filter: drop-shadow(0 0 8px rgba(255, 95, 210, .55)); }
+:root[data-theme="verity"] nav button.active { color: var(--strong); }
+@keyframes verity-rainbow { to { background-position: 300% 0; } }
+@keyframes verity-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
+body.calm .burst, :root[data-theme="verity"] body.calm * { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { :root[data-theme="verity"] * { animation: none !important; } }
