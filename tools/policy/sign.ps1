@@ -9,6 +9,7 @@ param(
     [string[]]$Blocked = @(),
     [string]$MessageEn = 'This version of haku control is no longer supported. Please install the new version.',
     [string]$MessageRu = 'Эта версия haku control больше не поддерживается. Установите новую версию.',
+    [string]$MessageFr = 'Cette version de haku control n''est plus prise en charge. Installez la nouvelle version.',
     [string]$Url = 'https://github.com/hxkune/haku-control/releases/latest',
     [string]$Key = (Join-Path $env:USERPROFILE '.haku-policy\policy-key.pem')
 )
@@ -16,7 +17,7 @@ $ver = '^\d+(\.\d+){0,3}$'
 if ($Min -notmatch $ver) { throw "-Min is not a version: $Min" }
 foreach ($b in $Blocked) { if ($b -notmatch $ver) { throw "-Blocked has something that is not a version: $b" } }
 if ($Url -notmatch '^https://') { throw '-Url must be https://' }
-$policy = [ordered]@{ min = $Min; blocked = @($Blocked); url = $Url; msg_en = $MessageEn; msg_ru = $MessageRu; signed = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }
+$policy = [ordered]@{ min = $Min; blocked = @($Blocked); url = $Url; msg_en = $MessageEn; msg_ru = $MessageRu; msg_fr = $MessageFr; signed = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }
 $json = $policy | ConvertTo-Json -Compress
 $bytes = [Text.Encoding]::UTF8.GetBytes($json)
 $k = [System.Security.Cryptography.ECDsa]::Create()

@@ -4,6 +4,9 @@
 #include "common.h"
 #include "devices.h"
 #include <ctype.h>
+#include <winhttp.h>
+#include <bcrypt.h>
+#include "../res/version.h"
 #include <ws2tcpip.h>
 #include <stdlib.h>
 
@@ -156,6 +159,61 @@ int http_call(const char *ip, int port, const char *method, const char *path, co
     }
     if (why && (status < 200 || status >= 300)) snprintf(why, whycap, "answered %d: %.80s", status, buf);
     return status;
+}
+
+// HTTPS download to a file (WinHTTP follows redirects, e.g. to a file host); gives up past max bytes or when the
+// download is shorter than announced. pct (may be NULL) follows the progress, and the window is told.
+int https_download(const wchar_t *url, const wchar_t *to, long long max, volatile LONG *pct) {
+    URL_COMPONENTS uc = { sizeof(uc) };
+    wchar_t host[256], path[1024];
+    uc.lpszHostName = host; uc.dwHostNameLength = 256; uc.lpszUrlPath = path; uc.dwUrlPathLength = 1024;
+    if (!WinHttpCrackUrl(url, 0, 0, &uc) || uc.nScheme != INTERNET_SCHEME_HTTPS) return 0;
+    int ok = 0; long long got = 0;
+    HINTERNET ses = WinHttpOpen(L"haku-control/" HAKU_VER_WSTR, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, NULL, NULL, 0);
+    if (!ses) return 0;
+    WinHttpSetTimeouts(ses, 10000, 10000, 30000, 60000);
+    HINTERNET con = WinHttpConnect(ses, host, uc.nPort, 0);
+    HINTERNET req = con ? WinHttpOpenRequest(con, L"GET", path, NULL, NULL, NULL, WINHTTP_FLAG_SECURE) : NULL;
+    FILE *f = NULL;
+    if (req && WinHttpSendRequest(req, NULL, 0, NULL, 0, 0, 0) && WinHttpReceiveResponse(req, NULL)) {
+        DWORD code = 0, sz = sizeof(code);
+        WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, NULL, &code, &sz, NULL);
+        wchar_t cl[32] = L""; DWORD cls = sizeof(cl);
+        long long total = WinHttpQueryHeaders(req, WINHTTP_QUERY_CONTENT_LENGTH, NULL, cl, &cls, NULL) ? _wtoi64(cl) : 0;
+        if (code == 200 && (f = _wfopen(to, L"wb")) != NULL) {
+            static char chunk[256 * 1024]; DWORD n;
+            ok = 1;
+            while (WinHttpReadData(req, chunk, sizeof(chunk), &n) && n) {
+                if (fwrite(chunk, 1, n, f) != n) { ok = 0; break; }
+                got += n;
+                LONG p = total > 0 ? (LONG)(got * 100 / total) : 0;
+                if (pct && p != *pct) { InterlockedExchange(pct, p); ui_refresh(); }
+                if (got > max) { ok = 0; break; }
+            }
+            if (total > 0 && got != total) ok = 0;
+            fclose(f);
+        } else logf_("download: %ls answered %lu", host, code);
+    }
+    if (req) WinHttpCloseHandle(req);
+    if (con) WinHttpCloseHandle(con);
+    WinHttpCloseHandle(ses);
+    return ok;
+}
+
+// SHA-256 of a file as lower-case hex (65 chars with the 0)
+int sha256_hex(const wchar_t *file, char *hex) {
+    FILE *f = _wfopen(file, L"rb");
+    if (!f) return 0;
+    BCRYPT_HASH_HANDLE h = NULL; BYTE d[32]; int ok = 0;
+    if (!BCryptCreateHash(BCRYPT_SHA256_ALG_HANDLE, &h, NULL, 0, NULL, 0, 0)) {
+        static BYTE buf[256 * 1024]; size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) BCryptHashData(h, buf, (ULONG)n, 0);
+        ok = !BCryptFinishHash(h, d, 32, 0);
+        BCryptDestroyHash(h);
+    }
+    fclose(f);
+    for (int i = 0; ok && i < 32; i++) sprintf(hex + i * 2, "%02x", d[i]);
+    return ok;
 }
 
 SOCKET udp_socket(int bind_port, int broadcast) {

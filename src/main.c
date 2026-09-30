@@ -758,6 +758,12 @@ void  app_config_changed(int layout) {
 
 static int effect_off_index(void) { return effect_index("off"); }
 
+// OpenRGB's memory (1) while the ENE sticks are driven here, an MSI board (0) while Mystic Light is
+int app_hw_own(int orgb_type, const char *name) {
+    char n[96]; snprintf(n, sizeof(n), "%s", name ? name : ""); _strlwr_s(n, sizeof(n));
+    return (orgb_type == 1 && have_ene && ene_count() > 0) || (orgb_type == 0 && have_msi && (strstr(n, "msi") || strstr(n, "mystic")));
+}
+
 void app_toggle_device(const char *key) {
     cfg_set_and_save("layout", key, cfg_geti("layout", key, 1) ? "0" : "1");
     build_scene();
@@ -879,7 +885,8 @@ void app_set(const char *s, const char *k, const char *v) {
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
 }
 
-int app_ru(void) { return !_stricmp(cfg_get("general", "lang", "en"), "ru"); }
+int app_lang(void) { const char *l = cfg_get("general", "lang", "en"); return !_stricmp(l, "ru") ? 1 : !_stricmp(l, "fr") ? 2 : 0; }
+int app_ru(void) { return app_lang() == 1; }
 
 void app_power(void) {
     int off = effect_index("off");
@@ -937,7 +944,7 @@ int app_autostart(int set) {
 
 static void show_menu(void) {
     HMENU m = CreatePopupMenu(), mb = CreatePopupMenu();
-    AppendMenuW(m, MF_STRING, ID_WINDOW, TR(L"Open haku control…", L"Открыть haku control…"));
+    AppendMenuW(m, MF_STRING, ID_WINDOW, TR(L"Open haku control…", L"Открыть haku control…", L"Ouvrir haku control…"));
     SetMenuDefaultItem(m, ID_WINDOW, FALSE);
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     for (int i = 0; i < g_effect_count; i++) {
@@ -957,7 +964,7 @@ static void show_menu(void) {
         wchar_t w[80]; MultiByteToWideChar(CP_UTF8, 0, cfg_get(sec, "name", "Preset"), -1, w, 80);
         AppendMenuW(mp, MF_STRING | (i == cur_p ? MF_CHECKED : 0), ID_PRESET + i, w); np++;
     }
-    if (np) AppendMenuW(m, MF_POPUP, (UINT_PTR)mp, TR(L"Presets", L"Пресеты")); else DestroyMenu(mp);
+    if (np) AppendMenuW(m, MF_POPUP, (UINT_PTR)mp, TR(L"Presets", L"Пресеты", L"Préréglages")); else DestroyMenu(mp);
     HMENU mf = CreatePopupMenu(); int nf = 0, cur_f = cfg_geti("general", "profile", 0);
     for (int i = 1; i <= PROFILE_MAX; i++) {
         if (!profile_exists(i)) continue;
@@ -965,20 +972,20 @@ static void show_menu(void) {
         wchar_t w[80]; MultiByteToWideChar(CP_UTF8, 0, cfg_get(sec, "name", "Profile"), -1, w, 80);
         AppendMenuW(mf, MF_STRING | (i == cur_f ? MF_CHECKED : 0), ID_PROFILE + i, w); nf++;
     }
-    if (nf) AppendMenuW(m, MF_POPUP, (UINT_PTR)mf, TR(L"Profiles", L"Профили")); else DestroyMenu(mf);
-    AppendMenuW(m, MF_POPUP, (UINT_PTR)mb, TR(L"Brightness", L"Яркость"));
-    AppendMenuW(m, MF_STRING | (ram_on ? MF_CHECKED : 0), ID_RAM_ON, TR(L"Memory lighting", L"Подсветка памяти"));
-    AppendMenuW(m, MF_STRING | (gpu_on ? MF_CHECKED : 0), ID_GPU_ON, TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты"));
-    if (lights_count()) AppendMenuW(m, MF_STRING | (lights_on ? MF_CHECKED : 0), ID_LIGHTS_ON, TR(L"AiDot bulbs", L"Лампочки AiDot"));
+    if (nf) AppendMenuW(m, MF_POPUP, (UINT_PTR)mf, TR(L"Profiles", L"Профили", L"Profils")); else DestroyMenu(mf);
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)mb, TR(L"Brightness", L"Яркость", L"Luminosité"));
+    AppendMenuW(m, MF_STRING | (ram_on ? MF_CHECKED : 0), ID_RAM_ON, TR(L"Memory lighting", L"Подсветка памяти", L"Éclairage de la mémoire"));
+    AppendMenuW(m, MF_STRING | (gpu_on ? MF_CHECKED : 0), ID_GPU_ON, TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты", L"Éclairage du ruban ARGB"));
+    if (lights_count()) AppendMenuW(m, MF_STRING | (lights_on ? MF_CHECKED : 0), ID_LIGHTS_ON, TR(L"AiDot bulbs", L"Лампочки AiDot", L"Ampoules AiDot"));
     for (int k = 0; k < NANO_MAX; k++) if (nano_present(k)) {
         char t[64]; wchar_t w[64]; nano_title(k, t, sizeof(t));
         MultiByteToWideChar(CP_UTF8, 0, t, -1, w, 64);
         AppendMenuW(m, MF_STRING | (nano_on[k] ? MF_CHECKED : 0), ID_NANO_ON + k, w);
     }
-    AppendMenuW(m, MF_STRING, ID_SETTINGS, TR(L"Settings file", L"Файл настроек"));
-    AppendMenuW(m, MF_STRING, ID_LOG, TR(L"Log", L"Журнал"));
+    AppendMenuW(m, MF_STRING, ID_SETTINGS, TR(L"Settings file", L"Файл настроек", L"Fichier de réglages"));
+    AppendMenuW(m, MF_STRING, ID_LOG, TR(L"Log", L"Журнал", L"Journal"));
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(m, MF_STRING, ID_EXIT, TR(L"Quit", L"Выход"));
+    AppendMenuW(m, MF_STRING, ID_EXIT, TR(L"Quit", L"Выход", L"Quitter"));
     POINT pt; GetCursorPos(&pt);
     SetForegroundWindow(hwnd);
     TrackPopupMenu(m, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
@@ -1132,7 +1139,7 @@ static void show_blocked(void) {
     wchar_t m[1400], w[1100], u[256];
     MultiByteToWideChar(CP_UTF8, 0, blocked_msg, -1, w, 1100);
     MultiByteToWideChar(CP_UTF8, 0, blocked_url, -1, u, 256);
-    swprintf(m, 1400, L"%s\n\n%s", w, TR(L"Open the download page?", L"Открыть страницу загрузки?"));
+    swprintf(m, 1400, L"%s\n\n%s", w, TR(L"Open the download page?", L"Открыть страницу загрузки?", L"Ouvrir la page de téléchargement ?"));
 #ifdef HAKU_DEV
     if (cfg_geti("general", "policy_quiet", 0)) { logf_("policy: would show: %ls", m); return; }   // tests: no dialog
 #endif

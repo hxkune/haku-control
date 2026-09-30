@@ -386,7 +386,9 @@ int ext_add(const char *kind, const char *host, int sub, const char *name, int l
     for (int i = 1; i <= 64; i++) {
         char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", i);
         const char *k = cfg_get(sec, "kind", NULL);
-        if (k && !_stricmp(k, kind) && !strcmp(cfg_get(sec, "host", ""), host) && cfg_geti(sec, "sub", -1) == sub) return i;   // already there
+        // already there: the same address and number; for OpenRGB the same controller name (its numbers change)
+        if (k && !_stricmp(k, kind) && !strcmp(cfg_get(sec, "host", ""), host) &&
+            (!_stricmp(kind, "openrgb") && name && *name ? !strcmp(cfg_get(sec, "match", cfg_get(sec, "name", "")), name) : cfg_geti(sec, "sub", -1) == sub)) return i;
         if (!k && !id) id = i;
     }
     if (!id) return 0;
@@ -412,6 +414,8 @@ void ext_save_key(ext_dev *d, const char *key) {
 
 void ext_remove(int id) {
     char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", id);
+    if (!_stricmp(cfg_get(sec, "kind", ""), "openrgb"))   // not added by itself again
+        orgbapp_removed(cfg_get(sec, "match", cfg_get(sec, "name", "")));
     cfg_remove_section(sec);
     snprintf(sec, sizeof(sec), "zone.dev%d", id);
     cfg_remove_section(sec);

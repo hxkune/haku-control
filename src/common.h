@@ -66,6 +66,7 @@ typedef struct {
     const char    *id;
     const wchar_t *title;      // English
     const wchar_t *title_ru;
+    const wchar_t *title_fr;
 } effect_info;
 
 extern const effect_info g_effects[];
@@ -209,7 +210,8 @@ void sensors_close(void);
 #endif
 void  app_data_path(const wchar_t *name, wchar_t *out);   // %APPDATA%\haku-control\<name> (MAX_PATH)
 int   app_ru(void);                      // [general] lang=ru (English otherwise)
-#define TR(en, ru) (app_ru() ? (ru) : (en))
+int   app_lang(void);                    // [general] lang: 0 English, 1 Russian (ru), 2 French (fr)
+#define TR(en, ru, fr) (app_lang() == 1 ? (ru) : app_lang() == 2 ? (fr) : (en))
 void  app_set_effect(int fx);
 #define PRESET_MAX 32
 int   app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
@@ -224,6 +226,8 @@ void  ui_refresh_state(void);   // the open window gets the whole state (setting
 void  app_set_brightness(float b, int save_now);
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
 void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled
+int   app_hw_own(int orgb_type, const char *name);  // hardware of that OpenRGB type this app drives itself
+void  orgbapp_setup(void);                         // OpenRGB's zip downloaded, checked, unpacked (openrgb_app.c)
 // settings window (ui_web.cpp) <-> core
 int   app_state_json(char *out, int cap);    // effects, config, devices
 int   app_status_json(char *out, int cap);   // devices only (polled)

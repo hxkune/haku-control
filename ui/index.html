@@ -181,16 +181,21 @@
         </div>
         <p class="note" data-i18n="pc.more.text">Graphics cards, motherboards, RAM and coolers of any brand come in through OpenRGB (free). haku then lights them together with everything else.</p>
         <div class="orgb-guide hidden" id="orgb-guide">
-          <ol>
-            <li data-i18n="orgb.g1">Install OpenRGB and start it once: it finds the hardware by itself.</li>
-            <li data-i18n="orgb.g2">In OpenRGB: Settings → General settings → tick "Start at login", "Start minimized" and "Start server".</li>
-            <li data-i18n="orgb.g3">On the "SDK Server" tab press "Start server", then "Check again" here.</li>
-          </ol>
-          <button class="btn small" data-open="openrgb"><span data-i18n="orgb.get">Get OpenRGB</span></button>
+          <p class="note" id="orgb-guide-text"></p>
+          <div class="ai-bar hidden" id="orgb-bar"><i></i></div>
+          <div class="btn-row">
+            <button class="btn small primary pc-only" id="orgb-setup"><span data-i18n="orgb.setup">Download and set up OpenRGB</span></button>
+            <button class="btn small ghost pc-only" id="orgb-locate"><span data-i18n="orgb.locate">Point to OpenRGB.exe</span></button>
+            <button class="btn small ghost" data-open="openrgb"><span data-i18n="orgb.site">openrgb.org</span></button>
+          </div>
         </div>
         <div class="found orgb-list" id="orgb-list"></div>
         <div class="btn-row hidden" id="orgb-all-row"><button class="btn small primary" id="orgb-all"><span data-i18n="orgb.all">Add all</span></button></div>
         <p class="hint hidden" id="orgb-note" data-i18n="orgb.note">Hardware haku drives by itself is not offered again, so two programs never fight over it. Close effects running in OpenRGB: haku takes over the lights.</p>
+        <div class="set-row pc-only">
+          <div><b data-i18n="orgb.auto">Use OpenRGB by itself</b><p class="muted" data-i18n="orgb.auto.note"></p></div>
+          <label class="switch"><input type="checkbox" id="orgb-auto"><span></span></label>
+        </div>
       </div>
     </div>
   </section>
@@ -391,7 +396,11 @@
         <h3 data-i18n="set.general">General</h3>
         <div class="set-row">
           <div><b data-i18n="lang">Language</b></div>
-          <div class="seg lang-seg" id="lang"><button data-v="en">English</button><button data-v="ru">Русский</button></div>
+          <div class="seg lang-seg" id="lang"><button data-v="en">English</button><button data-v="ru">Русский</button><button data-v="fr">Français</button></div>
+        </div>
+        <div class="set-row">
+          <div><b data-i18n="theme">Theme</b></div>
+          <div class="seg" id="theme"><button data-v="dark" data-i18n="theme.dark">Dark</button><button data-v="grey" data-i18n="theme.grey">Grey</button><button data-v="light" data-i18n="theme.light">Light</button></div>
         </div>
         <div class="set-row">
           <div><b data-i18n="autostart">Start with Windows</b><p class="muted" data-i18n="autostart.note"></p></div>
@@ -534,7 +543,7 @@
       <div class="wz-mark"></div>
       <h2 data-i18n="wz.hello">Welcome to haku control</h2>
       <p class="muted" data-i18n="wz.hello.text"></p>
-      <div class="seg lang-seg" id="wz-lang"><button data-v="en">English</button><button data-v="ru">Русский</button></div>
+      <div class="seg lang-seg" id="wz-lang"><button data-v="en">English</button><button data-v="ru">Русский</button><button data-v="fr">Français</button></div>
     </section>
     <section class="wz-step" data-step="1">
       <h2 data-i18n="wz.pc">Inside your PC</h2>

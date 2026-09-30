@@ -123,9 +123,9 @@ static int policy_stops(const char *json, char *msg, int mcap, char *url, int uc
     char q[40]; snprintf(q, sizeof(q), "\"%s\"", mine);
     if (b && e) { const char *f = strstr(b, q); if (f && f < e) stop = 1; }
     if (!stop) return 0;
-    if (!json_get_str(json, app_ru() ? "msg_ru" : "msg_en", msg, mcap)) json_get_str(json, "msg_en", msg, mcap);
+    if (!json_get_str(json, TR("msg_en", "msg_ru", "msg_fr"), msg, mcap)) json_get_str(json, "msg_en", msg, mcap);
     if (!json_get_str(json, "url", url, ucap) || strncmp(url, "https://", 8)) snprintf(url, ucap, "https://github.com/%s/releases/latest", HAKU_REPO);
-    if (!msg[0]) snprintf(msg, mcap, "%s", TR("This version of haku control is no longer supported.", "Эта версия haku control больше не поддерживается."));
+    if (!msg[0]) snprintf(msg, mcap, "%s", TR("This version of haku control is no longer supported.", "Эта версия haku control больше не поддерживается.", "Cette version de haku control n'est plus prise en charge."));
     return 1;
 }
 

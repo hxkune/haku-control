@@ -226,19 +226,38 @@ int orgb_list(orgb_ctl *out, int max) {
 
 static SRWLOCK chk_lk = SRWLOCK_INIT;
 static orgb_ctl chk[48];
-static int chk_n, chk_state;   // 0 not looked yet, 1 looking, 2 OpenRGB answers, 3 no OpenRGB on this PC
+static int chk_n, chk_state;   // 0 not looked yet, 1 looking, 2 OpenRGB answers, 3 not running, 4 not installed
 static volatile LONG chk_busy;
 
+static int server_answers(void) {
+    SOCKET s = tcp_connect("127.0.0.1", ORGB_PORT, 500);
+    if (s == INVALID_SOCKET) return 0;
+    closesocket(s);
+    return 1;
+}
+
+// OpenRGB started if needed (openrgb_app.c), its list read once it stops growing (it finds hardware for a few
+// seconds after it starts), and what is new added
 static unsigned __stdcall check_fn(void *p) {
     (void)p;
     net_init();
     static orgb_ctl tmp[48];
-    int n = orgb_list(tmp, 48);
+    int n = -1;
+    if (orgbapp_ensure(server_answers)) {
+        for (int i = 0, same = 0, last = -1; i < 20 && same < 2; i++) {
+            if (i) Sleep(1500);
+            n = orgb_list(tmp, 48);
+            same = n > 0 && n == last ? same + 1 : 0;
+            last = n;
+        }
+    }
+    wchar_t exe[MAX_PATH];
     AcquireSRWLockExclusive(&chk_lk);
-    chk_state = n < 0 ? 3 : 2; chk_n = n < 0 ? 0 : n;
+    chk_state = n >= 0 ? 2 : orgbapp_exe(exe, 0) ? 3 : 4; chk_n = n < 0 ? 0 : n;
     memcpy(chk, tmp, sizeof(orgb_ctl) * chk_n);
     ReleaseSRWLockExclusive(&chk_lk);
-    logf_("openrgb: %s", n < 0 ? "no SDK server on this PC" : "SDK server answers");
+    logf_("openrgb: %s", n >= 0 ? "SDK server answers" : chk_state == 3 ? "installed, no SDK server" : "not on this PC");
+    if (n > 0) orgbapp_add_new(tmp, n);
     InterlockedExchange(&chk_busy, 0);
     ui_refresh();
     return 0;
@@ -254,7 +273,9 @@ void orgb_check_start(void) {
 // "orgb":{"state":2,"ctls":[{"i":0,"type":2,"kind":"graphics card","name":"...","leds":8}]}
 int orgb_json(char *out, int cap) {
     AcquireSRWLockShared(&chk_lk);
-    int n = snprintf(out, cap, "\"orgb\":{\"state\":%d,\"ctls\":[", chk_state);
+    int n = snprintf(out, cap, "\"orgb\":{\"state\":%d,", chk_state);
+    n += orgbapp_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"ctls\":[");
     for (int i = 0; i < chk_n && n < cap - 300; i++) {
         n += snprintf(out + n, cap - n, "%s{\"i\":%d,\"type\":%d,\"kind\":\"%s\",\"leds\":%d,\"name\":\"", i ? "," : "", chk[i].idx, chk[i].type, chk[i].kind, chk[i].leds);
         n += json_escape_to(out + n, cap - n, chk[i].name);

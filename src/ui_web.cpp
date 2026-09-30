@@ -7,6 +7,7 @@ extern "C" {
 }
 #include <dwmapi.h>
 #include <shlobj.h>
+#include <commdlg.h>
 #include <wrl.h>
 #include <string>
 #include "../third_party/webview2/WebView2.h"
@@ -84,6 +85,19 @@ static std::string field(const std::string &js, const char *key) {
     return out;
 }
 
+// the title bar blends into the page: its theme's background ([general] theme = dark / grey / light)
+static void title_bar(const char *theme) {
+    if (!wnd) return;
+    int light = !_stricmp(theme, "light"), grey = !_stricmp(theme, "grey");
+    BOOL dark = !light;
+    DwmSetWindowAttribute(wnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
+    COLORREF cap = light ? RGB(0xef, 0xef, 0xed) : grey ? RGB(0x25, 0x26, 0x2a) : BG;
+    COLORREF txt = light ? RGB(90, 90, 90) : RGB(170, 170, 170);
+    DwmSetWindowAttribute(wnd, 35 /* DWMWA_CAPTION_COLOR */, &cap, sizeof(cap));
+    DwmSetWindowAttribute(wnd, 34 /* DWMWA_BORDER_COLOR */, &cap, sizeof(cap));
+    DwmSetWindowAttribute(wnd, 36 /* DWMWA_TEXT_COLOR */, &txt, sizeof(txt));
+}
+
 static void on_message(const std::string &js) {
     std::string cmd = field(js, "cmd");
     if (cmd == "hello") { page_ready = true; post_state(); }
@@ -112,6 +126,21 @@ static void on_message(const std::string &js) {
     else if (cmd == "scan") { ext_scan(); orgb_check_start(); post_status(); }
     else if (cmd == "orgb_check") { orgb_check_start(); post_status(); }
     else if (cmd == "ai_setup") { ollama_setup(); post_status(); }
+    else if (cmd == "theme") title_bar(field(js, "v").c_str());
+    else if (cmd == "orgb_setup") { orgbapp_setup(); post_status(); }
+    else if (cmd == "orgb_auto") { cfg_set_and_save("openrgb", "auto", field(js, "v") == "1" ? "1" : "0"); if (field(js, "v") == "1") orgb_check_start(); post_state(); }
+    else if (cmd == "orgb_locate") {   // OpenRGB.exe somewhere else: picked once
+        wchar_t file[MAX_PATH] = L"OpenRGB.exe";
+        OPENFILENAMEW of = { sizeof(of) };
+        of.hwndOwner = wnd; of.lpstrFilter = L"OpenRGB.exe\0OpenRGB.exe\0"; of.lpstrFile = file; of.nMaxFile = MAX_PATH;
+        of.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        const wchar_t *base = NULL;
+        if (GetOpenFileNameW(&of) && (base = wcsrchr(file, L'\\')) && !_wcsicmp(base + 1, L"OpenRGB.exe")) {
+            cfg_set_and_save("openrgb", "path", narrow(file).c_str());
+            orgb_check_start();
+        }
+        post_state();
+    }
     else if (cmd == "ai_on_demand") { ollama_set_on_demand(field(js, "v") == "1"); post_state(); }
     else if (cmd == "dev_add") {
         ext_add(field(js, "kind").c_str(), field(js, "host").c_str(), atoi(field(js, "sub").c_str()),
@@ -214,7 +243,7 @@ static void create_webview(void) {
         }).Get());
     if (FAILED(hr)) {
         logf_("ui: WebView2 runtime not available 0x%08lx", hr);
-        MessageBoxW(wnd, TR(L"Microsoft Edge WebView2 Runtime is missing, so the window cannot open.", L"Не найден Microsoft Edge WebView2 Runtime — окно не может открыться."), L"haku control", MB_ICONERROR);
+        MessageBoxW(wnd, TR(L"Microsoft Edge WebView2 Runtime is missing, so the window cannot open.", L"Не найден Microsoft Edge WebView2 Runtime — окно не может открыться.", L"Microsoft Edge WebView2 Runtime est absent, la fenêtre ne peut pas s'ouvrir."), L"haku control", MB_ICONERROR);
         DestroyWindow(wnd);
     }
 }
@@ -292,13 +321,7 @@ extern "C" void ui_open(HINSTANCE inst) {
     wnd = CreateWindowExW(0, L"haku_control_ui", L"haku control", WS_OVERLAPPEDWINDOW,
                           wa.left + (wa.right - wa.left - w) / 2, wa.top + (wa.bottom - wa.top - hgt) / 2, w, hgt,
                           NULL, NULL, inst, NULL);
-    // dark title bar that blends into the page
-    BOOL dark = TRUE;
-    DwmSetWindowAttribute(wnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
-    COLORREF cap = BG, txt = RGB(170, 170, 170);
-    DwmSetWindowAttribute(wnd, 35 /* DWMWA_CAPTION_COLOR */, &cap, sizeof(cap));
-    DwmSetWindowAttribute(wnd, 34 /* DWMWA_BORDER_COLOR */, &cap, sizeof(cap));
-    DwmSetWindowAttribute(wnd, 36 /* DWMWA_TEXT_COLOR */, &txt, sizeof(txt));
+    title_bar(cfg_get("general", "theme", "dark"));
     SendMessageW(wnd, WM_SETICON, ICON_SMALL, (LPARAM)app_icon(0));
     SendMessageW(wnd, WM_SETICON, ICON_BIG, (LPARAM)app_icon(1));
     ShowWindow(wnd, SW_SHOW);

@@ -58,6 +58,13 @@ struct ext_dev {
 // OpenRGB on this PC (drv_openrgb.c)
 typedef struct { int idx, type, leds; char name[64], kind[24]; } orgb_ctl;
 int  orgb_list(orgb_ctl *out, int max);   // -1: no OpenRGB SDK server answers on this PC
+// OpenRGB looked after (openrgb_app.c): found, started for its SDK server, what it finds added, set up
+int  orgbapp_exe(wchar_t *out, int running);
+int  orgbapp_auto(void);
+int  orgbapp_ensure(int (*answers)(void));   // 1: the SDK server answers (started if needed)
+void orgbapp_add_new(const orgb_ctl *c, int n);
+void orgbapp_removed(const char *name);
+int  orgbapp_json(char *out, int cap);
 
 extern const ext_driver drv_wled, drv_openrgb, drv_govee, drv_lifx, drv_yeelight, drv_hue, drv_wiz, drv_tuya, drv_nlusb, drv_goveecloud, drv_elgato, drv_wooting, drv_divoom;
 const ext_driver *ext_driver_by_kind(const char *kind);
@@ -72,6 +79,8 @@ int    tcp_recv_all(SOCKET s, void *data, int len);
 int    http_request(const char *host, int port, const char *method, const char *path, const char *body, char *buf, int cap);
 int    http_call(const char *host, int port, const char *method, const char *path, const char *body, char *buf, int cap,
                  char *why, int whycap);   // HTTP/1.1, one packet: for devices' own small web servers
+int    https_download(const wchar_t *url, const wchar_t *to, long long max, volatile LONG *pct);
+int    sha256_hex(const wchar_t *file, char *hex);   // 64 hex digits
 SOCKET udp_socket(int bind_port, int broadcast);   // bind_port < 0: unbound
 int    udp_send(SOCKET s, const char *host, int port, const void *data, int len);
 int    udp_recv(SOCKET s, void *buf, int cap, int ms, char *from, int from_cap);

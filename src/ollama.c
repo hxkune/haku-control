@@ -217,44 +217,6 @@ static void fail(const char *why) {
 }
 static void set_stage(int s, int p) { InterlockedExchange(&stage, s); InterlockedExchange(&pct, p); ui_refresh(); }
 
-// HTTPS download (WinHTTP follows ollama.com's redirect to its file host), progress in pct
-static int download(const wchar_t *url, const wchar_t *to) {
-    URL_COMPONENTS uc = { sizeof(uc) };
-    wchar_t host[256], path[1024];
-    uc.lpszHostName = host; uc.dwHostNameLength = 256; uc.lpszUrlPath = path; uc.dwUrlPathLength = 1024;
-    if (!WinHttpCrackUrl(url, 0, 0, &uc) || uc.nScheme != INTERNET_SCHEME_HTTPS) return 0;
-    int ok = 0; long long got = 0;
-    HINTERNET ses = WinHttpOpen(L"haku-control/" HAKU_VER_WSTR, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, NULL, NULL, 0);
-    if (!ses) return 0;
-    WinHttpSetTimeouts(ses, 10000, 10000, 30000, 60000);
-    HINTERNET con = WinHttpConnect(ses, host, uc.nPort, 0);
-    HINTERNET req = con ? WinHttpOpenRequest(con, L"GET", path, NULL, NULL, NULL, WINHTTP_FLAG_SECURE) : NULL;
-    FILE *f = NULL;
-    if (req && WinHttpSendRequest(req, NULL, 0, NULL, 0, 0, 0) && WinHttpReceiveResponse(req, NULL)) {
-        DWORD code = 0, sz = sizeof(code);
-        WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, NULL, &code, &sz, NULL);
-        wchar_t cl[32] = L""; DWORD cls = sizeof(cl);
-        long long total = WinHttpQueryHeaders(req, WINHTTP_QUERY_CONTENT_LENGTH, NULL, cl, &cls, NULL) ? _wtoi64(cl) : 0;
-        if (code == 200 && (f = _wfopen(to, L"wb")) != NULL) {
-            static char chunk[256 * 1024]; DWORD n;
-            ok = 1;
-            while (WinHttpReadData(req, chunk, sizeof(chunk), &n) && n) {
-                if (fwrite(chunk, 1, n, f) != n) { ok = 0; break; }
-                got += n;
-                LONG p = total > 0 ? (LONG)(got * 100 / total) : 0;
-                if (p != pct) { InterlockedExchange(&pct, p); ui_refresh(); }
-                if (got > 6LL * 1024 * 1024 * 1024) { ok = 0; break; }   // far more than Ollama's installer
-            }
-            if (total > 0 && got != total) ok = 0;
-            fclose(f);
-        } else logf_("ollama setup: download answered %lu", code);
-    }
-    if (req) WinHttpCloseHandle(req);
-    if (con) WinHttpCloseHandle(con);
-    WinHttpCloseHandle(ses);
-    return ok;
-}
-
 // A valid Authenticode signature whose signer's name has `who` in it (no revocation lookups over the network)
 static int signed_by(const wchar_t *file, const wchar_t *who) {
     WINTRUST_FILE_INFO fi = { sizeof(fi) }; fi.pcwszFilePath = file;
@@ -284,7 +246,7 @@ static int install_ollama(void) {
     swprintf(file, MAX_PATH, L"%s\\OllamaSetup.exe", dir);
     set_stage(ST_DOWNLOAD, 0);
     logf_("ollama setup: downloading the installer");
-    if (!download(SETUP_URL, file)) { DeleteFileW(file); fail("download"); return 0; }
+    if (!https_download(SETUP_URL, file, 6LL << 30, &pct)) { DeleteFileW(file); fail("download"); return 0; }
     set_stage(ST_VERIFY, 0);
     if (!signed_by(file, L"Ollama")) { DeleteFileW(file); fail("verify"); return 0; }
 #ifdef HAKU_DEV

@@ -8,23 +8,23 @@
 #include <stdlib.h>
 
 const effect_info g_effects[] = {
-    { "flow",        L"Flow",         L"Течение" },
-    { "caustic",     L"Caustics",     L"Каустика" },
-    { "bubbles",     L"Bubbles",      L"Пузырьки" },
-    { "comet",       L"Comet",        L"Комета" },
-    { "lava",        L"Lava",         L"Лава" },
-    { "breathe",     L"Breathe",      L"Дыхание" },
-    { "temperature", L"Temperature",  L"Температура" },
-    { "pump",        L"Pump flow",    L"Поток по насосу" },
-    { "audio",       L"Audio",        L"Звук" },
-    { "static",      L"Static colour", L"Статичный цвет" },
-    { "off",         L"Off",          L"Выключить" },
+    { "flow",        L"Flow",         L"Течение",         L"Flux" },
+    { "caustic",     L"Caustics",     L"Каустика",        L"Caustiques" },
+    { "bubbles",     L"Bubbles",      L"Пузырьки",        L"Bulles" },
+    { "comet",       L"Comet",        L"Комета",          L"Comète" },
+    { "lava",        L"Lava",         L"Лава",            L"Lave" },
+    { "breathe",     L"Breathe",      L"Дыхание",         L"Respiration" },
+    { "temperature", L"Temperature",  L"Температура",     L"Température" },
+    { "pump",        L"Pump flow",    L"Поток по насосу", L"Flux de la pompe" },
+    { "audio",       L"Audio",        L"Звук",            L"Audio" },
+    { "static",      L"Static colour", L"Статичный цвет", L"Couleur fixe" },
+    { "off",         L"Off",          L"Выключить",       L"Éteindre" },
 };
 const int g_effect_count = sizeof(g_effects) / sizeof(g_effects[0]);
 
 enum { FX_FLOW, FX_CAUSTIC, FX_BUBBLES, FX_COMET, FX_LAVA, FX_BREATHE, FX_TEMP, FX_PUMP, FX_AUDIO, FX_STATIC, FX_OFF, FX_N };
 
-const wchar_t *effect_title(int i) { return app_ru() ? g_effects[i].title_ru : g_effects[i].title; }
+const wchar_t *effect_title(int i) { return TR(g_effects[i].title, g_effects[i].title_ru, g_effects[i].title_fr); }
 
 int effect_index(const char *id) {
     for (int i = 0; i < g_effect_count; i++) if (_stricmp(g_effects[i].id, id) == 0) return i;

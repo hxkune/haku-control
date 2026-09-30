@@ -16,7 +16,7 @@ device runs its own effect.
 - **Behaves like a light switch:** switching a device off in the app really turns it off. When the PC shuts down or sleeps,
   the room lights go dark (or keep / restore their own state, as you choose).
 - **Local only:** no account, no cloud, no telemetry. Devices are controlled over USB, SMBus and your LAN.
-- English and Russian UI.
+- English, Russian and French UI; dark, grey and light themes.
 
 > **Status: early.** haku control grew out of one person's setup, so the list of supported devices is
 > short. Adding more is the main goal of the next releases (see the [roadmap](#roadmap)).

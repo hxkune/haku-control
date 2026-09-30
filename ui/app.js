@@ -100,6 +100,19 @@ function groupNew() {
   return n;
 }
 
+// ---- themes: [general] theme = dark (default) | grey | light, as html[data-theme]; the canvas takes the page's
+// colours for its frames, labels and tooltip (the hardware it draws stays dark, like the real thing)
+const THEMES = ['dark', 'grey', 'light'];
+const THEME = { ink: '255, 255, 255', hi: '#d8d8d8', mid: '#8a8a8a', lo: '#4e4e4e', tip: '#121212' };
+const inkA = a => `rgba(${THEME.ink}, ${a})`;
+function applyTheme() {
+  const th = THEMES.includes(cv('general', 'theme', 'dark')) ? cv('general', 'theme', 'dark') : 'dark';
+  if (th === 'dark') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = th;
+  const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
+  Object.assign(THEME, { ink: g('--ink'), hi: g('--text'), mid: g('--muted'), lo: g('--faint'), tip: g('--menu') });
+  $$('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === th));
+}
+
 // ------------------------------------------------------------------ colour helpers
 const hex2rgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 const rgb2hex = (r, g, b) => '#' + [r, g, b].map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -869,7 +882,7 @@ function drawGpu(c, X, Y, W, H) {
     c.save();
     if (lit(F.board)) { c.shadowColor = F.board; c.shadowBlur = 14 * d; }
     c.fillStyle = F.board || OFF; c.fillRect(bx - 3.5 * d, by - 3.5 * d, 7 * d, 7 * d); c.restore();
-    c.fillStyle = '#4e4e4e'; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'right';
+    c.fillStyle = THEME.lo; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'right';
     c.fillText(t('board'), bx - 10 * d, by + 4 * d);
   }
 }
@@ -944,7 +957,7 @@ function drawNano(c, X, Y, W, H, N) {
   }
   const G = nanoGeometry(N), cols = F.nano[N.slot - 1] || [];
   if (!G.length) {
-    c.fillStyle = '#4e4e4e'; c.font = `${12 * d}px ${WIDE}`; c.textAlign = 'center';
+    c.fillStyle = THEME.lo; c.font = `${12 * d}px ${WIDE}`; c.textAlign = 'center';
     c.fillText(nanoOn() ? t('nano.wait') : t('nano.none'), X + W / 2, Y + H / 2);
     return [];
   }
@@ -1116,7 +1129,7 @@ function drawExt(c, X, Y, W, H, k) {
 }
 function label(c, text, x, y, bright) {
   const d = devicePixelRatio;
-  c.fillStyle = bright ? '#d8d8d8' : '#4e4e4e'; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'center'; c.letterSpacing = `${3 * d}px`;
+  c.fillStyle = bright ? THEME.hi : THEME.lo; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'center'; c.letterSpacing = `${3 * d}px`;
   c.fillText(text.toUpperCase(), x, y);
 }
 
@@ -1242,7 +1255,7 @@ function tilePath(c, x, y, w, h, cut) {
 function tileLabel(c, text, x, y, w, bright) {
   const d = devicePixelRatio;
   c.font = `${9 * d}px ${WIDE}`; c.letterSpacing = `${2 * d}px`; c.textAlign = 'center';
-  c.fillStyle = bright ? '#d8d8d8' : '#5a5a5a';
+  c.fillStyle = bright ? THEME.hi : THEME.lo;
   let s = text.toUpperCase();
   if (c.measureText(s).width > w) { while (s.length > 1 && c.measureText(s + '…').width > w) s = s.slice(0, -1); s += '…'; }
   c.fillText(s, x + w / 2, y);
@@ -1275,11 +1288,11 @@ function drawHero() {
     const hot = HERO.hover === key || (to && to.key === key);
     c.save(); c.globalAlpha = v;
     tilePath(c, x, y, w, h, 11 * d);
-    c.fillStyle = hot ? 'rgba(255,255,255,.035)' : 'rgba(255,255,255,.012)'; c.fill();
-    c.strokeStyle = to && to.key === key ? 'rgba(255,255,255,.6)' : hot ? 'rgba(255,255,255,.26)' : 'rgba(255,255,255,.1)';
+    c.fillStyle = hot ? inkA(.035) : inkA(.012); c.fill();
+    c.strokeStyle = to && to.key === key ? inkA(.6) : hot ? inkA(.26) : inkA(.1);
     c.lineWidth = d; c.setLineDash(to && to.key === key ? [5 * d, 4 * d] : []); c.stroke(); c.setLineDash([]);
     c.font = `${9 * d}px ${WIDE}`; c.letterSpacing = `${2.5 * d}px`; c.textAlign = 'left';
-    c.fillStyle = hot ? '#e8e8e8' : '#8a8a8a';
+    c.fillStyle = hot ? THEME.hi : THEME.mid;
     let s = groupTitle(F.g).toUpperCase();
     const room = w - 46 * d;
     if (c.measureText(s).width > room) { while (s.length > 1 && c.measureText(s + '…').width > room) s = s.slice(0, -1); s += '…'; }
@@ -1296,8 +1309,8 @@ function drawHero() {
     c.globalAlpha = drag && drag.src.key === it.key ? v * .35 : v;
     const sc = .92 + .08 * v; c.translate(x + w / 2, y + h / 2); c.scale(sc, sc); c.translate(-x - w / 2, -y - h / 2);
     tilePath(c, x, y, w, h, 8 * d);
-    c.fillStyle = hot ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.015)'; c.fill();
-    c.strokeStyle = to && to.key === it.key ? 'rgba(255,255,255,.6)' : hot ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.06)'; c.lineWidth = d;
+    c.fillStyle = hot ? inkA(.04) : inkA(.015); c.fill();
+    c.strokeStyle = to && to.key === it.key ? inkA(.6) : hot ? inkA(.28) : inkA(.06); c.lineWidth = d;
     c.setLineDash(to && to.key === it.key ? [5 * d, 4 * d] : []); c.stroke(); c.setLineDash([]);
     c.save(); tilePath(c, x, y, w, h, 8 * d); c.clip();   // a device never draws outside its tile
     try { it.draw(c, x + 8 * d, y + 22 * d, w - 16 * d, h - 50 * d); } catch (e) { console.warn('preview', it.key, e); }
@@ -1309,7 +1322,7 @@ function drawHero() {
   hits.push(...ghits);   // a device in a group is found before its group
   for (const k of Object.keys(HERO.pos)) if (!seen.has(k)) { delete HERO.pos[k]; delete HERO.anim['a:' + k]; }
   if (!tiles.length && S.effects.length) {   // nothing to show yet: the whole preview invites to add a device
-    c.fillStyle = HERO.hover === 'add' ? '#d8d8d8' : '#6a6a6a'; c.font = `${13 * d}px ${WIDE}`; c.textAlign = 'center';
+    c.fillStyle = HERO.hover === 'add' ? THEME.hi : THEME.lo; c.font = `${13 * d}px ${WIDE}`; c.textAlign = 'center';
     c.fillText('+  ' + t('hero.empty'), W / 2, H / 2);
     hits.push({ key: 'add', k: 'add', x: W * .3, y: H * .3, w: W * .4, h: H * .4 });
   }
@@ -1322,8 +1335,8 @@ function drawHero() {
     c.font = `${11 * d}px ${WIDE}`; c.textAlign = 'left';
     const s = drag.src.name + (msg ? '  ·  ' + msg : ''), tw = c.measureText(s).width, px = Math.min(drag.px + 14 * d, W - tw - 24 * d), py = drag.py + 18 * d;
     rr(c, px, py - 14 * d, tw + 20 * d, 22 * d, 11 * d);
-    c.fillStyle = 'rgba(12,12,12,.92)'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = d; c.stroke();
-    c.fillStyle = '#e8e8e8'; c.fillText(s, px + 10 * d, py + 1 * d);
+    c.fillStyle = THEME.tip; c.fill(); c.strokeStyle = inkA(.35); c.lineWidth = d; c.stroke();
+    c.fillStyle = THEME.hi; c.fillText(s, px + 10 * d, py + 1 * d);
     c.restore();
   }
   if (HERO.moving && !HERO.raf) HERO.raf = requestAnimationFrame(() => { HERO.raf = 0; if (tab === 'effects') drawHero(); });
@@ -1849,15 +1862,29 @@ function buildDevices() {
 // ---- other PC hardware: what OpenRGB on this PC offers (S.orgb: state 0 not looked, 1 looking, 2 answers, 3 none).
 // Hardware haku drives itself (the MSI board, ENE memory) is shown but not offered, so two programs never fight.
 const ORGB_TYPES = { 0: 'board', 1: 'ram', 2: 'gpu', 3: 'fan', 4: 'strip', 5: 'keyboard', 6: 'mouse', 18: 'keyboard' };
-const orgbOwn = c => (c.type === 1 && S.sticks > 0) || (c.type === 0 && S.msi && /msi|mystic/i.test(c.name));
+// hardware haku drives itself: its memory and MSI board, and devices added directly (their brand in the name)
+const orgbOwn = c => (c.type === 1 && S.sticks > 0) || (c.type === 0 && S.msi && /msi|mystic/i.test(c.name)) ||
+  S.ext.devs.some(d => d.kind !== 'openrgb' && (d.title || '').split(' ')[0].length >= 3 && c.name.toLowerCase().includes(d.title.split(' ')[0].toLowerCase())) ||
+  (nanoOn() && /nanoleaf/i.test(c.name));
 const orgbAdded = c => S.ext.devs.some(d => d.kind === 'openrgb' && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(d.host) &&
   (cv('dev.' + d.id, 'match', '') ? cv('dev.' + d.id, 'match', '') === c.name : d.sub === c.i));
 const orgbAdd = c => send({ cmd: 'dev_add', kind: 'openrgb', host: '127.0.0.1', sub: c.i, name: c.name, leds: 0 });
 function updateOrgb() {
   const O = S.orgb || { state: 0, ctls: [] }, ctls = O.ctls || [];
-  $('#orgb-status').textContent = t('orgb.st' + O.state, ctls.length);
+  $('#orgb-status').textContent = t('orgb.st' + O.state, ctls.length) + (O.state === 2 && O.ours ? ' · ' + t('orgb.ours') : '');
   $('#orgb-check').disabled = O.state === 1;
-  $('#orgb-guide').classList.toggle('hidden', O.state !== 3);
+  // not there or not running: the setup (download, or point to it), with its progress
+  const su = O.setup || 0, busy = su >= 1 && su <= 3;
+  $('#orgb-guide').classList.toggle('hidden', !(O.state === 3 || O.state === 4 || busy || su === 5));
+  $('#orgb-guide-text').textContent = busy || su === 4 ? t('orgb.su' + su, O.pct || 0) : su === 5 ? t('orgb.err.' + O.err) : O.state === 4 ? t('orgb.none') : t('orgb.off');
+  $('#orgb-guide-text').classList.toggle('bad', su === 5);
+  const bar = $('#orgb-bar');
+  bar.classList.toggle('hidden', !busy); bar.classList.toggle('busy', busy && su !== 1);
+  bar.firstElementChild.style.width = su === 1 ? (O.pct || 0) + '%' : '';
+  $('#orgb-setup').classList.toggle('hidden', !!O.exe && su !== 5);
+  $('#orgb-setup').disabled = busy;
+  $('#orgb-locate').classList.toggle('hidden', !!O.exe || busy);
+  $('#orgb-auto').checked = O.auto !== 0;
   $('#orgb-note').classList.toggle('hidden', !ctls.length);
   const free = ctls.filter(c => !orgbOwn(c) && !orgbAdded(c));
   $('#orgb-all-row').classList.toggle('hidden', free.length < 2);
@@ -1877,6 +1904,9 @@ function updateOrgb() {
   }
 }
 $('#orgb-check').addEventListener('click', () => { S.orgb = Object.assign({}, S.orgb, { state: 1 }); updateOrgb(); send({ cmd: 'orgb_check' }); });
+$('#orgb-setup').addEventListener('click', () => { S.orgb = Object.assign({}, S.orgb, { setup: 1, pct: 0 }); updateOrgb(); send({ cmd: 'orgb_setup' }); });
+$('#orgb-locate').addEventListener('click', () => send({ cmd: 'orgb_locate' }));
+$('#orgb-auto').addEventListener('change', e => send({ cmd: 'orgb_auto', v: e.target.checked ? '1' : '0' }));
 $('#orgb-all').addEventListener('click', () => { (S.orgb.ctls || []).filter(c => !orgbOwn(c) && !orgbAdded(c)).forEach(orgbAdd); $('#orgb-all').disabled = true; setTimeout(() => { $('#orgb-all').disabled = false; }, 3000); });
 
 function updateDevices() {
@@ -1982,6 +2012,7 @@ $$('#wz-lang button').forEach(b => b.addEventListener('click', () => $$('#lang b
 // settings
 $('#autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.target.checked ? 1 : 0 }));
 $('#ui-motion').addEventListener('change', e => { setCfg('general', 'ui_motion', e.target.checked ? 1 : 0); updateSettings(); });
+$$('#theme button').forEach(b => b.addEventListener('click', () => { setCfg('general', 'theme', b.dataset.v); applyTheme(); send({ cmd: 'theme', v: b.dataset.v }); drawAll(); }));
 $('#hotspot-auto').addEventListener('change', e => setCfg('hotspot', 'auto', e.target.checked ? 1 : 0));
 $('#fps').addEventListener('input', e => { $('#fps-val').textContent = e.target.value; setCfgSoon('general', 'fps', e.target.value); });
 $$('[data-open]').forEach(b => b.addEventListener('click', () => send({ cmd: 'open', what: b.dataset.open })));
@@ -2215,9 +2246,9 @@ if (wv) wv.addEventListener('message', e => {
   else if (m.type === 'status') applyStatus(m);
   else if (m.type === 'state') {
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;
-    LANG = cv('general', 'lang', 'en') === 'ru' ? 'ru' : 'en';
+    LANG = ['ru', 'fr'].includes(cv('general', 'lang', 'en')) ? cv('general', 'lang', 'en') : 'en';
     applyI18n();
-    buildEffects(); buildHotkeys(); syncToggles(); renderProfiles();
+    applyTheme(); buildEffects(); buildHotkeys(); syncToggles(); renderProfiles();
     S.effect = null;           // force a full refresh
     S.bulbs = [];
     devSig = '';

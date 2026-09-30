@@ -205,7 +205,8 @@ static void handle(SOCKET c) {
 #ifdef HAKU_DEV
         // test builds (loopback only by default): the account sign-in can be driven from a browser for tests
         if (!strcmp(cmd, "aidot_login") || !strcmp(cmd, "tuya_login") || !strcmp(cmd, "govee_login") || !strcmp(cmd, "diag") || !strcmp(cmd, "update_check") || !strcmp(cmd, "update_install") ||
-            !strcmp(cmd, "ai_setup") || !strcmp(cmd, "ai_on_demand")) ok = 1;
+            !strcmp(cmd, "ai_setup") || !strcmp(cmd, "ai_on_demand") ||
+            !strcmp(cmd, "orgb_setup") || !strcmp(cmd, "orgb_auto")) ok = 1;
 #endif
         if (!ok) { reply_json(c, 400, "{\"error\":\"cmd\"}"); return; }
         app_remote_cmd(body);
