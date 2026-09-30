@@ -98,7 +98,7 @@ typedef struct {
     char ip[64]; int port, ep, have_token; long token;
     char cmd[40];   // the light command: Channel/SetRGBInfo, or the Times Frame's Channel/SetAmbientLight
     int frame, fx, had, had_bri, had_cycle, had_eq, had_fx; char had_col[16];   // the Frame: its effect, what it had
-    int scr_off, scr_mode, clock_on, orig_clock; DWORD mon_at;   // the Frame's screen: what haku set, what it had
+    int scr_off, scr_mode, clock_on, orig_clock, orig_scr_bri; DWORD mon_at;   // the Frame's screen: what haku set, what it had
     int lights, frame_dark, sent_on, sent_bri, have_sent, fails, lost; char sent_col[8]; DWORD sent_at;
 } dv_t;
 
@@ -230,6 +230,7 @@ static int dv_open(ext_dev *d) {
         v->frame = 1;
         s2 = call(v, "\"Command\":\"Channel/GetClockInfo\"", ans, sizeof(ans));
         v->orig_clock = s2 == 200 && answer_ok(ans) ? (int)json_get_num(ans, "ClockId", 0) : 0;
+        v->orig_scr_bri = s2 == 200 && answer_ok(ans) ? (int)json_get_num(ans, "Brightness", -1) : -1;
         if (!d->fails) logf_("dev.%d (divoom frame): its screen shows dial %d", d->id, v->orig_clock);
         fetch_clocks(d, v, (long long)json_get_num(buf, "DeviceId", 0));
         snprintf(v->cmd, sizeof(v->cmd), "Channel/SetAmbientLight");
@@ -387,15 +388,21 @@ static void screen_back(ext_dev *d, dv_t *v) {
     v->scr_mode = SCR_OWN; v->clock_on = 0;
 }
 
-// once a frame: the screen follows the settings (and the lights, when asked)
-static void screen_tick(ext_dev *d, dv_t *v) {
+// the screen off or on; when the Times Frame says no, its brightness down to 0 and back to what it had instead
+static void screen_power(ext_dev *d, dv_t *v, int off) {
+    char f[80]; snprintf(f, sizeof(f), "\"Command\":\"Channel/OnOffScreen\",\"OnOff\":%d", !off);
+    if (!simple(v, f, "Channel/OnOffScreen", d->id) && v->frame && v->orig_scr_bri > 0) {
+        snprintf(f, sizeof(f), "\"Command\":\"Channel/SetBrightness\",\"Brightness\":%d", off ? 0 : v->orig_scr_bri);
+        simple(v, f, "Channel/SetBrightness", d->id);
+    }
+}
+
+// once a frame, after the light: the screen follows the settings (and the lights, when asked). A light command
+// wakes a switched-off screen (the Times Gate's did), so after one the screen is switched off again.
+static void screen_tick(ext_dev *d, dv_t *v, int light_sent) {
     char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
     int off = cfg_geti(sec, "screen_follow", 1) && !_stricmp(cfg_get("general", "effect", ""), "off");
-    if (off != v->scr_off) {
-        char f[80]; snprintf(f, sizeof(f), "\"Command\":\"Channel/OnOffScreen\",\"OnOff\":%d", !off);
-        simple(v, f, "Channel/OnOffScreen", d->id);
-        v->scr_off = off;
-    }
+    if (off != v->scr_off || (off && light_sent)) { screen_power(d, v, off); v->scr_off = off; }
     if (off || !v->frame) return;   // the Times Gate: its screens only follow the lights
     int m = screen_mode_of(sec), clock = cfg_geti(sec, "clock", 0);
     if (m != v->scr_mode || (m == SCR_DIAL && clock != v->clock_on)) {
@@ -411,46 +418,49 @@ static void screen_tick(ext_dev *d, dv_t *v) {
 static int dv_send(ext_dev *d, const rgbf *c, int n) {
     if (n < 1) return 1;
     dv_t *v = d->priv;
-    screen_tick(d, v);
-    if (v->frame_dark) return 1;
-    float r = clampf(c[0].r, 0, 1), g = clampf(c[0].g, 0, 1), b = clampf(c[0].b, 0, 1), mx = max(r, max(g, b));
-    int on = mx >= 0.02f, bri = (int)(mx * 100 + 0.5f);
-    char col[8] = "#000000";
-    if (on) snprintf(col, sizeof(col), "#%02X%02X%02X", to8(r / mx), to8(g / mx), to8(b / mx));
-    // one HTTP request per change (again every 10 s, in case the device or its app changed it)
-    DWORD now = GetTickCount();
-    int l = lights_of(d->id);
-    if (l != v->lights) { v->lights = l; v->have_sent = 0; }
-    if (v->frame && frame_fx_of(d->id) != v->fx) v->have_sent = 0;
-    if (v->have_sent && v->sent_on == on && (!on || (abs(v->sent_bri - bri) < 2 && !strcmp(v->sent_col, col))) && now - v->sent_at < 10000) return 1;
-    if (!set_rgb(d, on, col, on ? bri : 0)) {
-        // the Times Gate's little web server now and then takes no connection: lost only after 3 in a row
-        return ++v->lost < 3;
+    int sent = 0, ok = 1;
+    if (!v->frame_dark) {
+        float r = clampf(c[0].r, 0, 1), g = clampf(c[0].g, 0, 1), b = clampf(c[0].b, 0, 1), mx = max(r, max(g, b));
+        int on = mx >= 0.02f, bri = (int)(mx * 100 + 0.5f);
+        char col[8] = "#000000";
+        if (on) snprintf(col, sizeof(col), "#%02X%02X%02X", to8(r / mx), to8(g / mx), to8(b / mx));
+        // one HTTP request per change, and again every 10 s while lit, in case the device or its app changed it
+        // (not while dark: a light command would wake the screen that went off with the lights)
+        DWORD now = GetTickCount();
+        int l = lights_of(d->id);
+        if (l != v->lights) { v->lights = l; v->have_sent = 0; }
+        if (v->frame && frame_fx_of(d->id) != v->fx) v->have_sent = 0;
+        int same = v->have_sent && v->sent_on == on && (!on || (abs(v->sent_bri - bri) < 2 && !strcmp(v->sent_col, col)));
+        if (!same || (on && now - v->sent_at >= 10000)) {
+            if (!set_rgb(d, on, col, on ? bri : 0)) ok = ++v->lost < 3;   // the Times Gate's little web server now and then takes no connection: lost only after 3 in a row
+            else {
+                v->lost = 0; sent = 1;
+                v->have_sent = 1; v->sent_on = on; v->sent_bri = bri; strcpy_s(v->sent_col, sizeof(v->sent_col), col); v->sent_at = now;
+            }
+        }
     }
-    v->lost = 0;
-    v->have_sent = 1; v->sent_on = on; v->sent_bri = bri; strcpy_s(v->sent_col, sizeof(v->sent_col), col); v->sent_at = now;
-    return 1;
+    screen_tick(d, v, sent);
+    return ok;
 }
 
 static void dv_leave(ext_dev *d, int how) {
     dv_t *v = d->priv;
     char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
     if (v->frame && v->scr_mode != SCR_OWN) screen_back(d, v);
+    // the light first: a light command wakes a switched-off screen
+    if (!v->frame_dark) {
+        if (how == LEAVE_OFF) set_rgb(d, 0, "#000000", 0);
+        else if (how == LEAVE_RESTORE && v->frame && v->had && !strpbrk(v->had_col, "\"\\")) {
+            // the Times Frame gets back the light it had
+            char f[300], buf[512];
+            snprintf(f, sizeof(f), "\"Command\":\"Channel/SetAmbientLight\",\"Brightness\":%d,\"Color\":\"%s\",\"ColorCycle\":%d,\"EqOnOff\":%d,\"SelectEffect\":%d",
+                     v->had_bri, v->had_col, v->had_cycle, v->had_eq, v->had_fx);
+            call(v, f, buf, sizeof(buf));
+        }
+        // LEAVE_RESTORE on the Times Gate: its light effect can't be read back over this API, so it keeps the last colour
+    }
     int off = how == LEAVE_OFF && cfg_geti(sec, "screen_follow", 1);
-    if (v->scr_off >= 0 && off != v->scr_off) {
-        char f[80]; snprintf(f, sizeof(f), "\"Command\":\"Channel/OnOffScreen\",\"OnOff\":%d", !off);
-        simple(v, f, "Channel/OnOffScreen", d->id);
-    }
-    if (v->frame_dark) return;
-    if (how == LEAVE_OFF) set_rgb(d, 0, "#000000", 0);
-    else if (how == LEAVE_RESTORE && v->frame && v->had && !strpbrk(v->had_col, "\"\\")) {
-        // the Times Frame gets back the light it had
-        char f[300], buf[512];
-        snprintf(f, sizeof(f), "\"Command\":\"Channel/SetAmbientLight\",\"Brightness\":%d,\"Color\":\"%s\",\"ColorCycle\":%d,\"EqOnOff\":%d,\"SelectEffect\":%d",
-                 v->had_bri, v->had_col, v->had_cycle, v->had_eq, v->had_fx);
-        call(v, f, buf, sizeof(buf));
-    }
-    // LEAVE_RESTORE on the Times Gate: its light effect can't be read back over this API, so it keeps the last colour
+    if (v->scr_off >= 0 && (off != v->scr_off || off)) screen_power(d, v, off);
 }
 
 static void dv_close(ext_dev *d) { free(d->priv); d->priv = NULL; }

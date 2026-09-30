@@ -341,6 +341,7 @@ def elgato_http(product, colour):
 
 # ------------------------------------------------------------------ Divoom Times Gate (hardware 400: POST /post)
 DIVOOM_TOKEN = 1234
+GATE_SCREEN = {'on': 1}
 DIVOOM_RATE = Rate('divoom')
 
 class DivoomHttp(BaseHTTPRequestHandler):
@@ -366,8 +367,10 @@ class DivoomHttp(BaseHTTPRequestHandler):
             self.reply({'error_code': 0, 'Brightness': 80, 'RotationFlag': 0, 'ClockTime': 60, 'GalleryTime': 60, 'LightSwitch': 1})
         elif c == 'Channel/SetRGBInfo':
             DIVOOM_RATE.hit(f"on={body['OnOff']} {body['Color']} bri={body['Brightness']} zone={body['SelectLightIndex']} fx={[x['SelectEffect'] for x in body['LightList']]}")
+            if not GATE_SCREEN['on']: GATE_SCREEN['on'] = 1; log('divoom', 'screens on=1 (woken by the light command, as a real one seemed to)')
             self.reply({'error_code': 0})
         elif c == 'Channel/OnOffScreen':
+            GATE_SCREEN['on'] = body.get('OnOff')
             log('divoom', f"screens on={body.get('OnOff')}")
             self.reply({'error_code': 0})
         else: self.reply({'error_code': 1})
@@ -391,6 +394,10 @@ class DivoomFrameHttp(DivoomHttp):
         if c == 'Channel/GetAllConf': self.reply(head)
         elif c == 'Channel/GetAmbientLight': self.reply({**head, **FRAME_LIGHT})
         elif c == 'Channel/GetClockInfo': self.reply({**head, 'ClockId': FRAME_SCREEN['clock'], 'Brightness': 90})
+        elif c == 'Channel/OnOffScreen' and os.environ.get('FAKE_FRAME_NO_SCREEN_OFF'):   # (to test haku's other way)
+            log('divoom-frame', 'refused Channel/OnOffScreen'); self.reply({'ReturnCode': 1, 'ReturnMessage': 'Only accept JSON parameters'})
+        elif c == 'Channel/SetBrightness':
+            FRAME_SCREEN['bri'] = body.get('Brightness'); log('divoom-frame', f"screen brightness={body.get('Brightness')}"); self.reply(head)
         elif c in ('Channel/SetClockSelectId', 'Channel/OnOffScreen', 'Device/EnterCustomControlMode', 'Device/UpdateDisplayItems', 'Device/ExitCustomControlMode'):
             if c == 'Channel/SetClockSelectId': FRAME_SCREEN['clock'] = body.get('ClockId')
             if c == 'Channel/OnOffScreen': FRAME_SCREEN['on'] = body.get('OnOff')
