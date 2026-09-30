@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.21',
+    en: ['Divoom Times Frame: its side light follows haku. Pick the light effect by number in its card (they have no names yet).',
+      'Divoom Times Frame screen: leave it as it is, show a Divoom dial, or haku\'s own screen with the time, CPU, memory, the effect and the profile. Each profile keeps its own.',
+      'Divoom Times Gate and Times Frame: the screens go off with the lights (can be turned off in the device\'s card).'],
+    ru: ['Divoom Times Frame: боковая подсветка следует за haku. Эффект подсветки выбирается по номеру в карточке (названий у них пока нет).',
+      'Экран Divoom Times Frame: оставить как есть, показать циферблат Divoom или экран haku со временем, CPU, памятью, эффектом и профилем. У каждого профиля свой.',
+      'Divoom Times Gate и Times Frame: экраны гаснут вместе со светом (отключается в карточке устройства).'],
+    fr: ['Divoom Times Frame : son éclairage latéral suit haku. L\'effet se choisit par numéro dans sa carte (ils n\'ont pas encore de nom).',
+      'Écran de la Divoom Times Frame : le laisser tel quel, afficher un cadran Divoom, ou l\'écran de haku avec l\'heure, le CPU, la mémoire, l\'effet et le profil. Chaque profil garde le sien.',
+      'Divoom Times Gate et Times Frame : les écrans s\'éteignent avec l\'éclairage (désactivable dans la carte de l\'appareil).'] },
   { v: '0.3.20',
     en: ['Updates keep coming even after "Check now" is pressed many times: GitHub limits how often it may be asked, so haku asks at most once a minute and, when GitHub says no, finds the new version another way.',
       'Divoom Times Frame: haku looks for the command its lights take. If they stay dark, the diagnostics now show what it tried.'],
