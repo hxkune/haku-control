@@ -241,6 +241,7 @@ int   hw_inventory(char *out, int cap);  // the PC hardware as text lines, for t
 int   app_frame_json(char *out, int cap);    // live LED colours
 void  app_set(const char *section, const char *key, const char *value);
 void  app_power(void);                       // off <-> previous effect
+float app_gpu_temp(void);                    // the last GPU temperature read, NAN when unknown
 void  app_open(const char *what);            // "log", "ini", "folder"
 void  app_quit(void);
 void  app_save_soon(void);                   // write settings.ini after a short pause

@@ -92,6 +92,15 @@ function groupAdd(n, zone) {
 }
 function groupRemove(zone) { const g = groupOf(zone); if (g) setMembers(g.n, g.members.filter(z => z !== zone)); }
 // a number for a new group, its section emptied (a group without members is gone, its section may be left over)
+// Times Frame: the dials Divoom lists for it (haku keeps them in [dev.N] clocks = "id:name|..."), else a number
+function frameDials(sec) {
+  const cur = cv(sec, 'clock', '');
+  const list = cv(sec, 'clocks', '').split('|').map(x => x.split(':')).filter(x => +x[0] > 0);
+  if (!list.length) return `<label class="num"><span>${t('dv.dial.id')}</span><input type="text" class="dev-dial" inputmode="numeric" maxlength="8" spellcheck="false" value="${esc(cur)}"></label>`;
+  return `<label class="num"><span>${t('dv.dial')}</span><select class="select dev-dial">${cur && !list.some(x => x[0] === cur) ? `<option value="${esc(cur)}" selected>#${esc(cur)}</option>` : ''}${list.map(([id, name]) =>
+    `<option value="${esc(id)}"${id === cur ? ' selected' : ''}>${esc(name || '#' + id)}</option>`).join('')}</select></label>`;
+}
+
 function groupNew() {
   let n = 0;
   for (let i = 1; i <= GROUP_MAX && !n; i++) if (!groups().some(g => g.n === i)) n = i;
@@ -1976,7 +1985,12 @@ function buildDevices() {
           <p class="hint">${t('dv.token')}</p>
           ${d.type === 'frame' ? `<label class="num"><span>${t('dv.fx')}</span><select class="select dev-fx">${Array.from({ length: 16 }, (_, v) =>
             `<option value="${v}"${+cv(sec, 'frame_fx', 0) === v ? ' selected' : ''}>${t('dv.fx.n', v)}</option>`).join('')}</select></label>
-          <p class="hint">${t('dv.fx.note')}</p>` : `<label class="num"><span>${t('dv.lights')}</span><select class="select dev-lights">${['both', 'back', 'sides', 'back_cycle', 'back_rainbow'].map(v =>
+          <p class="hint">${t('dv.fx.note')}</p>
+          <label class="num"><span>${t('dv.screen')}</span><select class="select dev-screen">${['own', 'dial', 'monitor'].map(v =>
+            `<option value="${v}"${cv(sec, 'screen', 'own') === v ? ' selected' : ''}>${t('dv.s.' + v)}</option>`).join('')}</select></label>
+          <div class="dev-dial-box${cv(sec, 'screen', 'own') === 'dial' ? '' : ' hidden'}">${frameDials(sec)}</div>
+          <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>
+          <p class="hint">${t('dv.screen.note')}</p>` : `<label class="num"><span>${t('dv.lights')}</span><select class="select dev-lights">${['both', 'back', 'sides', 'back_cycle', 'back_rainbow'].map(v =>
             `<option value="${v}"${cv(sec, 'lights', 'both') === v ? ' selected' : ''}>${t('dv.l.' + v)}</option>`).join('')}</select></label>
           <p class="hint">${t('dv.lights.note')}</p>`}` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
@@ -1994,6 +2008,12 @@ function buildDevices() {
     el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
     el.querySelector('.dev-fx')?.addEventListener('change', e => setCfg(sec, 'frame_fx', e.target.value));
+    el.querySelector('.dev-screen')?.addEventListener('change', e => {
+      setCfg(sec, 'screen', e.target.value);
+      el.querySelector('.dev-dial-box').classList.toggle('hidden', e.target.value !== 'dial');
+    });
+    el.querySelector('.dev-dial')?.addEventListener('change', e => { const v = String(e.target.value).replace(/\D/g, ''); if (v) setCfg(sec, 'clock', v); });
+    el.querySelector('.dev-follow')?.addEventListener('change', e => setCfg(sec, 'screen_follow', e.target.checked ? 1 : 0));
     el.querySelector('.dev-mode')?.addEventListener('change', e => {
       setCfg(sec, 'mode', e.target.value);
       el.querySelector('.dev-mode-note').textContent = t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour');

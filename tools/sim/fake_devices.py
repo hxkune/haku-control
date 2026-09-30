@@ -351,6 +351,10 @@ class DivoomHttp(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
+        if self.path == '/Channel/MyClockGetList':   # Divoom's cloud list of dials ([divoom] clocks_url= points here)
+            self.reply({'ReturnCode': 0, 'ClockList': [{'ClockId': 923, 'ClockName': 'Pixel Cat', 'ImagePixelId': '', 'ClockType': 0, 'Position': 1},
+                                                       {'ClockId': 1044, 'ClockName': 'Cyber Calendar', 'ImagePixelId': '', 'ClockType': 0, 'Position': 2}]})
+            return
         if self.path == '/Device/ReturnSameLANDevice':   # Divoom's cloud list ([divoom] lan_url= points here)
             self.reply({'ReturnCode': 0, 'ReturnMessage': '', 'DeviceList': [
                 {'DeviceName': 'Times Gate', 'DeviceId': 585010, 'DevicePrivateIP': '127.0.0.1:8082', 'DeviceMac': 'a8032a000000', 'Hardware': 400}]})
@@ -368,6 +372,7 @@ class DivoomHttp(BaseHTTPRequestHandler):
 # Divoom Times Frame: POST or GET with the JSON as its body, answers {"ReturnCode": ...} pretty-printed with tabs;
 # its light (the DIVOOM letters and the bars under them) takes Channel/SetAmbientLight, as a real one did
 FRAME_LIGHT = {'Brightness': 0, 'ColorCycle': 0, 'EqOnOff': 0, 'Color': '#000000', 'SelectEffect': 0}
+FRAME_SCREEN = {'clock': 923, 'on': 1, 'custom': False}
 
 class DivoomFrameHttp(DivoomHttp):
     def reply(self, obj):   # pretty-printed with tabs, as the real one answers
@@ -382,6 +387,15 @@ class DivoomFrameHttp(DivoomHttp):
         head = {'Command': c, 'DeviceId': 300256986, 'PacketFlag': 1788914207, 'DeviceType': 'Frame', 'ReturnCode': 0, 'ReturnMessage': ''}
         if c == 'Channel/GetAllConf': self.reply(head)
         elif c == 'Channel/GetAmbientLight': self.reply({**head, **FRAME_LIGHT})
+        elif c == 'Channel/GetClockInfo': self.reply({**head, 'ClockId': FRAME_SCREEN['clock'], 'Brightness': 90})
+        elif c in ('Channel/SetClockSelectId', 'Channel/OnOffScreen', 'Device/EnterCustomControlMode', 'Device/UpdateDisplayItems', 'Device/ExitCustomControlMode'):
+            if c == 'Channel/SetClockSelectId': FRAME_SCREEN['clock'] = body.get('ClockId')
+            if c == 'Channel/OnOffScreen': FRAME_SCREEN['on'] = body.get('OnOff')
+            if c == 'Device/EnterCustomControlMode': FRAME_SCREEN['custom'] = True
+            if c == 'Device/ExitCustomControlMode': FRAME_SCREEN['custom'] = False
+            texts = [x.get('TextMessage') for x in body.get('DispList', []) if x.get('TextMessage')]
+            log('divoom-frame', f"{c} clock={FRAME_SCREEN['clock']} on={FRAME_SCREEN['on']} custom={FRAME_SCREEN['custom']} {texts if texts else ''}")
+            self.reply(head)
         elif c == 'Channel/SetAmbientLight':
             for k in FRAME_LIGHT:
                 if k in body: FRAME_LIGHT[k] = body[k]

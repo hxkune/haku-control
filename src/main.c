@@ -142,6 +142,7 @@ static FILE    *logfile;
 static int      have_msi, have_ene, fps = 30;
 static HINSTANCE app_inst;
 static sensors_t last_sensors = { NAN, NAN, NAN, NAN, NAN };
+float app_gpu_temp(void) { return last_sensors.gpu_temp; }   // NAN when unknown (the Times Frame's screen)
 static scene_t  frame_sc;              // last rendered frame, for the live preview in the window
 static rgbf     frame_c[MAX_LEDS];
 static HICON    tray_icon;
@@ -613,7 +614,7 @@ static int profile_key(const char *sec, const char *key) {
     if (!_stricmp(sec, "general")) return !_stricmp(key, "effect") || !_stricmp(key, "brightness") || !_stricmp(key, "sync") || !_stricmp(key, "preset");
     if (!_stricmp(sec, "layout")) { size_t n = strlen(key); return n > 8 && !_stricmp(key + n - 8, "_enabled"); }
     if (!_stricmp(sec, "ui")) return !_stricmp(key, "hero_hide");
-    if (!_strnicmp(sec, "dev.", 4)) return !_stricmp(key, "enabled");
+    if (!_strnicmp(sec, "dev.", 4)) return !_stricmp(key, "enabled") || !_stricmp(key, "screen") || !_stricmp(key, "clock");
     if (!_strnicmp(sec, "group.", 6)) return 1;
     if (!_strnicmp(sec, "zone.", 5)) {
         for (int k = 0; k < (int)(sizeof(ZONE_KEYS) / sizeof(ZONE_KEYS[0])); k++) if (!_stricmp(key, ZONE_KEYS[k])) return 1;

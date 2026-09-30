@@ -109,7 +109,7 @@ int http_call(const char *ip, int port, const char *method, const char *path, co
     SOCKET s = tcp_connect(ip, port, 1500);
     if (s == INVALID_SOCKET) { if (why) snprintf(why, whycap, "no connection"); return 0; }
     DWORD to = 2000; setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char *)&to, sizeof(to));
-    char req[1024];
+    char req[4608];   // a Divoom Times Frame screen layout is some 2 KB
     int bl = body ? (int)strlen(body) : 0;
     int n = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\nHost: %s:%d\r\nAccept: application/json\r\n%s"
                      "Content-Length: %d\r\nConnection: close\r\n\r\n%s", method, path, ip, port,

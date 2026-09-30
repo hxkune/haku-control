@@ -8,6 +8,10 @@
 // full effect with our colour, the other only one of a few themes of its own; or both take the same effect.
 // [dev.N] lights= picks which (see LIGHTS). Brightness is shared. The screens are left alone.
 // The Times Frame's light takes Channel/SetAmbientLight ([dev.N] frame_fx= picks its effect); see dv_open.
+// Its screen ([dev.N] screen=): own (left alone), dial (one of Divoom's dials, [dev.N] clock=, kept per profile)
+// or monitor (haku's own layout: time, date, CPU, memory, GPU temperature, the effect and the profile, through
+// Device/EnterCustomControlMode and Device/UpdateDisplayItems). [dev.N] screen_follow=1 (default) switches the
+// screen off with the lights. The dial it showed is read at the start and given back when haku lets go.
 // Written after the community's notes (github.com/averhaegen/hacs-divoom-times-gate-dev, MIT;
 // github.com/mfmseth/divoom for the Times Frame) without a device: every answer is logged, for the diagnostics.
 // Finding them: Divoom's own service lists the Divoom devices behind the same internet address as the PC, with
@@ -93,12 +97,13 @@ typedef struct {
     char ip[64]; int port, ep, have_token; long token;
     char cmd[40];   // the light command: Channel/SetRGBInfo, or the Times Frame's Channel/SetAmbientLight
     int frame, fx, had, had_bri, had_cycle, had_eq, had_fx; char had_col[16];   // the Frame: its effect, what it had
+    int scr_off, scr_mode, clock_on, orig_clock; DWORD mon_at;   // the Frame's screen: what haku set, what it had
     int lights, frame_dark, sent_on, sent_bri, have_sent, fails, lost; char sent_col[8]; DWORD sent_at;
 } dv_t;
 
 // one command (the token added when there is one); returns the HTTP status, the answer in buf
 static int call(dv_t *v, const char *cmd_fields, char *buf, int cap) {
-    char body[768];
+    char body[4096];
     if (v->have_token) snprintf(body, sizeof(body), "{%s,\"LocalToken\":%ld}", cmd_fields, v->token);
     else snprintf(body, sizeof(body), "{%s}", cmd_fields);
     char why[120];
@@ -148,6 +153,8 @@ static void rgb_fields(dv_t *v, int id, int on, const char *col, int bri, char *
              "\"SelectLightIndex\":%d,\"LightList\":[{\"SelectEffect\":%d},{\"SelectEffect\":%d},{\"SelectEffect\":%d}]",
              v->cmd, on, col, bri, LIGHTS[l].index, LIGHTS[l].l0, LIGHTS[l].l1, LIGHTS[l].l2);
 }
+
+static void fetch_clocks(ext_dev *d, dv_t *v, long long devid);
 
 static int dv_open(ext_dev *d) {
     dv_t *v = calloc(1, sizeof(dv_t));
@@ -219,6 +226,11 @@ static int dv_open(ext_dev *d) {
                                  v->had_fx, v->had_col, v->had_bri, v->had_cycle, v->had_eq);
         }
         v->frame = 1;
+        v->scr_off = -1;   // unknown: the first frame sets it (haku may have switched it off when it last closed)
+        s2 = call(v, "\"Command\":\"Channel/GetClockInfo\"", ans, sizeof(ans));
+        v->orig_clock = s2 == 200 && answer_ok(ans) ? (int)json_get_num(ans, "ClockId", 0) : 0;
+        if (!d->fails) logf_("dev.%d (divoom frame): its screen shows dial %d", d->id, v->orig_clock);
+        fetch_clocks(d, v, (long long)json_get_num(buf, "DeviceId", 0));
         snprintf(v->cmd, sizeof(v->cmd), "Channel/SetAmbientLight");
         char f[400]; rgb_fields(v, d->id, 1, "#FFFFFF", 50, f, sizeof(f));
         s2 = call(v, f, ans, sizeof(ans));
@@ -247,9 +259,158 @@ static int set_rgb(ext_dev *d, int on, const char *col, int bri) {
     return 1;
 }
 
+// ---------------------------------------------------------------- the Times Frame's screen
+enum { SCR_OWN, SCR_MONITOR, SCR_DIAL };
+
+static int screen_mode_of(const char *sec) {
+    const char *m = cfg_get(sec, "screen", "own");
+    return !_stricmp(m, "monitor") ? SCR_MONITOR : !_stricmp(m, "dial") ? SCR_DIAL : SCR_OWN;
+}
+
+static int simple(dv_t *v, const char *fields, const char *what, int id) {
+    char ans[512];
+    int st = call(v, fields, ans, sizeof(ans)), ok = st == 200 && answer_ok(ans);
+    if (!ok) logf_("dev.%d (divoom frame): %s answered %d: %.200s", id, what, st, ans);
+    return ok;
+}
+
+// the dials Divoom has for this frame (its cloud, as the Divoom app lists them) -> [dev.N] clocks="id:name|..."
+static void fetch_clocks(ext_dev *d, dv_t *v, long long devid) {
+    static int done[EXT_MAX + 1];
+    if (d->id < 0 || d->id > EXT_MAX || done[d->id] || !devid) return;
+    done[d->id] = 1;
+    (void)v;
+    static char js[32768];
+    char body[160], url[256];
+    snprintf(body, sizeof(body), "{\"DeviceId\":%lld,\"StartNum\":1,\"EndNum\":60,\"DeviceType\":\"Frame\"}", devid);
+    const char *base = cfg_get("divoom", "clocks_url", "https://appin.divoom-gz.com/Channel/MyClockGetList");   // (tests)
+    if (strlen(base) > 180) return;
+    int st = web_call(base, body, js, sizeof(js));
+    if (st != 200 || !strstr(js, "\"ClockList\"")) {   // a GET with the fields in the address, as some notes have it
+        snprintf(url, sizeof(url), "%s?DeviceId=%lld&StartNum=1&EndNum=60&DeviceType=Frame", base, devid);
+        st = web_call(url, NULL, js, sizeof(js));
+    }
+    const char *p = strstr(js, "\"ClockList\"");
+    if (st != 200 || !p) { logf_("dev.%d (divoom frame): Divoom's list of dials answered %d: %.200s", d->id, st, js); return; }
+    char out[2048] = ""; int k = 0, n = 0;
+    while ((p = strchr(p, '{')) != NULL && n < 60) {
+        const char *e = strchr(p, '}');
+        if (!e) break;
+        char obj[1024]; int len = (int)min(e - p + 1, (ptrdiff_t)sizeof(obj) - 1);
+        memcpy(obj, p, len); obj[len] = 0;
+        int id = (int)json_get_num(obj, "ClockId", 0);
+        char name[64] = ""; json_get_str(obj, "ClockName", name, sizeof(name));
+        for (char *c = name; *c; c++) if (*c == '|' || *c == ':' || *c == '"' || *c == '\\' || (unsigned char)*c < 32) *c = ' ';
+        if (id > 0 && k < (int)sizeof(out) - 80) { k += snprintf(out + k, sizeof(out) - k, "%s%d:%s", k ? "|" : "", id, name); n++; }
+        p = e + 1;
+    }
+    char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    if (n && strcmp(cfg_get(sec, "clocks", ""), out)) { cfg_set(sec, "clocks", out); cfg_save_if_dirty(); }
+    logf_("dev.%d (divoom frame): %d dials from Divoom", d->id, n);
+}
+
+// CPU load since the last call, 0..100
+static int cpu_load(void) {
+    static ULONGLONG pi, pk, pu;
+    FILETIME i, k, u;
+    if (!GetSystemTimes(&i, &k, &u)) return 0;
+    ULONGLONG ni = ((ULONGLONG)i.dwHighDateTime << 32) | i.dwLowDateTime, nk = ((ULONGLONG)k.dwHighDateTime << 32) | k.dwLowDateTime,
+              nu = ((ULONGLONG)u.dwHighDateTime << 32) | u.dwLowDateTime;
+    ULONGLONG di = ni - pi, dt = (nk - pk) + (nu - pu);   // kernel time includes idle
+    pi = ni; pk = nk; pu = nu;
+    return dt ? (int)((dt - di) * 100 / dt) : 0;
+}
+
+// the monitor's lines: date, CPU, memory, GPU, effect, profile (JSON-escaped)
+static void monitor_lines(char t[6][96]) {
+    char raw[6][96] = { { 0 } };
+    wchar_t w[64];
+    if (GetDateFormatEx(L"en-US", 0, NULL, L"dddd, d MMMM", w, 64, NULL)) WideCharToMultiByte(CP_UTF8, 0, w, -1, raw[0], 96, NULL, NULL);
+    snprintf(raw[1], 96, "CPU  %d%%", cpu_load());
+    MEMORYSTATUSEX ms = { sizeof(ms) }; GlobalMemoryStatusEx(&ms);
+    snprintf(raw[2], 96, "RAM  %lu%%", ms.dwMemoryLoad);
+    float gt = app_gpu_temp();
+    if (gt == gt && gt > 0) snprintf(raw[3], 96, "GPU  %d\xC2\xB0" "C", (int)(gt + 0.5f));   // NAN != NAN
+    int e = effect_index(cfg_get("general", "effect", ""));
+    if (e >= 0) WideCharToMultiByte(CP_UTF8, 0, g_effects[e].title, -1, raw[4], 96, NULL, NULL);
+    int pr = cfg_geti("general", "profile", 0);
+    if (pr > 0) { char ps[24]; snprintf(ps, sizeof(ps), "profile.%d", pr); snprintf(raw[5], 96, "%s", cfg_get(ps, "name", "")); }
+    for (int i = 0; i < 6; i++) json_escape_to(t[i], 96, raw[i]);
+}
+
+static const struct { int id, y, h, size; const char *fg; } MON[6] = {
+    { 11, 440, 80, 52, "#9A9AA6" }, { 12, 600, 100, 80, "#F2F2F2" }, { 13, 710, 100, 80, "#F2F2F2" },
+    { 14, 820, 100, 80, "#F2F2F2" }, { 15, 960, 80, 60, "ACCENT" }, { 16, 1040, 64, 44, "#8A8A96" },
+};
+
+static int monitor_enter(ext_dev *d, dv_t *v) {
+    char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    const char *bg = cfg_get(sec, "screen_bg", "https://raw.githubusercontent.com/hxkune/haku-control/main/art/frame-bg.jpg");
+    if (strpbrk(bg, "\"\\")) bg = "";
+    const char *accent = v->sent_col[0] && strcmp(v->sent_col, "#000000") ? v->sent_col : "#00C8FF";
+    char t[6][96]; monitor_lines(t);
+    static char f[3800];
+    int k = snprintf(f, sizeof(f), "\"Command\":\"Device/EnterCustomControlMode\",\"BackgroudImageLocalFlag\":0,\"BackgroudImageAddr\":\"%s\",\"DispList\":["
+                     "{\"ID\":1,\"Type\":\"Time\",\"StartX\":0,\"StartY\":120,\"Width\":800,\"Height\":300,\"Align\":2,\"FontSize\":220,\"FontID\":52,"
+                     "\"FontColor\":\"#F2F2F2\",\"BgColor\":\"#0C0C0E\"}", bg);
+    for (int i = 0; i < 6; i++)
+        k += snprintf(f + k, sizeof(f) - k, ",{\"ID\":%d,\"Type\":\"Text\",\"StartX\":0,\"StartY\":%d,\"Width\":800,\"Height\":%d,\"Align\":2,"
+                      "\"FontSize\":%d,\"FontID\":52,\"FontColor\":\"%s\",\"BgColor\":\"#0C0C0E\",\"TextMessage\":\"%s\"}",
+                      MON[i].id, MON[i].y, MON[i].h, MON[i].size, strcmp(MON[i].fg, "ACCENT") ? MON[i].fg : accent, t[i]);
+    snprintf(f + k, sizeof(f) - k, "]");
+    int ok = simple(v, f, "Device/EnterCustomControlMode", d->id);
+    if (ok) logf_("dev.%d (divoom frame): haku's screen is on", d->id);
+    v->mon_at = GetTickCount();
+    return ok;
+}
+
+static void monitor_update(ext_dev *d, dv_t *v) {
+    char t[6][96]; monitor_lines(t);
+    char f[1400]; int k = snprintf(f, sizeof(f), "\"Command\":\"Device/UpdateDisplayItems\",\"DispList\":[");
+    for (int i = 0; i < 6; i++) k += snprintf(f + k, sizeof(f) - k, "%s{\"ID\":%d,\"TextMessage\":\"%s\"}", i ? "," : "", MON[i].id, t[i]);
+    snprintf(f + k, sizeof(f) - k, "]");
+    static int told;
+    char ans[512]; int st = call(v, f, ans, sizeof(ans));
+    if (!(st == 200 && answer_ok(ans)) && !told++) logf_("dev.%d (divoom frame): Device/UpdateDisplayItems answered %d: %.200s", d->id, st, ans);
+    v->mon_at = GetTickCount();
+}
+
+// leaves what haku put on the screen: its own layout, a dial; back to the dial it had
+static void screen_back(ext_dev *d, dv_t *v) {
+    char f[120];
+    if (v->scr_mode == SCR_MONITOR) simple(v, "\"Command\":\"Device/ExitCustomControlMode\"", "Device/ExitCustomControlMode", d->id);
+    if (v->scr_mode != SCR_OWN && v->orig_clock > 0) {
+        snprintf(f, sizeof(f), "\"Command\":\"Channel/SetClockSelectId\",\"ClockId\":%d", v->orig_clock);
+        simple(v, f, "Channel/SetClockSelectId", d->id);
+    }
+    v->scr_mode = SCR_OWN; v->clock_on = 0;
+}
+
+// once a frame: the screen follows the settings (and the lights, when asked)
+static void screen_tick(ext_dev *d, dv_t *v) {
+    char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    int off = cfg_geti(sec, "screen_follow", 1) && !_stricmp(cfg_get("general", "effect", ""), "off");
+    if (off != v->scr_off) {
+        char f[80]; snprintf(f, sizeof(f), "\"Command\":\"Channel/OnOffScreen\",\"OnOff\":%d", !off);
+        simple(v, f, "Channel/OnOffScreen", d->id);
+        v->scr_off = off;
+    }
+    if (off) return;
+    int m = screen_mode_of(sec), clock = cfg_geti(sec, "clock", 0);
+    if (m != v->scr_mode || (m == SCR_DIAL && clock != v->clock_on)) {
+        if (v->scr_mode == SCR_MONITOR || m == SCR_OWN) screen_back(d, v);
+        if (m == SCR_DIAL && clock > 0) {
+            char f[120]; snprintf(f, sizeof(f), "\"Command\":\"Channel/SetClockSelectId\",\"ClockId\":%d", clock);
+            simple(v, f, "Channel/SetClockSelectId", d->id);
+        } else if (m == SCR_MONITOR) monitor_enter(d, v);
+        v->scr_mode = m; v->clock_on = clock;   // (tried once: a refusal is logged, not repeated every frame)
+    } else if (m == SCR_MONITOR && GetTickCount() - v->mon_at >= 5000) monitor_update(d, v);
+}
+
 static int dv_send(ext_dev *d, const rgbf *c, int n) {
     if (n < 1) return 1;
     dv_t *v = d->priv;
+    if (v->frame) screen_tick(d, v);
     if (v->frame_dark) return 1;
     float r = clampf(c[0].r, 0, 1), g = clampf(c[0].g, 0, 1), b = clampf(c[0].b, 0, 1), mx = max(r, max(g, b));
     int on = mx >= 0.02f, bri = (int)(mx * 100 + 0.5f);
@@ -272,6 +433,15 @@ static int dv_send(ext_dev *d, const rgbf *c, int n) {
 
 static void dv_leave(ext_dev *d, int how) {
     dv_t *v = d->priv;
+    if (v->frame) {
+        char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+        if (v->scr_mode != SCR_OWN) screen_back(d, v);
+        int off = how == LEAVE_OFF && cfg_geti(sec, "screen_follow", 1);
+        if (off != v->scr_off) {
+            char f[80]; snprintf(f, sizeof(f), "\"Command\":\"Channel/OnOffScreen\",\"OnOff\":%d", !off);
+            simple(v, f, "Channel/OnOffScreen", d->id);
+        }
+    }
     if (v->frame_dark) return;
     if (how == LEAVE_OFF) set_rgb(d, 0, "#000000", 0);
     else if (how == LEAVE_RESTORE && v->frame && v->had && !strpbrk(v->had_col, "\"\\")) {
