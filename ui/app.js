@@ -1059,7 +1059,8 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
     rr(c, x, y, w, h, 4 * dp); c.fillStyle = '#121212'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; c.stroke();
     const kw = (w - 6 * dp) / cols_, kh = (h - 6 * dp) / rows;
     for (let r = 0; r < rows; r++) for (let k = 0; k < cols_; k++) {
-      const i = Math.floor((r * cols_ + k) * Math.max(n, 1) / (rows * cols_)), kc = col(i);
+      // per-key LEDs go row by row; a few (a keyboard driven by columns, e.g. a Wooting) spread across
+      const i = n <= 24 ? Math.floor(k * Math.max(n, 1) / cols_) : Math.floor((r * cols_ + k) * Math.max(n, 1) / (rows * cols_)), kc = col(i);
       rr(c, x + 3 * dp + k * kw + kw * 0.1, y + 3 * dp + r * kh + kh * 0.12, kw * 0.8, kh * 0.76, 1.5 * dp);
       c.fillStyle = on && lit(kc) ? kc : '#1d1d1d'; c.fill();
     }

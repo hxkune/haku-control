@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// LAN / bridge light devices ("ext devices"): WLED, OpenRGB, Govee, LIFX, Yeelight, Elgato...
+// LAN / bridge light devices ("ext devices"): WLED, OpenRGB, Govee, LIFX, Yeelight, Elgato, Wooting...
 // Each configured device lives in a settings section [dev.<id>] (kind, host, sub, name, leds, enabled, reverse)
 // and becomes one colour zone ("zone.dev<id>"). One worker thread (devices.c) opens, feeds and closes them;
 // drivers (drv_*.c) only implement the protocol.
@@ -59,7 +59,7 @@ struct ext_dev {
 typedef struct { int idx, type, leds; char name[64], kind[24]; } orgb_ctl;
 int  orgb_list(orgb_ctl *out, int max);   // -1: no OpenRGB SDK server answers on this PC
 
-extern const ext_driver drv_wled, drv_openrgb, drv_govee, drv_lifx, drv_yeelight, drv_hue, drv_wiz, drv_tuya, drv_nlusb, drv_goveecloud, drv_elgato;
+extern const ext_driver drv_wled, drv_openrgb, drv_govee, drv_lifx, drv_yeelight, drv_hue, drv_wiz, drv_tuya, drv_nlusb, drv_goveecloud, drv_elgato, drv_wooting;
 const ext_driver *ext_driver_by_kind(const char *kind);
 void ext_save_key(ext_dev *d, const char *key);   // stores a pairing token in [dev.N] key=
 

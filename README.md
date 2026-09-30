@@ -47,6 +47,7 @@ device runs its own effect.
 | LIFX | official LAN protocol | tested against a simulator |
 | Yeelight (with *LAN Control*) | LAN JSON protocol, music mode | tested against a simulator |
 | Philips WiZ | local UDP JSON protocol, no keys | tested against a simulator |
+| Wooting keyboards (One, Two, 60HE, 80HE, UwU; USB) | Wooting's HID protocol (as in their open RGB SDK), found on USB; effects run across the columns | verified on a 60HE v2; the others follow the SDK |
 | Elgato Key Light / Key Light Air / Mini, Ring Light (white), Light Strip (colour) | local HTTP API (port 9123), found by mDNS, no keys; Key Lights start in the White mode | **tested against a simulator only** |
 | Tuya / Smart Life colour lights (Lidl, Gosund, Nous, Teckin…) | local protocol 3.3 / 3.4 / 3.5, keys from your own Tuya cloud project | **experimental: not tested yet** |
 | AiDot Wi-Fi bulbs (e.g. Linkind / "Matter Smart Light Bulb") | local LAN protocol, keys fetched once | verified with RGBTW bulbs |
