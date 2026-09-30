@@ -42,15 +42,26 @@
   --chrome: linear-gradient(180deg, #2c2c2c 0%, #0f0f0f 55%, #232323 100%);
   color-scheme: light;
 }
-/* verity (hidden, opened with its code): a meme — midnight purple, bubblegum pink, a rainbow that never stops,
+/* bubblegum (hidden, opened with its code): a meme — midnight purple, bubblegum pink, a rainbow that never stops,
    Comic Sans in the headings and sparkles everywhere (the rest is at the end of this file) */
-:root[data-theme="verity"] {
+:root[data-theme="bubblegum"] {
   --bg: #1a0b2e; --panel: #241040; --panel2: #2d1450; --menu: #2b1348; --glass: 38, 16, 66; --scrim: 12, 4, 24;
   --ink: 255, 170, 235; --strong: #ff5fd2; --on-strong: #1a0b2e; --on-strong-dim: #6b3b77; --sel: #ff9be6;
   --line: rgba(255, 140, 225, .12); --line2: rgba(255, 140, 225, .24); --line3: rgba(255, 140, 225, .45);
   --text: #ffe9fb; --muted: #d99ad3; --faint: #8f5c9c;
   --chrome: linear-gradient(90deg, #ff5fd2, #ffb35f, #fff35f, #5fffb0, #5fc8ff, #b07bff, #ff5fd2);
   --display: "Comic Sans MS", "Segoe Print", "Segoe UI", cursive;
+}
+/* verity (hidden, opened with its code): the smiley yellow ball from the Minecraft horror ARG. A friendly helper
+   on a dark screen: lemon yellow, chat-style monospace headings, the ball itself in the corner (it blinks, and
+   now and then it is not smiling like before); the rest is at the end of this file */
+:root[data-theme="verity"] {
+  --bg: #0b0b09; --panel: #13130f; --panel2: #1a1a14; --menu: #161612; --glass: 19, 19, 15; --scrim: 4, 4, 3;
+  --ink: 255, 236, 140; --strong: #ffe14a; --on-strong: #111; --on-strong-dim: #6b5f1c; --sel: #ffe98a;
+  --line: rgba(255, 225, 74, .1); --line2: rgba(255, 225, 74, .2); --line3: rgba(255, 225, 74, .4);
+  --text: #fff8dc; --muted: #bfb27a; --faint: #6e6640;
+  --chrome: linear-gradient(180deg, #fff27a 0%, #ffd83a 55%, #ffe96a 100%);
+  --display: "Consolas", "Cascadia Mono", monospace;
 }
 
 * { box-sizing: border-box; }
@@ -942,28 +953,60 @@ body.calm nav button { transition: none; }
   animation: burst 1.2s cubic-bezier(.2, .7, .3, 1) forwards; }
 @keyframes burst { to { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 80px)) rotate(var(--rot)) scale(.6); opacity: 0; } }
 
-/* ---- verity: the meme part */
-:root[data-theme="verity"] body {
+/* ---- bubblegum: the meme part */
+:root[data-theme="bubblegum"] body {
   background: radial-gradient(900px circle at 85% 110%, rgba(255, 95, 210, .16), transparent 60%),
               radial-gradient(700px circle at 10% -10%, rgba(95, 200, 255, .12), transparent 60%), var(--bg);
 }
-:root[data-theme="verity"] h3::before { content: "✨"; font-size: 12px; }
-:root[data-theme="verity"] header h1::after { content: " ✨"; }
-:root[data-theme="verity"] .seg button.on, :root[data-theme="verity"] .btn.primary, :root[data-theme="verity"] .brand .logo {
-  background-size: 300% 100%; animation: verity-rainbow 6s linear infinite;
+:root[data-theme="bubblegum"] h3::before { content: "✨"; font-size: 12px; }
+:root[data-theme="bubblegum"] header h1::after { content: " ✨"; }
+:root[data-theme="bubblegum"] .seg button.on, :root[data-theme="bubblegum"] .btn.primary, :root[data-theme="bubblegum"] .brand .logo {
+  background-size: 300% 100%; animation: bubblegum-rainbow 6s linear infinite;
 }
-:root[data-theme="verity"] .brand .logo { background: var(--chrome); background-size: 300% 100%; }
-:root[data-theme="verity"] .brand .word { color: var(--strong); }
-:root[data-theme="verity"] .watermark {
+:root[data-theme="bubblegum"] .brand .logo { background: var(--chrome); background-size: 300% 100%; }
+:root[data-theme="bubblegum"] .brand .word { color: var(--strong); }
+:root[data-theme="bubblegum"] .watermark {
   -webkit-mask: none; mask: none; background: none; opacity: .07; width: auto; aspect-ratio: auto; right: -30px; bottom: -20px;
   font: 700 190px/1 "Comic Sans MS", cursive; color: var(--strong); white-space: nowrap;
 }
-:root[data-theme="verity"] .watermark::before { content: "verity ✨"; }
-:root[data-theme="verity"] #theme button[data-v="verity"]:not(.on) { color: var(--strong); }
-:root[data-theme="verity"] #theme button[data-v="verity"].on { animation: verity-rainbow 6s linear infinite, verity-wiggle 2.4s ease-in-out infinite; }
-:root[data-theme="verity"] .fx.on canvas { filter: drop-shadow(0 0 8px rgba(255, 95, 210, .55)); }
+:root[data-theme="bubblegum"] .watermark::before { content: "bubblegum ✨"; }
+:root[data-theme="bubblegum"] #theme button[data-v="bubblegum"]:not(.on) { color: var(--strong); }
+:root[data-theme="bubblegum"] #theme button[data-v="bubblegum"].on { animation: bubblegum-rainbow 6s linear infinite, bubblegum-wiggle 2.4s ease-in-out infinite; }
+:root[data-theme="bubblegum"] .fx.on canvas { filter: drop-shadow(0 0 8px rgba(255, 95, 210, .55)); }
+:root[data-theme="bubblegum"] nav button.active { color: var(--strong); }
+@keyframes bubblegum-rainbow { to { background-position: 300% 0; } }
+@keyframes bubblegum-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
+body.calm .burst, :root[data-theme="bubblegum"] body.calm * { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { :root[data-theme="bubblegum"] * { animation: none !important; } }
+
+/* ---- verity: the smiley ball */
+:root[data-theme="verity"] body {
+  background: radial-gradient(800px circle at 90% 105%, rgba(255, 225, 74, .09), transparent 60%), var(--bg);
+}
+:root[data-theme="verity"] h3::before { content: "☺"; font-size: 13px; color: var(--strong); }
+:root[data-theme="verity"] header h1::after { content: " :)"; color: var(--strong); }
+:root[data-theme="verity"] .brand .word { color: var(--strong); }
 :root[data-theme="verity"] nav button.active { color: var(--strong); }
-@keyframes verity-rainbow { to { background-position: 300% 0; } }
-@keyframes verity-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
-body.calm .burst, :root[data-theme="verity"] body.calm * { animation: none !important; }
-@media (prefers-reduced-motion: reduce) { :root[data-theme="verity"] * { animation: none !important; } }
+:root[data-theme="verity"] .fx.on canvas { filter: drop-shadow(0 0 8px rgba(255, 225, 74, .45)); }
+:root[data-theme="verity"] #theme button[data-v="verity"]:not(.on) { color: var(--strong); }
+:root[data-theme="verity"] .watermark {
+  -webkit-mask: none; mask: none; background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23ffe14a'/><ellipse cx='35' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><ellipse cx='65' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><path d='M27 60 Q50 80 73 60' stroke='%23111' stroke-width='5' fill='none' stroke-linecap='round'/></svg>") center / contain no-repeat;
+  width: 520px; aspect-ratio: 1; right: -90px; bottom: -90px; opacity: .1;
+  animation: verity-stare 47s steps(1) infinite;
+}
+@keyframes verity-stare {
+  0%, 96% { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23ffe14a'/><ellipse cx='35' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><ellipse cx='65' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><path d='M27 60 Q50 80 73 60' stroke='%23111' stroke-width='5' fill='none' stroke-linecap='round'/></svg>"); transform: rotate(-8deg); opacity: .1; }
+  96.5% { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23e8c93a'/><circle cx='34' cy='38' r='10' fill='%23000'/><circle cx='66' cy='38' r='10' fill='%23000'/><circle cx='34' cy='38' r='1.6' fill='%23fff'/><circle cx='66' cy='38' r='1.6' fill='%23fff'/><path d='M18 54 Q50 100 82 54 Q50 70 18 54Z' fill='%23000'/><path d='M26 60 L30 66 L34 61 L38 68 L42 62 L46 69 L50 63 L54 69 L58 62 L62 68 L66 61 L70 66 L74 60' stroke='%23fff' stroke-width='1.2' fill='none'/></svg>"); transform: rotate(-4deg) translate(-6px, 3px); opacity: .22; }
+  97.5% { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23e8c93a'/><circle cx='34' cy='38' r='10' fill='%23000'/><circle cx='66' cy='38' r='10' fill='%23000'/><circle cx='34' cy='38' r='1.6' fill='%23fff'/><circle cx='66' cy='38' r='1.6' fill='%23fff'/><path d='M18 54 Q50 100 82 54 Q50 70 18 54Z' fill='%23000'/><path d='M26 60 L30 66 L34 61 L38 68 L42 62 L46 69 L50 63 L54 69 L58 62 L62 68 L66 61 L70 66 L74 60' stroke='%23fff' stroke-width='1.2' fill='none'/></svg>"); transform: rotate(-11deg) translate(4px, -2px); opacity: .18; }
+  98.5% { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23ffe14a'/><ellipse cx='35' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><ellipse cx='65' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><path d='M27 60 Q50 80 73 60' stroke='%23111' stroke-width='5' fill='none' stroke-linecap='round'/></svg>"); transform: rotate(-8deg); opacity: .1; }
+}
+/* what verity says, as a line of game chat */
+.vchat { position: fixed; left: 16px; bottom: 96px; z-index: 60; max-width: min(460px, calc(100vw - 32px)); padding: 6px 10px;
+  background: rgba(0, 0, 0, .62); color: #fff; font: 14px/1.35 "Consolas", "Cascadia Mono", monospace; pointer-events: none;
+  animation: vchat 7s ease forwards; }
+.vchat b { color: #ffe14a; font-weight: 400; }
+@keyframes vchat { 0% { opacity: 0; transform: translateY(6px); } 5%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+body.calm .vchat { animation: vchat-calm 7s steps(1) forwards; }
+@keyframes vchat-calm { 0% { opacity: 1; } 100% { opacity: 0; } }
+:root[data-theme="verity"] body.calm .watermark { animation: none; }
+@media (prefers-reduced-motion: reduce) { :root[data-theme="verity"] .watermark { animation: none; } }

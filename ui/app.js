@@ -105,7 +105,7 @@ function groupNew() {
 // Hidden themes are opened with a code typed next to the switch ([general] unlocked = their names); the codes
 // are kept as hashes so the source does not give them away.
 const THEMES = ['dark', 'grey', 'light'];
-const CODES = { '9kr8dk': 'verity' };
+const CODES = { '9kr8dk': 'verity', '1se99dm': 'bubblegum' };
 const THEME = { ink: '255, 255, 255', hi: '#d8d8d8', mid: '#8a8a8a', lo: '#4e4e4e', tip: '#121212' };
 const inkA = a => `rgba(${THEME.ink}, ${a})`;
 const unlocked = () => cv('general', 'unlocked', '').split(',').filter(v => Object.values(CODES).includes(v));
@@ -124,6 +124,36 @@ function applyTheme() {
   Object.assign(THEME, { ink: g('--ink'), hi: g('--text'), mid: g('--muted'), lo: g('--faint'), tip: g('--menu') });
   $$('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === th));
 }
+
+// verity (the hidden smiley theme) says something in game-chat style now and then: first a hello, later every few
+// minutes a line, friendly at first and less so the longer it stays
+const VERITY = {
+  en: ["hi! i'm Verity :)", "it's going to rain soon", 'there are diamonds 11 blocks below you', 'your lights look nice today :)',
+    'i like it when the lights are on', "don't turn off the lights :)", 'i know which room you are in',
+    'why did you close the window yesterday?', "i'm always here", 'look behind you :)'],
+  ru: ['привет! я Верити :)', 'скоро пойдёт дождь', 'в 11 блоках под тобой алмазы', 'красивая сегодня подсветка :)',
+    'мне нравится, когда свет включён', 'не выключай свет :)', 'я знаю, в какой ты комнате',
+    'почему вчера окно было закрыто?', 'я всегда здесь', 'обернись :)'],
+  fr: ["salut ! moi c'est Verity :)", 'il va bientôt pleuvoir', 'il y a des diamants 11 blocs sous toi', 'tes lumières sont jolies aujourd\'hui :)',
+    "j'aime quand les lumières sont allumées", "n'éteins pas les lumières :)", 'je sais dans quelle pièce tu es',
+    'pourquoi as-tu fermé la fenêtre hier ?', 'je suis toujours là', 'regarde derrière toi :)'],
+};
+let verityNext = 0, verityN = 0;
+function veritySays(i) {
+  const L = VERITY[LANG] || VERITY.en;
+  if (i === undefined) { verityN = Math.min(verityN + 1, L.length - 1); i = 1 + Math.floor(Math.random() * verityN); }
+  $$('.vchat').forEach(e => e.remove());
+  const d = document.createElement('div');
+  d.className = 'vchat'; d.innerHTML = '<b>&lt;Verity&gt;</b> '; d.append(L[i]);
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 7200);
+  verityNext = Date.now() + (3 + Math.random() * 4) * 60000;
+}
+setInterval(() => {
+  if (document.documentElement.dataset.theme !== 'verity' || document.hidden) return;
+  if (!verityNext) verityNext = Date.now() + 2 * 60000;
+  else if (Date.now() > verityNext) veritySays();
+}, 20000);
 
 // ------------------------------------------------------------------ colour helpers
 const hex2rgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -2064,10 +2094,11 @@ $('#code').addEventListener('submit', e => {
   if (!unlocked().includes(th)) setCfg('general', 'unlocked', unlocked().concat(th).join(','));
   inp.value = ''; inp.classList.add('ok'); inp.blur();
   setTheme(th);
-  if (!document.body.classList.contains('calm')) burst($('#code'));
+  if (!document.body.classList.contains('calm')) burst($('#code'), th === 'verity' ? ['😊', '💛', '☺', '⭐'] : ['✨', '💖', '⭐', '💜', '🌈', '💫']);
+  if (th === 'verity') setTimeout(() => veritySays(0), 700);
 });
-function burst(at) {
-  const r = at.getBoundingClientRect(), bits = ['✨', '💖', '⭐', '💜', '🌈', '💫'];
+function burst(at, bits) {
+  const r = at.getBoundingClientRect();
   for (let i = 0; i < 28; i++) {
     const s = document.createElement('span');
     s.className = 'burst'; s.textContent = bits[i % bits.length];

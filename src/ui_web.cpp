@@ -85,14 +85,14 @@ static std::string field(const std::string &js, const char *key) {
     return out;
 }
 
-// the title bar blends into the page: its theme's background ([general] theme = dark / grey / light / verity)
+// the title bar blends into the page: its theme's background ([general] theme = dark / grey / light, or a hidden one)
 static void title_bar(const char *theme) {
     if (!wnd) return;
-    int light = !_stricmp(theme, "light"), grey = !_stricmp(theme, "grey"), verity = !_stricmp(theme, "verity");
+    int light = !_stricmp(theme, "light"), grey = !_stricmp(theme, "grey"), gum = !_stricmp(theme, "bubblegum"), verity = !_stricmp(theme, "verity");
     BOOL dark = !light;
     DwmSetWindowAttribute(wnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
-    COLORREF cap = light ? RGB(0xef, 0xef, 0xed) : grey ? RGB(0x25, 0x26, 0x2a) : verity ? RGB(0x1a, 0x0b, 0x2e) : BG;
-    COLORREF txt = light ? RGB(90, 90, 90) : verity ? RGB(0xff, 0x9b, 0xe6) : RGB(170, 170, 170);
+    COLORREF cap = light ? RGB(0xef, 0xef, 0xed) : grey ? RGB(0x25, 0x26, 0x2a) : gum ? RGB(0x1a, 0x0b, 0x2e) : verity ? RGB(0x0b, 0x0b, 0x09) : BG;
+    COLORREF txt = light ? RGB(90, 90, 90) : gum ? RGB(0xff, 0x9b, 0xe6) : verity ? RGB(0xff, 0xe1, 0x4a) : RGB(170, 170, 170);
     DwmSetWindowAttribute(wnd, 35 /* DWMWA_CAPTION_COLOR */, &cap, sizeof(cap));
     DwmSetWindowAttribute(wnd, 34 /* DWMWA_BORDER_COLOR */, &cap, sizeof(cap));
     DwmSetWindowAttribute(wnd, 36 /* DWMWA_TEXT_COLOR */, &txt, sizeof(txt));
