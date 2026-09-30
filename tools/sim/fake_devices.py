@@ -351,6 +351,10 @@ class DivoomHttp(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
+        if self.path == '/Device/ReturnSameLANDevice':   # Divoom's cloud list ([divoom] lan_url= points here)
+            self.reply({'ReturnCode': 0, 'ReturnMessage': '', 'DeviceList': [
+                {'DeviceName': 'Times Gate', 'DeviceId': 585010, 'DevicePrivateIP': '127.0.0.1:8082', 'DeviceMac': 'a8032a000000', 'Hardware': 400}]})
+            return
         if self.path != '/post': self.send_error(404); return
         if body.get('LocalToken') != DIVOOM_TOKEN: log('divoom', f"refused {body.get('Command')}: token {body.get('LocalToken')}"); self.reply({'error_code': 'DeviceToken is err'}); return
         c = body.get('Command')

@@ -7,8 +7,60 @@
 // documented as off). One call always sets both zones, brightness is shared. The screens are left alone.
 // Written after the community's notes (github.com/averhaegen/hacs-divoom-times-gate-dev, MIT) without a device:
 // every answer is logged, for the diagnostics.
+// Finding them: Divoom's own service lists the Divoom devices behind the same internet address as the PC, with
+// their LAN IPs (the Divoom app finds them this way). A scan asks it, and a device added by its Device ID (the
+// number the Divoom app shows) instead of an IP is looked up there each time it connects.
 #include "devices.h"
 #include <stdlib.h>
+
+typedef struct { char name[64], ip[64]; long long id; } dv_lan_t;
+
+// the devices Divoom's service sees on this network; [divoom] lan_url= points it elsewhere (tests)
+static int lan_list(dv_lan_t *out, int max) {
+    static char js[16384];
+    static SRWLOCK lk = SRWLOCK_INIT;
+    AcquireSRWLockExclusive(&lk);
+    const char *url = cfg_get("divoom", "lan_url", "https://app.divoom-gz.com/Device/ReturnSameLANDevice");
+    int st = web_call(url, "{}", js, sizeof(js)), n = 0;
+    const char *p = strstr(js, "\"DeviceList\"");
+    while (p && n < max && (p = strchr(p, '{')) != NULL) {
+        const char *e = strchr(p, '}');
+        if (!e) break;
+        char obj[1024]; int len = (int)min(e - p + 1, (ptrdiff_t)sizeof(obj) - 1);
+        memcpy(obj, p, len); obj[len] = 0;
+        dv_lan_t *d = &out[n];
+        json_get_str(obj, "DeviceName", d->name, sizeof(d->name));
+        json_get_str(obj, "DevicePrivateIP", d->ip, sizeof(d->ip));
+        d->id = (long long)json_get_num(obj, "DeviceId", 0);
+        if (d->ip[0] && d->id) n++;
+        p = e + 1;
+    }
+    if (st != 200) logf_("divoom: device list answered %d: %.200s", st, js);
+    ReleaseSRWLockExclusive(&lk);
+    return n;
+}
+
+// "585010": a Device ID, not an address
+static int is_device_id(const char *h) {
+    if (!*h) return 0;
+    for (; *h; h++) if (*h < '0' || *h > '9') return 0;
+    return 1;
+}
+
+static void dv_discover(int ms, void (*found)(const disc_t *)) {
+    (void)ms;
+    dv_lan_t l[16];
+    int n = lan_list(l, 16);
+    for (int i = 0; i < n; i++) {
+        disc_t d = { 0 };
+        snprintf(d.kind, sizeof(d.kind), "divoom");
+        snprintf(d.host, sizeof(d.host), "%lld", l[i].id);   // the ID: it stays when the router gives a new IP
+        d.sub = -1; d.nleds = 1;
+        snprintf(d.name, sizeof(d.name), "%s", l[i].name[0] ? l[i].name : "Divoom");
+        snprintf(d.info, sizeof(d.info), "Divoom · %s", l[i].ip);
+        found(&d);
+    }
+}
 
 typedef struct {
     char ip[64]; int port; char path[24]; long token;
@@ -37,7 +89,24 @@ static int dv_open(ext_dev *d) {
     dv_t *v = calloc(1, sizeof(dv_t));
     if (!v) return 0;
     char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
-    int port = host_port(d->host, 0, v->ip, sizeof(v->ip));
+    char host[64]; snprintf(host, sizeof(host), "%s", d->host);
+    if (is_device_id(host)) {
+        dv_lan_t l[16];
+        int n = lan_list(l, 16), at = -1;
+        for (int i = 0; i < n; i++) if (l[i].id == _atoi64(host)) at = i;
+        if (at < 0) {
+            if (!d->fails) {
+                char seen[400] = ""; int k = 0;
+                for (int i = 0; i < n; i++) k += snprintf(seen + k, sizeof(seen) - k, "%s%s %lld at %s", i ? ", " : "", l[i].name, l[i].id, l[i].ip);
+                logf_("dev.%d (divoom %s): not in Divoom's list of devices on this network (it lists: %s)", d->id, host, n ? seen : "none");
+            }
+            snprintf(d->info, sizeof(d->info), "Device ID %s is not on this network (Divoom's list): is the PC on the same Wi-Fi?", host);
+            free(v); return 0;
+        }
+        if (!d->fails) logf_("dev.%d (divoom %s): device ID %s is at %s", d->id, host, host, l[at].ip);
+        snprintf(host, sizeof(host), "%s", l[at].ip);
+    }
+    int port = host_port(host, 0, v->ip, sizeof(v->ip));
     v->token = atol(d->key);
     v->edge = cfg_geti(sec, "edge", 5);
     // the endpoint: as given ([dev.N] host=ip:9000 picks the 402 one), else /post on 80, then 9000
@@ -100,4 +169,4 @@ static void dv_leave(ext_dev *d, int how) {
 
 static void dv_close(ext_dev *d) { free(d->priv); d->priv = NULL; }
 
-const ext_driver drv_divoom = { "divoom", "Divoom", 2, 0, dv_open, dv_send, dv_leave, dv_close, NULL };
+const ext_driver drv_divoom = { "divoom", "Divoom", 2, 0, dv_open, dv_send, dv_leave, dv_close, dv_discover };

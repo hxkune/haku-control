@@ -84,6 +84,7 @@ int    http_call(const char *host, int port, const char *method, const char *pat
                  char *why, int whycap);   // HTTP/1.1, one packet: for devices' own small web servers
 int    https_download(const wchar_t *url, const wchar_t *to, long long max, volatile LONG *pct);
 int    sha256_hex(const wchar_t *file, char *hex);   // 64 hex digits
+int    web_call(const char *url, const char *body, char *out, int cap);   // http(s); POST json, GET if body NULL
 SOCKET udp_socket(int bind_port, int broadcast);   // bind_port < 0: unbound
 int    udp_send(SOCKET s, const char *host, int port, const void *data, int len);
 int    udp_recv(SOCKET s, void *buf, int cap, int ms, char *from, int from_cap);
