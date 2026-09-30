@@ -133,6 +133,22 @@ static int mode_sync(const gcloud_t *g, const char *sec) {
     return !_stricmp(m, "colour") || !_stricmp(m, "color") ? 0 : !_stricmp(m, "sync") ? 1 : g->sync_auto;
 }
 
+// Screen sync on / off. Govee lists dreamViewToggle for some boxes (AI Sync Box Kit H6603) and then answers
+// "The device does not has DreamView": from then on the device counts as one without screen sync, so "auto" means
+// colours from haku, and the refusal does not hold up the colour commands. Returns 200, or the status of a failure
+// that is worth waiting on (no answer, 429, server error).
+static int dream(gcloud_t *g, int on) {
+    int st = control(g, "toggle", "dreamViewToggle", on);
+    if (st >= 400 && st < 500 && st != 429) {
+        char sec[24]; snprintf(sec, sizeof(sec), "dev.%s", g->id);
+        g->has_dream = 0; g->sync_auto = 0;
+        g->sync = mode_sync(g, sec);
+        logf_("govee cloud %s: no screen sync through the cloud, %s", g->sku, g->sync ? "mode stays own (set in the window)" : "colours from haku");
+        return 200;
+    }
+    return st;
+}
+
 static unsigned __stdcall worker(void *arg) {
     gcloud_t *g = arg;
     DWORD next = 0;
@@ -151,17 +167,17 @@ static unsigned __stdcall worker(void *arg) {
         if (sync != g->sync) {   // mode changed in the window: back to screen sync, or colours from now on
             g->sync = sync; g->sent_rgb = g->sent_bri = -1; g->dream_off = 0;
             logf_("govee cloud %s: mode %s", g->sku, sync ? "own (screen sync)" : "colours from haku");
-            if (sync && g->sent_on == 1) control(g, "toggle", "dreamViewToggle", 1);
+            if (sync && g->sent_on == 1) dream(g, 1);
         }
         if (!have || (int)(GetTickCount() - next) < 0) continue;
         int st = 200;
         if (on != g->sent_on) {
             st = control(g, "on_off", "powerSwitch", on);
-            if (st == 200) { g->sent_on = on; g->dream_off = 0; if (on && g->sync) control(g, "toggle", "dreamViewToggle", 1); }
+            if (st == 200) { g->sent_on = on; g->dream_off = 0; if (on && g->sync) dream(g, 1); }
         }
         if (on && !g->sync && st == 200) {
             // colours from haku on a sync box: its screen sync goes off first, or it keeps following the screen
-            if (g->has_dream && !g->dream_off) { st = control(g, "toggle", "dreamViewToggle", 0); if (st == 200) { g->dream_off = 1; g->sent_rgb = -1; } }
+            if (g->has_dream && !g->dream_off) { st = dream(g, 0); if (st == 200) { g->dream_off = 1; g->sent_rgb = -1; } }
             if (st == 200 && rgb != g->sent_rgb) { st = control(g, "color_setting", "colorRgb", rgb); if (st == 200) g->sent_rgb = rgb; }
             if (st == 200 && g->has_bright && abs(bri - g->sent_bri) > 2) { st = control(g, "range", "brightness", bri); if (st == 200) g->sent_bri = bri; }
         }
@@ -181,11 +197,12 @@ static int gc_open(ext_dev *d) {
     logf_("govee cloud %s: mode %s", g->sku, g->sync ? "own (screen sync), haku only switches it on / off" : "colours from haku");
     InitializeSRWLock(&g->lk);
     g->sent_on = g->sent_rgb = g->sent_bri = -1; g->leave = -1; g->run = 1;
-    // sync: on at once and screen sync on (the device's own mode); colour: waits for the first frame
+    // sync: on at once and screen sync on (the device's own mode); colour: waits for the first frame.
+    // A refused screen sync turns "auto" into colours (dream()), so the info below is set after it.
     if (g->sync) {
         if (control(g, "on_off", "powerSwitch", 1) == 0) { SecureZeroMemory(g, sizeof(*g)); free(g); return 0; }
         g->sent_on = 1;
-        control(g, "toggle", "dreamViewToggle", 1);
+        dream(g, 1);
     }
     g->wake = CreateEventW(NULL, FALSE, FALSE, NULL);
     g->th = (HANDLE)_beginthreadex(NULL, 0, worker, g, 0, NULL);

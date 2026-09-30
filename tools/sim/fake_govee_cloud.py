@@ -3,7 +3,8 @@
 
 Test build: [govee] server=http://127.0.0.1:8780 in %APPDATA%\\haku-control-dev\\settings.ini, API key "test-key".
 Two devices: an AI Sync Box 2 (screen sync) and a floor lamp. Every command is printed; more than 2 per second for
-one device gets 429, like the real service.
+one device gets 429, like the real service. --box-no-colour: the box offers no colour command;
+--box-no-dream: it lists screen sync but refuses it (as the AI Sync Box Kit H6603 does).
     python tools/sim/fake_govee_cloud.py
 """
 import json
@@ -67,6 +68,9 @@ class H(BaseHTTPRequestHandler):
         if len(t) > 2:
             print(time.strftime("%H:%M:%S"), p["sku"], "429 too many", flush=True)
             return self.out(429, {"code": 429, "message": "Too many requests"})
+        if c["instance"] == "dreamViewToggle" and "--box-no-dream" in __import__("sys").argv:   # AI Sync Box Kit H6603 lists it, then:
+            print(time.strftime("%H:%M:%S"), p["sku"], c["instance"], "no DreamView", flush=True)
+            return self.out(200, {"requestId": body["requestId"], "msg": "The device does not has DreamView", "code": 400})
         if not any(x["instance"] == c["instance"] for x in dev["capabilities"]):   # like the real service: HTTP 200, error inside
             print(time.strftime("%H:%M:%S"), p["sku"], c["instance"], "not supported", flush=True)
             return self.out(200, {"requestId": body["requestId"], "msg": "Unsupported capability", "code": 400})
