@@ -412,22 +412,62 @@
   </section>
 </main>
 
-<!-- first start: a short walk through what was found -->
-<!-- a device's settings, opened from the preview on the Effects tab -->
+<!-- a preset: made and changed here (effect, colours, speed, brightness), opened from the Effects tab -->
 <div class="sheet-wrap pdlg-wrap hidden" id="pdlg">
   <form class="card pdlg" id="pdlg-form" role="dialog" aria-modal="true" autocomplete="off">
-    <h3 id="pdlg-title"></h3>
-    <p class="muted" id="pdlg-what"></p>
-    <div class="mood-pal pdlg-pal" id="pdlg-pal"></div>
+    <div class="pdlg-head">
+      <h3 id="pdlg-title"></h3>
+      <button class="btn ghost small" type="button" id="pdlg-retake"><span data-i18n="preset.retake">Take the current look</span></button>
+    </div>
+    <canvas class="pdlg-prev" id="pdlg-prev"></canvas>
     <label class="num"><span data-i18n="preset.name">Name</span><input type="text" id="pdlg-name" maxlength="40" spellcheck="false"></label>
-    <label class="check"><input type="checkbox" id="pdlg-zones"><span></span><em data-i18n="preset.zones">Each device's own colours</em></label>
-    <label class="check"><input type="checkbox" id="pdlg-bri"><span></span><em data-i18n="preset.bri">Brightness</em></label>
+    <div class="field">
+      <div class="lbl"><span data-i18n="preset.effect">Effect</span></div>
+      <div class="pdlg-fx" id="pdlg-fx"></div>
+    </div>
+    <div class="field" id="pdlg-pal-field">
+      <div class="lbl"><span data-i18n="fx.colors">Effect colours</span></div>
+      <div class="swatches" id="pdlg-pal"></div>
+    </div>
+    <div class="field" id="pdlg-speed-field">
+      <div class="lbl"><span data-i18n="speed">Speed</span><b id="pdlg-speed-val">5</b></div>
+      <input type="range" class="range" id="pdlg-speed" min="1" max="10" value="5">
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="pdlg-bri"><span></span><em data-i18n="preset.bri">Brightness</em><b class="pdlg-bri-val" id="pdlg-bri-val"></b></label>
+      <input type="range" class="range" id="pdlg-bri-v" min="5" max="100" value="100">
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="pdlg-zones"><span></span><em data-i18n="preset.zones">Each device's own colours</em></label>
+      <p class="hint pdlg-zones-note" id="pdlg-zones-note"></p>
+    </div>
     <div class="btn-row">
       <button class="btn primary" type="submit" id="pdlg-save"><span></span></button>
-      <button class="btn ghost hidden" type="button" id="pdlg-retake"><span data-i18n="preset.retake">Take the current look</span></button>
       <span class="grow"></span>
       <button class="btn danger small hidden" type="button" id="pdlg-del"><span></span></button>
       <button class="btn ghost" type="button" id="pdlg-cancel"><span data-i18n="cancel">Cancel</span></button>
+    </div>
+  </form>
+</div>
+<!-- a group of devices in the preview: its name, who is in it and one look for all of them -->
+<div class="sheet-wrap pdlg-wrap hidden" id="gdlg">
+  <form class="card pdlg gdlg" id="gdlg-form" role="dialog" aria-modal="true" autocomplete="off">
+    <div class="pdlg-head"><h3 id="gdlg-title"></h3></div>
+    <label class="num"><span data-i18n="preset.name">Name</span><input type="text" id="gdlg-name" maxlength="32" spellcheck="false"></label>
+    <div class="field">
+      <div class="lbl"><span data-i18n="group.members">Devices in the group</span></div>
+      <div class="gdlg-devs" id="gdlg-devs"></div>
+    </div>
+    <div class="field gdlg-look">
+      <div class="lbl"><span data-i18n="group.look">Look of the whole group</span></div>
+      <p class="hint" data-i18n="group.look.note">Changes here go to every device in the group at once.</p>
+      <div class="gzone" id="gdlg-zone"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" type="submit" id="gdlg-save"><span data-i18n="group.done">Done</span></button>
+      <span class="grow"></span>
+      <button class="btn danger small hidden" type="button" id="gdlg-del"><span></span></button>
+      <button class="btn ghost" type="button" id="gdlg-cancel"><span data-i18n="cancel">Cancel</span></button>
     </div>
   </form>
 </div>

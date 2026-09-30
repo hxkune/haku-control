@@ -487,7 +487,18 @@ static void set_brightness(float b) { set_brightness_ex(b, 1); ui_refresh(); }
 // [general] preset=N marks the one showing; changing the effect or its colours clears it.
 static const char *const ZONE_KEYS[] = { "mode", "palette", "kelvin", "brightness", "effect" };
 
-int app_preset_save(int id, const char *name, int with_bri, int with_zones) {
+// Values the settings window hands over: text only when it looks like one (a "#RRGGBB, ..." list, a number)
+static int palette_ok(const char *s) {
+    if (!s || !*s) return 0;
+    for (const char *p = s; *p; p++) if (!strchr("#0123456789abcdefABCDEF, ", *p)) return 0;
+    return strchr(s, '#') != NULL;
+}
+
+// effect / palette / speed: the preset's look, "" = the current one; brightness: "" = none kept, "cur" = the
+// current one, else 5..100. zones: "1" takes every device's own colours as they are now, "keep" leaves the ones
+// saved before, anything else drops them. Returns the preset's number (0: all PRESET_MAX are taken).
+int app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
+                    const char *bri, const char *zones) {
     char sec[24];
     if (id <= 0 || id > PRESET_MAX) {   // a new one: the first free number
         id = 0;
@@ -498,15 +509,31 @@ int app_preset_save(int id, const char *name, int with_bri, int with_zones) {
     char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(sec, "name", ""));
     for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
     if (!nm[0]) snprintf(nm, sizeof(nm), "Preset %d", id);
+    int keep = zones && !_stricmp(zones, "keep") && cfg_geti(sec, "zones", 0), take = zones && !strcmp(zones, "1");
+    static cfg_item kept[512];
+    int nkept = keep ? cfg_items(sec, kept, 512) : 0;
     cfg_remove_section(sec);
-    const char *eff = g_effects[cur_effect].id;
+    const char *eff = effect && *effect ? g_effects[effect_index(effect)].id : g_effects[cur_effect].id;
     cfg_set(sec, "name", nm);
     cfg_set(sec, "effect", eff);
-    const char *pal = cfg_get(eff, "palette", cfg_get("general", "palette", ""));
+    const char *pal = palette_ok(palette) ? palette : cfg_get(eff, "palette", cfg_get("general", "palette", ""));
     if (*pal) cfg_set(sec, "palette", pal);
-    cfg_set(sec, "speed", cfg_get(eff, "speed", cfg_get("general", "speed", "5")));
-    if (with_bri) cfg_set(sec, "brightness", cfg_get("general", "brightness", "100"));
-    if (with_zones) {
+    char sp[8];
+    if (speed && atoi(speed) >= 1 && atoi(speed) <= 10) snprintf(sp, sizeof(sp), "%d", atoi(speed));
+    else snprintf(sp, sizeof(sp), "%s", cfg_get(eff, "speed", cfg_get("general", "speed", "5")));
+    cfg_set(sec, "speed", sp);
+    int with_bri = bri && *bri;
+    if (with_bri) {
+        char b[8]; int v = atoi(bri);
+        if (!_stricmp(bri, "cur") || v < 5 || v > 100) snprintf(b, sizeof(b), "%s", cfg_get("general", "brightness", "100"));
+        else snprintf(b, sizeof(b), "%d", v);
+        cfg_set(sec, "brightness", b);
+    }
+    int with_zones = take || keep;
+    if (keep) {
+        for (int i = 0; i < nkept; i++)
+            if (!_strnicmp(kept[i].key, "z.", 2) || !_stricmp(kept[i].key, "zones") || !_stricmp(kept[i].key, "sync")) cfg_set(sec, kept[i].key, kept[i].val);
+    } else if (take) {
         cfg_set(sec, "zones", "1");
         cfg_set(sec, "sync", cfg_get("general", "sync", "1"));
         char zs[64][64]; int nz = cfg_sections("zone.", zs, 64);
@@ -518,8 +545,6 @@ int app_preset_save(int id, const char *name, int with_bri, int with_zones) {
                 cfg_set(sec, key, v);
             }
     }
-    char v[8]; snprintf(v, sizeof(v), "%d", id);
-    cfg_set("general", "preset", v);
     cfg_save_if_dirty();
     logf_("preset %d saved: %s (%s)%s%s", id, nm, eff, with_bri ? ", brightness" : "", with_zones ? ", device colours" : "");
     return id;

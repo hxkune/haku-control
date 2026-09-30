@@ -44,6 +44,7 @@ function setCfg(s, k, v) {
   v = String(v);
   (S.cfg[s] = S.cfg[s] || {})[k] = v;
   send({ cmd: 'set', s, k, v });
+  groupSpread(s, k, v, setCfg);
 }
 const parsePal = str => (str || '').match(/#[0-9a-fA-F]{6}/g)?.map(x => x.toUpperCase()) || [];
 const palStr = a => a.join(', ');
@@ -54,12 +55,49 @@ const pendingSets = new Map();
 let flushTimer = 0;
 function setCfgSoon(s, k, v) {
   (S.cfg[s] = S.cfg[s] || {})[k] = String(v);
+  groupSpread(s, k, String(v), setCfgSoon);
   pendingSets.set(s + '\u0001' + k, [s, k, String(v)]);
   if (!flushTimer) flushTimer = setTimeout(() => {
     flushTimer = 0;
     for (const [s2, k2, v2] of pendingSets.values()) send({ cmd: 'set', s: s2, k: k2, v: v2 });
     pendingSets.clear();
   }, 40);
+}
+
+// ---- groups of devices (the preview on the Effects tab): [group.N] name, members = the devices' zone sections
+// (zone.dev3, zone.nanoleaf2, zone.light1, ...). The look keys of [group.N] are also written to every member's
+// [zone.*], so changing the group's look changes all of its devices; the core knows nothing about groups.
+const GROUP_MAX = 16, GROUP_KEYS = ['mode', 'palette', 'kelvin', 'brightness', 'effect'];
+const groupSec = n => 'group.' + n;
+function groups() {
+  return Object.keys(S.cfg).map(k => /^group\.(\d+)$/.exec(k)).filter(Boolean)
+    .map(m => ({ n: +m[1], name: S.cfg[m[0]].name || '', members: (S.cfg[m[0]].members || '').split(',').filter(Boolean) }))
+    .filter(g => g.members.length).sort((a, b) => a.n - b.n);
+}
+const groupOf = zone => groups().find(g => g.members.includes(zone));
+const groupTitle = g => g.name || t('group.n', g.n);
+function groupSpread(s, k, v, set) {
+  const m = /^group\.(\d+)$/.exec(s);
+  if (!m || !GROUP_KEYS.includes(k)) return;
+  const g = groups().find(x => x.n === +m[1]);
+  if (g) g.members.forEach(z => set(z, k, v));
+}
+const setMembers = (n, list) => setCfg(groupSec(n), 'members', list.join(','));
+// into group n (out of any other); the device takes the group's look
+function groupAdd(n, zone) {
+  groups().forEach(g => { if (g.n !== n && g.members.includes(zone)) setMembers(g.n, g.members.filter(z => z !== zone)); });
+  const g = groups().find(x => x.n === n), list = g ? g.members : [];
+  if (!list.includes(zone)) setMembers(n, list.concat(zone));
+  GROUP_KEYS.forEach(k => { const v = cv(groupSec(n), k, ''); if (v !== '') setCfg(zone, k, v); });
+}
+function groupRemove(zone) { const g = groupOf(zone); if (g) setMembers(g.n, g.members.filter(z => z !== zone)); }
+// a number for a new group, its section emptied (a group without members is gone, its section may be left over)
+function groupNew() {
+  let n = 0;
+  for (let i = 1; i <= GROUP_MAX && !n; i++) if (!groups().some(g => g.n === i)) n = i;
+  if (!n) return 0;
+  ['name'].concat(GROUP_KEYS).forEach(k => { if (cv(groupSec(n), k, '') !== '') setCfg(groupSec(n), k, ''); });
+  return n;
 }
 
 // ------------------------------------------------------------------ colour helpers
@@ -399,7 +437,7 @@ function buildEffects() {
     b.addEventListener('click', () => { S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect(); });
     grid.appendChild(b);
   });
-  // own presets after the effects, then the + tile that saves the current look
+  // own presets after the effects, then the + tile that makes a new one
   presets().forEach(P => {
     const b = document.createElement('button');
     b.className = 'fx preset'; b.dataset.preset = P.id;
@@ -445,38 +483,102 @@ function markEffect() {
   $('#power span').textContent = off ? t('power.on') : t('power.off');
   updateBrand();
 }
-// ---- preset dialog: id 0 = save the current look as a new preset; otherwise rename, re-take or delete that one
-const PDLG = { id: 0 };
+// ---- preset window: "+" opens it with the look that shows now as the starting point, and every part (effect,
+// colours, speed, brightness, the devices' own colours) can be changed before it is added. A preset's "···" (or a
+// right click) opens the same window with that preset's values. Saving shows the preset.
+const PDLG = { id: 0, effect: 'flow', pal: [], palTouched: false, speed: 5, bri: 100, zonesHad: false, retake: false, raf: 0 };
+const pdlgEffects = () => S.effects.filter(e => e.id !== 'off');
+const pdlgSpeed = id => !['static', 'off', 'temperature'].includes(id);
+// devices with a look of their own right now (own effect, own colours, white light)
+const zonesCustom = () => $$('.zone').some(z => cv(z.dataset.zone, 'mode', 'effect') !== 'effect' || cv(z.dataset.zone, 'effect', ''));
+function pdlgFromNow() {
+  const P = activePreset(), fx = S.effect !== 'off' ? S.effect : (P ? P.effect : (pdlgEffects()[0] || {}).id || 'flow');
+  PDLG.effect = fx; PDLG.pal = effPal(fx).slice(); PDLG.palTouched = false;
+  PDLG.speed = +cv(fx, 'speed', cv('general', 'speed', 5)); PDLG.bri = S.brightness || 100;
+}
 function presetDialog(id, name) {
   const P = id ? presets().find(p => p.id === id) : null;
-  PDLG.id = P ? P.id : 0;
-  $('#pdlg-title').textContent = P ? t('preset.edit') : t('preset.new');
+  PDLG.id = P ? P.id : 0; PDLG.zonesHad = !!(P && P.zones); PDLG.retake = false;
+  if (P) {
+    PDLG.effect = S.effects.some(e => e.id === P.effect) ? P.effect : 'flow';
+    PDLG.pal = parsePal(P.palette).length ? parsePal(P.palette) : effPal(PDLG.effect).slice(); PDLG.palTouched = true;
+    PDLG.speed = +P.speed || 5; PDLG.bri = +P.bri || S.brightness || 100;
+  } else pdlgFromNow();
+  $('#pdlg-title').textContent = t(P ? 'preset.edit' : 'preset.new');
   $('#pdlg-name').value = P ? P.name : name || '';
   $('#pdlg-name').placeholder = t('preset.name.ph');
   $('#pdlg-bri').checked = P ? !!P.bri : false;
-  $('#pdlg-zones').checked = P ? P.zones : $$('.zone').some(z => cv(z.dataset.zone, 'mode', 'effect') !== 'effect' || cv(z.dataset.zone, 'effect', ''));
-  $('#pdlg-what').textContent = P ? t('preset.saved', fxName(P.effect)) : t('preset.now', activePreset() ? activePreset().name : fxName(S.effect));
-  $('#pdlg-save span').textContent = t(P ? 'preset.rename' : 'preset.save');
-  $('#pdlg-retake').classList.toggle('hidden', !P);
+  $('#pdlg-zones').checked = P ? P.zones : zonesCustom();
+  $('#pdlg-save span').textContent = t(P ? 'preset.save' : 'preset.addbtn');
   const del = $('#pdlg-del'); del.classList.toggle('hidden', !P); del.classList.remove('confirm'); del.querySelector('span').textContent = t('preset.delete');
   $('#pdlg').classList.remove('hidden');
-  const sw = $('#pdlg-pal'), pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(S.effect);
-  sw.innerHTML = pal.map(c => `<i style="background:${c}"></i>`).join('');
+  pdlgRender();
+  const cvs = $('#pdlg-prev'); cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio;
+  if (!PDLG.raf) PDLG.raf = requestAnimationFrame(pdlgPreview);
   setTimeout(() => { $('#pdlg-name').focus(); $('#pdlg-name').select(); }, 30);
 }
-const closePresetDialog = () => $('#pdlg').classList.add('hidden');
+function pdlgRender() {
+  $('#pdlg-fx').innerHTML = pdlgEffects().map(e => `<button type="button" data-fx="${e.id}" class="${e.id === PDLG.effect ? 'on' : ''}">${fxName(e.id)}</button>`).join('');
+  pdlgPalette();
+  $('#pdlg-speed-field').classList.toggle('hidden', !pdlgSpeed(PDLG.effect));
+  setRange($('#pdlg-speed'), PDLG.speed); $('#pdlg-speed-val').textContent = PDLG.speed;
+  const bri = $('#pdlg-bri').checked, br = $('#pdlg-bri-v');
+  setRange(br, PDLG.bri); br.disabled = !bri; $('#pdlg-bri-val').textContent = bri ? PDLG.bri + '%' : '';
+  const z = $('#pdlg-zones').checked, keep = z && PDLG.zonesHad && !PDLG.retake;
+  $('#pdlg-zones-note').textContent = z ? t(keep ? 'preset.zones.keep' : 'preset.zones.take') : t('preset.zones.none');
+}
+// the colours as swatches: click one to change it (or remove it in the picker), "+" adds one; a single colour for static
+function pdlgPalette() {
+  const box = $('#pdlg-pal'), single = PDLG.effect === 'static', list = PDLG.pal;
+  box.innerHTML = '';
+  (single ? list.slice(0, 1) : list).forEach((c, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'sw'; b.style.setProperty('--c', c); b.title = c;
+    b.addEventListener('click', () => {
+      $$('.sw.sel').forEach(s => s.classList.remove('sel')); b.classList.add('sel');
+      openPicker(b, list[i], hex => { list[i] = hex; PDLG.palTouched = true; b.style.setProperty('--c', hex); b.title = hex; },
+        !single && list.length > 1 ? () => { list.splice(i, 1); PDLG.palTouched = true; pdlgPalette(); } : null);
+    });
+    box.appendChild(b);
+  });
+  if (!single && list.length < 8) {
+    const a = document.createElement('button');
+    a.type = 'button'; a.className = 'sw add'; a.textContent = '+'; a.title = t('add.colour');
+    a.addEventListener('click', () => { list.push(list[list.length - 1] || '#FFFFFF'); PDLG.palTouched = true; pdlgPalette(); box.querySelectorAll('.sw:not(.add)')[list.length - 1].click(); });
+    box.appendChild(a);
+  }
+}
+function pdlgPreview(now) {
+  PDLG.raf = 0;
+  if ($('#pdlg').classList.contains('hidden')) return;
+  const cvs = $('#pdlg-prev'), pal = (PDLG.effect === 'static' ? PDLG.pal.slice(0, 1) : PDLG.pal).map(hex2rgb);
+  if (cvs.width && pal.length) drawStrip(cvs, preview(PDLG.effect, pal, now / 1000 * PDLG.speed / 5, 40));
+  PDLG.raf = requestAnimationFrame(pdlgPreview);
+}
+$('#pdlg-fx').addEventListener('click', e => {
+  const b = e.target.closest('[data-fx]'); if (!b) return;
+  PDLG.effect = b.dataset.fx;
+  // colours that were not changed by hand follow the effect (its own palette); the speed too
+  if (!PDLG.palTouched) PDLG.pal = effPal(PDLG.effect).slice();
+  if (!PDLG.id) PDLG.speed = +cv(PDLG.effect, 'speed', cv('general', 'speed', 5));
+  pdlgRender();
+});
+$('#pdlg-speed').addEventListener('input', e => { PDLG.speed = +e.target.value; fill(e.target); $('#pdlg-speed-val').textContent = PDLG.speed; });
+$('#pdlg-bri-v').addEventListener('input', e => { PDLG.bri = +e.target.value; fill(e.target); $('#pdlg-bri-val').textContent = PDLG.bri + '%'; });
+$('#pdlg-bri').addEventListener('change', pdlgRender);
+$('#pdlg-zones').addEventListener('change', pdlgRender);
+$('#pdlg-retake').addEventListener('click', () => {   // start over from what shows now (the devices' colours too)
+  pdlgFromNow(); PDLG.retake = true;
+  if (zonesCustom()) $('#pdlg-zones').checked = true;
+  pdlgRender();
+});
+const closePresetDialog = () => { $('#pdlg').classList.add('hidden'); closePicker(); };
 const pdlgName = () => $('#pdlg-name').value.replace(/[;#\[\]=]/g, ' ').trim();
 $('#pdlg-form').addEventListener('submit', e => {
   e.preventDefault();
-  const name = pdlgName(), bri = $('#pdlg-bri').checked ? '1' : '0', zones = $('#pdlg-zones').checked ? '1' : '0';
-  if (PDLG.id) {   // edit: the name (and which parts it keeps) change; the saved look stays until "take the current look"
-    const P = presets().find(p => p.id === PDLG.id);
-    if (name && P && name !== P.name) setCfg('preset.' + PDLG.id, 'name', name);
-  } else send({ cmd: 'preset_save', id: '0', name, bri, zones });
-  closePresetDialog();
-});
-$('#pdlg-retake').addEventListener('click', () => {
-  send({ cmd: 'preset_save', id: String(PDLG.id), name: pdlgName(), bri: $('#pdlg-bri').checked ? '1' : '0', zones: $('#pdlg-zones').checked ? '1' : '0' });
+  const z = $('#pdlg-zones').checked, pal = PDLG.effect === 'static' ? PDLG.pal.slice(0, 1) : PDLG.pal;
+  send({ cmd: 'preset_save', id: String(PDLG.id), name: pdlgName(), effect: PDLG.effect, palette: palStr(pal), speed: String(PDLG.speed),
+    brightness: $('#pdlg-bri').checked ? String(PDLG.bri) : '', zones: z ? (PDLG.id && PDLG.zonesHad && !PDLG.retake ? 'keep' : '1') : '0', apply: '1' });
   closePresetDialog();
 });
 $('#pdlg-del').addEventListener('click', () => {
@@ -487,7 +589,7 @@ $('#pdlg-del').addEventListener('click', () => {
 });
 $('#pdlg-cancel').addEventListener('click', closePresetDialog);
 $('#pdlg').addEventListener('pointerdown', e => { if (e.target.id === 'pdlg') closePresetDialog(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#pdlg').classList.contains('hidden')) closePresetDialog(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#pdlg').classList.contains('hidden') && pk.classList.contains('hidden')) closePresetDialog(); });
 
 function renderEffectSide() {
   const id = S.effect, P = activePreset();
@@ -886,46 +988,89 @@ function heroAnim(key, target) {
 // stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
 // animates the height) and tiles glide to their new places when something is added or removed.
 const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7 };
-function heroItems() {
-  const hide = heroHidden(), items = [];
-  if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
-  if (S.msi && !hide.includes('gpu')) items.push({ key: 'gpu', k: 'gpu', w: 2.4, name: stripName(), draw: drawGpu });
+function heroItems(all) {
+  const hide = all ? [] : heroHidden(), items = [];
+  if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
+  if (S.msi && !hide.includes('gpu')) items.push({ key: 'gpu', k: 'gpu', zone: 'zone.gpu', w: 2.4, name: stripName(), draw: drawGpu });
   if (!hide.includes('nano')) nanoCtls().forEach(n => {
     const P = n.panels || [], xs = P.map(p => p[0]), ys = P.map(p => p[1]), sd = n.side || .2;
     const a = P.length ? (Math.max(...xs) - Math.min(...xs) + sd) / (Math.max(...ys) - Math.min(...ys) + sd) : 1;
-    items.push({ key: 'nano' + n.slot, k: 'nano', slot: n.slot, w: Math.max(1.1, Math.min(3, a * 1.25)), name: nanoCtls().length > 1 ? nanoName(n) : 'Nanoleaf',
+    items.push({ key: 'nano' + n.slot, k: 'nano', slot: n.slot, zone: nanoZone(n.slot), w: Math.max(1.1, Math.min(3, a * 1.25)), name: nanoCtls().length > 1 ? nanoName(n) : 'Nanoleaf',
       draw: (c, x, y, w, h) => drawNano(c, x, y, w, h, n) });
   });
-  if (!hide.includes('bulbs')) S.bulbs.forEach((b, i) => items.push({ key: 'bulb' + i, k: 'bulb', i, w: .85, name: t('bulb', i + 1),
+  if (!hide.includes('bulbs')) S.bulbs.forEach((b, i) => items.push({ key: 'bulb' + i, k: 'bulb', i, zone: 'zone.light' + (i + 1), w: .85, name: t('bulb', i + 1),
     draw: (c, x, y, w, h) => { const col = F.bulbs[i], on = lit(col) && b.online; drawFixture(c, x, y, w, h, bulbType(i), [on ? col : OFF], on); } }));
   if (!hide.includes('ext')) S.ext.devs.forEach((dv, k) => {
     const ty = dv.type || (dv.per_led ? 'strip' : 'bulb');
-    items.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, name: dv.name,
+    items.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, zone: 'zone.dev' + dv.id, name: dv.name,
       w: HERO_EXT_W[ty] || Math.min(2.4, .55 + .35 * Math.max(1, dv.leds || 1)), draw: (c, x, y, w, h) => drawExt(c, x, y, w, h, k) });
   });
   return items;
 }
-// Tile rectangles in CSS pixels for a preview W wide; returns { tiles: [{ it, x, y, w, h }], height }.
+// What the preview shows, in reading order: single devices and groups (a group sits where its first device would).
+function heroEntries() {
+  const gs = groups(), out = [], seen = new Map();
+  for (const it of heroItems()) {
+    const g = gs.find(x => x.members.includes(it.zone));
+    if (!g) { out.push({ it }); continue; }
+    if (!seen.has(g.n)) { const e = { g, items: [] }; seen.set(g.n, e); out.push(e); }
+    seen.get(g.n).items.push(it);
+  }
+  return out;
+}
+// Tile rectangles in CSS pixels for a preview W wide; returns { tiles: [{ it, x, y, w, h, group }], frames: [{ g, x,
+// y, w, h }], height }. A group is a frame with a header around its devices: as wide as they are, or the full width
+// with its devices in rows of their own when they do not fit in one. A row is as tall as its tallest entry.
 function heroLayout(W) {
   const phone = matchMedia('(max-width: 700px)').matches;
-  const U = phone ? 70 : 92, RH = phone ? 118 : 144, G = 10, P = 14, inner = Math.max(40, W - P * 2);
-  const rows = []; let row = [], used = 0;
-  for (const it of heroItems()) {
-    const w = Math.min(it.w * U, inner);
-    if (row.length && used + G + w > inner) { rows.push(row); row = []; used = 0; }
-    used += (row.length ? G : 0) + w; row.push({ it, w });
-  }
-  if (row.length) rows.push(row);
-  const tiles = [];
-  rows.forEach((r, ri) => {
-    // the last row leaves the bottom-right corner to the preview's settings button (#hero-edit)
-    const last = ri === rows.length - 1, avail = inner - (last ? 40 : 0);
-    const sum = r.reduce((a, x) => a + x.w, 0), gaps = G * (r.length - 1);
-    const f = !last || rows.length === 1 ? Math.min(1.7, (avail - gaps) / sum) : Math.min(1.7, (avail - gaps) / sum, tiles.length ? tiles[0].f : 1.7);
-    let x = P;
-    for (const { it, w } of r) { tiles.push({ it, x, y: P + ri * (RH + G), w: w * f, h: RH, f }); x += w * f + G; }
+  const U = phone ? 70 : 92, RH = phone ? 118 : 144, G = 10, P = 14, GH = phone ? 24 : 28, GP = 7, inner = Math.max(40, W - P * 2);
+  const pack = (list, width) => {
+    const rows = []; let row = [], used = 0;
+    for (const b of list) {
+      b.w = Math.min(b.w, width);
+      if (row.length && (b.full || used + G + b.w > width)) { rows.push(row); row = []; used = 0; }
+      used += (row.length ? G : 0) + b.w; row.push(b);
+      if (b.full) { rows.push(row); row = []; used = 0; }
+    }
+    if (row.length) rows.push(row);
+    return rows;
+  };
+  // full rows stretch to the width (at most 1.7x), the last one no more than the first; place(b, x, w, row)
+  const spread = (rows, width, reserve, place) => {
+    let f0 = 1.7;
+    rows.forEach((r, ri) => {
+      const last = ri === rows.length - 1, sum = r.reduce((a, b) => a + b.w, 0), gaps = G * (r.length - 1);
+      let f = Math.min(1.7, (width - (last ? reserve : 0) - gaps) / sum);
+      if (last && rows.length > 1) f = Math.min(f, f0);
+      if (!ri) f0 = f;
+      let x = 0;
+      for (const b of r) { place(b, x, b.w * f, ri); x += b.w * f + G; }
+    });
+  };
+  const boxes = heroEntries().map(e => {
+    if (e.it) return { it: e.it, w: e.it.w * U, h: RH };
+    const nat = GP * 2 + e.items.reduce((a, it) => a + it.w * U, 0) + G * (e.items.length - 1);
+    if (nat <= inner) return { g: e.g, items: e.items, w: nat, h: GH + RH + GP };
+    const inRows = pack(e.items.map(it => ({ it, w: it.w * U })), inner - GP * 2);
+    return { g: e.g, items: e.items, w: inner, full: true, inRows, h: GH + inRows.length * RH + (inRows.length - 1) * G + GP };
   });
-  return { tiles, height: rows.length ? P * 2 + rows.length * RH + (rows.length - 1) * G : (phone ? 150 : 180) };
+  const rows = pack(boxes, inner), tiles = [], frames = [];
+  let y = P;
+  const rowH = rows.map(r => Math.max(...r.map(b => b.h)));
+  // the last row leaves the bottom-right corner to the preview's settings button (#hero-edit)
+  spread(rows, inner, 40, (b, x, w, ri) => {
+    const by = P + rowH.slice(0, ri).reduce((a, h) => a + h + G, 0), h = rowH[ri], bx = P + x;
+    if (b.it) { tiles.push({ it: b.it, x: bx, y: by, w, h }); return; }
+    frames.push({ g: b.g, x: bx, y: by, w, h });
+    const n = b.g.n;
+    if (!b.full) {   // one row inside: the devices share the frame's width by their own widths
+      const sum = b.items.reduce((a, it) => a + it.w, 0), aw = w - GP * 2 - G * (b.items.length - 1);
+      let ix = bx + GP;
+      for (const it of b.items) { const iw = aw * it.w / sum; tiles.push({ it, x: ix, y: by + GH, w: iw, h: h - GH - GP, group: n }); ix += iw + G; }
+    } else spread(b.inRows, w - GP * 2, 0, (m, mx, mw, mri) => tiles.push({ it: m.it, x: bx + GP + mx, y: by + GH + mri * (RH + G), w: mw, h: RH, group: n }));
+  });
+  y = P + rowH.reduce((a, h) => a + h, 0) + G * Math.max(0, rows.length - 1) + P;
+  return { tiles, frames, height: rows.length ? y : (phone ? 150 : 180) };
 }
 function heroHeight() {
   const el = $('#tab-effects .hero'), h = Math.round(heroLayout($('#hero').clientWidth || el.clientWidth).height);
@@ -955,41 +1100,75 @@ function drawHero() {
   heroHeight();
   const c = cvs.getContext('2d'), W = cvs.width, H = cvs.height, d = devicePixelRatio;
   c.clearRect(0, 0, W, H);
-  const { tiles } = heroLayout(W / d), calm = document.body.classList.contains('calm'), hits = [];
+  const { tiles, frames } = heroLayout(W / d), calm = document.body.classList.contains('calm'), hits = [], ghits = [];
   HERO.pos = HERO.pos || {};
-  const seen = new Set();
+  const seen = new Set(), drag = HERO.drag, to = drag && drag.to;
+  const glide = (key, T) => {   // eased position of a tile or frame (a new one starts in place)
+    let p = HERO.pos[key];
+    if (!p) p = HERO.pos[key] = { x: T.x, y: T.y, w: T.w, h: T.h };
+    for (const k of ['x', 'y', 'w', 'h']) {
+      const tgt = T[k];
+      if (p[k] == null || calm || Math.abs(tgt - p[k]) < .5) p[k] = tgt; else { p[k] += (tgt - p[k]) * HERO.k; HERO.moving = true; }
+    }
+    return p;
+  };
+  for (const F of frames) {
+    const key = 'g' + F.g.n; seen.add(key);
+    const p = glide(key, F), v = heroAnim('a:' + key, 1), x = p.x * d, y = p.y * d, w = p.w * d, h = p.h * d;
+    const hot = HERO.hover === key || (to && to.key === key);
+    c.save(); c.globalAlpha = v;
+    tilePath(c, x, y, w, h, 11 * d);
+    c.fillStyle = hot ? 'rgba(255,255,255,.035)' : 'rgba(255,255,255,.012)'; c.fill();
+    c.strokeStyle = to && to.key === key ? 'rgba(255,255,255,.6)' : hot ? 'rgba(255,255,255,.26)' : 'rgba(255,255,255,.1)';
+    c.lineWidth = d; c.setLineDash(to && to.key === key ? [5 * d, 4 * d] : []); c.stroke(); c.setLineDash([]);
+    c.font = `${9 * d}px ${WIDE}`; c.letterSpacing = `${2.5 * d}px`; c.textAlign = 'left';
+    c.fillStyle = hot ? '#e8e8e8' : '#8a8a8a';
+    let s = groupTitle(F.g).toUpperCase();
+    const room = w - 46 * d;
+    if (c.measureText(s).width > room) { while (s.length > 1 && c.measureText(s + '…').width > room) s = s.slice(0, -1); s += '…'; }
+    c.fillText(s, x + 13 * d, y + 17 * d); c.letterSpacing = '0px';
+    c.restore();
+    ghits.push({ key, k: 'group', g: F.g.n, x, y, w, h });
+  }
   for (const T of tiles) {
     const { it } = T; seen.add(it.key);
-    // glide from where the tile was (a new tile starts in place and fades / grows in)
-    let p = HERO.pos[it.key];
-    if (!p) p = HERO.pos[it.key] = { x: T.x, y: T.y, w: T.w };
-    for (const k of ['x', 'y', 'w']) {
-      const tgt = T[k];
-      if (calm || Math.abs(tgt - p[k]) < .5) p[k] = tgt; else { p[k] += (tgt - p[k]) * HERO.k; HERO.moving = true; }
-    }
+    const p = glide(it.key, T);   // glides from where the tile was (a new tile fades / grows in)
     const v = heroAnim('a:' + it.key, 1);
-    const x = p.x * d, y = p.y * d, w = p.w * d, h = T.h * d, hot = HERO.hover === it.key;
+    const x = p.x * d, y = p.y * d, w = p.w * d, h = p.h * d, hot = HERO.hover === it.key || (to && to.key === it.key);
     c.save();
-    c.globalAlpha = v;
+    c.globalAlpha = drag && drag.src.key === it.key ? v * .35 : v;
     const sc = .92 + .08 * v; c.translate(x + w / 2, y + h / 2); c.scale(sc, sc); c.translate(-x - w / 2, -y - h / 2);
     tilePath(c, x, y, w, h, 8 * d);
     c.fillStyle = hot ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.015)'; c.fill();
-    c.strokeStyle = hot ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.06)'; c.lineWidth = d; c.stroke();
+    c.strokeStyle = to && to.key === it.key ? 'rgba(255,255,255,.6)' : hot ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.06)'; c.lineWidth = d;
+    c.setLineDash(to && to.key === it.key ? [5 * d, 4 * d] : []); c.stroke(); c.setLineDash([]);
     c.save(); tilePath(c, x, y, w, h, 8 * d); c.clip();   // a device never draws outside its tile
     try { it.draw(c, x + 8 * d, y + 22 * d, w - 16 * d, h - 50 * d); } catch (e) { console.warn('preview', it.key, e); }
     c.restore();
     tileLabel(c, it.name, x + 8 * d, y + h - 12 * d, w - 16 * d, hot);
     c.restore();
-    hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, x, y, w, h });
+    hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, zone: it.zone, name: it.name, group: T.group || 0, x, y, w, h });
   }
+  hits.push(...ghits);   // a device in a group is found before its group
   for (const k of Object.keys(HERO.pos)) if (!seen.has(k)) { delete HERO.pos[k]; delete HERO.anim['a:' + k]; }
   if (!tiles.length && S.effects.length) {   // nothing to show yet: the whole preview invites to add a device
     c.fillStyle = HERO.hover === 'add' ? '#d8d8d8' : '#6a6a6a'; c.font = `${13 * d}px ${WIDE}`; c.textAlign = 'center';
     c.fillText('+  ' + t('hero.empty'), W / 2, H / 2);
     hits.push({ key: 'add', k: 'add', x: W * .3, y: H * .3, w: W * .4, h: H * .4 });
   }
+  HERO.hits = hits;   // (before the power buttons: a group's button asks its devices)
   hits.forEach(h => heroPowerButton(c, h));
-  HERO.hits = hits;
+  if (drag && drag.px != null) {   // the device being dragged: its name under the pointer, and what dropping does
+    const msg = to && to.group ? t('group.drop.in', groupTitle(groups().find(g => g.n === to.group) || { n: to.group }))
+      : to && to.tile ? t('group.drop.new') : drag.src.group ? t('group.drop.out') : '';
+    c.save();
+    c.font = `${11 * d}px ${WIDE}`; c.textAlign = 'left';
+    const s = drag.src.name + (msg ? '  ·  ' + msg : ''), tw = c.measureText(s).width, px = Math.min(drag.px + 14 * d, W - tw - 24 * d), py = drag.py + 18 * d;
+    rr(c, px, py - 14 * d, tw + 20 * d, 22 * d, 11 * d);
+    c.fillStyle = 'rgba(12,12,12,.92)'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = d; c.stroke();
+    c.fillStyle = '#e8e8e8'; c.fillText(s, px + 10 * d, py + 1 * d);
+    c.restore();
+  }
   if (HERO.moving && !HERO.raf) HERO.raf = requestAnimationFrame(() => { HERO.raf = 0; if (tab === 'effects') drawHero(); });
 }
 // the canvas follows the card while its height animates
@@ -1006,17 +1185,70 @@ const heroHit = e => {
 };
 // the power button of the device under the pointer, if the pointer is on it
 const heroOnPower = (h, e) => { if (!h || !h.pw) return false; const [px, py] = heroXY(e); return Math.hypot(px - h.pw.x, py - h.pw.y) <= h.pw.r * 1.5; };
+// Drag a device (with the mouse) onto another one: a new group of the two; onto a group: into it; out of its group's
+// frame: out of the group.
+function heroDropTarget(e) {
+  const [px, py] = heroXY(e), src = HERO.drag.src, inside = h => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h;
+  const tile = HERO.hits.find(h => h.zone && h.key !== src.key && inside(h));
+  if (tile) return tile.group ? (tile.group === src.group ? null : { group: tile.group, key: 'g' + tile.group }) : { tile, key: tile.key };
+  const fr = HERO.hits.find(h => h.k === 'group' && inside(h));
+  if (fr) return fr.g === src.group ? null : { group: fr.g, key: fr.key };
+  return src.group ? { out: true } : null;
+}
+function heroDrop(d) {
+  const to = d.to, z = d.src.zone;
+  if (!to) return;
+  if (to.group) groupAdd(to.group, z);
+  else if (to.out) groupRemove(z);
+  else if (to.tile) {
+    const n = groupNew(); if (!n) return;
+    groupRemove(z);
+    setMembers(n, [to.tile.zone, z]);
+    groupDialog(n, true);   // a name for it
+  }
+}
+$('#hero').addEventListener('pointerdown', e => {
+  if (e.button !== 0 || e.pointerType === 'touch') return;
+  const h = heroHit(e);
+  HERO.press = h && h.zone && !heroOnPower(h, e) ? { h, x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+});
 $('#hero').addEventListener('pointermove', e => {
+  const P = HERO.press;
+  if (P && !HERO.drag && e.buttons === 1 && Math.hypot(e.clientX - P.x, e.clientY - P.y) > 6) {
+    HERO.drag = { src: P.h };
+    try { $('#hero').setPointerCapture(P.id); } catch (x) { }
+  }
+  if (HERO.drag) {
+    [HERO.drag.px, HERO.drag.py] = heroXY(e);
+    HERO.drag.to = heroDropTarget(e);
+    HERO.hover = HERO.hoverPw = '';
+    $('#hero').style.cursor = 'grabbing'; $('#hero').title = '';
+    drawHero();
+    return;
+  }
   const h = heroHit(e), key = h ? h.key : '', pw = heroOnPower(h, e) ? key : '';
   $('#hero').style.cursor = h ? 'pointer' : '';
-  $('#hero').title = pw ? t(h.pw.on ? 'power.dev.off' : 'power.dev.on') : '';
+  $('#hero').title = pw ? t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on')) : '';
   if (key !== HERO.hover || pw !== HERO.hoverPw) { HERO.hover = key; HERO.hoverPw = pw; drawHero(); }
 });
-$('#hero').addEventListener('pointerleave', () => { if (HERO.hover) { HERO.hover = HERO.hoverPw = ''; drawHero(); } });
+const heroDragEnd = drop => {
+  const d = HERO.drag; HERO.press = null;
+  if (!d) return;
+  HERO.drag = null; HERO.noClick = true; setTimeout(() => { HERO.noClick = false; });
+  $('#hero').style.cursor = '';
+  if (drop) heroDrop(d);
+  drawHero();
+};
+$('#hero').addEventListener('pointerup', () => heroDragEnd(true));
+$('#hero').addEventListener('pointercancel', () => heroDragEnd(false));
+$('#hero').addEventListener('pointerleave', () => { if (HERO.hover && !HERO.drag) { HERO.hover = HERO.hoverPw = ''; drawHero(); } });
 $('#hero').addEventListener('click', e => {
+  if (HERO.noClick) return;
   const h = heroHit(e);
   if (!h) return;
-  if (heroOnPower(h, e)) { togglePower(h); drawHero(); } else openSheet(h, e.clientX, e.clientY);
+  if (heroOnPower(h, e)) { togglePower(h); drawHero(); }
+  else if (h.k === 'group') groupDialog(h.g);
+  else openSheet(h, e.clientX, e.clientY);
 });
 
 // ---- one power button per device in the preview: memory, the ARGB strip, each Nanoleaf controller, each bulb,
@@ -1028,10 +1260,15 @@ function devicePower(h) {
   if (h.k === 'nano' && h.slot) return { on: L(nanoKey(h.slot)), keys: [nanoKey(h.slot)] };
   if (h.k === 'bulb') return { on: L('lights_enabled') && L(`light${h.i + 1}_enabled`), keys: [`light${h.i + 1}_enabled`] };
   if (h.k === 'ext') { const d = S.ext.devs[h.i]; return d ? { on: !!d.enabled, dev: d } : null; }
+  if (h.k === 'group') {   // on while any of its devices is; the switch turns all of them off, or all on
+    const members = HERO.hits.filter(x => x.group === h.g && x.zone), on = members.some(m => (devicePower(m) || {}).on);
+    return members.length ? { on, members } : null;
+  }
   return null;
 }
 function togglePower(h) {
   const p = devicePower(h); if (!p) return;
+  if (p.members) { p.members.forEach(m => { const q = devicePower(m); if (q && q.on === p.on) togglePower(m); }); return; }
   if (p.dev) {
     p.dev.enabled = p.on ? 0 : 1;
     setCfg('dev.' + p.dev.id, 'enabled', p.dev.enabled);
@@ -1122,7 +1359,8 @@ function buildHeroMenu() {
   const hide = heroHidden();
   $('#hero-menu').innerHTML = `<div class="lbl"><span>${t('hero.show')}</span></div>` +
     heroGroups().map(([k]) => `<label class="check"><input type="checkbox" data-hg="${k}" ${hide.includes(k) ? '' : 'checked'}><span></span><em>${groupName(k)}</em></label>`).join('') +
-    `<button class="btn small ghost" id="hero-add"><span>+ ${t('hero.add')}</span></button><p class="hint">${t('hero.hint')}</p>`;
+    `<div class="btn-row"><button class="btn small ghost" id="hero-add"><span>+ ${t('hero.add')}</span></button>` +
+    `<button class="btn small ghost" id="hero-group"><span>+ ${t('group.add')}</span></button></div><p class="hint">${t('hero.hint')}</p>`;
   $$('[data-hg]').forEach(i => i.addEventListener('change', () => {
     const h = new Set(heroHidden()); i.checked ? h.delete(i.dataset.hg) : h.add(i.dataset.hg);
     if (h.size >= heroGroups().length) { i.checked = true; return; }   // keep at least one
@@ -1130,7 +1368,59 @@ function buildHeroMenu() {
     drawHero();
   }));
   $('#hero-add').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); showTab('devices'); send({ cmd: 'scan' }); });
+  $('#hero-group').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); const n = groupNew(); if (n) groupDialog(n, true); });
 }
+
+// ---- group window: name, which devices are in it (a device is in one group at most) and one look for all of them
+// (the zone editor on [group.N]: every change goes to the members, see groupSpread). Changes apply at once;
+// Cancel puts the name and the devices back (a new group goes away).
+const GDLG = { n: 0, isNew: false, before: null };
+function groupDialog(n, isNew) {
+  const sec = groupSec(n), g = groups().find(x => x.n === n);
+  GDLG.n = n; GDLG.isNew = !!isNew;
+  GDLG.before = { name: cv(sec, 'name', ''), members: g ? g.members.slice() : [], homes: {} };
+  heroItems(true).forEach(it => { const o = groupOf(it.zone); if (o) GDLG.before.homes[it.zone] = o.n; });
+  $('#gdlg-title').textContent = t(isNew ? 'group.new' : 'group.edit');
+  $('#gdlg-name').value = cv(sec, 'name', '');
+  $('#gdlg-name').placeholder = t('group.n', n);
+  const del = $('#gdlg-del'); del.classList.toggle('hidden', !!isNew); del.classList.remove('confirm'); del.querySelector('span').textContent = t('group.delete');
+  gdlgDevs();
+  const z = $('#gdlg-zone'); z.dataset.zone = sec; renderZone(z);
+  $('#gdlg').classList.remove('hidden');
+  setTimeout(() => { $('#gdlg-name').focus(); $('#gdlg-name').select(); }, 30);
+}
+function gdlgDevs() {
+  const g = groups().find(x => x.n === GDLG.n), mine = g ? g.members : [];
+  $('#gdlg-devs').innerHTML = heroItems(true).map(it => {
+    const o = groupOf(it.zone), on = mine.includes(it.zone);
+    return `<button type="button" data-z="${it.zone}" class="${on ? 'on' : ''}"><i></i><b>${esc(it.name)}</b>${o && !on ? `<small>${esc(t('group.in', groupTitle(o)))}</small>` : ''}</button>`;
+  }).join('') || `<p class="hint">${t('hero.empty')}</p>`;
+}
+$('#gdlg-devs').addEventListener('click', e => {
+  const b = e.target.closest('[data-z]'); if (!b) return;
+  if (b.classList.contains('on')) groupRemove(b.dataset.z); else groupAdd(GDLG.n, b.dataset.z);
+  gdlgDevs(); drawHero();
+});
+$('#gdlg-name').addEventListener('input', e => { setCfgSoon(groupSec(GDLG.n), 'name', e.target.value.replace(/[;#\[\]=,]/g, ' ').trim()); drawHero(); });
+function closeGroupDialog() { $('#gdlg').classList.add('hidden'); closePicker(); renderZones(); drawHero(); }
+$('#gdlg-form').addEventListener('submit', e => { e.preventDefault(); closeGroupDialog(); });
+$('#gdlg-cancel').addEventListener('click', () => {
+  const B = GDLG.before, sec = groupSec(GDLG.n);
+  if (cv(sec, 'name', '') !== B.name) setCfg(sec, 'name', B.name);
+  if (GDLG.isNew) setMembers(GDLG.n, []);
+  else {   // the devices back where they were
+    heroItems(true).forEach(it => { const home = B.homes[it.zone], now = groupOf(it.zone); if ((now ? now.n : 0) !== (home || 0)) { if (home) groupAdd(home, it.zone); else groupRemove(it.zone); } });
+  }
+  closeGroupDialog();
+});
+$('#gdlg-del').addEventListener('click', () => {
+  const b = $('#gdlg-del');
+  if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.querySelector('span').textContent = t('preset.delete.sure'); return; }
+  setMembers(GDLG.n, []); setCfg(groupSec(GDLG.n), 'name', '');
+  closeGroupDialog();
+});
+$('#gdlg').addEventListener('pointerdown', e => { if (e.target.id === 'gdlg') closeGroupDialog(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#gdlg').classList.contains('hidden') && pk.classList.contains('hidden')) $('#gdlg-cancel').click(); });
 $('#hero-edit').addEventListener('click', e => {
   e.stopPropagation();
   const m = $('#hero-menu');

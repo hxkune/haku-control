@@ -202,7 +202,8 @@ int   app_ru(void);                      // [general] lang=ru (English otherwise
 #define TR(en, ru) (app_ru() ? (ru) : (en))
 void  app_set_effect(int fx);
 #define PRESET_MAX 32
-int   app_preset_save(int id, const char *name, int with_brightness, int with_zones);   // id 0: new; returns its number
+int   app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
+                      const char *brightness, const char *zones);   // id 0: new; returns its number, see main.c
 void  app_preset_apply(int id);
 void  app_preset_delete(int id);
 void  ui_refresh_state(void);   // the open window gets the whole state (settings included) again

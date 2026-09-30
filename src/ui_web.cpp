@@ -96,7 +96,12 @@ static void on_message(const std::string &js) {
     else if (cmd == "pair") { std::string ip = field(js, "ip"); nano_pair_start_ip(ip.c_str()); post_status(); }
     else if (cmd == "preset") { app_preset_apply(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "preset_save") {
-        app_preset_save(atoi(field(js, "id").c_str()), field(js, "name").c_str(), atoi(field(js, "bri").c_str()), atoi(field(js, "zones").c_str()));
+        // the preset window's values; "bri":"1" (older pages) keeps the current brightness
+        std::string bri = field(js, "brightness");
+        if (bri.empty() && field(js, "bri") == "1") bri = "cur";
+        int id = app_preset_save(atoi(field(js, "id").c_str()), field(js, "name").c_str(), field(js, "effect").c_str(),
+                                 field(js, "palette").c_str(), field(js, "speed").c_str(), bri.c_str(), field(js, "zones").c_str());
+        if (id && field(js, "apply") == "1") app_preset_apply(id);   // shows what was just made
         post_state();
     }
     else if (cmd == "preset_delete") { app_preset_delete(atoi(field(js, "id").c_str())); post_state(); }
