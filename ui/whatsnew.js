@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.20',
+    en: ['Updates keep coming even after "Check now" is pressed many times: GitHub limits how often it may be asked, so haku asks at most once a minute and, when GitHub says no, finds the new version another way.',
+      'Divoom Times Frame: haku looks for the command its lights take. If they stay dark, the diagnostics now show what it tried.'],
+    ru: ['Обновления приходят, даже если много раз нажать «Проверить»: GitHub ограничивает, как часто его можно спрашивать, поэтому haku спрашивает не чаще раза в минуту, а если GitHub отказал, находит новую версию другим путём.',
+      'Divoom Times Frame: haku ищет команду, которую принимает его подсветка. Если она не загорается, в диагностике теперь видно, что было испробовано.'],
+    fr: ['Les mises à jour arrivent même après de nombreux « Vérifier » : GitHub limite la fréquence des demandes, alors haku demande au plus une fois par minute et, si GitHub refuse, trouve la nouvelle version autrement.',
+      'Divoom Times Frame : haku cherche la commande que prend son éclairage. S\'il reste éteint, le diagnostic montre maintenant ce qui a été essayé.'] },
   { v: '0.3.19',
     en: ['Divoom Times Frame connects (it was wrongly told its LocalToken was wrong).',
       'Divoom devices are found more reliably when Divoom\'s service misses them for a moment.'],
