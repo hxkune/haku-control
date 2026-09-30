@@ -1120,7 +1120,7 @@ function drawNano(c, X, Y, W, H, N) {
 
 // What a light is, for its picture in the preview (and, for LAN devices, how effects lay out on it; see
 // device_type in devices.c). LAN devices get it from the core (chosen, or guessed from the model); bulbs: [zone.lightN] type.
-const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse', 'keylight', 'gate'];
+const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse', 'keylight', 'gate', 'frame'];
 const bulbType = i => { const v = cv('zone.light' + (i + 1), 'type', 'bulb'); return FIXTURES.includes(v) ? v : 'bulb'; };
 
 // One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
@@ -1224,6 +1224,16 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
       rr(c, x, y, u, u, 2 * dp); c.fillStyle = '#101010'; c.fill();
       c.strokeStyle = on1 ? k : 'rgba(255,255,255,.1)'; c.lineWidth = dp; c.stroke();
     });
+  } else if (type === 'frame') {   // Divoom Times Frame: a clear 10" screen on a foot, its light along the edges
+    const w = Math.min(W * 0.8, H * 1.35), h = w * 0.62, x = cx - w / 2, y = cy - h / 2 - H * 0.04, k = col(0), on1 = on && lit(k);
+    metal(cx - w * 0.2, y + h + 2 * dp, w * 0.4, 4 * dp);
+    c.save();
+    if (on1) { c.shadowColor = k; c.shadowBlur = 18 * dp; }
+    rr(c, x, y, w, h, 3 * dp); c.strokeStyle = on1 ? k : 'rgba(255,255,255,.12)'; c.lineWidth = 2.5 * dp; c.stroke();
+    c.restore();
+    rr(c, x + 5 * dp, y + 5 * dp, w - 10 * dp, h - 10 * dp, 2 * dp); c.fillStyle = 'rgba(20,24,28,.85)'; c.fill();
+    c.strokeStyle = 'rgba(255,255,255,.05)'; c.lineWidth = dp;
+    for (let i = 1; i < 4; i++) { c.beginPath(); c.moveTo(x + w * i / 4 - 8 * dp, y + 8 * dp); c.lineTo(x + w * i / 4 - 20 * dp, y + h - 8 * dp); c.stroke(); }
   } else if (type === 'keylight') {   // a key light: a flat glowing panel on a pole, tilted a little towards you
     const h = H * 0.86, pw = Math.min(W * 0.62, h * 0.9), ph = pw * 0.62, top = cy - h / 2;
     metal(cx - dp, top + ph * 0.8, 2 * dp, h - ph * 0.8 - 3 * dp);
@@ -1296,7 +1306,7 @@ function heroAnim(key, target) {
 // controller, each bulb, each LAN device), laid out in rows; a row that is full wraps to the next one. Full rows
 // stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
 // animates the height) and tiles glide to their new places when something is added or removed.
-const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1, gate: 1.2 };
+const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1, gate: 1.2, frame: 1.4 };
 function heroItems(all) {
   const hide = all ? [] : heroHidden(), items = [];
   if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
@@ -1963,7 +1973,10 @@ function buildDevices() {
           `<option value="${v}"${cv(sec, 'mode', 'auto') === v ? ' selected' : ''}>${t('gc.' + v)}</option>`).join('')}</select></label>
           <p class="hint dev-mode-note">${t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour')}</p>` : ''}
         ${d.kind === 'divoom' ? `<label class="num"><span>LocalToken</span><input type="text" class="dev-token" inputmode="numeric" maxlength="16" spellcheck="false" value="${esc(cv(sec, 'key', ''))}"></label>
-          <p class="hint">${t('dv.token')}</p>` : ''}
+          <p class="hint">${t('dv.token')}</p>
+          <label class="num"><span>${t('dv.lights')}</span><select class="select dev-lights">${['both', 'back', 'sides', 'back_cycle', 'back_rainbow'].map(v =>
+            `<option value="${v}"${cv(sec, 'lights', 'both') === v ? ' selected' : ''}>${t('dv.l.' + v)}</option>`).join('')}</select></label>
+          <p class="hint">${t('dv.lights.note')}</p>` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
@@ -1977,6 +1990,7 @@ function buildDevices() {
     el.querySelector('.dev-rev')?.addEventListener('change', e => setCfg(sec, 'reverse', e.target.checked ? 1 : 0));
     el.querySelector('.dev-token')?.addEventListener('change', e => { const v = e.target.value.replace(/\D/g, ''); e.target.value = v; setCfg(sec, 'key', v); });
     el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
+    el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
     el.querySelector('.dev-mode')?.addEventListener('change', e => {
       setCfg(sec, 'mode', e.target.value);
       el.querySelector('.dev-mode-note').textContent = t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour');

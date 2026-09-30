@@ -14,7 +14,7 @@ Every fake prints what it receives (frames per second, a sample colour), so a de
     Yeelight 127.0.0.1       (TCP 55443, music mode)
     Hue      127.0.0.1:8081  (pairing succeeds on the second try, 3 colour lights)
     Elgato   127.0.0.1       (Key Light, HTTP 9123, found by mDNS) and 127.0.0.1:9124 (Light Strip, colour)
-    Divoom   127.0.0.1:8082  (Times Gate, LocalToken 1234)
+    Divoom   127.0.0.1:8082  (Times Gate, LocalToken 1234), 127.0.0.1:8083 (Times Frame)
 """
 import json, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -365,6 +365,18 @@ class DivoomHttp(BaseHTTPRequestHandler):
             self.reply({'error_code': 0})
         else: self.reply({'error_code': 1})
 
+# Divoom Times Frame: GET with the JSON as its body, answers {"ReturnCode": ...}; its lights' command is unknown,
+# so it refuses SetRGBInfo the way it refuses any command it lacks
+class DivoomFrameHttp(DivoomHttp):
+    def do_POST(self): self.send_error(404)
+    def do_GET(self):
+        body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
+        if self.path != '/divoom_api': self.send_error(404); return
+        c = body.get('Command')
+        log('divoom-frame', f"{c}")
+        if c == 'Channel/GetAllConf': self.reply({'ReturnCode': 0, 'ReturnMessage': '', 'Brightness': 70, 'DeviceId': 300256986})
+        else: self.reply({'ReturnCode': 1, 'ReturnMessage': 'Only accept JSON parameters'})
+
 def serve(cls, port, tag):
     try:
         ThreadingHTTPServer(('', port), cls).serve_forever()
@@ -378,7 +390,8 @@ FAKES = {
     'hue': lambda: serve(HueHttp, 8081, 'hue'),
     'elgato': lambda: [threading.Thread(target=serve, args=(elgato_http('Elgato Light Strip', True), 9124, 'elgato'), daemon=True).start(),
                        serve(elgato_http('Elgato Key Light Air', False), 9123, 'elgato')],
-    'divoom': lambda: serve(DivoomHttp, 8082, 'divoom'),
+    'divoom': lambda: [threading.Thread(target=serve, args=(DivoomFrameHttp, 8083, 'divoom-frame'), daemon=True).start(),
+                       serve(DivoomHttp, 8082, 'divoom')],
     'mdns': lambda: mdns_responder([b'_wled', b'_hue', b'_elg']),
 }
 

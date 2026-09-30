@@ -55,6 +55,8 @@ const STATE = {
       { id: 9, kind: 'openrgb', title: 'OpenRGB', name: 'Front fans', host: '127.0.0.1', sub: 1, leds: 16, per_led: 1, online: 1, enabled: 1, type: 'fan', info: 'OpenRGB · Fan hub · cooler' },
       { id: 10, kind: 'openrgb', title: 'OpenRGB', name: 'Mouse', host: '127.0.0.1', sub: 5, leds: 3, per_led: 1, online: 1, enabled: 1, type: 'mouse', info: 'OpenRGB · Mouse · mouse' },
       { id: 11, kind: 'elgato', title: 'Elgato', name: 'Key Light Air', host: '192.168.1.80', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'keylight', info: 'Elgato Key Light Air · fw 1.0.3' },
+      { id: 12, kind: 'divoom', title: 'Divoom', name: 'Times Gate', host: '300183039', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'gate', info: 'Divoom · hardware 400 · lights' },
+      { id: 13, kind: 'divoom', title: 'Divoom', name: 'TimesFrame', host: '300256986', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'frame', info: 'Times Frame · lights' },
     ],
     found: [
       { kind: 'wled', title: 'WLED', host: '192.168.1.60', sub: -1, name: 'Desk strip', leds: 60, info: 'WLED 0.14.4', added: 1 },
