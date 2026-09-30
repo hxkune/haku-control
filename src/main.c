@@ -26,6 +26,7 @@
 #define ID_GPU_ON    1206
 #define ID_LIGHTS_ON 1207
 #define ID_NANO_ON   1300   // + controller 0..NANO_MAX-1
+#define ID_PRESET    1400   // + preset number 1..PRESET_MAX
 #define WM_REHOTKEY  (WM_APP + 2)
 #define WM_REMOTE_CMD (WM_APP + 3)
 #define SAVE_TIMER   1
@@ -444,6 +445,7 @@ static void set_effect(int fx) {
     if (fx != cur_effect && fx == effect_index("off")) prev_effect = cur_effect;
     cur_effect = fx; effects_reset();
     LeaveCriticalSection(&cs);
+    if (cfg_get("general", "preset", NULL)) cfg_set("general", "preset", "");   // a preset is no longer what shows
     cfg_set_and_save("general", "effect", g_effects[fx].id);
     update_tip();
     ui_refresh();
@@ -459,6 +461,96 @@ static void set_brightness_ex(float b, int save_now) {
 }
 
 static void set_brightness(float b) { set_brightness_ex(b, 1); ui_refresh(); }
+
+// ---- presets: the whole look saved under a name, [preset.N] (N = 1..PRESET_MAX):
+//   name, effect, palette, speed        the effect and its colours / speed
+//   brightness                          optional: the overall brightness
+//   zones=1, sync, z.<zone>.<key>       optional: every device's own colours (mode, palette, kelvin, brightness,
+//                                       effect of each [zone.*]); applying clears what other zones had
+// [general] preset=N marks the one showing; changing the effect or its colours clears it.
+static const char *const ZONE_KEYS[] = { "mode", "palette", "kelvin", "brightness", "effect" };
+
+int app_preset_save(int id, const char *name, int with_bri, int with_zones) {
+    char sec[24];
+    if (id <= 0 || id > PRESET_MAX) {   // a new one: the first free number
+        id = 0;
+        for (int i = 1; i <= PRESET_MAX && !id; i++) { snprintf(sec, sizeof(sec), "preset.%d", i); if (!cfg_get(sec, "effect", NULL)) id = i; }
+        if (!id) return 0;
+    }
+    snprintf(sec, sizeof(sec), "preset.%d", id);
+    char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(sec, "name", ""));
+    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
+    if (!nm[0]) snprintf(nm, sizeof(nm), "Preset %d", id);
+    cfg_remove_section(sec);
+    const char *eff = g_effects[cur_effect].id;
+    cfg_set(sec, "name", nm);
+    cfg_set(sec, "effect", eff);
+    const char *pal = cfg_get(eff, "palette", cfg_get("general", "palette", ""));
+    if (*pal) cfg_set(sec, "palette", pal);
+    cfg_set(sec, "speed", cfg_get(eff, "speed", cfg_get("general", "speed", "5")));
+    if (with_bri) cfg_set(sec, "brightness", cfg_get("general", "brightness", "100"));
+    if (with_zones) {
+        cfg_set(sec, "zones", "1");
+        cfg_set(sec, "sync", cfg_get("general", "sync", "1"));
+        char zs[64][64]; int nz = cfg_sections("zone.", zs, 64);
+        for (int z = 0; z < nz; z++)
+            for (int k = 0; k < (int)(sizeof(ZONE_KEYS) / sizeof(ZONE_KEYS[0])); k++) {
+                const char *v = cfg_get(zs[z], ZONE_KEYS[k], "");
+                if (!*v) continue;
+                char key[96]; snprintf(key, sizeof(key), "z.%s.%s", zs[z], ZONE_KEYS[k]);
+                cfg_set(sec, key, v);
+            }
+    }
+    char v[8]; snprintf(v, sizeof(v), "%d", id);
+    cfg_set("general", "preset", v);
+    cfg_save_if_dirty();
+    logf_("preset %d saved: %s (%s)%s%s", id, nm, eff, with_bri ? ", brightness" : "", with_zones ? ", device colours" : "");
+    return id;
+}
+
+void app_preset_apply(int id) {
+    char sec[24]; snprintf(sec, sizeof(sec), "preset.%d", id);
+    const char *eff = cfg_get(sec, "effect", NULL);
+    if (!eff) return;
+    int fx = effect_index(eff);
+    char e[32]; snprintf(e, sizeof(e), "%s", g_effects[fx].id);
+    const char *pal = cfg_get(sec, "palette", "");
+    if (*pal) cfg_set(e, "palette", pal);
+    const char *sp = cfg_get(sec, "speed", "");
+    if (*sp) cfg_set(e, "speed", sp);
+    if (cfg_geti(sec, "zones", 0)) {
+        char zs[64][64]; int nz = cfg_sections("zone.", zs, 64);
+        for (int z = 0; z < nz; z++)
+            for (int k = 0; k < (int)(sizeof(ZONE_KEYS) / sizeof(ZONE_KEYS[0])); k++)
+                if (cfg_get(zs[z], ZONE_KEYS[k], NULL)) cfg_set(zs[z], ZONE_KEYS[k], "");
+        static cfg_item it[512];
+        int n = cfg_items(sec, it, 512);
+        for (int i = 0; i < n; i++) {
+            if (_strnicmp(it[i].key, "z.", 2)) continue;
+            char zone[64]; snprintf(zone, sizeof(zone), "%s", it[i].key + 2);
+            char *dot = strrchr(zone, '.');
+            if (!dot) continue;
+            *dot = 0;
+            cfg_set(zone, dot + 1, it[i].val);
+        }
+        cfg_set("general", "sync", cfg_get(sec, "sync", "1"));
+    }
+    const char *br = cfg_get(sec, "brightness", "");
+    if (*br) set_brightness_ex((float)atof(br) / 100.0f, 0);
+    app_config_changed(0);
+    set_effect(fx);
+    char v[8]; snprintf(v, sizeof(v), "%d", id);
+    cfg_set_and_save("general", "preset", v);
+    ui_refresh_state();
+    logf_("preset %d: %s", id, cfg_get(sec, "name", ""));
+}
+
+void app_preset_delete(int id) {
+    char sec[24]; snprintf(sec, sizeof(sec), "preset.%d", id);
+    cfg_remove_section(sec);
+    if (cfg_geti("general", "preset", 0) == id) cfg_set("general", "preset", "");
+    cfg_save_if_dirty();
+}
 
 // ---- interface for the settings window (ui_web.cpp); all called on the UI thread
 void  app_set_effect(int fx) { set_effect(fx); }
@@ -579,6 +671,8 @@ void app_set(const char *s, const char *k, const char *v) {
     if (!_stricmp(s, "general") && !_stricmp(k, "fps")) { int f = atoi(v); fps = f < 5 ? 5 : f > 60 ? 60 : f; }
     if (!_stricmp(s, "hotkeys") || !_stricmp(s, "general")) PostMessageW(hwnd, WM_REHOTKEY, 0, 0);   // also refreshes the tray tip (language)
     if (!_strnicmp(s, "nanoleaf", 8) && (!_stricmp(k, "rotate") || !_stricmp(k, "flip"))) nano_relayout();
+    if (cfg_geti("general", "preset", 0) && (!_strnicmp(s, "zone.", 5) && _stricmp(k, "type") ? 1 :
+        !_stricmp(s, g_effects[cur_effect].id) && (!_stricmp(k, "palette") || !_stricmp(k, "speed")))) cfg_set("general", "preset", "");
     if (!_strnicmp(s, "dev.", 4)) { cfg_save_if_dirty(); ext_reload(); }
     if (!_stricmp(s, "remote")) { cfg_save_if_dirty(); remote_apply(); }
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
@@ -654,6 +748,14 @@ static void show_menu(void) {
         AppendMenuW(mb, MF_STRING | ((int)(brightness * 100 + 0.5f) == levels[i] ? MF_CHECKED : 0), ID_BRIGHT + levels[i], s);
     }
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+    HMENU mp = CreatePopupMenu(); int np = 0, cur_p = cfg_geti("general", "preset", 0);
+    for (int i = 1; i <= PRESET_MAX; i++) {
+        char sec[24]; snprintf(sec, sizeof(sec), "preset.%d", i);
+        if (!cfg_get(sec, "effect", NULL)) continue;
+        wchar_t w[80]; MultiByteToWideChar(CP_UTF8, 0, cfg_get(sec, "name", "Preset"), -1, w, 80);
+        AppendMenuW(mp, MF_STRING | (i == cur_p ? MF_CHECKED : 0), ID_PRESET + i, w); np++;
+    }
+    if (np) AppendMenuW(m, MF_POPUP, (UINT_PTR)mp, TR(L"Presets", L"Пресеты")); else DestroyMenu(mp);
     AppendMenuW(m, MF_POPUP, (UINT_PTR)mb, TR(L"Brightness", L"Яркость"));
     AppendMenuW(m, MF_STRING | (ram_on ? MF_CHECKED : 0), ID_RAM_ON, TR(L"Memory lighting", L"Подсветка памяти"));
     AppendMenuW(m, MF_STRING | (gpu_on ? MF_CHECKED : 0), ID_GPU_ON, TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты"));
@@ -755,6 +857,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (id == ID_RAM_ON) app_toggle_device("ram_enabled");
         else if (id == ID_GPU_ON) app_toggle_device("gpu_enabled");
         else if (id == ID_LIGHTS_ON) app_toggle_device("lights_enabled");
+        else if (id > ID_PRESET && id <= ID_PRESET + PRESET_MAX) app_preset_apply(id - ID_PRESET);
         else if (id >= ID_NANO_ON && id < ID_NANO_ON + NANO_MAX) { char key[32]; nano_key(id - ID_NANO_ON, key, sizeof(key)); app_toggle_device(key); }
         else if (id == ID_SETTINGS) open_in_editor(cfg_path());
         else if (id == ID_LOG) app_open("log");

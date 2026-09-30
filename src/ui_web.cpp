@@ -94,6 +94,12 @@ static void on_message(const std::string &js) {
     else if (cmd == "toggle") { app_toggle_device(field(js, "k").c_str()); post_status(); }
     else if (cmd == "power") { app_power(); post_status(); }
     else if (cmd == "pair") { nano_pair_start(); post_status(); }
+    else if (cmd == "preset") { app_preset_apply(atoi(field(js, "id").c_str())); post_state(); }
+    else if (cmd == "preset_save") {
+        app_preset_save(atoi(field(js, "id").c_str()), field(js, "name").c_str(), atoi(field(js, "bri").c_str()), atoi(field(js, "zones").c_str()));
+        post_state();
+    }
+    else if (cmd == "preset_delete") { app_preset_delete(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "nano_forget") { nano_forget(atoi(field(js, "slot").c_str())); post_state(); }
     else if (cmd == "scan") { ext_scan(); post_status(); }
     else if (cmd == "dev_add") {
@@ -216,7 +222,7 @@ static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == FRAME_TIMER) { static char b[64 * 1024]; app_frame_json(b, sizeof(b)); post(b); }
         if (wp == STATUS_TIMER) post_status();
         return 0;
-    case WM_UI_REFRESH: post_status(); return 0;
+    case WM_UI_REFRESH: if (wp) post_state(); else post_status(); return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: the taskbar button gets the matching mark
         if (lp && !wcscmp((const wchar_t *)lp, L"ImmersiveColorSet")) SendMessageW(h, WM_SETICON, ICON_BIG, (LPARAM)app_icon(1));
@@ -290,5 +296,6 @@ extern "C" void ui_open(HINSTANCE inst) {
 }
 
 extern "C" void ui_refresh(void) { if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 0, 0); }
+extern "C" void ui_refresh_state(void) { if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 1, 0); }
 
 extern "C" int ui_is_dialog_message(MSG *m) { (void)m; return 0; }

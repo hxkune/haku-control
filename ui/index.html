@@ -76,6 +76,7 @@
         <div class="mood-pal" id="mood-pal"></div>
         <div class="mood-info"><b id="mood-name"></b><small id="mood-fx"></small></div>
         <button class="btn small ghost" id="mood-again" type="button"><span data-i18n="mood.again">Another</span></button>
+        <button class="btn small ghost" id="mood-save" type="button"><span data-i18n="mood.save">Save as preset</span></button>
         <button class="btn small primary" id="mood-apply" type="button"><span data-i18n="mood.apply">Apply</span></button>
       </div>
       <p class="mood-msg" id="mood-msg"></p>
@@ -404,6 +405,23 @@
 
 <!-- first start: a short walk through what was found -->
 <!-- a device's settings, opened from the preview on the Effects tab -->
+<div class="sheet-wrap pdlg-wrap hidden" id="pdlg">
+  <form class="card pdlg" id="pdlg-form" role="dialog" aria-modal="true" autocomplete="off">
+    <h3 id="pdlg-title"></h3>
+    <p class="muted" id="pdlg-what"></p>
+    <div class="mood-pal pdlg-pal" id="pdlg-pal"></div>
+    <label class="num"><span data-i18n="preset.name">Name</span><input type="text" id="pdlg-name" maxlength="40" spellcheck="false"></label>
+    <label class="check"><input type="checkbox" id="pdlg-zones"><span></span><em data-i18n="preset.zones">Each device's own colours</em></label>
+    <label class="check"><input type="checkbox" id="pdlg-bri"><span></span><em data-i18n="preset.bri">Brightness</em></label>
+    <div class="btn-row">
+      <button class="btn primary" type="submit" id="pdlg-save"><span></span></button>
+      <button class="btn ghost hidden" type="button" id="pdlg-retake"><span data-i18n="preset.retake">Take the current look</span></button>
+      <span class="grow"></span>
+      <button class="btn danger small hidden" type="button" id="pdlg-del"><span></span></button>
+      <button class="btn ghost" type="button" id="pdlg-cancel"><span data-i18n="cancel">Cancel</span></button>
+    </div>
+  </form>
+</div>
 <div class="sheet-wrap hidden" id="sheet">
   <div class="card sheet" role="dialog" aria-modal="true">
     <div class="sheet-head" id="sheet-head">

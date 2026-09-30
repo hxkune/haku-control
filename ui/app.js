@@ -396,22 +396,103 @@ function buildEffects() {
     const b = document.createElement('button');
     b.className = 'fx'; b.dataset.id = e.id;
     b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><span class="num-i">${String(n + 1).padStart(2, '0')}</span></div><small>${t('short.' + e.id)}</small><canvas></canvas>`;
-    b.addEventListener('click', () => { S.effect = e.id; send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect(); });
+    b.addEventListener('click', () => { S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect(); });
     grid.appendChild(b);
   });
+  // own presets after the effects, then the + tile that saves the current look
+  presets().forEach(P => {
+    const b = document.createElement('button');
+    b.className = 'fx preset'; b.dataset.preset = P.id;
+    const sub = [fxName(P.effect)].concat(P.bri ? [P.bri + '%'] : [], P.zones ? [t('preset.sub.zones')] : []).join(' · ');
+    b.innerHTML = `<div class="top"><b>${esc(P.name)}</b><span class="num-i">P${P.id}</span><i class="pmenu" title="${t('preset.edit')}">···</i></div><small>${esc(sub)}</small><canvas></canvas>`;
+    b.addEventListener('click', e => {
+      if (e.target.closest('.pmenu')) { presetDialog(P.id); return; }
+      S.effect = P.effect; setCfgLocal('general', 'preset', String(P.id));
+      if (P.palette) setCfgLocal(P.effect, 'palette', P.palette);
+      if (P.speed) setCfgLocal(P.effect, 'speed', P.speed);
+      send({ cmd: 'preset', id: String(P.id) });
+      renderEffectSide(); markEffect();
+    });
+    b.addEventListener('contextmenu', e => { e.preventDefault(); presetDialog(P.id); });
+    grid.appendChild(b);
+  });
+  if (presets().length < 32) {
+    const add = document.createElement('button');
+    add.className = 'fx add'; add.title = t('preset.new');
+    add.innerHTML = `<span class="plus">+</span><b>${t('preset.add')}</b><small>${t('preset.add.sub')}</small>`;
+    add.addEventListener('click', () => presetDialog(0));
+    grid.appendChild(add);
+  }
   markEffect();
 }
+// [preset.N] sections of the settings (the core saves and applies them, see main.c)
+function presets() {
+  return Object.keys(S.cfg).map(k => /^preset\.(\d+)$/.exec(k)).filter(m => m && S.cfg[m[0]].effect).map(m => {
+    const c = S.cfg[m[0]];
+    return { id: +m[1], name: c.name || 'Preset ' + m[1], effect: c.effect, palette: c.palette || '', speed: c.speed || '', bri: c.brightness || '', zones: c.zones === '1' };
+  }).sort((a, b) => a.id - b.id);
+}
+// the preset that is showing: [general] preset, while its effect is the current one
+function activePreset() {
+  const id = +cv('general', 'preset', 0), P = id && presets().find(p => p.id === id);
+  return P && P.effect === S.effect ? P : null;
+}
 function markEffect() {
-  $$('.fx').forEach(b => b.classList.toggle('on', b.dataset.id === S.effect));
+  const P = activePreset();
+  $$('.fx').forEach(b => b.classList.toggle('on', b.dataset.preset ? !!P && +b.dataset.preset === P.id : !P && b.dataset.id === S.effect));
   const off = S.effect === 'off';
   $('#power').classList.toggle('off', off);
   $('#power span').textContent = off ? t('power.on') : t('power.off');
   updateBrand();
 }
+// ---- preset dialog: id 0 = save the current look as a new preset; otherwise rename, re-take or delete that one
+const PDLG = { id: 0 };
+function presetDialog(id, name) {
+  const P = id ? presets().find(p => p.id === id) : null;
+  PDLG.id = P ? P.id : 0;
+  $('#pdlg-title').textContent = P ? t('preset.edit') : t('preset.new');
+  $('#pdlg-name').value = P ? P.name : name || '';
+  $('#pdlg-name').placeholder = t('preset.name.ph');
+  $('#pdlg-bri').checked = P ? !!P.bri : false;
+  $('#pdlg-zones').checked = P ? P.zones : $$('.zone').some(z => cv(z.dataset.zone, 'mode', 'effect') !== 'effect' || cv(z.dataset.zone, 'effect', ''));
+  $('#pdlg-what').textContent = P ? t('preset.saved', fxName(P.effect)) : t('preset.now', activePreset() ? activePreset().name : fxName(S.effect));
+  $('#pdlg-save span').textContent = t(P ? 'preset.rename' : 'preset.save');
+  $('#pdlg-retake').classList.toggle('hidden', !P);
+  const del = $('#pdlg-del'); del.classList.toggle('hidden', !P); del.classList.remove('confirm'); del.querySelector('span').textContent = t('preset.delete');
+  $('#pdlg').classList.remove('hidden');
+  const sw = $('#pdlg-pal'), pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(S.effect);
+  sw.innerHTML = pal.map(c => `<i style="background:${c}"></i>`).join('');
+  setTimeout(() => { $('#pdlg-name').focus(); $('#pdlg-name').select(); }, 30);
+}
+const closePresetDialog = () => $('#pdlg').classList.add('hidden');
+const pdlgName = () => $('#pdlg-name').value.replace(/[;#\[\]=]/g, ' ').trim();
+$('#pdlg-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = pdlgName(), bri = $('#pdlg-bri').checked ? '1' : '0', zones = $('#pdlg-zones').checked ? '1' : '0';
+  if (PDLG.id) {   // edit: the name (and which parts it keeps) change; the saved look stays until "take the current look"
+    const P = presets().find(p => p.id === PDLG.id);
+    if (name && P && name !== P.name) setCfg('preset.' + PDLG.id, 'name', name);
+  } else send({ cmd: 'preset_save', id: '0', name, bri, zones });
+  closePresetDialog();
+});
+$('#pdlg-retake').addEventListener('click', () => {
+  send({ cmd: 'preset_save', id: String(PDLG.id), name: pdlgName(), bri: $('#pdlg-bri').checked ? '1' : '0', zones: $('#pdlg-zones').checked ? '1' : '0' });
+  closePresetDialog();
+});
+$('#pdlg-del').addEventListener('click', () => {
+  const b = $('#pdlg-del');
+  if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.querySelector('span').textContent = t('preset.delete.sure'); return; }
+  send({ cmd: 'preset_delete', id: String(PDLG.id) });
+  closePresetDialog();
+});
+$('#pdlg-cancel').addEventListener('click', closePresetDialog);
+$('#pdlg').addEventListener('pointerdown', e => { if (e.target.id === 'pdlg') closePresetDialog(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#pdlg').classList.contains('hidden')) closePresetDialog(); });
+
 function renderEffectSide() {
-  const id = S.effect;
-  $('#fx-name').textContent = fxName(id);
-  $('#fx-desc').textContent = t('desc.' + id);
+  const id = S.effect, P = activePreset();
+  $('#fx-name').textContent = P ? P.name : fxName(id);
+  $('#fx-desc').textContent = (P ? t('preset.based', fxName(id)) + ' ' : '') + t('desc.' + id);
   $('#fx-pal-field').classList.toggle('hidden', id === 'off');
   renderPalette($('#fx-pal'), id, false, effPal(id));
   const hasSpeed = !['static', 'off', 'temperature'].includes(id);
@@ -513,11 +594,15 @@ function animate(now) {
   if (tab !== 'effects' || now - lastPrev < 33) return;
   lastPrev = now;
   const t = (now - t0) / 1000;
+  const PR = presets();
   for (const b of $$('.fx')) {
-    const id = b.dataset.id, cvs = b.querySelector('canvas');
+    const cvs = b.querySelector('canvas'); if (!cvs) continue;
+    const P = b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null, id = P ? P.effect : b.dataset.id;
+    if (!id) continue;
     if (cvs.width !== cvs.clientWidth * devicePixelRatio) { cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio; }
-    const spd = +cv(id, 'speed', cv('general', 'speed', 5)) / 5;
-    drawStrip(cvs, preview(id, effPal(id).map(hex2rgb), t * spd, 28));
+    const pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(id);
+    const spd = +(P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5))) / 5;
+    drawStrip(cvs, preview(id, pal.map(hex2rgb), t * spd, 28));
   }
 }
 requestAnimationFrame(animate);
@@ -1477,7 +1562,7 @@ function updateMood() {
   const busy = !!M.busy || MOOD.pending;
   $('#mood-in').placeholder = t('mood.ph');
   $('#mood').classList.toggle('busy', busy);
-  $('#mood-go').disabled = $('#mood-again').disabled = $('#mood-apply').disabled = busy;
+  $('#mood-go').disabled = $('#mood-again').disabled = $('#mood-apply').disabled = $('#mood-save').disabled = busy;
   const has = (M.colors || []).length > 1;
   $('#mood-out').classList.toggle('hidden', !has);
   if (has) {
@@ -1494,6 +1579,7 @@ function updateMood() {
 }
 $('#mood-form').addEventListener('submit', e => { e.preventDefault(); askMood(false); });
 $('#mood-again').addEventListener('click', () => askMood(true));
+$('#mood-save').addEventListener('click', () => { $('#mood-apply').click(); presetDialog(0, (S.mood || {}).name || ''); });
 $('#mood-apply').addEventListener('click', () => {
   const M = S.mood || {};
   if (!(M.colors || []).length) return;

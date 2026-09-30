@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 
-#define MAX_LINES 1024
+#define MAX_LINES 4096   // presets with device colours take a few dozen lines each
 #define LINE_LEN  256
 
 static char     lines[MAX_LINES][LINE_LEN];
@@ -174,6 +174,47 @@ void cfg_remove_section(const char *section) {
         dirty = 1;
     }
     ReleaseSRWLockExclusive(&lock);
+}
+
+// Keys and values of one section, in file order; copies, so the caller may change the config meanwhile.
+int cfg_items(const char *section, cfg_item *out, int max) {
+    int n = 0, in = 0;
+    AcquireSRWLockShared(&lock);
+    for (int i = 0; i < nlines && n < max; i++) {
+        char tmp[LINE_LEN]; strcpy_s(tmp, LINE_LEN, lines[i]);
+        char *s = trim(tmp);
+        if (*s == '#' || *s == 0) continue;
+        char *c = strchr(s, ';'); if (c) *c = 0;
+        s = trim(s);
+        if (*s == '[') { char *e = strchr(s, ']'); if (e) *e = 0; in = _stricmp(trim(s + 1), section) == 0; continue; }
+        char *eq = strchr(s, '=');
+        if (!in || !eq) continue;
+        *eq = 0;
+        snprintf(out[n].key, sizeof(out[n].key), "%s", trim(s));
+        snprintf(out[n].val, sizeof(out[n].val), "%s", trim(eq + 1));
+        n++;
+    }
+    ReleaseSRWLockShared(&lock);
+    return n;
+}
+
+// Names of the sections that start with prefix (case-insensitive), in file order.
+int cfg_sections(const char *prefix, char (*out)[64], int max) {
+    int n = 0, pl = (int)strlen(prefix);
+    AcquireSRWLockShared(&lock);
+    for (int i = 0; i < nlines && n < max; i++) {
+        char tmp[LINE_LEN]; strcpy_s(tmp, LINE_LEN, lines[i]);
+        char *s = trim(tmp);
+        if (*s != '[') continue;
+        char *e = strchr(s, ']'); if (e) *e = 0;
+        s = trim(s + 1);
+        if (_strnicmp(s, prefix, pl)) continue;
+        int dup = 0;
+        for (int k = 0; k < n; k++) if (!_stricmp(out[k], s)) dup = 1;
+        if (!dup) snprintf(out[n++], 64, "%s", s);
+    }
+    ReleaseSRWLockShared(&lock);
+    return n;
 }
 
 void cfg_save_if_dirty(void) {

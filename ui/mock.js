@@ -50,6 +50,8 @@ const STATE = {
     lava: { palette: '#FF2D00, #FF9000, #B0006A', speed: '3' }, breathe: { palette: '#00C8FF, #FF2D95', speed: '3' },
     temperature: { palette: '#0050FF, #00FF80, #FFB000, #FF0020', cold: '35', hot: '75' }, static: { palette: '#7A3CFF' },
     'zone.light1': { mode: 'white', kelvin: '3200', brightness: '70' }, 'zone.gpu': { mode: 'palette', palette: '#00FFD5, #0068FF', effect: 'lava' }, 'zone.nanoleaf': { effect: 'breathe' },
+    'preset.1': { name: 'Evening', effect: 'lava', palette: '#FF3300, #FF8800, #CC1100', speed: '3', brightness: '60', zones: '1' },
+    'preset.2': { name: 'Cyberpunk', effect: 'comet', palette: '#00E5FF, #FF00A8, #7B2CFF', speed: '7' },
     hotkeys: { next: 'Ctrl+Alt+Right', prev: 'Ctrl+Alt+Left', off: 'Ctrl+Alt+Down', brighter: 'Ctrl+Alt+PageUp', dimmer: 'Ctrl+Alt+PageDown' } },
 };
 const pal = [[0,200,255],[122,60,255],[255,45,149]];

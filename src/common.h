@@ -57,6 +57,9 @@ int         cfg_palette(const char *section, rgbf *out, int max);
 const wchar_t *cfg_path(void);
 int         cfg_json(char *out, int cap);   // whole config as {"section":{"key":"value"}}
 void        cfg_remove_section(const char *section);
+typedef struct { char key[64], val[256]; } cfg_item;
+int         cfg_items(const char *section, cfg_item *out, int max);      // a section's keys, copied
+int         cfg_sections(const char *prefix, char (*out)[64], int max);  // section names starting with prefix
 
 // ---- effects.c
 typedef struct {
@@ -196,6 +199,11 @@ void  app_data_path(const wchar_t *name, wchar_t *out);   // %APPDATA%\haku-cont
 int   app_ru(void);                      // [general] lang=ru (English otherwise)
 #define TR(en, ru) (app_ru() ? (ru) : (en))
 void  app_set_effect(int fx);
+#define PRESET_MAX 32
+int   app_preset_save(int id, const char *name, int with_brightness, int with_zones);   // id 0: new; returns its number
+void  app_preset_apply(int id);
+void  app_preset_delete(int id);
+void  ui_refresh_state(void);   // the open window gets the whole state (settings included) again
 void  app_set_brightness(float b, int save_now);
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
 void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled
