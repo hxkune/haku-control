@@ -368,13 +368,17 @@ class DivoomHttp(BaseHTTPRequestHandler):
 # Divoom Times Frame: GET with the JSON as its body, answers {"ReturnCode": ...}; its lights' command is unknown,
 # so it refuses SetRGBInfo the way it refuses any command it lacks
 class DivoomFrameHttp(DivoomHttp):
-    def do_POST(self): self.send_error(404)
+    def reply(self, obj):   # pretty-printed with tabs, as the real one answers
+        b = json.dumps(obj, indent='\t', separators=(',', ':\t')).encode()
+        self.send_response(200); self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_POST(self): self.do_GET()
     def do_GET(self):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
         if self.path != '/divoom_api': self.send_error(404); return
         c = body.get('Command')
         log('divoom-frame', f"{c}")
-        if c == 'Channel/GetAllConf': self.reply({'ReturnCode': 0, 'ReturnMessage': '', 'Brightness': 70, 'DeviceId': 300256986})
+        if c == 'Channel/GetAllConf': self.reply({'Command': c, 'DeviceId': 300256986, 'PacketFlag': 1788914207, 'DeviceType': 'Frame', 'ReturnCode': 0, 'ReturnMessage': ''})
         else: self.reply({'ReturnCode': 1, 'ReturnMessage': 'Only accept JSON parameters'})
 
 def serve(cls, port, tag):

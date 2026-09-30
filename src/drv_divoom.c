@@ -19,11 +19,21 @@
 
 typedef struct { char name[64], ip[64]; long long id; } dv_lan_t;
 
-// the devices Divoom's service sees on this network; [divoom] lan_url= points it elsewhere (tests)
+// the devices Divoom's service sees on this network; [divoom] lan_url= points it elsewhere (tests). It now and
+// then answers with an empty list (asked twice in a row, say), so its last full answer stands in for 10 minutes.
+static int lan_fetch(dv_lan_t *out, int max);
 static int lan_list(dv_lan_t *out, int max) {
-    static char js[16384];
+    static dv_lan_t last[16]; static int nlast; static DWORD at;
     static SRWLOCK lk = SRWLOCK_INIT;
     AcquireSRWLockExclusive(&lk);
+    int n = lan_fetch(out, max);
+    if (n) { nlast = min(n, 16); memcpy(last, out, nlast * sizeof(dv_lan_t)); at = GetTickCount(); }
+    else if (nlast && GetTickCount() - at < 10 * 60 * 1000) { n = min(nlast, max); memcpy(out, last, n * sizeof(dv_lan_t)); }
+    ReleaseSRWLockExclusive(&lk);
+    return n;
+}
+static int lan_fetch(dv_lan_t *out, int max) {
+    static char js[16384];
     const char *url = cfg_get("divoom", "lan_url", "https://app.divoom-gz.com/Device/ReturnSameLANDevice");
     int st = web_call(url, "{}", js, sizeof(js)), n = 0;
     const char *p = strstr(js, "\"DeviceList\"");
@@ -40,7 +50,6 @@ static int lan_list(dv_lan_t *out, int max) {
         p = e + 1;
     }
     if (st != 200) logf_("divoom: device list answered %d: %.200s", st, js);
-    ReleaseSRWLockExclusive(&lk);
     return n;
 }
 
@@ -103,7 +112,7 @@ static int answer_ok(const char *buf) {
         if (!e) continue;
         e = strchr(e, ':');
         if (!e) return 0;
-        for (e++; *e == ' ' || *e == '"'; e++) {}
+        for (e++; *e == ' ' || *e == '\t' || *e == '\r' || *e == '\n' || *e == '"'; e++) {}   // the Frame pretty-prints
         return *e == '0';
     }
     return 0;
@@ -171,12 +180,14 @@ static int dv_open(ext_dev *d) {
         free(v); return 0;
     }
     if (!d->fails) logf_("dev.%d (divoom %s): %s :%d%s answers: %.300s", d->id, v->ip, EP[v->ep].method, v->port, EP[v->ep].path, buf);
-    if (v->ep != EP_FRAME && !answer_ok(buf)) {
+    // the Times Frame answers {"ReturnCode":0,"DeviceType":"Frame"...} (to a POST as well); the Times Gate error_code
+    int frame = strstr(buf, "\"ReturnCode\"") && !strstr(buf, "\"error_code\"");
+    if (!frame && !answer_ok(buf)) {
         // reachable, but the token is missing or wrong: shown on the device card until it is fixed
         snprintf(d->info, sizeof(d->info), "%s", d->key[0] ? "LocalToken is wrong: see the Divoom app" : "Enter the LocalToken from the Divoom app");
         free(v); return 0;
     }
-    if (v->ep == EP_FRAME) {
+    if (frame) {
         // the Times Frame: what it says to the light command (and to reading its lights) is logged, once
         char f[400], ans[1024];
         int s2 = call(v, "\"Command\":\"Channel/GetRGBInfo\"", ans, sizeof(ans));
