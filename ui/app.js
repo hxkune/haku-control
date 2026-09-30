@@ -14,7 +14,7 @@ const fxName = id => t('fx.' + id);
 // the ARGB header zone can be given its own name (e.g. "Water block")
 const stripName = () => cv('layout', 'strip_name', '') || t('pc.block');
 const TABS = ['effects', 'pc', 'nano', 'bulbs', 'devices', 'settings'];
-const HOTKEYS = ['next', 'prev', 'off', 'brighter', 'dimmer'];
+const HOTKEYS = ['next', 'prev', 'off', 'brighter', 'dimmer', 'profile'];
 const PRESETS = ['#FF0000', '#FF5A00', '#FFA000', '#FFE000', '#9DFF00', '#00FF6A', '#00FFD5', '#00C8FF',
   '#0068FF', '#2B2BFF', '#7A3CFF', '#B400FF', '#FF00D4', '#FF2D95', '#FFB070', '#FFFFFF'];
 const DEFAULT_PAL = ['#00C8FF', '#7A3CFF', '#FF2D95'];
@@ -483,6 +483,90 @@ function markEffect() {
   $('#power span').textContent = off ? t('power.on') : t('power.off');
   updateBrand();
 }
+// ---- profiles: a whole setup per scenario (gaming, work, night...): the effect and colours, which devices are on,
+// the preview's widgets. [profile.N] name / hotkey; the core keeps each setup and switches them (see main.c), so
+// the page only lists them. The switcher sits above the preview: a click on a profile switches to it, the pencil
+// renames it (and sets its hotkey or deletes it), "Save profile" makes a new one from what is set up now.
+const PROFILE_MAX = 16;
+const PROF = { edit: 0, sure: false };
+const profSec = id => 'profile.' + id;
+function profiles() {
+  return Object.keys(S.cfg).map(k => /^profile\.(\d+)$/.exec(k)).filter(m => m && S.cfg[m[0]].name)
+    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '' })).sort((a, b) => a.id - b.id);
+}
+const profCur = () => profiles().find(p => p.id === +cv('general', 'profile', 0)) || null;
+const PENCIL = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>';
+function renderProfiles() {
+  const P = profiles(), cur = profCur();
+  $('#prof-cur').textContent = cur ? cur.name : t('prof.none');
+  $('#prof-btn').classList.toggle('none', !cur);
+  if (PROF.edit && !P.some(p => p.id === PROF.edit)) PROF.edit = 0;
+  $('#prof-list').innerHTML = P.map(p => p.id === PROF.edit ? `
+    <div class="prof-edit" data-id="${p.id}">
+      <input type="text" class="prof-name" maxlength="40" spellcheck="false" value="${esc(p.name)}">
+      <div class="hk"><span>${t('prof.hotkey')}</span><button class="kbd" type="button"></button></div>
+      <div class="btns">
+        <button class="btn danger small prof-del" type="button"><span>${t(PROF.sure ? 'prof.delete.sure' : 'prof.delete')}</span></button>
+        <span class="grow"></span>
+        <button class="btn primary small prof-ok" type="button"><span>${t('prof.done')}</span></button>
+      </div>
+    </div>` : `
+    <div class="prof-row${cur && cur.id === p.id ? ' on' : ''}" data-id="${p.id}">
+      <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
+      <button class="prof-ren" type="button" title="${t('prof.rename')}">${PENCIL}</button>
+    </div>`).join('') || `<p class="hint">${t('prof.empty')}</p>`;
+  const ed = $('#prof-list .prof-edit');
+  if (ed) hotkeyButton($('.kbd', ed), profSec(PROF.edit), 'hotkey');
+  const full = P.length >= PROFILE_MAX;
+  $('#prof-save').classList.toggle('hidden', full || !$('#prof-new').classList.contains('hidden'));
+  $('#prof-new-name').placeholder = t('prof.name.ph');
+}
+function profMenu(open) {
+  const m = $('#prof-menu');
+  if (open === undefined) open = m.classList.contains('hidden');
+  m.classList.toggle('hidden', !open);
+  $('#prof-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (!open) { profRenameDone(); $('#prof-new').classList.add('hidden'); PROF.edit = 0; PROF.sure = false; }
+  renderProfiles();
+}
+// the name typed in the pencil's box goes in when it is left
+function profRenameDone() {
+  const ed = $('#prof-list .prof-edit'); if (!ed) return;
+  const id = +ed.dataset.id, v = $('.prof-name', ed).value.replace(/[;#\[\]=]/g, ' ').trim();
+  if (v && v !== cv(profSec(id), 'name', '')) setCfg(profSec(id), 'name', v);
+}
+$('#prof-btn').addEventListener('click', e => { e.stopPropagation(); profMenu(); });
+$('#prof-list').addEventListener('click', e => {
+  const row = e.target.closest('[data-id]'); if (!row) return;
+  const id = +row.dataset.id;
+  if (e.target.closest('.prof-ren')) { profRenameDone(); PROF.edit = id; PROF.sure = false; renderProfiles(); const i = $('#prof-list .prof-name'); i.focus(); i.select(); return; }
+  if (e.target.closest('.prof-item')) { profMenu(false); if (id !== +cv('general', 'profile', 0)) { setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } return; }
+  if (e.target.closest('.prof-ok')) { profRenameDone(); PROF.edit = 0; renderProfiles(); return; }
+  if (e.target.closest('.prof-del')) {
+    if (!PROF.sure) { PROF.sure = true; profRenameDone(); renderProfiles(); return; }
+    send({ cmd: 'profile_delete', id: String(id) }); PROF.edit = 0; PROF.sure = false;
+  }
+});
+$('#prof-list').addEventListener('keydown', e => {
+  if (!e.target.classList.contains('prof-name')) return;
+  if (e.key === 'Enter') { e.preventDefault(); profRenameDone(); PROF.edit = 0; renderProfiles(); }
+  if (e.key === 'Escape') { e.stopPropagation(); PROF.edit = 0; renderProfiles(); }
+});
+$('#prof-save').addEventListener('click', () => {
+  profRenameDone(); PROF.edit = 0;
+  $('#prof-new').classList.remove('hidden'); $('#prof-new-name').value = '';
+  renderProfiles(); $('#prof-new-name').focus();
+});
+$('#prof-new').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('#prof-new-name').value.replace(/[;#\[\]=]/g, ' ').trim() || t('prof.n', profiles().length + 1);
+  send({ cmd: 'profile_save', id: '0', name });
+  $('#prof-new').classList.add('hidden'); renderProfiles();
+});
+$('#prof-new-name').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); $('#prof-new').classList.add('hidden'); renderProfiles(); } });
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#prof') && !$('#prof-menu').classList.contains('hidden')) profMenu(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#prof-menu').classList.contains('hidden') && !$('.kbd.rec')) profMenu(false); });
+
 // ---- preset window: "+" opens it with the look that shows now as the starting point, and every part (effect,
 // colours, speed, brightness, the devices' own colours) can be changed before it is added. A preset's "···" (or a
 // right click) opens the same window with that preset's values. Saving shows the preset.
@@ -884,7 +968,7 @@ function drawNano(c, X, Y, W, H, N) {
 
 // What a light is, for its picture in the preview (and, for LAN devices, how effects lay out on it; see
 // device_type in devices.c). LAN devices get it from the core (chosen, or guessed from the model); bulbs: [zone.lightN] type.
-const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse'];
+const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse', 'keylight'];
 const bulbType = i => { const v = cv('zone.light' + (i + 1), 'type', 'bulb'); return FIXTURES.includes(v) ? v : 'bulb'; };
 
 // One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
@@ -979,6 +1063,18 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
       rr(c, x + 3 * dp + k * kw + kw * 0.1, y + 3 * dp + r * kh + kh * 0.12, kw * 0.8, kh * 0.76, 1.5 * dp);
       c.fillStyle = on && lit(kc) ? kc : '#1d1d1d'; c.fill();
     }
+  } else if (type === 'keylight') {   // a key light: a flat glowing panel on a pole, tilted a little towards you
+    const h = H * 0.86, pw = Math.min(W * 0.62, h * 0.9), ph = pw * 0.62, top = cy - h / 2;
+    metal(cx - dp, top + ph * 0.8, 2 * dp, h - ph * 0.8 - 3 * dp);
+    metal(cx - pw * 0.28, top + h - 3 * dp, pw * 0.56, 3 * dp);
+    c.save();
+    if (glow) { c.shadowColor = glow; c.shadowBlur = 26 * dp; }
+    rr(c, cx - pw / 2, top, pw, ph, 3 * dp); c.fillStyle = '#141414'; c.fill();
+    c.restore();
+    const g = c.createLinearGradient(0, top, 0, top + ph), k = col(0), on1 = on && lit(k);
+    g.addColorStop(0, on1 ? '#fff' : '#202020'); g.addColorStop(1, on1 ? k : '#171717');
+    rr(c, cx - pw / 2 + 3 * dp, top + 3 * dp, pw - 6 * dp, ph - 6 * dp, 2 * dp); c.fillStyle = g; c.globalAlpha = on1 ? .92 : 1; c.fill(); c.globalAlpha = 1;
+    c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; rr(c, cx - pw / 2, top, pw, ph, 3 * dp); c.stroke();
   } else if (type === 'mouse') {   // a mouse from above, its logo and side light
     const h = Math.min(H * 0.85, W * 1.2), w = h * 0.58, x = cx - w / 2, y = cy - h / 2;
     c.save();
@@ -1039,7 +1135,7 @@ function heroAnim(key, target) {
 // controller, each bulb, each LAN device), laid out in rows; a row that is full wraps to the next one. Full rows
 // stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
 // animates the height) and tiles glide to their new places when something is added or removed.
-const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8 };
+const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1 };
 function heroItems(all) {
   const hide = all ? [] : heroHidden(), items = [];
   if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
@@ -1881,29 +1977,32 @@ $('#quit').addEventListener('click', () => send({ cmd: 'quit' }));
 
 function buildHotkeys() {
   $('#hotkeys').innerHTML = HOTKEYS.map(k => `<div class="hk"><span>${t('hk.' + k)}</span><button class="kbd" data-hk="${k}"></button></div>`).join('');
-  $$('[data-hk]').forEach(b => {
-    const show = () => { const v = cv('hotkeys', b.dataset.hk, ''); b.textContent = v ? v.replace(/\+/g, ' + ') : t('hk.none'); b.classList.toggle('empty', !v); };
-    show();
-    b.addEventListener('click', () => {
-      $$('.kbd.rec').forEach(x => x !== b && x.blur());
-      b.classList.add('rec'); b.textContent = t('hk.press');
-      const onKey = e => {
-        e.preventDefault(); e.stopPropagation();
-        if (e.key === 'Escape') return done();
-        if (e.key === 'Backspace') { setCfg('hotkeys', b.dataset.hk, ''); return done(); }
-        const map = { ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down', PageUp: 'PageUp', PageDown: 'PageDown', Home: 'Home', End: 'End' };
-        let key = map[e.key] || (/^F\d{1,2}$/.test(e.key) ? e.key : '');
-        if (!key && /^(Key|Digit)[A-Z0-9]$/.test(e.code)) key = e.code.slice(-1);
-        if (!key) return;   // modifier alone: keep waiting
-        const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Win'].filter(Boolean);
-        if (!mods.length && !/^F\d/.test(key)) return;
-        setCfg('hotkeys', b.dataset.hk, [...mods, key].join('+'));
-        done();
-      };
-      const done = () => { document.removeEventListener('keydown', onKey, true); b.classList.remove('rec'); show(); };
-      document.addEventListener('keydown', onKey, true);
-      b.addEventListener('blur', done, { once: true });
-    });
+  $$('[data-hk]').forEach(b => hotkeyButton(b, 'hotkeys', b.dataset.hk));
+}
+
+// a .kbd button that shows [s] k as a shortcut; a click records a new one (Esc cancels, Backspace clears)
+function hotkeyButton(b, s, k) {
+  const show = () => { const v = cv(s, k, ''); b.textContent = v ? v.replace(/\+/g, ' + ') : t('hk.none'); b.classList.toggle('empty', !v); };
+  show();
+  b.addEventListener('click', () => {
+    $$('.kbd.rec').forEach(x => x !== b && x.blur());
+    b.classList.add('rec'); b.textContent = t('hk.press');
+    const onKey = e => {
+      e.preventDefault(); e.stopPropagation();
+      if (e.key === 'Escape') return done();
+      if (e.key === 'Backspace') { setCfg(s, k, ''); return done(); }
+      const map = { ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down', PageUp: 'PageUp', PageDown: 'PageDown', Home: 'Home', End: 'End' };
+      let key = map[e.key] || (/^F\d{1,2}$/.test(e.key) ? e.key : '');
+      if (!key && /^(Key|Digit)[A-Z0-9]$/.test(e.code)) key = e.code.slice(-1);
+      if (!key) return;   // modifier alone: keep waiting
+      const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Win'].filter(Boolean);
+      if (!mods.length && !/^F\d/.test(key)) return;
+      setCfg(s, k, [...mods, key].join('+'));
+      done();
+    };
+    const done = () => { document.removeEventListener('keydown', onKey, true); b.classList.remove('rec'); show(); };
+    document.addEventListener('keydown', onKey, true);
+    b.addEventListener('blur', done, { once: true });
   });
 }
 
@@ -2078,7 +2177,7 @@ if (wv) wv.addEventListener('message', e => {
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;
     LANG = cv('general', 'lang', 'en') === 'ru' ? 'ru' : 'en';
     applyI18n();
-    buildEffects(); buildHotkeys(); syncToggles();
+    buildEffects(); buildHotkeys(); syncToggles(); renderProfiles();
     S.effect = null;           // force a full refresh
     S.bulbs = [];
     devSig = '';

@@ -29,10 +29,11 @@
 #define ID_LIGHTS_ON 1207
 #define ID_NANO_ON   1300   // + controller 0..NANO_MAX-1
 #define ID_PRESET    1400   // + preset number 1..PRESET_MAX
+#define ID_PROFILE   1500   // + profile number 1..PROFILE_MAX
 #define WM_REHOTKEY  (WM_APP + 2)
 #define WM_REMOTE_CMD (WM_APP + 3)
 #define SAVE_TIMER   1
-enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN };
+enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN, HK_PROFILE_NEXT, HK_PROFILE = 100 /* + profile number */ };
 
 static const char default_ini[] =
 "; haku control settings. The file is re-read automatically after it is saved.\r\n"
@@ -80,6 +81,8 @@ static const char default_ini[] =
 "off=Ctrl+Alt+Down\r\n"
 "brighter=Ctrl+Alt+PageUp\r\n"
 "dimmer=Ctrl+Alt+PageDown\r\n"
+"; the next profile (each profile can have its own hotkey too, [profile.N] hotkey)\r\n"
+"profile=\r\n"
 "\r\n"
 "[layout]\r\n"
 "; LEDs on the ARGB header (JRAINBOW1) and a name for it, e.g. Water block\r\n"
@@ -594,6 +597,155 @@ void app_preset_delete(int id) {
     cfg_save_if_dirty();
 }
 
+// ---- profiles: a whole setup kept for one scenario (a game, work, a film, the night): the effect and its colours,
+// every device's own colours, which devices are on, the brightness, and the preview's layout (its groups, what it
+// hides). [profile.N] (N = 1..PROFILE_MAX) holds its name and hotkey, the setup itself is in profiles\N.ini
+// (sections and keys as in settings.ini). [general] profile=N is the one in use: its setup IS the live settings,
+// written to its file when another profile takes over; a new profile takes them as they are.
+static int is_effect_section(const char *s) {
+    for (int i = 0; i < g_effect_count; i++) if (!_stricmp(s, g_effects[i].id)) return 1;
+    return 0;
+}
+
+// does [sec] key belong to a profile's setup
+static int profile_key(const char *sec, const char *key) {
+    if (!_stricmp(sec, "general")) return !_stricmp(key, "effect") || !_stricmp(key, "brightness") || !_stricmp(key, "sync") || !_stricmp(key, "preset");
+    if (!_stricmp(sec, "layout")) { size_t n = strlen(key); return n > 8 && !_stricmp(key + n - 8, "_enabled"); }
+    if (!_stricmp(sec, "ui")) return !_stricmp(key, "hero_hide");
+    if (!_strnicmp(sec, "dev.", 4)) return !_stricmp(key, "enabled");
+    if (!_strnicmp(sec, "group.", 6)) return 1;
+    if (!_strnicmp(sec, "zone.", 5)) {
+        for (int k = 0; k < (int)(sizeof(ZONE_KEYS) / sizeof(ZONE_KEYS[0])); k++) if (!_stricmp(key, ZONE_KEYS[k])) return 1;
+        return 0;
+    }
+    return is_effect_section(sec);
+}
+
+static void profile_file(int id, wchar_t *out) {
+    wchar_t n[40]; swprintf(n, 40, L"profiles\\%d.ini", id);
+    app_data_path(n, out);
+}
+
+static int profile_exists(int id) {
+    char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
+    return id >= 1 && id <= PROFILE_MAX && cfg_get(sec, "name", NULL) != NULL;
+}
+
+// the live setup -> profiles\N.ini
+static void profile_capture(int id) {
+    static char secs[512][64]; static cfg_item it[512];
+    wchar_t p[MAX_PATH]; app_data_path(L"profiles", p); CreateDirectoryW(p, NULL);
+    profile_file(id, p);
+    FILE *f = _wfopen(p, L"wb");
+    if (!f) { logf_("profile %d: can't write its file", id); return; }
+    fprintf(f, "; haku control profile %d: its setup, written when another profile takes over\r\n", id);
+    int ns = cfg_sections("", secs, 512);
+    for (int s = 0; s < ns; s++) {
+        int n = cfg_items(secs[s], it, 512), head = 0;
+        for (int i = 0; i < n; i++) {
+            if (!it[i].val[0] || !profile_key(secs[s], it[i].key)) continue;
+            if (!head++) fprintf(f, "[%s]\r\n", secs[s]);
+            fprintf(f, "%s=%s\r\n", it[i].key, it[i].val);
+        }
+    }
+    fclose(f);
+}
+
+// profiles\N.ini -> the live setup; what the file doesn't have goes back to its default
+static int profile_load(int id) {
+    typedef struct { char sec[64], key[64], val[256]; } entry;
+    static entry e[4096]; static char secs[512][64]; static cfg_item it[512];
+    wchar_t p[MAX_PATH]; profile_file(id, p);
+    FILE *f = _wfopen(p, L"rb");
+    if (!f) { logf_("profile %d: its file is missing", id); return 0; }
+    int n = 0; char line[400], sec[64] = "";
+    while (n < 4096 && fgets(line, sizeof(line), f)) {
+        char *s = line, *end = s + strlen(s);
+        while (end > s && (end[-1] == '\r' || end[-1] == '\n' || end[-1] == ' ')) *--end = 0;
+        if (*s == ';' || !*s) continue;
+        if (*s == '[') { char *c = strchr(s, ']'); if (c) *c = 0; snprintf(sec, sizeof(sec), "%s", s + 1); continue; }
+        char *eq = strchr(s, '=');
+        if (!eq || !sec[0]) continue;
+        *eq = 0;
+        if (!profile_key(sec, s)) continue;
+        snprintf(e[n].sec, 64, "%s", sec); snprintf(e[n].key, 64, "%s", s); snprintf(e[n].val, 256, "%s", eq + 1);
+        n++;
+    }
+    fclose(f);
+    // the preview's groups are replaced whole; everything else of the setup is emptied, then filled from the file
+    int ns = cfg_sections("group.", secs, 512);
+    for (int s = 0; s < ns; s++) cfg_remove_section(secs[s]);
+    ns = cfg_sections("", secs, 512);
+    for (int s = 0; s < ns; s++) {
+        int m = cfg_items(secs[s], it, 512);
+        for (int i = 0; i < m; i++) if (it[i].val[0] && profile_key(secs[s], it[i].key)) cfg_set(secs[s], it[i].key, "");
+    }
+    for (int i = 0; i < n; i++) cfg_set(e[i].sec, e[i].key, e[i].val);
+    return 1;
+}
+
+void app_profile_apply(int id) {
+    if (!profile_exists(id)) return;
+    int cur = cfg_geti("general", "profile", 0);
+    if (cur != id && profile_exists(cur)) profile_capture(cur);   // the one in use keeps what was changed in it
+    if (!profile_load(id)) return;
+    char pre[16]; snprintf(pre, sizeof(pre), "%s", cfg_get("general", "preset", ""));
+    int fx = effect_index(cfg_get("general", "effect", "flow"));
+    set_brightness_ex(clampf(cfg_getf("general", "brightness", 100) / 100.0f, 0.05f, 1), 0);
+    char v[8]; snprintf(v, sizeof(v), "%d", id);
+    cfg_set("general", "profile", v);
+    app_config_changed(1);
+    ext_reload();
+    set_effect(fx);
+    cfg_set("general", "preset", pre);   // (set_effect clears it)
+    cfg_save_if_dirty();
+    ui_refresh_state();
+    char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
+    logf_("profile %d: %s", id, cfg_get(sec, "name", ""));
+}
+
+// id 0: a new profile with the setup as it is now, which becomes the one in use (the profile used before keeps
+// what it had when it was last left); else rewrites profile id with the setup as it is now.
+// Returns its number (0: all PROFILE_MAX are taken).
+int app_profile_save(int id, const char *name) {
+    char sec[24];
+    if (!profile_exists(id)) {
+        id = 0;
+        for (int i = 1; i <= PROFILE_MAX && !id; i++) if (!profile_exists(i)) id = i;
+        if (!id) return 0;
+    }
+    snprintf(sec, sizeof(sec), "profile.%d", id);
+    char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(sec, "name", ""));
+    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
+    if (!nm[0]) snprintf(nm, sizeof(nm), "Profile %d", id);
+    cfg_set(sec, "name", nm);
+    profile_capture(id);
+    char v[8]; snprintf(v, sizeof(v), "%d", id);
+    cfg_set("general", "profile", v);
+    cfg_save_if_dirty();
+    PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
+    logf_("profile %d saved: %s", id, nm);
+    return id;
+}
+
+void app_profile_delete(int id) {
+    char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
+    cfg_remove_section(sec);
+    wchar_t p[MAX_PATH]; profile_file(id, p); DeleteFileW(p);
+    if (cfg_geti("general", "profile", 0) == id) cfg_set("general", "profile", "");   // the setup stays as it is
+    cfg_save_if_dirty();
+    PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
+}
+
+// the next profile after the one in use (hotkey)
+static void profile_next(void) {
+    int cur = cfg_geti("general", "profile", 0);
+    for (int k = 1; k <= PROFILE_MAX; k++) {
+        int id = (cur + k - 1) % PROFILE_MAX + 1;
+        if (profile_exists(id)) { if (id != cur) app_profile_apply(id); return; }
+    }
+}
+
 // ---- interface for the settings window (ui_web.cpp); all called on the UI thread
 void  app_set_effect(int fx) { set_effect(fx); }
 void  app_set_brightness(float b, int save_now) { set_brightness_ex(b, save_now); }
@@ -715,7 +867,7 @@ void app_set(const char *s, const char *k, const char *v) {
     cfg_set(s, k, v);
     SetTimer(hwnd, SAVE_TIMER, 500, NULL);
     if (!_stricmp(s, "general") && !_stricmp(k, "fps")) { int f = atoi(v); fps = f < 5 ? 5 : f > 60 ? 60 : f; }
-    if (!_stricmp(s, "hotkeys") || !_stricmp(s, "general")) PostMessageW(hwnd, WM_REHOTKEY, 0, 0);   // also refreshes the tray tip (language)
+    if (!_stricmp(s, "hotkeys") || !_stricmp(s, "general") || !_strnicmp(s, "profile.", 8)) PostMessageW(hwnd, WM_REHOTKEY, 0, 0);   // also refreshes the tray tip (language)
     if (!_strnicmp(s, "nanoleaf", 8) && (!_stricmp(k, "rotate") || !_stricmp(k, "flip"))) nano_relayout();
     if (cfg_geti("general", "preset", 0) && (!_strnicmp(s, "zone.", 5) && _stricmp(k, "type") ? 1 :
         !_stricmp(s, g_effects[cur_effect].id) && (!_stricmp(k, "palette") || !_stricmp(k, "speed")))) cfg_set("general", "preset", "");
@@ -803,6 +955,14 @@ static void show_menu(void) {
         AppendMenuW(mp, MF_STRING | (i == cur_p ? MF_CHECKED : 0), ID_PRESET + i, w); np++;
     }
     if (np) AppendMenuW(m, MF_POPUP, (UINT_PTR)mp, TR(L"Presets", L"Пресеты")); else DestroyMenu(mp);
+    HMENU mf = CreatePopupMenu(); int nf = 0, cur_f = cfg_geti("general", "profile", 0);
+    for (int i = 1; i <= PROFILE_MAX; i++) {
+        if (!profile_exists(i)) continue;
+        char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", i);
+        wchar_t w[80]; MultiByteToWideChar(CP_UTF8, 0, cfg_get(sec, "name", "Profile"), -1, w, 80);
+        AppendMenuW(mf, MF_STRING | (i == cur_f ? MF_CHECKED : 0), ID_PROFILE + i, w); nf++;
+    }
+    if (nf) AppendMenuW(m, MF_POPUP, (UINT_PTR)mf, TR(L"Profiles", L"Профили")); else DestroyMenu(mf);
     AppendMenuW(m, MF_POPUP, (UINT_PTR)mb, TR(L"Brightness", L"Яркость"));
     AppendMenuW(m, MF_STRING | (ram_on ? MF_CHECKED : 0), ID_RAM_ON, TR(L"Memory lighting", L"Подсветка памяти"));
     AppendMenuW(m, MF_STRING | (gpu_on ? MF_CHECKED : 0), ID_GPU_ON, TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты"));
@@ -848,13 +1008,22 @@ static int parse_hotkey(const char *s, UINT *mods, UINT *vk) {
 
 static void register_hotkeys(void) {
     static const struct { int id; const char *key; } hk[] = {
-        { HK_NEXT, "next" }, { HK_PREV, "prev" }, { HK_OFF, "off" }, { HK_BUP, "brighter" }, { HK_BDOWN, "dimmer" } };
-    for (int i = 0; i < 5; i++) {
+        { HK_NEXT, "next" }, { HK_PREV, "prev" }, { HK_OFF, "off" }, { HK_BUP, "brighter" }, { HK_BDOWN, "dimmer" },
+        { HK_PROFILE_NEXT, "profile" } };
+    for (int i = 0; i < (int)(sizeof(hk) / sizeof(hk[0])); i++) {
         UnregisterHotKey(hwnd, hk[i].id);
         UINT mods, vk;
         const char *v = cfg_get("hotkeys", hk[i].key, NULL);
         if (v && parse_hotkey(v, &mods, &vk) && !RegisterHotKey(hwnd, hk[i].id, mods, vk))
             logf_("hotkey %s (%s) is taken by another program", hk[i].key, v);
+    }
+    for (int i = 1; i <= PROFILE_MAX; i++) {   // each profile's own
+        UnregisterHotKey(hwnd, HK_PROFILE + i);
+        char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", i);
+        UINT mods, vk;
+        const char *v = profile_exists(i) ? cfg_get(sec, "hotkey", NULL) : NULL;
+        if (v && parse_hotkey(v, &mods, &vk) && !RegisterHotKey(hwnd, HK_PROFILE + i, mods, vk))
+            logf_("hotkey of profile %d (%s) is taken by another program", i, v);
     }
 }
 
@@ -905,6 +1074,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (id == ID_GPU_ON) app_toggle_device("gpu_enabled");
         else if (id == ID_LIGHTS_ON) app_toggle_device("lights_enabled");
         else if (id > ID_PRESET && id <= ID_PRESET + PRESET_MAX) app_preset_apply(id - ID_PRESET);
+        else if (id > ID_PROFILE && id <= ID_PROFILE + PROFILE_MAX) app_profile_apply(id - ID_PROFILE);
         else if (id >= ID_NANO_ON && id < ID_NANO_ON + NANO_MAX) { char key[32]; nano_key(id - ID_NANO_ON, key, sizeof(key)); app_toggle_device(key); }
         else if (id == ID_SETTINGS) open_in_editor(cfg_path());
         else if (id == ID_LOG) app_open("log");
@@ -920,6 +1090,8 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case HK_OFF:  set_effect(cur_effect == off ? prev_effect : off); break;
         case HK_BUP:  set_brightness(brightness + 0.1f); break;
         case HK_BDOWN: set_brightness(brightness - 0.1f); break;
+        case HK_PROFILE_NEXT: profile_next(); break;
+        default: if (wp > HK_PROFILE && wp <= HK_PROFILE + PROFILE_MAX) app_profile_apply((int)wp - HK_PROFILE);
         }
         return 0;
     }

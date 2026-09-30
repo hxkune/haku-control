@@ -18,7 +18,16 @@ const LAYOUTS = {
 };
 const emit = d => L.forEach(f => f({ data: d }));
 window.chrome = { webview: {
-  postMessage(s) { const o = JSON.parse(s); console.log('->', o); if (o.cmd === 'hello') setTimeout(() => emit(STATE), 30); },
+  postMessage(s) {
+    const o = JSON.parse(s); console.log('->', o);
+    if (o.cmd === 'hello') setTimeout(() => emit(STATE), 30);
+    // profiles: kept in the fake settings only (the core keeps the setups)
+    const C = STATE.cfg, G = C.general;
+    if (o.cmd === 'set') (C[o.s] = C[o.s] || {})[o.k] = o.v;
+    if (o.cmd === 'profile') { G.profile = o.id; setTimeout(() => emit(STATE), 120); }
+    if (o.cmd === 'profile_save') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; G.profile = String(n); setTimeout(() => emit(STATE), 60); }
+    if (o.cmd === 'profile_delete') { delete C['profile.' + o.id]; if (G.profile === o.id) G.profile = ''; setTimeout(() => emit(STATE), 60); }
+  },
   addEventListener(t, f) { L.push(f); },
 } };
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
@@ -45,6 +54,7 @@ const STATE = {
       { id: 8, kind: 'openrgb', title: 'OpenRGB', name: 'B550-F', host: '127.0.0.1', sub: 4, leds: 12, per_led: 1, online: 1, enabled: 1, type: 'board', info: 'OpenRGB · ASUS ROG STRIX B550-F GAMING · motherboard' },
       { id: 9, kind: 'openrgb', title: 'OpenRGB', name: 'Front fans', host: '127.0.0.1', sub: 1, leds: 16, per_led: 1, online: 1, enabled: 1, type: 'fan', info: 'OpenRGB · Fan hub · cooler' },
       { id: 10, kind: 'openrgb', title: 'OpenRGB', name: 'Mouse', host: '127.0.0.1', sub: 5, leds: 3, per_led: 1, online: 1, enabled: 1, type: 'mouse', info: 'OpenRGB · Mouse · mouse' },
+      { id: 11, kind: 'elgato', title: 'Elgato', name: 'Key Light Air', host: '192.168.1.80', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'keylight', info: 'Elgato Key Light Air · fw 1.0.3' },
     ],
     found: [
       { kind: 'wled', title: 'WLED', host: '192.168.1.60', sub: -1, name: 'Desk strip', leds: 60, info: 'WLED 0.14.4', added: 1 },
@@ -54,7 +64,7 @@ const STATE = {
     scanning: 0,
     kinds: ['wled:WLED:1', 'openrgb:OpenRGB:1', 'govee:Govee:0', 'lifx:LIFX:0', 'yeelight:Yeelight:0', 'hue:Philips Hue:0', 'wiz:WiZ:0'].map(x => { const [kind, title, p] = x.split(':'); return { kind, title, per_led: +p }; }),
   },
-  cfg: { remote: { enabled: '1' }, general: { palette: '#00C8FF, #7A3CFF, #FF2D95', speed: '5', fps: '30' }, layout: { gpu_leds: '8', board_led: '1', ram_enabled: '1', gpu_enabled: '1', lights_enabled: '1', nanoleaf_enabled: '1' },
+  cfg: { remote: { enabled: '1' }, general: { palette: '#00C8FF, #7A3CFF, #FF2D95', speed: '5', fps: '30', profile: '1' }, 'profile.1': { name: 'Gaming', hotkey: 'Ctrl+Alt+1' }, 'profile.2': { name: 'Work' }, 'profile.3': { name: 'Night' }, layout: { gpu_leds: '8', board_led: '1', ram_enabled: '1', gpu_enabled: '1', lights_enabled: '1', nanoleaf_enabled: '1' },
     caustic: { palette: '#00E5FF, #0060FF, #00FFB0' }, bubbles: { palette: '#001830, #00E5FF, #FFFFFF' }, comet: { palette: '#FFFFFF, #00C8FF, #7A3CFF' },
     lava: { palette: '#FF2D00, #FF9000, #B0006A', speed: '3' }, breathe: { palette: '#00C8FF, #FF2D95', speed: '3' },
     temperature: { palette: '#0050FF, #00FF80, #FFB000, #FF0020', cold: '35', hot: '75' }, static: { palette: '#7A3CFF' },
@@ -78,5 +88,6 @@ setInterval(() => {
   for (let i = 0; i < 3; i++) l.push([102, i, hx(pc(i / 3 - t * .12))]);
   l.push([103, 0, hx(pc(.6 - t * .12))]);
   [[105, 8], [106, 10], [107, 12], [108, 16], [109, 3]].forEach(([k, n], j) => { for (let i = 0; i < n; i++) l.push([k, i, hx(pc(i / n + j * .2 - t * .12))]); });   // PC hardware through OpenRGB
+  l.push([110, 0, 'ffd9b0']);   // the Key Light: warm white
   emit({ type: 'frame', l });
 }, 50);

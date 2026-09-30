@@ -62,6 +62,22 @@
 
   <!-- ============ EFFECTS ============ -->
   <section class="tab active" id="tab-effects">
+    <div class="prof" id="prof">
+      <button class="prof-btn" id="prof-btn" type="button" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        <span class="prof-lbl" data-i18n="prof.label">Profile</span><b id="prof-cur"></b>
+        <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="prof-menu hidden" id="prof-menu">
+        <div class="prof-list" id="prof-list"></div>
+        <form class="prof-new hidden" id="prof-new" autocomplete="off">
+          <input type="text" id="prof-new-name" maxlength="40" spellcheck="false">
+          <button class="btn primary small" type="submit"><span data-i18n="preset.save">Save</span></button>
+        </form>
+        <button class="prof-save" id="prof-save" type="button"><span class="plus">+</span><span data-i18n="prof.save">Save profile</span></button>
+        <p class="hint" data-i18n="prof.note"></p>
+      </div>
+    </div>
     <div class="card hero"><canvas id="hero"></canvas>
       <button class="hero-edit" id="hero-edit" data-i18n-title="hero.edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
       <div class="hero-menu hidden" id="hero-menu"></div>

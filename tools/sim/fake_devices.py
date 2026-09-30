@@ -13,6 +13,7 @@ Every fake prints what it receives (frames per second, a sample colour), so a de
     WiZ      127.0.0.1       (UDP 38899)
     Yeelight 127.0.0.1       (TCP 55443, music mode)
     Hue      127.0.0.1:8081  (pairing succeeds on the second try, 3 colour lights)
+    Elgato   127.0.0.1       (Key Light, HTTP 9123, found by mDNS) and 127.0.0.1:9124 (Light Strip, colour)
 """
 import json, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -311,6 +312,32 @@ class HueHttp(BaseHTTPRequestHandler):
         HUE_RATE.hit(f'{self.path.split("/")[4]} {body}')
         self.reply([{'success': {}}])
 
+# ------------------------------------------------------------------ Elgato (Key Light / Light Strip)
+def elgato_http(product, colour):
+    state = {'on': 1, 'brightness': 40, 'hue': 30.0, 'saturation': 60.0} if colour else {'on': 1, 'brightness': 40, 'temperature': 213}
+    rate = Rate('elgato ' + ('strip' if colour else 'key'))
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def reply(self, obj):
+            b = json.dumps(obj).encode()
+            self.send_response(200); self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+        def do_GET(self):
+            if self.path == '/elgato/accessory-info':
+                self.reply({'productName': product, 'hardwareBoardType': 70 if colour else 53, 'firmwareBuildNumber': 218,
+                            'firmwareVersion': '1.0.3', 'serialNumber': 'CW00SIM000', 'displayName': '', 'features': ['lights']})
+            elif self.path == '/elgato/lights': self.reply({'numberOfLights': 1, 'lights': [state]})
+            else: self.send_error(404)
+        def do_PUT(self):
+            body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
+            if self.path != '/elgato/lights' or 'lights' not in body: self.send_error(400); return
+            state.update(body['lights'][0])
+            l = state
+            k = f"{round(1e6 / l['temperature'])} K" if 'temperature' in l else f"hue {l['hue']} sat {l['saturation']}"
+            rate.hit(f"on={l['on']} bri={l['brightness']} {k}")
+            self.reply({'numberOfLights': 1, 'lights': [state]})
+    return H
+
 def serve(cls, port, tag):
     try:
         ThreadingHTTPServer(('', port), cls).serve_forever()
@@ -322,7 +349,9 @@ FAKES = {
                      threading.Thread(target=serve, args=(WledHttp, 80, 'wled'), daemon=True).start(), wled_udp()],
     'openrgb': openrgb, 'govee': govee, 'lifx': lifx, 'yeelight': yeelight, 'wiz': wiz,
     'hue': lambda: serve(HueHttp, 8081, 'hue'),
-    'mdns': lambda: mdns_responder([b'_wled', b'_hue']),
+    'elgato': lambda: [threading.Thread(target=serve, args=(elgato_http('Elgato Light Strip', True), 9124, 'elgato'), daemon=True).start(),
+                       serve(elgato_http('Elgato Key Light Air', False), 9123, 'elgato')],
+    'mdns': lambda: mdns_responder([b'_wled', b'_hue', b'_elg']),
 }
 
 if __name__ == '__main__':

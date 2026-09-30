@@ -199,7 +199,7 @@ static void handle(SOCKET c) {
     }
     if (!strcmp(method, "POST") && !strcmp(path, "/api/cmd")) {
         char cmd[32] = ""; json_get_str(body, "cmd", cmd, sizeof(cmd));
-        static const char *allowed[] = { "effect", "brightness", "set", "toggle", "power", "pair", "scan", "dev_add", "dev_remove", "mood", "preset", "preset_save", "preset_delete", "orgb_check" };
+        static const char *allowed[] = { "effect", "brightness", "set", "toggle", "power", "pair", "scan", "dev_add", "dev_remove", "mood", "preset", "preset_save", "preset_delete", "orgb_check", "profile", "profile_save", "profile_delete" };
         int ok = 0;
         for (int i = 0; i < (int)(sizeof(allowed) / sizeof(allowed[0])); i++) if (!strcmp(cmd, allowed[i])) ok = 1;
 #ifdef HAKU_DEV

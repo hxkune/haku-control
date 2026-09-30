@@ -9,6 +9,8 @@ device runs its own effect.
 
 - **Scene-based effects:** flow, caustics, bubbles, comet, lava, breathe, temperature and static.
   Each device can follow the main effect or run its own, with its own palette, colour or white (2700–6000 K).
+- **Profiles for every scenario** (gaming, work, night…): each keeps the effect and colours, which devices are on
+  and the widgets on the Effects page. Switch them above the widgets, from the tray, the phone or a hotkey.
 - **Light on resources:** a small C core in the tray (~0.05 % CPU, a few MB of RAM). Unchanged frames are
   never sent. The settings window (WebView2) exists only while it is open.
 - **Behaves like a light switch:** switching a device off in the app really turns it off. When the PC shuts down or sleeps,
@@ -45,6 +47,7 @@ device runs its own effect.
 | LIFX | official LAN protocol | tested against a simulator |
 | Yeelight (with *LAN Control*) | LAN JSON protocol, music mode | tested against a simulator |
 | Philips WiZ | local UDP JSON protocol, no keys | tested against a simulator |
+| Elgato Key Light / Key Light Air / Mini, Ring Light (white), Light Strip (colour) | local HTTP API (port 9123), found by mDNS, no keys; Key Lights start in the White mode | **tested against a simulator only** |
 | Tuya / Smart Life colour lights (Lidl, Gosund, Nous, Teckin…) | local protocol 3.3 / 3.4 / 3.5, keys from your own Tuya cloud project | **experimental: not tested yet** |
 | AiDot Wi-Fi bulbs (e.g. Linkind / "Matter Smart Light Bulb") | local LAN protocol, keys fetched once | verified with RGBTW bulbs |
 
@@ -73,7 +76,7 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
 
 ### Room lights
 
-- **WLED, Hue, Govee, LIFX, Yeelight:** *Devices → Scan network*, then *Add*. Govee and Yeelight need
+- **WLED, Hue, Govee, LIFX, Yeelight, WiZ, Elgato:** *Devices → Scan network*, then *Add*. Govee and Yeelight need
   *LAN Control* switched on in their apps. Hue asks you to press the bridge's link button after adding.
 - **OpenRGB (graphics cards, other boards, RAM, coolers):** install OpenRGB, tick *Start at login*, *Start minimized*
   and *Start server* in its general settings, then *PC → Other PC hardware* lists its controllers (*Add* / *Add all*).
@@ -129,7 +132,7 @@ build.cmd
 Output goes to `bin\`. `build.cmd dev` makes a test build in `bin-dev\`: it keeps its settings in
 `%APPDATA%\haku-control-dev`, runs without admin rights and never touches the motherboard or memory, so it
 can run next to the installed app. Stop it with `scripts\stop.ps1 -Dev`. `python tools/sim/fake_devices.py` starts
-simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue devices on this PC for it to talk to, and
+simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue / Elgato devices on this PC for it to talk to, and
 `python tools/sim/fake_ollama.py` / `fake_nanoleaf.py` / `fake_aidot.py` / `fake_govee_cloud.py` stand-ins for Ollama, a Nanoleaf controller, the AiDot cloud and the Govee cloud.
 
 For UI work without the app, serve `ui\` with any static server and open
