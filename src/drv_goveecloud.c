@@ -13,7 +13,7 @@
 
 typedef struct {
     char sku[24], dev[48], key[80];
-    int  sync, sync_auto, has_bright;
+    int  sync, sync_auto, has_bright, has_dream, dream_off;   // dream_off: screen sync switched off for colours
     HANDLE th, wake;
     volatile LONG run;
     SRWLOCK lk;
@@ -42,6 +42,7 @@ static int load(gcloud_t *g, const char *device) {
     const char *e = strchr(d, '}');
     if (e && strstr(d, "\"dreamview\"") > e) dream = 0;   // the number belongs to the next device
     g->sync = g->sync_auto = dream || !color;
+    g->has_dream = dream;
     SecureZeroMemory(buf, sizeof(buf));
     return 1;
 }
@@ -82,17 +83,19 @@ static unsigned __stdcall worker(void *arg) {
         float iv = cfg_getf(sec, "interval", 3); if (iv < 1) iv = 1;
         int sync = mode_sync(g, sec);
         if (sync != g->sync) {   // mode changed in the window: back to screen sync, or colours from now on
-            g->sync = sync; g->sent_rgb = g->sent_bri = -1;
+            g->sync = sync; g->sent_rgb = g->sent_bri = -1; g->dream_off = 0;
             if (sync && g->sent_on == 1) control(g, "toggle", "dreamViewToggle", 1);
         }
         if (!have || (int)(GetTickCount() - next) < 0) continue;
         int st = 200;
         if (on != g->sent_on) {
             st = control(g, "on_off", "powerSwitch", on);
-            if (st == 200) { g->sent_on = on; if (on && g->sync) control(g, "toggle", "dreamViewToggle", 1); }
+            if (st == 200) { g->sent_on = on; g->dream_off = 0; if (on && g->sync) control(g, "toggle", "dreamViewToggle", 1); }
         }
         if (on && !g->sync && st == 200) {
-            if (rgb != g->sent_rgb) { st = control(g, "color_setting", "colorRgb", rgb); if (st == 200) g->sent_rgb = rgb; }
+            // colours from haku on a sync box: its screen sync goes off first, or it keeps following the screen
+            if (g->has_dream && !g->dream_off) { st = control(g, "toggle", "dreamViewToggle", 0); if (st == 200) { g->dream_off = 1; g->sent_rgb = -1; } }
+            if (st == 200 && rgb != g->sent_rgb) { st = control(g, "color_setting", "colorRgb", rgb); if (st == 200) g->sent_rgb = rgb; }
             if (st == 200 && g->has_bright && abs(bri - g->sent_bri) > 2) { st = control(g, "range", "brightness", bri); if (st == 200) g->sent_bri = bri; }
         }
         next = GetTickCount() + (st == 429 ? 60000 : st != 200 ? 10000 : (DWORD)(iv * 1000));

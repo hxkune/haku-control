@@ -1324,6 +1324,8 @@ function updateBulbs() {
 $('#bulb-smooth').addEventListener('input', e => { const v = (e.target.value / 100).toFixed(2); $('#smooth-val').textContent = v + t('sec'); setCfgSoon('lights', 'smooth', v); });
 $('#bulb-rate').addEventListener('input', e => { $('#rate-val').textContent = e.target.value; setCfgSoon('lights', 'rate', e.target.value); });
 
+// Govee cloud mode as it works out: "auto" is screen sync for devices that have it (a sync box), colours otherwise
+const gcSync = (d, sec) => { const m = cv(sec, 'mode', 'auto'); return m === 'sync' || (m === 'auto' && /screen sync/.test(d.info || '')); };
 // "Type" choices: auto (the core's guess, named) or one of FIXTURES; bulbs offer only the ones a bulb can be in
 function typeOptions(cur, guess, only) {
   const list = only || FIXTURES;
@@ -1359,7 +1361,8 @@ function buildDevices() {
         ${d.per_led ? `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
         ${d.kind === 'goveecloud' ? `<label class="num"><span>${t('gc.mode')}</span><select class="select dev-mode">${['auto', 'sync', 'colour'].map(v =>
-          `<option value="${v}"${cv(sec, 'mode', 'auto') === v ? ' selected' : ''}>${t('gc.' + v)}</option>`).join('')}</select></label>` : ''}
+          `<option value="${v}"${cv(sec, 'mode', 'auto') === v ? ' selected' : ''}>${t('gc.' + v)}</option>`).join('')}</select></label>
+          <p class="hint dev-mode-note">${t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour')}</p>` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
@@ -1372,7 +1375,10 @@ function buildDevices() {
     });
     el.querySelector('.dev-rev')?.addEventListener('change', e => setCfg(sec, 'reverse', e.target.checked ? 1 : 0));
     el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
-    el.querySelector('.dev-mode')?.addEventListener('change', e => setCfg(sec, 'mode', e.target.value));
+    el.querySelector('.dev-mode')?.addEventListener('change', e => {
+      setCfg(sec, 'mode', e.target.value);
+      el.querySelector('.dev-mode-note').textContent = t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour');
+    });
     el.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => {
       const n = Math.max(1, Math.min(512, +(cv(sec, 'leds', 0) > 0 ? cv(sec, 'leds') : d.leds) + +b.dataset.d));
       setCfg(sec, 'leds', n); el.querySelector('.dev-leds').textContent = n;
