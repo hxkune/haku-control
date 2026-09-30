@@ -3,15 +3,18 @@
 const L = [];
 // index.html?mock#tri / #hex: Nanoleaf Light Panels triangles / Shapes hexagons instead of Blocks. Positions are in
 // Nanoleaf layout units (y up) and normalised the way dev_nanoleaf.c does it.
-function mockLayout(shape, pts) {
+function mockLayout(shape, pts) {   // a point's own shape (4th value) wins over shape
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys);
   const w = Math.max(...xs) - x0, h = Math.max(...ys) - y0, span = Math.max(w, h, 1);
-  return { unit: 1 / span, panels: pts.map(([x, y, o]) => [(x - x0 + (span - w) / 2) / span, 1 - (y - y0 + (span - h) / 2) / span, shape, (720 - o) % 360]) };
+  return { unit: 1 / span, panels: pts.map(([x, y, o, sh]) => [(x - x0 + (span - w) / 2) / span, 1 - (y - y0 + (span - h) / 2) / span, sh ?? shape, (720 - o) % 360]) };
 }
 const TRI_H = 150 * Math.sqrt(3) / 2;
 const LAYOUTS = {
   tri: mockLayout(0, [...[0, 1, 2, 3, 4, 5].map(i => [75 * (i + 1), i % 2 ? 2 * TRI_H / 3 : TRI_H / 3, i % 2 ? 0 : 180]), [75, -TRI_H / 3, 0], [150, -2 * TRI_H / 3 + 0, 180]]),
   hex: mockLayout(7, [[0, 0, 0], [116, 0, 0], [232, 0, 0], [58, -100.5, 0], [174, -100.5, 0]]),
+  // a real Blocks wall (NL81): squares (33) and pairs of mini squares (34), turned by its globalOrientation 179
+  blocks: mockLayout(33, [[251, 301, 0], [251, 167, 0], [117, 100, 0], [251, 33, 0], [151, 0, 0, 34], [84, 0, 0, 34], [117, 301, 0], [151, 201, 0, 34], [84, 201, 0, 34]]
+    .map(([x, y, o, sh]) => [-x, -y, o, sh])),
 };
 const emit = d => L.forEach(f => f({ data: d }));
 window.chrome = { webview: {
@@ -19,13 +22,13 @@ window.chrome = { webview: {
   addEventListener(t, f) { L.push(f); },
 } };
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
-const panels = LAY ? LAY.panels : [[.83,.12,33],[.83,.5,33],[.83,.88,33],[.45,.69,33],[.45,.12,33],[.54,.99,34],[.36,.99,34],[.54,.44,34],[.36,.44,34]];
+const panels = (LAY || LAYOUTS.blocks).panels;
 const STATE = {
   type: 'state', autostart: 1, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
   // #multi: a second controller (Shapes hexagons) and a Secretlab MAGRGB strip next to the Blocks
-  nano: { pair: 0, max: 8, ctls: [{ slot: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', model: 'NL81', side: .45, unit: LAY ? LAY.unit : 0, stream: 0, panels }].concat(MULTI ? [
+  nano: { pair: 0, max: 8, ctls: [{ slot: 1, online: 1, ip: '192.168.1.40', name: 'Blocks 1A2B', model: 'NL81', side: .45, unit: (LAY || LAYOUTS.blocks).unit, stream: 0, panels }].concat(MULTI ? [
     { slot: 2, online: 1, ip: '192.168.1.41', name: 'Shapes 77C1', model: 'NL42', side: .3, unit: LAYOUTS.hex.unit, stream: 0, panels: LAYOUTS.hex.panels },
     { slot: 3, online: 1, ip: '192.168.1.42', name: 'Secretlab MAGRGB', model: 'NL72S2', side: .02, unit: 0, stream: 1, panels: Array.from({ length: 41 }, (_, i) => [(40 - i) / 40, .5, 0, 0]) },
   ] : []) },

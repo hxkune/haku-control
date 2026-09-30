@@ -694,6 +694,7 @@ function drawGpu(c, X, Y, W, H) {
 const NANO_SHAPES = {
   0: [3, 150], 8: [3, 134], 9: [3, 67],          // Light Panels triangle, Shapes triangle, Shapes mini triangle
   2: [4, 100], 3: [4, 100], 4: [4, 100],         // Canvas squares
+  33: [4, 134], 34: [4, 67],                     // Blocks square, Blocks mini square (they sit edge to edge)
   7: [6, 67], 14: [6, 134], 15: [6, 33.5],       // Shapes hexagon, Elements hexagon, Elements hexagon corner
   17: [2, 154], 18: [2, 77],                     // Lines (a bar)
 };
