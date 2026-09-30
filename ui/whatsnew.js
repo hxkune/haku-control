@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.17',
+    en: ['Divoom: a scan finds them (through Divoom\'s own service, like the Divoom app), and a device can be added by its Device ID as well as by its IP. The LocalToken is still needed.',
+      'Hidden themes play their animations even when Windows\' animation effects are off (haku\'s own Animations switch still stops them).'],
+    ru: ['Divoom: поиск находит их (через сервис самой Divoom, как приложение Divoom), а добавить устройство можно не только по IP, но и по Device ID. LocalToken по-прежнему нужен.',
+      'Скрытые темы показывают свои анимации, даже когда в Windows выключены эффекты анимации (переключатель «Анимации» в haku их по-прежнему останавливает).'],
+    fr: ['Divoom : une recherche les trouve (via le service de Divoom, comme l\'app Divoom), et un appareil peut être ajouté par son Device ID aussi bien que par son IP. Le LocalToken reste nécessaire.',
+      'Les thèmes cachés jouent leurs animations même quand les effets d\'animation de Windows sont désactivés (l\'interrupteur Animations de haku les arrête toujours).'] },
   { v: '0.3.16',
     en: ['Next to the theme switch there is now a field for secret codes. What they open is for you to find out 👀'],
     ru: ['Рядом с выбором темы появилось поле для секретных кодов. Что они открывают — узнаете сами 👀'],
