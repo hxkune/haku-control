@@ -16,7 +16,7 @@ Every fake prints what it receives (frames per second, a sample colour), so a de
     Elgato   127.0.0.1       (Key Light, HTTP 9123, found by mDNS) and 127.0.0.1:9124 (Light Strip, colour)
     Divoom   127.0.0.1:8082  (Times Gate, LocalToken 1234), 127.0.0.1:8083 (Times Frame)
 """
-import json, socket, struct, sys, threading, time
+import json, os, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOCK = threading.Lock()
@@ -365,6 +365,9 @@ class DivoomHttp(BaseHTTPRequestHandler):
             self.reply({'error_code': 0})
         else: self.reply({'error_code': 1})
 
+# A stand-in so haku's search for the Times Frame's light command can be tested: the real command is not known.
+FRAME_LIGHT_CMD = os.environ.get('FAKE_FRAME_LIGHT_CMD', 'Device/SetLightInfo')
+
 # Divoom Times Frame: GET with the JSON as its body, answers {"ReturnCode": ...}; its lights' command is unknown,
 # so it refuses SetRGBInfo the way it refuses any command it lacks
 class DivoomFrameHttp(DivoomHttp):
@@ -379,6 +382,9 @@ class DivoomFrameHttp(DivoomHttp):
         c = body.get('Command')
         log('divoom-frame', f"{c}")
         if c == 'Channel/GetAllConf': self.reply({'Command': c, 'DeviceId': 300256986, 'PacketFlag': 1788914207, 'DeviceType': 'Frame', 'ReturnCode': 0, 'ReturnMessage': ''})
+        elif c == FRAME_LIGHT_CMD:
+            DIVOOM_RATE.hit(f"frame {c} on={body.get('OnOff')} {body.get('Color')} bri={body.get('Brightness')}")
+            self.reply({'ReturnCode': 0, 'ReturnMessage': ''})
         else: self.reply({'ReturnCode': 1, 'ReturnMessage': 'Only accept JSON parameters'})
 
 def serve(cls, port, tag):

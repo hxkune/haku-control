@@ -91,6 +91,7 @@ static const struct { int port; const char *path, *method; } EP[] = {
 
 typedef struct {
     char ip[64]; int port, ep, have_token; long token;
+    char cmd[40];   // the light command: Channel/SetRGBInfo, or what the Times Frame took ([dev.N] frame_cmd)
     int lights, frame_dark, sent_on, sent_bri, have_sent, fails, lost; char sent_col[8]; DWORD sent_at;
 } dv_t;
 
@@ -129,9 +130,9 @@ static int lights_of(int id) {
 
 static void rgb_fields(dv_t *v, int on, const char *col, int bri, char *f, int cap) {
     int l = v->lights;
-    snprintf(f, cap, "\"Command\":\"Channel/SetRGBInfo\",\"OnOff\":%d,\"Color\":\"%s\",\"ColorCycle\":0,\"Brightness\":%d,"
+    snprintf(f, cap, "\"Command\":\"%s\",\"OnOff\":%d,\"Color\":\"%s\",\"ColorCycle\":0,\"Brightness\":%d,"
              "\"SelectLightIndex\":%d,\"LightList\":[{\"SelectEffect\":%d},{\"SelectEffect\":%d},{\"SelectEffect\":%d}]",
-             on, col, bri, LIGHTS[l].index, LIGHTS[l].l0, LIGHTS[l].l1, LIGHTS[l].l2);
+             v->cmd, on, col, bri, LIGHTS[l].index, LIGHTS[l].l0, LIGHTS[l].l1, LIGHTS[l].l2);
 }
 
 static int dv_open(ext_dev *d) {
@@ -146,7 +147,7 @@ static int dv_open(ext_dev *d) {
         const char *last = cfg_get(sec, "ip", "");
         if (at >= 0) {
             if (!d->fails) logf_("dev.%d (divoom %s): device ID %s is at %s", d->id, host, host, l[at].ip);
-            if (strcmp(last, l[at].ip)) cfg_set(sec, "ip", l[at].ip);
+            if (strcmp(last, l[at].ip)) { cfg_set(sec, "ip", l[at].ip); cfg_save_if_dirty(); }
             snprintf(host, sizeof(host), "%s", l[at].ip);
         } else if (*last) {
             if (!d->fails) logf_("dev.%d (divoom %s): not in Divoom's list right now, trying its last IP %s", d->id, host, last);
@@ -187,15 +188,50 @@ static int dv_open(ext_dev *d) {
         snprintf(d->info, sizeof(d->info), "%s", d->key[0] ? "LocalToken is wrong: see the Divoom app" : "Enter the LocalToken from the Divoom app");
         free(v); return 0;
     }
+    snprintf(v->cmd, sizeof(v->cmd), "Channel/SetRGBInfo");
     if (frame) {
-        // the Times Frame: what it says to the light command (and to reading its lights) is logged, once
+        // The Times Frame's light command is documented nowhere, and it refuses the Times Gate's ("Only accept JSON
+        // parameters" is its word for an unknown command). Once per run it is asked a few likely names: readers
+        // first (harmless, and their answer would name the fields), then setters with the Times Gate's fields.
+        // Every answer is logged; a setter it takes is kept ([dev.N] frame_cmd) and used for the colours.
+        static const char *const GETS[] = { "Channel/GetRGBInfo", "Device/GetRGBInfo", "Channel/GetLightInfo", "Device/GetLightInfo",
+            "Device/GetLedInfo", "Channel/GetAmbientLight", "Device/GetAmbientLight", "Device/GetRGBLight", "Device/GetLightEffect",
+            "Device/GetAllConf", "Sys/GetConf" };
+        static const char *const SETS[] = { "Device/SetRGBInfo", "Channel/SetLightInfo", "Device/SetLightInfo", "Channel/SetAmbientLight",
+            "Device/SetAmbientLight", "Channel/SetRGBLight", "Device/SetRGBLight", "Device/SetLightColor", "Device/SetLightEffect",
+            "Device/SetLedInfo" };
+        static int probed[EXT_MAX + 1];
         char f[400], ans[1024];
-        int s2 = call(v, "\"Command\":\"Channel/GetRGBInfo\"", ans, sizeof(ans));
-        if (!d->fails) logf_("dev.%d (divoom frame): Channel/GetRGBInfo answered %d: %.300s", d->id, s2, ans);
-        rgb_fields(v, 1, "#FFFFFF", 50, f, sizeof(f));
-        s2 = call(v, f, ans, sizeof(ans));
-        if (!d->fails) logf_("dev.%d (divoom frame): Channel/SetRGBInfo answered %d: %.300s", d->id, s2, ans);
-        v->frame_dark = !(s2 == 200 && answer_ok(ans));
+        const char *kept = cfg_get(sec, "frame_cmd", "");
+        int took = 0;
+        if (*kept && strlen(kept) < sizeof(v->cmd) && !strpbrk(kept, "\"\\")) {
+            snprintf(v->cmd, sizeof(v->cmd), "%s", kept);
+            rgb_fields(v, 1, "#FFFFFF", 50, f, sizeof(f));
+            int s2 = call(v, f, ans, sizeof(ans));
+            took = s2 == 200 && answer_ok(ans);
+            if (!d->fails) logf_("dev.%d (divoom frame): %s (kept) answered %d: %.200s", d->id, v->cmd, s2, ans);
+        }
+        if (!took && d->id >= 0 && d->id <= EXT_MAX && !probed[d->id]) {
+            probed[d->id] = 1;
+            char line[1200] = ""; int k = 0;
+            for (int i = 0; i < (int)(sizeof(GETS) / sizeof(GETS[0])); i++) {
+                char c[80]; snprintf(c, sizeof(c), "\"Command\":\"%s\"", GETS[i]);
+                int s2 = call(v, c, ans, sizeof(ans));
+                if (s2 == 200 && answer_ok(ans)) logf_("dev.%d (divoom frame): %s answers: %.400s", d->id, GETS[i], ans);
+                else k += snprintf(line + k, sizeof(line) - k, "%s%s %d", k ? ", " : "", GETS[i], s2);
+            }
+            for (int i = 0; i < (int)(sizeof(SETS) / sizeof(SETS[0])) && !took; i++) {
+                snprintf(v->cmd, sizeof(v->cmd), "%s", SETS[i]);
+                rgb_fields(v, 1, "#FFFFFF", 50, f, sizeof(f));
+                int s2 = call(v, f, ans, sizeof(ans));
+                if (s2 == 200 && answer_ok(ans)) {
+                    took = 1; cfg_set(sec, "frame_cmd", SETS[i]); cfg_save_if_dirty();
+                    logf_("dev.%d (divoom frame): %s is taken: %.200s", d->id, SETS[i], ans);
+                } else k += snprintf(line + k, sizeof(line) - k, "%s%s %d", k ? ", " : "", SETS[i], s2);
+            }
+            logf_("dev.%d (divoom frame): unknown to it (HTTP 200 = \"Only accept JSON parameters\"): %s", d->id, line);
+        }
+        v->frame_dark = !took;
         snprintf(d->info, sizeof(d->info), "%s", v->frame_dark ? "Times Frame · its lights don't take haku's colours yet (see the log)" : "Times Frame · lights");
     } else {
         snprintf(d->info, sizeof(d->info), "Divoom · %s%s", v->ep == EP_402 ? "hardware 402" : "hardware 400",
