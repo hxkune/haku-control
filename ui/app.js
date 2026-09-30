@@ -149,7 +149,9 @@ function veritySays(i) {
   setTimeout(() => d.remove(), 7200);
   verityNext = Date.now() + (3 + Math.random() * 4) * 60000;
 }
-const stillMotion = () => document.body.classList.contains('calm') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+// only haku's own Animations switch stops them, like everything else here (not Windows' animation effects,
+// which many turn off for speed)
+const stillMotion = () => document.body.classList.contains('calm');
 
 // verity's code: for about three seconds the window breaks down (it shakes, tears, flips colours and themes, jumps
 // between tabs, the ball shows both its faces), then the theme is on and verity says hello. Without animations

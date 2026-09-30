@@ -980,7 +980,6 @@ body.calm nav button { transition: none; }
 @keyframes bubblegum-rainbow { to { background-position: 300% 0; } }
 @keyframes bubblegum-wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
 body.calm .burst, :root[data-theme="bubblegum"] body.calm * { animation: none !important; }
-@media (prefers-reduced-motion: reduce) { :root[data-theme="bubblegum"] * { animation: none !important; } }
 
 /* ---- verity: the smiley ball */
 :root[data-theme="verity"] body {
