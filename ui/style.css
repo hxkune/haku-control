@@ -26,6 +26,9 @@
   --glass: 16, 16, 16;
   --scrim: 5, 5, 5;
   color-scheme: dark;
+  --v-smile: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23ffe14a'/><ellipse cx='35' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><ellipse cx='65' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><path d='M27 60 Q50 80 73 60' stroke='%23111' stroke-width='5' fill='none' stroke-linecap='round'/></svg>");
+  --v-evil: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23d9a91f'/><path d='M17 23 L44 34 M83 23 L56 34' stroke='%23000' stroke-width='6' stroke-linecap='round'/><path d='M23 36 L45 43 Q41 53 32 51 Q23 47 23 36Z M77 36 L55 43 Q59 53 68 51 Q77 47 77 36Z' fill='%23000'/><circle cx='35' cy='46' r='2.4' fill='%23ff2a2a'/><circle cx='65' cy='46' r='2.4' fill='%23ff2a2a'/><path d='M15 58 Q50 104 85 58 Q50 73 15 58Z' fill='%23000'/><path d='M20 61 L25 69 L30 63 L35 72 L40 65 L45 74 L50 66 L55 74 L60 65 L65 72 L70 63 L75 69 L80 61' stroke='%23fff' stroke-width='1.4' fill='none'/></svg>");
+  --v-rgb: drop-shadow(5px 0 0 rgba(255, 0, 60, .8)) drop-shadow(-5px 0 0 rgba(0, 240, 255, .8));
 }
 /* grey: the same dark look, lifted to a soft graphite */
 :root[data-theme="grey"] {
@@ -989,17 +992,64 @@ body.calm .burst, :root[data-theme="bubblegum"] body.calm * { animation: none !i
 :root[data-theme="verity"] nav button.active { color: var(--strong); }
 :root[data-theme="verity"] .fx.on canvas { filter: drop-shadow(0 0 8px rgba(255, 225, 74, .45)); }
 :root[data-theme="verity"] #theme button[data-v="verity"]:not(.on) { color: var(--strong); }
+/* the ball: smiling, blinking; now and then (app.js adds .vg) it lags, tears and turns evil for a moment */
 :root[data-theme="verity"] .watermark {
-  -webkit-mask: none; mask: none; background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23ffe14a'/><ellipse cx='35' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><ellipse cx='65' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><path d='M27 60 Q50 80 73 60' stroke='%23111' stroke-width='5' fill='none' stroke-linecap='round'/></svg>") center / contain no-repeat;
+  -webkit-mask: none; mask: none; background: var(--v-smile) center / contain no-repeat;
   width: 520px; aspect-ratio: 1; right: -90px; bottom: -90px; opacity: .1;
-  animation: verity-stare 47s steps(1) infinite;
 }
-@keyframes verity-stare {
-  0%, 96% { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23ffe14a'/><ellipse cx='35' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><ellipse cx='65' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><path d='M27 60 Q50 80 73 60' stroke='%23111' stroke-width='5' fill='none' stroke-linecap='round'/></svg>"); transform: rotate(-8deg); opacity: .1; }
-  96.5% { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23e8c93a'/><circle cx='34' cy='38' r='10' fill='%23000'/><circle cx='66' cy='38' r='10' fill='%23000'/><circle cx='34' cy='38' r='1.6' fill='%23fff'/><circle cx='66' cy='38' r='1.6' fill='%23fff'/><path d='M18 54 Q50 100 82 54 Q50 70 18 54Z' fill='%23000'/><path d='M26 60 L30 66 L34 61 L38 68 L42 62 L46 69 L50 63 L54 69 L58 62 L62 68 L66 61 L70 66 L74 60' stroke='%23fff' stroke-width='1.2' fill='none'/></svg>"); transform: rotate(-4deg) translate(-6px, 3px); opacity: .22; }
-  97.5% { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23e8c93a'/><circle cx='34' cy='38' r='10' fill='%23000'/><circle cx='66' cy='38' r='10' fill='%23000'/><circle cx='34' cy='38' r='1.6' fill='%23fff'/><circle cx='66' cy='38' r='1.6' fill='%23fff'/><path d='M18 54 Q50 100 82 54 Q50 70 18 54Z' fill='%23000'/><path d='M26 60 L30 66 L34 61 L38 68 L42 62 L46 69 L50 63 L54 69 L58 62 L62 68 L66 61 L70 66 L74 60' stroke='%23fff' stroke-width='1.2' fill='none'/></svg>"); transform: rotate(-11deg) translate(4px, -2px); opacity: .18; }
-  98.5% { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%23ffe14a'/><ellipse cx='35' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><ellipse cx='65' cy='38' rx='5' ry='9' fill='%23111'><animate attributeName='ry' values='9;9;1;9' keyTimes='0;.94;.97;1' dur='6s' repeatCount='indefinite'/></ellipse><path d='M27 60 Q50 80 73 60' stroke='%23111' stroke-width='5' fill='none' stroke-linecap='round'/></svg>"); transform: rotate(-8deg); opacity: .1; }
+:root[data-theme="verity"] .watermark::after {
+  content: ""; position: absolute; inset: 0; background: var(--v-evil) center / contain no-repeat; opacity: 0;
 }
+:root[data-theme="verity"] .watermark.vg { animation: vg-ball 2.6s steps(1) forwards; }
+:root[data-theme="verity"] .watermark.vg::after { animation: vg-tear 2.6s steps(1) forwards; }
+@keyframes vg-ball {
+  0% { transform: rotate(-8deg); }
+  5% { transform: rotate(-8deg) translate(-6px, 2px); filter: var(--v-rgb); }
+  9% { transform: rotate(-8deg); filter: none; }
+  14% { background-image: var(--v-evil); opacity: .24; transform: rotate(-5deg) translate(7px, -3px); filter: var(--v-rgb); }
+  17% { background-image: var(--v-smile); opacity: .1; transform: rotate(-8deg); filter: none; }
+  22% { background-image: var(--v-evil); opacity: .2; transform: rotate(-10deg) translate(-4px, 0); filter: var(--v-rgb); }
+  25% { background-image: var(--v-smile); opacity: .12; transform: rotate(-8deg) translate(3px, 1px); filter: none; }
+  30% { background-image: var(--v-evil); opacity: .26; transform: rotate(-8deg) scale(1.03); filter: var(--v-rgb); }
+  40% { transform: rotate(-7deg) scale(1.03) translate(-3px, 2px); filter: none; }
+  50% { transform: rotate(-9deg) scale(1.04) translate(3px, -1px); filter: var(--v-rgb); }
+  60% { transform: rotate(-8deg) scale(1.03) translate(-2px, -2px); filter: none; }
+  70% { transform: rotate(-8deg) scale(1.05) translate(2px, 2px); filter: var(--v-rgb); }
+  82% { transform: rotate(-8deg) scale(1.03); filter: none; }
+  86% { background-image: var(--v-smile); opacity: .14; transform: rotate(-8deg) translate(-5px, 0); filter: var(--v-rgb); }
+  89% { background-image: var(--v-evil); opacity: .22; transform: rotate(-6deg); filter: none; }
+  92% { background-image: var(--v-smile); opacity: .1; transform: rotate(-8deg); filter: none; }
+  100% { background-image: var(--v-smile); opacity: .1; transform: rotate(-8deg); }
+}
+@keyframes vg-tear {
+  0%, 100% { opacity: 0; }
+  5% { opacity: 1; clip-path: inset(28% 0 58% 0); transform: translateX(22px); }
+  7% { opacity: 1; clip-path: inset(62% 0 20% 0); transform: translateX(-16px); }
+  9% { opacity: 0; }
+  20% { opacity: 1; clip-path: inset(40% 0 44% 0); transform: translateX(-26px); }
+  22% { opacity: 0; }
+  26% { opacity: 1; clip-path: inset(10% 0 74% 0); transform: translateX(14px); }
+  28% { opacity: 0; }
+  52% { opacity: 1; clip-path: inset(55% 0 30% 0); transform: translateX(18px); }
+  54% { opacity: 0; }
+  86% { opacity: 1; clip-path: inset(34% 0 50% 0); transform: translateX(-20px); }
+  88% { opacity: 0; }
+}
+
+/* entering verity's code: the whole window breaks down for a few seconds (app.js drives it), then the theme is on */
+.vglitch { position: fixed; inset: 0; z-index: 98; cursor: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px); }
+.vglitch i { position: absolute; left: 0; right: 0; backdrop-filter: invert(1) hue-rotate(var(--h, 90deg)); }
+.vglitch .vg-face { position: absolute; left: 50%; top: 50%; width: min(60vh, 70vw); aspect-ratio: 1; transform: translate(-50%, -50%);
+  background: var(--v-smile) center / contain no-repeat; filter: var(--v-rgb); }
+.vglitch .vg-face.evil { background-image: var(--v-evil); }
+.vglitch .vg-text { position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%); padding: 6px 12px; white-space: nowrap;
+  background: rgba(0, 0, 0, .7); color: #ffe14a; font: 18px "Consolas", "Cascadia Mono", monospace; }
+body.glitching > *:not(.vglitch):not(.vchat) {
+  transform: translate(var(--gx, 0), var(--gy, 0)) skewX(var(--sk, 0deg));
+  filter: hue-rotate(var(--hue, 0deg)) var(--v-rgb2, );
+}
+
 /* what verity says, as a line of game chat */
 .vchat { position: fixed; left: 16px; bottom: 96px; z-index: 60; max-width: min(460px, calc(100vw - 32px)); padding: 6px 10px;
   background: rgba(0, 0, 0, .62); color: #fff; font: 14px/1.35 "Consolas", "Cascadia Mono", monospace; pointer-events: none;
@@ -1008,5 +1058,4 @@ body.calm .burst, :root[data-theme="bubblegum"] body.calm * { animation: none !i
 @keyframes vchat { 0% { opacity: 0; transform: translateY(6px); } 5%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 body.calm .vchat { animation: vchat-calm 7s steps(1) forwards; }
 @keyframes vchat-calm { 0% { opacity: 1; } 100% { opacity: 0; } }
-:root[data-theme="verity"] body.calm .watermark { animation: none; }
-@media (prefers-reduced-motion: reduce) { :root[data-theme="verity"] .watermark { animation: none; } }
+:root[data-theme="verity"] body.calm .watermark, :root[data-theme="verity"] body.calm .watermark::after { animation: none; }

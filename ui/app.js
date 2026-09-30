@@ -149,6 +149,72 @@ function veritySays(i) {
   setTimeout(() => d.remove(), 7200);
   verityNext = Date.now() + (3 + Math.random() * 4) * 60000;
 }
+const stillMotion = () => document.body.classList.contains('calm') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// verity's code: for about three seconds the window breaks down (it shakes, tears, flips colours and themes, jumps
+// between tabs, the ball shows both its faces), then the theme is on and verity says hello. Without animations
+// the theme just comes on.
+let verityBusy = false;
+function verityArrives() {
+  if (verityBusy) return;
+  const done = () => { showTab(back); setTheme('verity'); veritySays(0); };
+  const back = tab;
+  if (stillMotion()) { done(); return; }
+  verityBusy = true;
+  const tabs = $$('#nav button').filter(b => b.offsetParent).map(b => b.dataset.tab);
+  const looks = ['', 'light', 'grey', 'bubblegum', 'verity'];
+  const words = ['h̷̢e̸l̵l̶o̷?', 'V E R I T Y', 'ERR 0x5M1L3', ':)', 'i̸ ̷s̵e̶e̷ ̸y̵o̶u̸', 'l̶e̸t̷ ̵m̶e̴ ̷i̵n̶', '☺☺☺☺☺☺'];
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const root = document.documentElement, body = document.body;
+  const ov = document.createElement('div'); ov.className = 'vglitch';
+  body.appendChild(ov); body.classList.add('glitching');
+  const t0 = Date.now(), len = 3200;
+  (function step() {
+    const k = (Date.now() - t0) / len;
+    if (k >= 1) {
+      ov.remove(); body.classList.remove('glitching');
+      ['--gx', '--gy', '--sk', '--hue', '--v-rgb2'].forEach(p => body.style.removeProperty(p));
+      verityBusy = false; done(); return;
+    }
+    const hard = k > .55;   // it gets worse towards the end
+    const r = (n) => (Math.random() * 2 - 1) * n;
+    body.style.setProperty('--gx', r(hard ? 18 : 8).toFixed(1) + 'px');
+    body.style.setProperty('--gy', r(hard ? 8 : 3).toFixed(1) + 'px');
+    body.style.setProperty('--sk', r(hard ? 6 : 2).toFixed(1) + 'deg');
+    body.style.setProperty('--hue', (Math.random() < .3 ? r(180) : 0).toFixed(0) + 'deg');
+    body.style.setProperty('--v-rgb2', Math.random() < .6 ? 'drop-shadow(4px 0 0 rgba(255,0,60,.7)) drop-shadow(-4px 0 0 rgba(0,240,255,.7))' : 'hue-rotate(0deg)');
+    if (Math.random() < .45) showTab(pick(tabs));
+    root.dataset.theme = pick(looks); if (!root.dataset.theme) delete root.dataset.theme;
+    if (Math.random() < .5) $('#title').textContent = pick(words);
+    ov.innerHTML = '';
+    for (let n = 0; n < 2 + Math.floor(Math.random() * (hard ? 6 : 3)); n++) {
+      const b = document.createElement('i');
+      b.style.top = Math.random() * 100 + '%'; b.style.height = 2 + Math.random() * (hard ? 90 : 40) + 'px';
+      b.style.setProperty('--h', Math.floor(Math.random() * 360) + 'deg');
+      ov.appendChild(b);
+    }
+    if (k > .3 && Math.random() < (hard ? .5 : .2)) {
+      const f = document.createElement('div');
+      f.className = 'vg-face' + (Math.random() < (hard ? .7 : .3) ? ' evil' : '');
+      ov.appendChild(f);
+    }
+    if (Math.random() < .35) { const w = document.createElement('div'); w.className = 'vg-text'; w.textContent = '<Verity> ' + pick(words); ov.appendChild(w); }
+    setTimeout(step, 60 + Math.random() * (hard ? 70 : 140));
+  })();
+}
+
+// the ball in the corner: every half a minute to a minute and a half it lags and turns evil for a moment
+(function ballGlitch() {
+  setTimeout(() => {
+    const w = $('.watermark');
+    if (w && document.documentElement.dataset.theme === 'verity' && !document.hidden && !stillMotion()) {
+      w.classList.remove('vg'); void w.offsetWidth; w.classList.add('vg');
+      setTimeout(() => w.classList.remove('vg'), 2700);
+    }
+    ballGlitch();
+  }, 30000 + Math.random() * 60000);
+})();
+
 setInterval(() => {
   if (document.documentElement.dataset.theme !== 'verity' || document.hidden) return;
   if (!verityNext) verityNext = Date.now() + 2 * 60000;
@@ -2093,9 +2159,9 @@ $('#code').addEventListener('submit', e => {
   if (!th) { if (inp.value.trim()) inp.classList.add('bad'); return; }
   if (!unlocked().includes(th)) setCfg('general', 'unlocked', unlocked().concat(th).join(','));
   inp.value = ''; inp.classList.add('ok'); inp.blur();
+  if (th === 'verity') { verityArrives(); return; }
   setTheme(th);
-  if (!document.body.classList.contains('calm')) burst($('#code'), th === 'verity' ? ['😊', '💛', '☺', '⭐'] : ['✨', '💖', '⭐', '💜', '🌈', '💫']);
-  if (th === 'verity') setTimeout(() => veritySays(0), 700);
+  if (!document.body.classList.contains('calm')) burst($('#code'), ['✨', '💖', '⭐', '💜', '🌈', '💫']);
 });
 function burst(at, bits) {
   const r = at.getBoundingClientRect();
