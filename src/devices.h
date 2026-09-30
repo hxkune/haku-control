@@ -55,7 +55,7 @@ struct ext_dev {
     void *priv;               // driver state
 };
 
-extern const ext_driver drv_wled, drv_openrgb, drv_govee, drv_lifx, drv_yeelight, drv_hue, drv_wiz, drv_tuya, drv_nlusb;
+extern const ext_driver drv_wled, drv_openrgb, drv_govee, drv_lifx, drv_yeelight, drv_hue, drv_wiz, drv_tuya, drv_nlusb, drv_goveecloud;
 const ext_driver *ext_driver_by_kind(const char *kind);
 void ext_save_key(ext_dev *d, const char *key);   // stores a pairing token in [dev.N] key=
 

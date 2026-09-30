@@ -41,6 +41,7 @@ device runs its own effect.
 | WLED (ESP8266 / ESP32 LED controllers) | UDP realtime (DNRGB), found via mDNS | tested against a simulator |
 | Philips Hue (bridge) | local REST API, link-button pairing | tested against a simulator |
 | Govee (lights with *LAN Control*) | official LAN API | tested against a simulator |
+| Govee without LAN Control (e.g. AI Sync Box 2) | official cloud API with your API key: on/off and screen sync, or slow colours | tested against a simulator |
 | LIFX | official LAN protocol | tested against a simulator |
 | Yeelight (with *LAN Control*) | LAN JSON protocol, music mode | tested against a simulator |
 | Philips WiZ | local UDP JSON protocol, no keys | tested against a simulator |
@@ -81,6 +82,10 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
   5–7 s. Every controller becomes its own device (own map, colours and switch); *Add a controller* on the Nanoleaf
   page pairs the next one. **Secretlab MAGRGB:** first turn the strip's API on in Nanoleaf Desktop (select the strip →
   *Enable API*), press *Connect* here, then *Connect to API* in Nanoleaf Desktop within 30 s.
+- **Govee without LAN Control (AI Sync Box 2...):** in the Govee Home app, *Profile → Settings → Apply for API Key*
+  (it comes by e-mail); paste it under *Devices → Sign-ins and pairing → Govee (cloud)*, then *Scan*. A sync box keeps
+  its own screen sync and haku switches it on and off with the PC; other devices can take colours from haku, slowly
+  (every command goes through Govee's cloud). The key is saved on this PC and sent only to Govee.
 - **Nanoleaf Pegboard / Screen Mirror Lightstrip (USB):** *Devices → Scan* finds them on USB; quit Nanoleaf Desktop
   first, or both apps drive the lights at once.
 - **AiDot bulbs:** *Devices → Sign-ins and pairing → Sign in* with your AiDot app account, once. The password goes
@@ -121,7 +126,7 @@ Output goes to `bin\`. `build.cmd dev` makes a test build in `bin-dev\`: it keep
 `%APPDATA%\haku-control-dev`, runs without admin rights and never touches the motherboard or memory, so it
 can run next to the installed app. Stop it with `scripts\stop.ps1 -Dev`. `python tools/sim/fake_devices.py` starts
 simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue devices on this PC for it to talk to, and
-`python tools/sim/fake_ollama.py` / `fake_nanoleaf.py` / `fake_aidot.py` stand-ins for Ollama, a Nanoleaf controller and the AiDot cloud.
+`python tools/sim/fake_ollama.py` / `fake_nanoleaf.py` / `fake_aidot.py` / `fake_govee_cloud.py` stand-ins for Ollama, a Nanoleaf controller, the AiDot cloud and the Govee cloud.
 
 For UI work without the app, serve `ui\` with any static server and open
 `index.html?mock`, for example `python -m http.server -d ui 8766`. The mock fakes the core with sample data.

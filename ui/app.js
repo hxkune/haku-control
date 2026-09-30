@@ -136,7 +136,7 @@ function updateAccounts() {
   m.textContent = busy ? t('acc.busy') : A.state === 2 ? t('acc.aidot.done', A.found) :
     A.state === 3 ? (known ? t('acc.err.' + A.msg) : t('acc.err.vendor', A.msg)) : '';
   m.classList.toggle('bad', A.state === 3);
-  updateTuya();
+  updateTuya(); updateGovee();
 }
 // Tuya: a cloud project's Access ID / Secret (iot.tuya.com) reads the linked app's lights and their local keys
 const TACC = { shown: false, pending: false };
@@ -162,6 +162,32 @@ function updateTuya() {
     T.state === 3 ? (known ? t('acc.err.' + T.msg) : t('acc.err.tvendor', T.msg)) : '';
   m.classList.toggle('bad', T.state === 3);
 }
+// Govee cloud: an API key from the Govee Home app, for devices without LAN Control (AI Sync Box 2...)
+const GACC = { shown: false, pending: false };
+function updateGovee() {
+  const G = (S.accounts || {}).govee || {}, ng = S.ext.devs.filter(d => d.kind === 'goveecloud').length;
+  $('#acc-govee').textContent = G.state === 2 ? t('acc.govee.ok', G.found) : ng ? t('acc.tuya.devs', ng) : G.saved ? t('acc.govee.saved') : t('acc.govee.none');
+  $('#govee-open-t').textContent = t(G.state === 2 || ng || G.saved ? 'acc.govee.again' : 'acc.govee.go');
+  const busy = G.state === 1;
+  $('#govee-go').disabled = busy;
+  if (GACC.pending && !busy && (G.state === 2 || G.state === 3)) { GACC.pending = false; if (G.state === 2) GACC.shown = false; }
+  $('#govee-form').classList.toggle('hidden', !GACC.shown);
+  $('#govee-open').classList.toggle('hidden', GACC.shown);
+  const m = $('#govee-msg');
+  m.textContent = busy ? t('acc.busy') : G.state === 2 ? t('acc.govee.done', G.found) : G.state === 3 ? t('acc.err.' + G.msg) : '';
+  m.classList.toggle('bad', G.state === 3);
+}
+$('#govee-open').addEventListener('click', () => { GACC.shown = true; updateGovee(); setTimeout(() => $('#govee-key').focus(), 30); });
+$('#govee-cancel').addEventListener('click', () => { GACC.shown = false; $('#govee-key').value = ''; updateGovee(); });
+$('#govee-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const key = $('#govee-key').value.trim();
+  if (!key) return;
+  $('#govee-key').value = '';
+  GACC.pending = true;
+  send({ cmd: 'govee_login', key });
+  updateGovee();
+});
 $('#tuya-open').addEventListener('click', () => { TACC.shown = true; updateTuya(); setTimeout(() => $('#tuya-id').focus(), 30); });
 $('#tuya-cancel').addEventListener('click', () => { TACC.shown = false; $('#tuya-secret').value = ''; updateTuya(); });
 $('#tuya-form').addEventListener('submit', e => {
@@ -1235,6 +1261,8 @@ function buildDevices() {
         <label class="num"><span>${t('strip.name')}</span><input type="text" class="dev-name" maxlength="40" spellcheck="false" value="${esc(cv(sec, 'name', d.name))}"></label>
         ${d.per_led ? `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
+        ${d.kind === 'goveecloud' ? `<label class="num"><span>${t('gc.mode')}</span><select class="select dev-mode">${['auto', 'sync', 'colour'].map(v =>
+          `<option value="${v}"${cv(sec, 'mode', 'auto') === v ? ' selected' : ''}>${t('gc.' + v)}</option>`).join('')}</select></label>` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
@@ -1247,6 +1275,7 @@ function buildDevices() {
     });
     el.querySelector('.dev-rev')?.addEventListener('change', e => setCfg(sec, 'reverse', e.target.checked ? 1 : 0));
     el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
+    el.querySelector('.dev-mode')?.addEventListener('change', e => setCfg(sec, 'mode', e.target.value));
     el.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => {
       const n = Math.max(1, Math.min(512, +(cv(sec, 'leds', 0) > 0 ? cv(sec, 'leds') : d.leds) + +b.dataset.d));
       setCfg(sec, 'leds', n); el.querySelector('.dev-leds').textContent = n;

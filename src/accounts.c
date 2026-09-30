@@ -368,6 +368,84 @@ void accounts_tuya_login(const char *region, const char *access_id, const char *
     if (t) CloseHandle(t); else { SecureZeroMemory(t_secret, sizeof(t_secret)); set_tstate(3, 0, "thread"); InterlockedExchange(&t_busy, 0); }
 }
 
+// ---------------------------------------------------------------- Govee (cloud API key)
+// For Govee devices without "LAN Control" (e.g. the AI Sync Box 2): the user applies for a free API key in the Govee
+// Home app. The key stays in govee.json because every command goes through Govee's cloud (drv_goveecloud.c); the
+// device list (sku, id, name, and whether it has screen sync) is saved next to it.
+static int  g_state, g_found;
+static char g_msg[160], g_key[80];
+static volatile LONG g_busy;
+
+static void set_gstate(int st, int n, const char *m) {
+    AcquireSRWLockExclusive(&lk);
+    g_state = st; g_found = n; snprintf(g_msg, sizeof(g_msg), "%s", m ? m : "");
+    ReleaseSRWLockExclusive(&lk);
+}
+
+static unsigned __stdcall govee_run(void *arg) {
+    (void)arg;
+    static char buf[256 * 1024], out[32 * 1024];
+    char head[160];
+    int count = 0, n = 0;
+    if (!g_key[0]) { set_gstate(3, 0, "gkey"); goto done; }
+    snprintf(head, sizeof(head), "Govee-API-Key: %s\r\nContent-Type: application/json\r\n", g_key);
+    int st = https("govee", "GET", "openapi.api.govee.com", "/router/api/v1/user/devices", head, NULL, buf, sizeof(buf));
+    if (st != 200) {
+        logf_("govee: device list refused (%d)", st);
+        set_gstate(3, 0, !st ? "gnetwork" : st == 401 || st == 403 ? "gkey" : st == 429 ? "glimit" : "gvendor");
+        goto done;
+    }
+    char key[160]; jcopy(key, sizeof(key), g_key);
+    n = snprintf(out, sizeof(out), "{\r\n  \"key\": \"%s\",\r\n  \"devices\": [", key);
+    SecureZeroMemory(key, sizeof(key));
+    const char *arr = strstr(buf, "\"data\""), *de;
+    for (const char *d = arr ? next_obj(arr, &de) : NULL; d; d = next_obj(de, &de)) {
+        char sku[24], dev[48], name[128], type[64];
+        field(d, de, "sku", sku, sizeof(sku)); field(d, de, "device", dev, sizeof(dev));
+        field(d, de, "deviceName", name, sizeof(name)); field(d, de, "type", type, sizeof(type));
+        if (!sku[0] || !dev[0]) continue;
+        // capabilities decide what haku can do with it (the object text is enough for these checks)
+        char caps[8192]; int cl = (int)(de - d) < (int)sizeof(caps) - 1 ? (int)(de - d) : (int)sizeof(caps) - 1;
+        memcpy(caps, d, cl); caps[cl] = 0;
+        int power = strstr(caps, "\"powerSwitch\"") != NULL, color = strstr(caps, "\"colorRgb\"") != NULL;
+        int bright = strstr(caps, "\"brightness\"") != NULL, dream = strstr(caps, "\"dreamViewToggle\"") != NULL;
+        if (!power || (!color && !dream)) continue;   // lights and sync boxes only
+        n += snprintf(out + n, sizeof(out) - n, "%s\r\n    {\"sku\": \"%s\", \"device\": \"%s\", \"name\": \"%s\", \"type\": \"%s\", "
+                      "\"color\": %d, \"brightness\": %d, \"dreamview\": %d}", count ? "," : "", sku, dev, name, type, color, bright, dream);
+        count++;
+        if (n > (int)sizeof(out) - 1024) break;
+    }
+    n += snprintf(out + n, sizeof(out) - n, "\r\n  ]\r\n}\r\n");
+    if (!count) { set_gstate(3, 0, "gnodevices"); goto done; }
+    {
+        wchar_t p2[MAX_PATH]; app_data_path(L"govee.json", p2);
+        FILE *f = _wfopen(p2, L"wb");
+        if (!f) { set_gstate(3, 0, "write"); goto done; }
+        fwrite(out, 1, n, f); fclose(f);
+    }
+    logf_("govee: API key accepted, %d device(s) saved", count);
+    set_gstate(2, count, "");
+done:
+    SecureZeroMemory(out, sizeof(out)); SecureZeroMemory(g_key, sizeof(g_key)); SecureZeroMemory(head, sizeof(head));
+    InterlockedExchange(&g_busy, 0);
+    return 0;
+}
+
+void accounts_govee_login(const char *api_key) {
+    if (InterlockedCompareExchange(&g_busy, 1, 0)) return;
+    snprintf(g_key, sizeof(g_key), "%s", api_key ? api_key : "");
+    for (char *p = g_key; *p; p++) if (*p == '"' || *p == '\\' || (unsigned char)*p < 0x20) *p = 0;   // a key is plain text
+    set_gstate(1, 0, "");
+    HANDLE t = (HANDLE)_beginthreadex(NULL, 0, govee_run, NULL, 0, NULL);
+    if (t) CloseHandle(t); else { SecureZeroMemory(g_key, sizeof(g_key)); set_gstate(3, 0, "thread"); InterlockedExchange(&g_busy, 0); }
+}
+
+// HTTPS for the Govee cloud driver (same WinHTTP helper, [section] server= override for tests)
+int acc_https(const char *section, const char *method, const char *host, const char *path, const char *headers,
+              const char *body, char *out, int cap) {
+    return https(section, method, host, path, headers, body, out, cap);
+}
+
 void accounts_aidot_login(const char *country, const char *email, const char *password) {
     if (InterlockedCompareExchange(&busy, 1, 0)) return;
     snprintf(a_cc, sizeof(a_cc), "%s", country ? country : "");
@@ -392,6 +470,11 @@ int accounts_json(char *out, int cap) {
     ReleaseSRWLockShared(&lk);
     for (int i = 0; i < (int)(sizeof(TUYA_REGIONS) / sizeof(TUYA_REGIONS[0])); i++)
         n += snprintf(out + n, cap - n, "%s[\"%s\",\"%s\"]", i ? "," : "", TUYA_REGIONS[i][0], TUYA_REGIONS[i][1]);
-    n += snprintf(out + n, cap - n, "]}}");
+    AcquireSRWLockShared(&lk);
+    jcopy(m, sizeof(m), g_msg);
+    wchar_t gp[MAX_PATH]; app_data_path(L"govee.json", gp);
+    n += snprintf(out + n, cap - n, "]},\"govee\":{\"state\":%d,\"msg\":\"%s\",\"found\":%d,\"saved\":%d}}", g_state, m, g_found,
+                  GetFileAttributesW(gp) != INVALID_FILE_ATTRIBUTES);
+    ReleaseSRWLockShared(&lk);
     return n;
 }

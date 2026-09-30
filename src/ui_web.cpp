@@ -107,6 +107,12 @@ static void on_message(const std::string &js) {
     else if (cmd == "autostart") { app_autostart(atoi(field(js, "v").c_str())); post_state(); }
     else if (cmd == "open") app_open(field(js, "what").c_str());
     else if (cmd == "update_check") update_check_now();
+    else if (cmd == "govee_login") {   // PC window only, like aidot_login
+        std::string key = field(js, "key");
+        accounts_govee_login(key.c_str());
+        SecureZeroMemory(&key[0], key.size());
+        post_status();
+    }
     else if (cmd == "tuya_login") {   // PC window only, like aidot_login
         std::string sec = field(js, "secret");
         accounts_tuya_login(field(js, "region").c_str(), field(js, "id").c_str(), sec.c_str());

@@ -164,6 +164,9 @@ int  mood_json(char *out, int cap);
 // ---- accounts.c (one-time vendor sign-ins that hand out local-control keys)
 void accounts_aidot_login(const char *country, const char *email, const char *password);
 void accounts_tuya_login(const char *region, const char *access_id, const char *secret);
+void accounts_govee_login(const char *api_key);
+int  acc_https(const char *section, const char *method, const char *host, const char *path, const char *headers,
+               const char *body, char *out, int cap);   // WinHTTP; returns the status (0: no answer)
 int  accounts_json(char *out, int cap);
 
 // ---- net.c

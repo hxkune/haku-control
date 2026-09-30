@@ -295,6 +295,22 @@
         </div>
       </form>
       <p class="acc-msg" id="tuya-msg"></p>
+      <div class="acc-row">
+        <div><b>Govee (cloud)</b><small id="acc-govee"></small></div>
+        <button class="btn small ghost pc-only" id="govee-open"><span id="govee-open-t"></span></button>
+      </div>
+      <form class="acc-form hidden pc-only" id="govee-form" autocomplete="off">
+        <p class="note" data-i18n="acc.govee.how"></p>
+        <div class="acc-fields">
+          <label class="num"><span data-i18n="acc.govee.key">API key</span><input type="password" id="govee-key" spellcheck="false"></label>
+        </div>
+        <p class="note" data-i18n="acc.govee.privacy"></p>
+        <div class="btn-row">
+          <button class="btn primary" type="submit" id="govee-go"><span data-i18n="acc.govee.go">Connect</span></button>
+          <button class="btn ghost" type="button" id="govee-cancel"><span data-i18n="cancel">Cancel</span></button>
+        </div>
+      </form>
+      <p class="acc-msg" id="govee-msg"></p>
       <p class="hint remote-only" data-i18n="acc.phone"></p>
     </div>
     <div class="bulb-grid dev-grid" id="dev-grid"></div>
