@@ -412,6 +412,15 @@ void ext_save_key(ext_dev *d, const char *key) {
     cfg_save_if_dirty();
 }
 
+void ext_set_caps(ext_dev *d, const char *caps, int kmin, int kmax) {
+    char sec[16], a[12], b[12]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    snprintf(a, sizeof(a), "%d", kmin); snprintf(b, sizeof(b), "%d", kmax);
+    if (!strcmp(cfg_get(sec, "caps", ""), caps) && !strcmp(cfg_get(sec, "kmin", ""), kmin ? a : "") && !strcmp(cfg_get(sec, "kmax", ""), kmax ? b : "")) return;
+    cfg_set(sec, "caps", caps); cfg_set(sec, "kmin", kmin ? a : ""); cfg_set(sec, "kmax", kmax ? b : "");
+    cfg_save_if_dirty();
+    ui_refresh_state();
+}
+
 void ext_remove(int id) {
     char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", id);
     if (!_stricmp(cfg_get(sec, "kind", ""), "openrgb"))   // not added by itself again

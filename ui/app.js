@@ -80,7 +80,7 @@ function groupSpread(s, k, v, set) {
   const m = /^group\.(\d+)$/.exec(s);
   if (!m || !GROUP_KEYS.includes(k)) return;
   const g = groups().find(x => x.n === +m[1]);
-  if (g) g.members.forEach(z => set(z, k, v));
+  if (g) g.members.forEach(z => { if (zoneTakes(z, k)) set(z, k, v); });
 }
 const setMembers = (n, list) => setCfg(groupSec(n), 'members', list.join(','));
 // into group n (out of any other); the device takes the group's look
@@ -88,7 +88,7 @@ function groupAdd(n, zone) {
   groups().forEach(g => { if (g.n !== n && g.members.includes(zone)) setMembers(g.n, g.members.filter(z => z !== zone)); });
   const g = groups().find(x => x.n === n), list = g ? g.members : [];
   if (!list.includes(zone)) setMembers(n, list.concat(zone));
-  GROUP_KEYS.forEach(k => { const v = cv(groupSec(n), k, ''); if (v !== '') setCfg(zone, k, v); });
+  GROUP_KEYS.forEach(k => { const v = cv(groupSec(n), k, ''); if (v !== '' && zoneTakes(zone, k)) setCfg(zone, k, v); });
 }
 function groupRemove(zone) { const g = groupOf(zone); if (g) setMembers(g.n, g.members.filter(z => z !== zone)); }
 // a number for a new group, its section emptied (a group without members is gone, its section may be left over)
@@ -396,8 +396,23 @@ function zoneMode(section) {
   if (!parsePal(cv(section, 'palette')).length) return 'effect';
   return m === 'static' || m === 'palette' ? m : 'effect';
 }
+// What a device's zone can do: 'white' (white light only: Elgato Key Light, Ring Light; its range in K from the
+// driver, [dev.N] caps / kmin / kmax), 'onoff' (only switched on and off here: a Govee sync box in its own mode),
+// or '' (everything). Only what applies is shown, and a group does not push the rest onto it.
+function zoneCaps(zone) {
+  const m = /^zone\.dev(\d+)$/.exec(zone || ''); if (!m) return { kind: '' };
+  const sec = 'dev.' + m[1], d = (S.ext.devs || []).find(x => x.id === +m[1]);
+  if (d && d.kind === 'goveecloud' && gcSync(d, sec)) return { kind: 'onoff' };
+  if (cv(sec, 'caps', '') === 'white') return { kind: 'white', kmin: +cv(sec, 'kmin', 2700), kmax: +cv(sec, 'kmax', 6500) };
+  return { kind: '' };
+}
+const zoneTakes = (zone, k) => { const c = zoneCaps(zone).kind; return !c || (c === 'white' && (k === 'brightness' || k === 'kelvin')); };
+
 function renderZone(el) {
-  const section = el.dataset.zone, mode = zoneMode(section);
+  const section = el.dataset.zone, caps = zoneCaps(section);
+  if (caps.kind === 'onoff') { el.innerHTML = `<p class="note">${t('zone.onoff')}</p>`; return; }
+  if (caps.kind === 'white') { renderWhiteZone(el, section, caps); return; }
+  const mode = zoneMode(section);
   const k = +cv(section, 'kelvin', 4000), br = +cv(section, 'brightness', 100);
   const own = cv(section, 'effect', '');
   const opts = [`<option value="">${t('zone.global')} — ${fxName(S.effect)}</option>`]
@@ -436,6 +451,20 @@ function renderZone(el) {
     setCfg(section, 'mode', m);
     renderZone(el);
   }));
+}
+// a white-only light: its colour temperature (in its own range) and brightness, nothing else
+function renderWhiteZone(el, section, caps) {
+  if (cv(section, 'mode', '') !== 'white') setCfg(section, 'mode', 'white');
+  const k = Math.min(caps.kmax, Math.max(caps.kmin, +cv(section, 'kelvin', 4500))), br = +cv(section, 'brightness', 100);
+  el.innerHTML = `
+    <div class="field"><div class="lbl"><span>${t('kelvin')}</span><b>${k} K</b></div>
+      <input type="range" class="range kelvin" min="${caps.kmin}" max="${caps.kmax}" step="100" value="${k}"></div>
+    <div class="field"><div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
+      <input type="range" class="range zb" min="5" max="100" value="${br}"></div>
+    <p class="note">${t('zone.white')}</p>`;
+  const r = el.querySelector('.kelvin'), zb = el.querySelector('.zb'); fill(r); fill(zb);
+  r.addEventListener('input', () => { r.parentElement.querySelector('b').textContent = r.value + ' K'; setCfgSoon(section, 'kelvin', r.value); });
+  zb.addEventListener('input', () => { zb.parentElement.querySelector('b').textContent = zb.value + '%'; setCfgSoon(section, 'brightness', zb.value); });
 }
 const renderZones = () => $$('.zone').forEach(renderZone);
 
@@ -2094,6 +2123,35 @@ $('#upd-install').addEventListener('click', () => { S.update = { ...S.update, in
 $('#upd-on').addEventListener('change', e => { setCfg('general', 'update_check', e.target.checked ? 1 : 0); updateUpdate(); });
 $('#upd-get').addEventListener('click', () => send({ cmd: 'open', what: 'release' }));
 $('#upd-now').addEventListener('click', () => send({ cmd: 'update_check' }));
+// ---- what is new: shown once in the window after an update ([general] seen_version; the texts are in
+// whatsnew.js), with every version since the one seen last; Settings opens it again. Not on the phone, and not
+// on a fresh install (the first-start guide is shown then).
+const verNum = v => String(v || '').split('.').concat(['0', '0', '0', '0']).slice(0, 4).reduce((a, x) => a * 10000 + (parseInt(x, 10) || 0), 0);
+let wnChecked = false;
+function whatsNew(all) {
+  const cur = (S.update || {}).version || '', seen = cv('general', 'seen_version', '');
+  const list = (typeof WHATSNEW === 'undefined' ? [] : WHATSNEW).filter(e => verNum(e.v) <= verNum(cur) &&
+    (all || (seen ? verNum(e.v) > verNum(seen) : e.v === cur)));
+  if (!list.length) return false;
+  $('#wn-title').textContent = t('wn.title', cur);
+  $('#wn-list').innerHTML = list.map(e => `<section><h4>${t('wn.v', e.v)}</h4><ul>${(e[LANG] || e.en).map(p => `<li>${esc(p)}</li>`).join('')}</ul></section>`).join('');
+  $('#wn').classList.remove('hidden');
+  $('#wn-list').scrollTop = 0;
+  return true;
+}
+function whatsNewCheck() {
+  if (wnChecked || document.documentElement.classList.contains('remote')) return;
+  const cur = (S.update || {}).version; if (!cur) return;
+  wnChecked = true;
+  if (cv('general', 'seen_version', '') === cur) return;
+  if (wzShown || !whatsNew(false)) setCfg('general', 'seen_version', cur);   // a fresh install, or nothing to show
+}
+function whatsNewClose() { $('#wn').classList.add('hidden'); const cur = (S.update || {}).version; if (cur) setCfg('general', 'seen_version', cur); }
+$('#wn-ok').addEventListener('click', whatsNewClose);
+$('#wn').addEventListener('pointerdown', e => { if (e.target.id === 'wn') whatsNewClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#wn').classList.contains('hidden')) whatsNewClose(); });
+$('#wn-open').addEventListener('click', () => whatsNew(true));
+
 // diagnostics: one text file in Downloads (log, settings, devices, network), without keys or passwords
 function updateDiag() {
   const D = S.diag || {};
@@ -2256,6 +2314,7 @@ if (wv) wv.addEventListener('message', e => {
     renderEffectSide();
     sizeCanvases();
     if (!wzShown && cv('general', 'welcome', '0') === '1') wizard(true);
+    whatsNewCheck();
   }
 });
 

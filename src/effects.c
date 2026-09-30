@@ -102,7 +102,7 @@ static void load_params(void) {
         znpal[z] = cfg_palette(zs, zpal[z], MAX_PALETTE);
         zmode[z] = !_stricmp(m, "white") ? ZMODE_WHITE
                  : !znpal[z] ? ZMODE_EFFECT : !_stricmp(m, "static") ? ZMODE_STATIC : !_stricmp(m, "palette") ? ZMODE_PALETTE : ZMODE_EFFECT;
-        zkelvin[z] = (int)clampf(cfg_getf(zs, "kelvin", 4000), 2700, 6500);
+        zkelvin[z] = (int)clampf(cfg_getf(zs, "kelvin", 4000), 2000, 7000);
         zlevel[z]  = clampf(cfg_getf(zs, "brightness", 100) / 100.0f, 0.05f, 1);
         const char *e = cfg_get(zs, "effect", "");
         zeffect[z] = !e[0] || !_stricmp(e, "sync") ? -1 : effect_index(e);

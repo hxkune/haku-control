@@ -908,3 +908,11 @@ body.calm nav button { transition: none; }
 
 /* light theme: the watermark and the glows are shown a little stronger, the live colours still lead */
 :root[data-theme="light"] .watermark { opacity: .05; }
+
+/* ---- what is new */
+.card.pdlg.wn { width: min(520px, 100%); max-height: min(640px, calc(100vh - 48px)); }
+.wn-list { overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.wn-list section + section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.wn-list h4 { margin: 0 0 8px; font: 600 11px var(--font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.wn-list ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; }
+.wn-list li::marker { color: var(--faint); }

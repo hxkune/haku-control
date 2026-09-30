@@ -452,6 +452,7 @@
         </div>
         <div class="about mt"><div class="mark"></div>
           <div><h3>haku control</h3><p id="about1"></p><p data-i18n="about2"></p><p class="about-lic" data-i18n="about3"></p></div></div>
+        <div class="btn-row pc-only"><button class="btn small ghost" type="button" id="wn-open"><span data-i18n="wn.open">What's new</span></button></div>
         <div class="set-row pc-only hidden" id="upd-row">
           <div><b data-i18n="upd">Check for updates</b><p class="muted" id="upd-status"></p></div>
           <label class="switch"><input type="checkbox" id="upd-on"><span></span></label>
@@ -505,6 +506,14 @@
   </form>
 </div>
 <!-- a group of devices in the preview: its name, who is in it and one look for all of them -->
+<!-- what is new: once after an update, and from Settings -->
+<div class="sheet-wrap pdlg-wrap hidden" id="wn">
+  <div class="card pdlg wn" role="dialog" aria-modal="true">
+    <div class="pdlg-head"><h3 id="wn-title"></h3></div>
+    <div class="wn-list" id="wn-list"></div>
+    <div class="btn-row"><button class="btn primary" type="button" id="wn-ok"><span data-i18n="wn.ok">Got it</span></button></div>
+  </div>
+</div>
 <div class="sheet-wrap pdlg-wrap hidden" id="gdlg">
   <form class="card pdlg gdlg" id="gdlg-form" role="dialog" aria-modal="true" autocomplete="off">
     <div class="pdlg-head"><h3 id="gdlg-title"></h3></div>
@@ -597,6 +606,7 @@
   if (location.search === "?mock") document.write('<script src="mock.js"><\/script>');
   else if (!(window.chrome && window.chrome.webview)) document.write('<script src="remote.js"><\/script>');</script>
 <script src="i18n.js"></script>
+<script src="whatsnew.js"></script>
 <script src="qr.js"></script>
 <script src="app.js"></script>
 </body>

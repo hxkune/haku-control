@@ -93,6 +93,7 @@ static int elg_open(ext_dev *d) {
     d->priv = e; d->nleds = 1;
     // the first time a Key Light shows up it is put in the white mode (4500 K): it has no colours of its own
     char sec[16], zone[24]; snprintf(sec, sizeof(sec), "dev.%d", d->id); snprintf(zone, sizeof(zone), "zone.dev%d", d->id);
+    ext_set_caps(d, e->colour ? "" : "white", e->colour ? 0 : 2900, e->colour ? 0 : 7000);   // Key Lights: white only
     if (!e->colour && !cfg_geti(sec, "white_set", 0)) {
         if (!cfg_get(zone, "mode", NULL)) { cfg_set(zone, "mode", "white"); cfg_set(zone, "kelvin", "4500"); }
         cfg_set(sec, "white_set", "1");

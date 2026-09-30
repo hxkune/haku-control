@@ -64,7 +64,7 @@ const STATE = {
     scanning: 0,
     kinds: ['wled:WLED:1', 'openrgb:OpenRGB:1', 'govee:Govee:0', 'lifx:LIFX:0', 'yeelight:Yeelight:0', 'hue:Philips Hue:0', 'wiz:WiZ:0'].map(x => { const [kind, title, p] = x.split(':'); return { kind, title, per_led: +p }; }),
   },
-  cfg: { remote: { enabled: '1' }, general: { palette: '#00C8FF, #7A3CFF, #FF2D95', speed: '5', fps: '30', profile: '1' }, 'profile.1': { name: 'Gaming', hotkey: 'Ctrl+Alt+1' }, 'profile.2': { name: 'Work' }, 'profile.3': { name: 'Night' }, layout: { gpu_leds: '8', board_led: '1', ram_enabled: '1', gpu_enabled: '1', lights_enabled: '1', nanoleaf_enabled: '1' },
+  cfg: { remote: { enabled: '1' }, general: { palette: '#00C8FF, #7A3CFF, #FF2D95', speed: '5', fps: '30', profile: '1' }, 'profile.1': { name: 'Gaming', hotkey: 'Ctrl+Alt+1' }, 'dev.11': { kind: 'elgato', caps: 'white', kmin: '2900', kmax: '7000' }, 'zone.dev11': { mode: 'white', kelvin: '4500' }, 'profile.2': { name: 'Work' }, 'profile.3': { name: 'Night' }, layout: { gpu_leds: '8', board_led: '1', ram_enabled: '1', gpu_enabled: '1', lights_enabled: '1', nanoleaf_enabled: '1' },
     caustic: { palette: '#00E5FF, #0060FF, #00FFB0' }, bubbles: { palette: '#001830, #00E5FF, #FFFFFF' }, comet: { palette: '#FFFFFF, #00C8FF, #7A3CFF' },
     lava: { palette: '#FF2D00, #FF9000, #B0006A', speed: '3' }, breathe: { palette: '#00C8FF, #FF2D95', speed: '3' },
     temperature: { palette: '#0050FF, #00FF80, #FFB000, #FF0020', cold: '35', hot: '75' }, static: { palette: '#7A3CFF' },

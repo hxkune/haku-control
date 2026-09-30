@@ -69,6 +69,9 @@ int  orgbapp_json(char *out, int cap);
 extern const ext_driver drv_wled, drv_openrgb, drv_govee, drv_lifx, drv_yeelight, drv_hue, drv_wiz, drv_tuya, drv_nlusb, drv_goveecloud, drv_elgato, drv_wooting, drv_divoom;
 const ext_driver *ext_driver_by_kind(const char *kind);
 void ext_save_key(ext_dev *d, const char *key);   // stores a pairing token in [dev.N] key=
+// What the device can do, for the window ([dev.N] caps, kmin, kmax): "" everything, "white" white light only (its
+// colour temperature range in K). The window then shows only the settings that apply.
+void ext_set_caps(ext_dev *d, const char *caps, int kmin, int kmax);
 
 // ---- netutil.c
 void   net_init(void);
