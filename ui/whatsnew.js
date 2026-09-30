@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.16',
+    en: ['Next to the theme switch there is now a field for secret codes. What they open is for you to find out 👀'],
+    ru: ['Рядом с выбором темы появилось поле для секретных кодов. Что они открывают — узнаете сами 👀'],
+    fr: ['À côté du choix du thème, il y a maintenant un champ pour des codes secrets. Ce qu\'ils ouvrent, à vous de le découvrir 👀'] },
   { v: '0.3.15',
     en: ['Updates install by themselves: haku checks every few hours and updates when a new version is out, after a notice from the tray (never during a full-screen game or a presentation).'],
     ru: ['Обновления ставятся сами: haku проверяет каждые несколько часов и обновляется, когда выходит новая версия, предупредив уведомлением из трея (никогда во время полноэкранной игры или презентации).'],
