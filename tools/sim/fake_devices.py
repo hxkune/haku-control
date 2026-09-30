@@ -367,6 +367,9 @@ class DivoomHttp(BaseHTTPRequestHandler):
         elif c == 'Channel/SetRGBInfo':
             DIVOOM_RATE.hit(f"on={body['OnOff']} {body['Color']} bri={body['Brightness']} zone={body['SelectLightIndex']} fx={[x['SelectEffect'] for x in body['LightList']]}")
             self.reply({'error_code': 0})
+        elif c == 'Channel/OnOffScreen':
+            log('divoom', f"screens on={body.get('OnOff')}")
+            self.reply({'error_code': 0})
         else: self.reply({'error_code': 1})
 
 # Divoom Times Frame: POST or GET with the JSON as its body, answers {"ReturnCode": ...} pretty-printed with tabs;

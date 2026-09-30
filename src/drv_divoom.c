@@ -11,7 +11,8 @@
 // Its screen ([dev.N] screen=): own (left alone), dial (one of Divoom's dials, [dev.N] clock=, kept per profile)
 // or monitor (haku's own layout: time, date, CPU, memory, GPU temperature, the effect and the profile, through
 // Device/EnterCustomControlMode and Device/UpdateDisplayItems). [dev.N] screen_follow=1 (default) switches the
-// screen off with the lights. The dial it showed is read at the start and given back when haku lets go.
+// screen off with the lights, the Times Gate's five screens too. The dial it showed is read at the start and given
+// back when haku lets go.
 // Written after the community's notes (github.com/averhaegen/hacs-divoom-times-gate-dev, MIT;
 // github.com/mfmseth/divoom for the Times Frame) without a device: every answer is logged, for the diagnostics.
 // Finding them: Divoom's own service lists the Divoom devices behind the same internet address as the PC, with
@@ -210,6 +211,7 @@ static int dv_open(ext_dev *d) {
         free(v); return 0;
     }
     snprintf(v->cmd, sizeof(v->cmd), "Channel/SetRGBInfo");
+    v->scr_off = -1;   // the screen's state is unknown: the first frame sets it (haku may have switched it off last time)
     if (frame) {
         // The Times Frame's light (the DIVOOM letters on its side and the bars under them) takes
         // Channel/SetAmbientLight with Brightness, Color, ColorCycle, EqOnOff and SelectEffect, the fields
@@ -226,7 +228,6 @@ static int dv_open(ext_dev *d) {
                                  v->had_fx, v->had_col, v->had_bri, v->had_cycle, v->had_eq);
         }
         v->frame = 1;
-        v->scr_off = -1;   // unknown: the first frame sets it (haku may have switched it off when it last closed)
         s2 = call(v, "\"Command\":\"Channel/GetClockInfo\"", ans, sizeof(ans));
         v->orig_clock = s2 == 200 && answer_ok(ans) ? (int)json_get_num(ans, "ClockId", 0) : 0;
         if (!d->fails) logf_("dev.%d (divoom frame): its screen shows dial %d", d->id, v->orig_clock);
@@ -259,7 +260,7 @@ static int set_rgb(ext_dev *d, int on, const char *col, int bri) {
     return 1;
 }
 
-// ---------------------------------------------------------------- the Times Frame's screen
+// ---------------------------------------------------------------- the screen (the Times Frame's; the Times Gate's only goes off and on)
 enum { SCR_OWN, SCR_MONITOR, SCR_DIAL };
 
 static int screen_mode_of(const char *sec) {
@@ -270,7 +271,7 @@ static int screen_mode_of(const char *sec) {
 static int simple(dv_t *v, const char *fields, const char *what, int id) {
     char ans[512];
     int st = call(v, fields, ans, sizeof(ans)), ok = st == 200 && answer_ok(ans);
-    if (!ok) logf_("dev.%d (divoom frame): %s answered %d: %.200s", id, what, st, ans);
+    if (!ok) logf_("dev.%d (divoom): %s answered %d: %.200s", id, what, st, ans);
     return ok;
 }
 
@@ -395,7 +396,7 @@ static void screen_tick(ext_dev *d, dv_t *v) {
         simple(v, f, "Channel/OnOffScreen", d->id);
         v->scr_off = off;
     }
-    if (off) return;
+    if (off || !v->frame) return;   // the Times Gate: its screens only follow the lights
     int m = screen_mode_of(sec), clock = cfg_geti(sec, "clock", 0);
     if (m != v->scr_mode || (m == SCR_DIAL && clock != v->clock_on)) {
         if (v->scr_mode == SCR_MONITOR || m == SCR_OWN) screen_back(d, v);
@@ -410,7 +411,7 @@ static void screen_tick(ext_dev *d, dv_t *v) {
 static int dv_send(ext_dev *d, const rgbf *c, int n) {
     if (n < 1) return 1;
     dv_t *v = d->priv;
-    if (v->frame) screen_tick(d, v);
+    screen_tick(d, v);
     if (v->frame_dark) return 1;
     float r = clampf(c[0].r, 0, 1), g = clampf(c[0].g, 0, 1), b = clampf(c[0].b, 0, 1), mx = max(r, max(g, b));
     int on = mx >= 0.02f, bri = (int)(mx * 100 + 0.5f);
@@ -433,14 +434,12 @@ static int dv_send(ext_dev *d, const rgbf *c, int n) {
 
 static void dv_leave(ext_dev *d, int how) {
     dv_t *v = d->priv;
-    if (v->frame) {
-        char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
-        if (v->scr_mode != SCR_OWN) screen_back(d, v);
-        int off = how == LEAVE_OFF && cfg_geti(sec, "screen_follow", 1);
-        if (off != v->scr_off) {
-            char f[80]; snprintf(f, sizeof(f), "\"Command\":\"Channel/OnOffScreen\",\"OnOff\":%d", !off);
-            simple(v, f, "Channel/OnOffScreen", d->id);
-        }
+    char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    if (v->frame && v->scr_mode != SCR_OWN) screen_back(d, v);
+    int off = how == LEAVE_OFF && cfg_geti(sec, "screen_follow", 1);
+    if (v->scr_off >= 0 && off != v->scr_off) {
+        char f[80]; snprintf(f, sizeof(f), "\"Command\":\"Channel/OnOffScreen\",\"OnOff\":%d", !off);
+        simple(v, f, "Channel/OnOffScreen", d->id);
     }
     if (v->frame_dark) return;
     if (how == LEAVE_OFF) set_rgb(d, 0, "#000000", 0);

@@ -1992,7 +1992,8 @@ function buildDevices() {
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>
           <p class="hint">${t('dv.screen.note')}</p>` : `<label class="num"><span>${t('dv.lights')}</span><select class="select dev-lights">${['both', 'back', 'sides', 'back_cycle', 'back_rainbow'].map(v =>
             `<option value="${v}"${cv(sec, 'lights', 'both') === v ? ' selected' : ''}>${t('dv.l.' + v)}</option>`).join('')}</select></label>
-          <p class="hint">${t('dv.lights.note')}</p>`}` : ''}
+          <p class="hint">${t('dv.lights.note')}</p>
+          <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>`}` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
