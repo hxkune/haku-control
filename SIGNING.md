@@ -60,8 +60,10 @@ The next `v*` tag then waits for the approval in SignPath and publishes signed f
 - **Repository:** https://github.com/hxkune/haku-control
 - **License:** GPL-3.0-only
 - **Description:** Windows tray app that drives PC and room RGB lighting: MSI Mystic Light boards and ENE DRAM
-  (through the PawnIO driver), Nanoleaf, Philips Hue, WLED, OpenRGB, LIFX, Govee, Yeelight, WiZ and AiDot lights over
-  the local network. Written in C with a WebView2 settings window; built by GitHub Actions.
+  (through the PawnIO driver), Nanoleaf (several controllers, Secretlab MAGRGB, the USB Pegboard), Philips Hue, WLED,
+  OpenRGB, LIFX, Govee, Yeelight, WiZ, Tuya and AiDot lights, mostly over the local network. Written in C with a
+  WebView2 settings window; built by GitHub Actions. Updates are installed from this repository's releases only,
+  after checking the size, SHA-256 and (once signed) the signature of the installer.
 - **Released artifacts:** `haku-control-setup.exe` (installer) and a zip with the same files, on GitHub Releases.
 - **Third-party components:** Microsoft WebView2 SDK loader (BSD-3-Clause), PawnIO SMBus module (LGPL-2.1,
   unmodified, from namazso/PawnIO.Modules). No other bundled code.

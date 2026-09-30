@@ -165,12 +165,17 @@ haku control collects no personal data and sends no usage statistics. It connect
 purposes:
 
 - **Update check:** once a day it asks the GitHub API for the latest release of this repository (no data about
-  you or your PC is sent). *Settings → Check for updates* turns it off.
+  you or your PC is sent). *Settings → Check for updates* turns it off. *Update* downloads that release's installer
+  from GitHub, only when you press it.
 - **Your lights:** it talks to the lights you added, on your local network.
 - **Sign-ins you start:** AiDot or Tuya receive the sign-in data you enter, once, to hand out your lights' local
   keys. Nothing is sent to them otherwise.
+- **Govee (cloud):** only if you enter a Govee API key: the key and the commands for the Govee devices you added
+  (on / off, colour, brightness, screen sync) go to Govee's cloud API, as those devices cannot be reached locally.
 - **Describe a mood:** the text goes to Ollama on your own PC, if you use it.
 - **Phone control:** off by default; when on, it serves the settings page on your local network only.
+- **Diagnostics:** *Save* under *Settings → Files* writes a text file to your Downloads folder (log, settings without
+  keys or passwords, devices, network adapters). It is not sent anywhere; you decide whether to share it.
 
 ## License
 
