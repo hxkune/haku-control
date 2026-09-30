@@ -210,6 +210,19 @@ static void save_keys(void) {
 }
 
 // ---------------------------------------------------------------- layout
+// 1D lightstrips report no panel positions at all (Secretlab MAGRGB NL72S2: its layout request answers 500), so
+// their zone count comes from the model: [nanoleafN] zones= overrides it (the MAGRGB XL shares the model string
+// with 48 zones). Zones are numbered from 0; zone 0 is at the right end.
+static int strip_zones(const ctl_t *c, const char *js) {
+    char sec[16]; sec_of(c->slot, sec, sizeof(sec));
+    int z = cfg_geti(sec, "zones", 0);
+    if (z > 0 && z <= MAX_PANELS) return z;
+    static const struct { const char *model; int zones; } M[] = { { "NL72S2", 41 } };
+    for (int i = 0; i < (int)(sizeof(M) / sizeof(M[0])); i++) if (!_stricmp(c->model, M[i].model)) return M[i].zones;
+    int n = (int)jnum(strstr(js, "\"layout\":"), "numPanels", 0);
+    return n > 0 && n <= MAX_PANELS ? n : 0;
+}
+
 // Panel centres, rotated by the controller's globalOrientation plus the user's rotation, normalised to 0..1 (y = 0 at top).
 static void parse_layout(ctl_t *c, const char *js) {
     char sec[16]; sec_of(c->slot, sec, sizeof(sec));
@@ -243,6 +256,12 @@ static void parse_layout(ctl_t *c, const char *js) {
         const char *close = strchr(o, ']'), *next = strchr(o, '{');
         if (close && (!next || close < next)) break;
     }
+    if (!n) {   // a strip without positions: its zones in a row (the row layout below)
+        int z = strip_zones(c, js);
+        for (int i = 0; i < z; i++) { p[i].id = i; p[i].shape = 0; p[i].x = p[i].y = p[i].o = 0; }
+        n = z;
+        if (n) logf_("nanoleaf %s: no panel positions, %d zones for %s", c->cur.ip, n, c->model[0] ? c->model : "this model");
+    }
     if (!n) return;
     float x0 = p[0].x, x1 = p[0].x, y0 = p[0].y, y1 = p[0].y;
     for (int i = 1; i < n; i++) {
@@ -252,7 +271,7 @@ static void parse_layout(ctl_t *c, const char *js) {
     // a strip whose zones all report the same spot: lay them out in a row, zone 0 at the right end (like MAGRGB)
     int row = n > 1 && span < 1;
     if (row) {
-        for (int i = 0; i < n; i++) { p[i].x = (float)(n - 1 - i) * 10; p[i].y = 0; p[i].o = 0; }
+        for (int i = 0; i < n; i++) { p[i].x = (float)(flip ? i : n - 1 - i) * 10; p[i].y = 0; p[i].o = 0; }   // flip: mounted the other way round
         x0 = 0; x1 = (float)(n - 1) * 10; y0 = y1 = 0; w = x1; h = 0; span = w;
     }
     if (span < 1) span = 1;
@@ -338,7 +357,7 @@ static int connect_panels(ctl_t *c) {
     char nm[64], md[16], sn[40];
     jstr(c->http_buf, "name", nm, sizeof(nm)); jstr(c->http_buf, "model", md, sizeof(md)); jstr(c->http_buf, "serialNo", sn, sizeof(sn));
     AcquireSRWLockExclusive(&lk);
-    strcpy_s(c->name, sizeof(c->name), nm); strcpy_s(c->model, sizeof(c->model), md);
+    strcpy_s(c->name, sizeof(c->name), nm[0] ? nm : md); strcpy_s(c->model, sizeof(c->model), md);
     int new_serial = sn[0] && strcmp(sn, c->cur.serial);
     if (new_serial) strcpy_s(c->cur.serial, sizeof(c->cur.serial), sn);
     ReleaseSRWLockExclusive(&lk);
@@ -375,7 +394,7 @@ static int write_anim(ctl_t *c) {
     if (n >= cap) { logf_("nanoleaf %s: animation too large", c->cur.ip); return 0; }
     snprintf(c->anim_body + n, sizeof(c->anim_body) - n, "\"}}");
     int st = api(c, "PUT", "/effects", c->anim_body);
-    if (st / 100 == 4 && st != 401 && st != 403) {
+    if (st >= 400 && st != 401 && st != 403) {
         logf_("nanoleaf %s: custom animations refused (%d), streaming instead", c->cur.ip, st);
         return -1;
     }
@@ -429,12 +448,21 @@ static int accept_token(const char *ip, void *ctx) {
     return http(ip, "GET", path, NULL, b, sizeof(b)) == 200;
 }
 
-// any Nanoleaf controller: unauthenticated API requests answer 401 / 403
+// any Nanoleaf controller: something answering HTTP on port 16021 (panels say 401 / 403 without a token, other
+// devices such as the MAGRGB strip may answer differently; only a real controller hands out a token later)
 static int accept_any(const char *ip, void *ctx) {
     (void)ctx;
     char b[2048];
     int st = http(ip, "GET", "/api/v1/", NULL, b, sizeof(b));
-    return st == 401 || st == 403;
+    if (st) logf_("nanoleaf: %s answers on port 16021 (%d)", ip, st);
+    return st != 0;
+}
+
+typedef struct { char (*cand)[32]; int *n, max; } mdns_ctx;
+static void mdns_hit(const char *ip, void *p) {
+    mdns_ctx *m = p;
+    for (int i = 0; i < *m->n; i++) if (!strcmp(m->cand[i], ip)) return;
+    if (*m->n < m->max) { strcpy_s(m->cand[(*m->n)++], 32, ip); logf_("nanoleaf: %s announces itself (mDNS)", ip); }
 }
 
 // the controller moved to another address (DHCP): look for the one that knows our token
@@ -615,8 +643,16 @@ static unsigned __stdcall pair_fn(void *p) {
     // every controller on the local /24 networks, except the ones already paired and answering to their token
     // (a paired controller that lost its token may be paired again: it keeps its slot)
     static char cand[32][32]; int nc = 0;
+    // controllers that announce themselves (panels: _nanoleafapi; Essentials-class devices such as MAGRGB also _ltpdu),
+    // then every host of the local /24 networks
+    mdns_ctx mc = { cand, &nc, 32 };
+    mdns_browse("_nanoleafapi._tcp.local", 1500, mdns_hit, &mc);
+    mdns_browse("_ltpdu._tcp.local", 1500, mdns_hit, &mc);
     ULONG bc[8]; int nb = net_broadcasts(bc, 8);
-    for (int i = 0; i < nb && nc < 32; i++) nc += scan24(ntohl(bc[i]), accept_any, NULL, cand + nc, 32 - nc);
+    for (int i = 0; i < nb && nc < 32; i++) {
+        char more[32][32]; int k = scan24(ntohl(bc[i]), accept_any, NULL, more, 32);
+        for (int j = 0; j < k; j++) mdns_hit(more[j], &mc);
+    }
     int again[32] = { 0 };
     for (int i = 0; i < nc; i++) {
         addr_t a = { 0 }; int k = -1;
@@ -636,9 +672,12 @@ static unsigned __stdcall pair_fn(void *p) {
     logf_("nanoleaf: pairing, %d controller(s) found, waiting for a power button / Connect to API", nc);
     InterlockedExchange(&pair_state, PAIR_PRESS);
     DWORD end = GetTickCount() + 90000;
+    int last_st[32]; for (int i = 0; i < 32; i++) last_st[i] = -1;
     while (GetTickCount() < end) {
         for (int i = 0; i < nc; i++) {
-            if (http(cand[i], "POST", "/api/v1/new", NULL, b, sizeof(b)) != 200) continue;
+            int st = http(cand[i], "POST", "/api/v1/new", NULL, b, sizeof(b));
+            if (st != last_st[i]) { last_st[i] = st; logf_("nanoleaf: pairing %s answers %d", cand[i], st); }   // 403: window not open
+            if (st != 200) continue;
             addr_t a = { 0 };
             strcpy_s(a.ip, sizeof(a.ip), cand[i]);
             jstr(b, "auth_token", a.token, sizeof(a.token));

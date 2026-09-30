@@ -33,9 +33,10 @@ def info():
         "state": {"on": {"value": state["on"]}, "brightness": {"value": state["brightness"]}, "hue": {"value": 0},
                   "sat": {"value": 0}, "ct": {"value": 4000}, "colorMode": "effect"},
         "effects": {"select": state["select"], "effectsList": ["Northern Lights"]},
-        "panelLayout": {"globalOrientation": {"value": 0}, "layout": {"numPanels": len(PANELS) + 1, "sideLength": 0,
-            "positionData": ([] if STRIP else [{"panelId": 0, "x": 150, "y": -40, "o": 0, "shapeType": 12}]) +
-                            [{"panelId": i, "x": round(x), "y": round(y), "o": o, "shapeType": 0 if STRIP else 8} for i, x, y, o in PANELS]}},
+        # the real MAGRGB (NL72S2) reports no layout at all: its zones are known by model (41)
+        **({} if STRIP else {"panelLayout": {"globalOrientation": {"value": 0}, "layout": {"numPanels": len(PANELS) + 1, "sideLength": 0,
+            "positionData": [{"panelId": 0, "x": 150, "y": -40, "o": 0, "shapeType": 12}] +
+                            [{"panelId": i, "x": round(x), "y": round(y), "o": o, "shapeType": 8} for i, x, y, o in PANELS]}}}),
     }
 
 
@@ -75,8 +76,10 @@ class Api(BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path
         if not p.startswith("/api/v1/test"):
-            return self.reply(401)
+            return self.reply(404 if STRIP else 401)
         p = p[len("/api/v1/test"):]
+        if STRIP and p.startswith("/panelLayout"):
+            return self.reply(500)   # not implemented on the 1D strip
         if p in ("", "/"):
             return self.reply(200, info())
         if p == "/state/on":
@@ -105,7 +108,7 @@ class Api(BaseHTTPRequestHandler):
             elif w["animType"] == "custom":
                 if STRIP:
                     print(time.strftime("%H:%M:%S"), "custom animation refused (strip)", flush=True)
-                    return self.reply(400)
+                    return self.reply(500)
                 try:
                     frames, fade = check_anim(w)
                 except (AssertionError, ValueError, IndexError) as e:
@@ -126,8 +129,12 @@ def udp():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind((IP, 60222))
     while True:
-        s.recv(2048)
+        d = s.recv(2048)
         state["udp"] += 1
+        n = int.from_bytes(d[:2], "big")
+        ids = [int.from_bytes(d[2 + i * 8:4 + i * 8], "big") for i in range(n)]
+        if len(d) != 2 + n * 8 or any(i >= len(PANELS) for i in ids):   # the real strip drops such frames whole
+            print(time.strftime("%H:%M:%S"), f"BAD FRAME: {n} panels, ids {min(ids, default=0)}..{max(ids, default=0)}", flush=True)
 
 
 def report():
