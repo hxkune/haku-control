@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.22',
+    en: ['Divoom Times Gate and Times Frame: the screens stay off with the lights (they used to come back on right away).'],
+    ru: ['Divoom Times Gate и Times Frame: экраны остаются выключенными вместе со светом (раньше сразу включались обратно).'],
+    fr: ['Divoom Times Gate et Times Frame : les écrans restent éteints avec l\'éclairage (ils se rallumaient aussitôt).'] },
   { v: '0.3.21',
     en: ['Divoom Times Frame: its side light follows haku. Pick the light effect by number in its card (they have no names yet).',
       'Divoom Times Frame screen: leave it as it is, show a Divoom dial, or haku\'s own screen with the time, CPU, memory, the effect and the profile. Each profile keeps its own.',
