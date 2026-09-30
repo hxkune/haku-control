@@ -1413,7 +1413,8 @@ function updateDevices() {
     }));
   }
   const ks = $('#man-kind');
-  if (ks.options.length !== E.kinds.length) ks.innerHTML = E.kinds.map(k => `<option value="${k.kind}">${esc(k.title)}</option>`).join('');
+  if (ks.options.length !== E.kinds.length + 1)   // + Nanoleaf: paired by address (Nanoleaf page), not a LAN device
+    ks.innerHTML = `<option value="nanoleaf">Nanoleaf / Secretlab MAGRGB</option>` + E.kinds.map(k => `<option value="${k.kind}">${esc(k.title)}</option>`).join('');
   manualHints();
 }
 function manualHints() {
@@ -1427,6 +1428,11 @@ $('#man-kind').addEventListener('change', manualHints);
 $('#man-add').addEventListener('click', () => {
   const kind = $('#man-kind').value, host = $('#man-host').value.trim();
   if (!kind || !/^[\w.\-]+(:\d+)?$/.test(host)) { $('#man-host').focus(); return; }
+  if (kind === 'nanoleaf') {   // pairing with that address; the Nanoleaf page shows what to press
+    if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) { $('#man-host').focus(); return; }
+    S.nano.pair = 1; send({ cmd: 'pair', ip: host }); $('#man-host').value = ''; showTab('nano'); updateNano();
+    return;
+  }
   send({ cmd: 'dev_add', kind, host, sub: kind === 'openrgb' ? (+$('#man-sub').value || 0) : -1, name: kindTitle(kind), leds: 0 });
   $('#man-host').value = '';
 });

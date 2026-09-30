@@ -631,6 +631,8 @@ void nano_suspend(int s) {
 }
 
 // ---------------------------------------------------------------- pairing
+static char pair_ip[32];   // pairing with this address only ("Add by address"), else search
+
 static unsigned __stdcall pair_fn(void *p) {
     (void)p;
     char b[4096];
@@ -646,6 +648,7 @@ static unsigned __stdcall pair_fn(void *p) {
     // controllers that announce themselves (panels: _nanoleafapi; Essentials-class devices such as MAGRGB also _ltpdu),
     // then every host of the local /24 networks
     mdns_ctx mc = { cand, &nc, 32 };
+    if (pair_ip[0]) { mdns_hit(pair_ip, &mc); logf_("nanoleaf: pairing with %s (added by address)", pair_ip); goto searched; }
     mdns_browse("_nanoleafapi._tcp.local", 1500, mdns_hit, &mc);
     mdns_browse("_ltpdu._tcp.local", 1500, mdns_hit, &mc);
     ULONG bc[8]; int nb = net_broadcasts(bc, 8);
@@ -653,6 +656,7 @@ static unsigned __stdcall pair_fn(void *p) {
         char more[32][32]; int k = scan24(ntohl(bc[i]), accept_any, NULL, more, 32);
         for (int j = 0; j < k; j++) mdns_hit(more[j], &mc);
     }
+searched:;
     int again[32] = { 0 };
     for (int i = 0; i < nc; i++) {
         addr_t a = { 0 }; int k = -1;
@@ -712,14 +716,21 @@ int nano_start(void) {
     return n > 0;
 }
 
-void nano_pair_start(void) {
+// ip: pair with the controller at this address only (a strip on another subnet, or one the search misses);
+// NULL / "": search the local networks
+void nano_pair_start_ip(const char *ip) {
     if (pair_th) {
         if (WaitForSingleObject(pair_th, 0) != WAIT_OBJECT_0) return;   // still running
         CloseHandle(pair_th);
+        pair_th = NULL;
     }
+    struct in_addr a;
+    snprintf(pair_ip, sizeof(pair_ip), "%s", ip && inet_pton(AF_INET, ip, &a) == 1 ? ip : "");
     net_ready();
     pair_th = (HANDLE)_beginthreadex(NULL, 0, pair_fn, NULL, 0, NULL);
 }
+
+void nano_pair_start(void) { nano_pair_start_ip(NULL); }
 
 // Unpair a controller: its panels get their own scene back, the slot is freed.
 void nano_forget(int slot) {

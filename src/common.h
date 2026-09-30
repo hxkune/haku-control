@@ -122,6 +122,7 @@ int  nano_bake_wanted(int k);     // 1 once when the panels need their animation
 void nano_upload(int k, const rgbf *frames, int nframes, int npanels, float step);   // frames[f * NANO_MAX_PANELS + panel]; 0 frames: stream
 void nano_stop(void);
 void nano_pair_start(void);       // find a new controller and wait for its power button (runs in background)
+void nano_pair_start_ip(const char *ip);   // the same with one address (Add by address)
 void nano_forget(int slot);
 void nano_relayout(void);         // re-read the layouts (after rotate / flip changed)
 void nano_suspend(int sleeping);  // PC sleep / resume

@@ -88,6 +88,18 @@ class Api(BaseHTTPRequestHandler):
             return self.reply(200, state["select"])
         self.reply(404)
 
+    def do_POST(self):
+        # pairing: 403 until the "Connect to API" window opens (here: the 3rd try), then the token
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        if self.path != "/api/v1/new":
+            return self.reply(404)
+        state["pair_tries"] = state.get("pair_tries", 0) + 1
+        if state["pair_tries"] < 3:
+            print(time.strftime("%H:%M:%S"), "pairing refused (window closed)", flush=True)
+            return self.reply(403)
+        print(time.strftime("%H:%M:%S"), "pairing: token handed out", flush=True)
+        self.reply(200, {"auth_token": "test"})
+
     def do_PUT(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
         p = self.path[len("/api/v1/test"):]

@@ -93,7 +93,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "set") app_set(field(js, "s").c_str(), field(js, "k").c_str(), field(js, "v").c_str());
     else if (cmd == "toggle") { app_toggle_device(field(js, "k").c_str()); post_status(); }
     else if (cmd == "power") { app_power(); post_status(); }
-    else if (cmd == "pair") { nano_pair_start(); post_status(); }
+    else if (cmd == "pair") { std::string ip = field(js, "ip"); nano_pair_start_ip(ip.c_str()); post_status(); }
     else if (cmd == "preset") { app_preset_apply(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "preset_save") {
         app_preset_save(atoi(field(js, "id").c_str()), field(js, "name").c_str(), atoi(field(js, "bri").c_str()), atoi(field(js, "zones").c_str()));
