@@ -19,7 +19,10 @@ typedef struct {
 static int call(dv_t *v, const char *cmd_fields, char *buf, int cap) {
     char body[768];
     snprintf(body, sizeof(body), "{%s,\"LocalToken\":%ld}", cmd_fields, v->token);
-    return http_request(v->ip, v->port, "POST", v->path, body, buf, cap);
+    char why[120];
+    int st = http_call(v->ip, v->port, "POST", v->path, body, buf, cap, why, sizeof(why));
+    if (!st && why[0]) snprintf(buf, cap, "(%s)", why);   // for the log
+    return st;
 }
 
 // error_code 0 (a number) is success; anything else ("DeviceToken is err", 1, 2...) is not

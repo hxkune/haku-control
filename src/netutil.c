@@ -3,6 +3,7 @@
 // UDP sockets, and a forgiving JSON field reader (flat lookups by key, good enough for device APIs).
 #include "common.h"
 #include "devices.h"
+#include <ctype.h>
 #include <ws2tcpip.h>
 #include <stdlib.h>
 
@@ -91,6 +92,69 @@ int http_request(const char *host, int port, const char *method, const char *pat
     if (sscanf_s(buf, "HTTP/%*d.%*d %d", &status) != 1) return 0;
     char *b = strstr(buf, "\r\n\r\n");
     if (b) memmove(buf, b + 4, strlen(b + 4) + 1); else buf[0] = 0;
+    return status;
+}
+
+// HTTP/1.1 for small devices' own web servers: the request and its body in one packet, and the answer read up to
+// the Content-Length it names (or to the end of a chunked one), since such servers may keep the connection open.
+// Sent over HTTP/1.0 in two packets (http_request), PUTs to Elgato Key Lights MK.2 (firmware 1.0.4) went
+// unanswered. 2 s for an answer. Returns the status (0: no answer); why (may be NULL) says what went wrong.
+int http_call(const char *ip, int port, const char *method, const char *path, const char *body,
+                    char *buf, int cap, char *why, int whycap) {
+    buf[0] = 0; if (why) why[0] = 0;
+    DWORD t0 = GetTickCount();
+    SOCKET s = tcp_connect(ip, port, 1500);
+    if (s == INVALID_SOCKET) { if (why) snprintf(why, whycap, "no connection"); return 0; }
+    DWORD to = 2000; setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char *)&to, sizeof(to));
+    char req[1024];
+    int bl = body ? (int)strlen(body) : 0;
+    int n = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\nHost: %s:%d\r\nAccept: application/json\r\n%s"
+                     "Content-Length: %d\r\nConnection: close\r\n\r\n%s", method, path, ip, port,
+                     bl ? "Content-Type: application/json\r\n" : "", bl, body ? body : "");
+    if (n >= (int)sizeof(req) || !tcp_send_all(s, req, n)) { closesocket(s); if (why) snprintf(why, whycap, "send failed"); return 0; }
+    int got = 0, head = -1, clen = -1, chunked = 0;
+    while (got < cap - 1) {
+        int r = recv(s, buf + got, cap - 1 - got, 0);
+        if (r <= 0) break;
+        got += r; buf[got] = 0;
+        if (head < 0) {
+            char *e = strstr(buf, "\r\n\r\n");
+            if (e) {
+                head = (int)(e - buf) + 4;
+                char low[1024]; int hl = min(head, (int)sizeof(low) - 1);
+                for (int i = 0; i < hl; i++) low[i] = (char)tolower((unsigned char)buf[i]);
+                low[hl] = 0;
+                char *cl = strstr(low, "content-length:");
+                if (cl) clen = atoi(cl + 15);
+                chunked = strstr(low, "transfer-encoding: chunked") != NULL;
+            }
+        }
+        if (head >= 0 && clen >= 0 && got >= head + clen) break;   // the whole answer
+        if (head >= 0 && chunked && strstr(buf + head, "\r\n0\r\n\r\n") != NULL) break;
+        if (head >= 0 && chunked && !strncmp(buf + head, "0\r\n\r\n", 5)) break;
+    }
+    closesocket(s);
+    buf[got] = 0;
+    int status = 0;
+    if (sscanf_s(buf, "HTTP/%*d.%*d %d", &status) != 1) {
+        if (why) snprintf(why, whycap, got ? "odd answer after %lu ms: %.60s" : "no answer in %lu ms", GetTickCount() - t0, buf);
+        return 0;
+    }
+    if (head >= 0) memmove(buf, buf + head, strlen(buf + head) + 1); else buf[0] = 0;
+    if (chunked) {   // size CRLF data CRLF ... 0 CRLF CRLF -> data
+        char *r = buf, *w = buf;
+        for (;;) {
+            long n = strtol(r, &r, 16);
+            char *nl = strstr(r, "\r\n");
+            if (n <= 0 || !nl) break;
+            r = nl + 2;
+            if ((long)strlen(r) < n) n = (long)strlen(r);
+            memmove(w, r, n); w += n; r += n;
+            if (r[0] == '\r' && r[1] == '\n') r += 2;
+        }
+        *w = 0;
+    }
+    if (why && (status < 200 || status >= 300)) snprintf(why, whycap, "answered %d: %.80s", status, buf);
     return status;
 }
 

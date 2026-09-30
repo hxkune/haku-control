@@ -70,6 +70,8 @@ SOCKET tcp_connect(const char *host, int port, int timeout_ms);
 int    tcp_send_all(SOCKET s, const void *data, int len);
 int    tcp_recv_all(SOCKET s, void *data, int len);
 int    http_request(const char *host, int port, const char *method, const char *path, const char *body, char *buf, int cap);
+int    http_call(const char *host, int port, const char *method, const char *path, const char *body, char *buf, int cap,
+                 char *why, int whycap);   // HTTP/1.1, one packet: for devices' own small web servers
 SOCKET udp_socket(int bind_port, int broadcast);   // bind_port < 0: unbound
 int    udp_send(SOCKET s, const char *host, int port, const void *data, int len);
 int    udp_recv(SOCKET s, void *buf, int cap, int ms, char *from, int from_cap);

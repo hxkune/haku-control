@@ -17,7 +17,7 @@ typedef struct {
     int nlights;
     char saved[1024];        // GET /elgato/lights as it was before (for LEAVE_RESTORE)
     int sent_on, sent_bri, sent_a, sent_b, have_sent, fails;
-    DWORD sent_at;
+    DWORD sent_at, retry_at;
 } elg_t;
 
 // The same approximation the effects use for white light (effects.c), so white mode maps back exactly.
@@ -61,25 +61,33 @@ static void model_info(const char *js, char *info, int icap, char *name, int nca
 
 static int put_lights(ext_dev *d, const char *light) {
     elg_t *e = d->priv;
-    char body[640], buf[1024];
+    char body[640], buf[1024], why[160];
     int n = snprintf(body, sizeof(body), "{\"numberOfLights\":%d,\"lights\":[", e->nlights);
     for (int i = 0; i < e->nlights && n < (int)sizeof(body) - 140; i++) n += snprintf(body + n, sizeof(body) - n, "%s%s", i ? "," : "", light);
     snprintf(body + n, sizeof(body) - n, "]}");
-    int st = http_request(e->ip, e->port, "PUT", "/elgato/lights", body, buf, sizeof(buf));
-    return st >= 200 && st < 300;
+    int st = http_call(e->ip, e->port, "PUT", "/elgato/lights", body, buf, sizeof(buf), why, sizeof(why));
+    int ok = st >= 200 && st < 300;
+    // what went wrong goes to the log (the first time, then every 20th), and when it works again
+    if (!ok && (!e->fails || e->fails % 20 == 0)) logf_("dev.%d (elgato %s): PUT /elgato/lights failed: %s (sent %s)", d->id, e->ip, why, body);
+    if (ok && e->fails) logf_("dev.%d (elgato %s): PUT works again", d->id, e->ip);
+    return ok;
 }
 
 static int elg_open(ext_dev *d) {
     elg_t *e = calloc(1, sizeof(elg_t));
     if (!e) return 0;
     e->port = host_port(d->host, ELG_PORT, e->ip, sizeof(e->ip));
-    char buf[2048];
-    if (http_request(e->ip, e->port, "GET", "/elgato/lights", NULL, buf, sizeof(buf)) != 200 || !strstr(buf, "\"lights\"")) { free(e); return 0; }
+    char buf[2048], why[160];
+    if (http_call(e->ip, e->port, "GET", "/elgato/lights", NULL, buf, sizeof(buf), why, sizeof(why)) != 200 || !strstr(buf, "\"lights\"")) {
+        if (!d->fails) logf_("dev.%d (elgato %s): GET /elgato/lights failed: %s", d->id, e->ip, why[0] ? why : buf);
+        free(e); return 0;
+    }
+    if (!d->fails) logf_("dev.%d (elgato %s): lights %.200s", d->id, e->ip, buf);
     snprintf(e->saved, sizeof(e->saved), "%s", buf);
     e->nlights = (int)json_get_num(buf, "numberOfLights", 1);
     if (e->nlights < 1 || e->nlights > 4) e->nlights = 1;
     e->colour = strstr(buf, "\"hue\"") != NULL;
-    if (http_request(e->ip, e->port, "GET", "/elgato/accessory-info", NULL, buf, sizeof(buf)) == 200) model_info(buf, d->info, sizeof(d->info), NULL, 0);
+    if (http_call(e->ip, e->port, "GET", "/elgato/accessory-info", NULL, buf, sizeof(buf), NULL, 0) == 200) model_info(buf, d->info, sizeof(d->info), NULL, 0);
     else strcpy_s(d->info, sizeof(d->info), "Elgato");
     if (e->colour) strncat_s(d->info, sizeof(d->info), " · colour", _TRUNCATE);
     d->priv = e; d->nleds = 1;
@@ -116,8 +124,9 @@ static int elg_send(ext_dev *d, const rgbf *c, int n) {
     // an HTTP request per change: nothing is sent while the light stays the same (again every 5 s, in case it
     // was changed in Elgato's own app)
     DWORD now = GetTickCount();
+    if (e->fails && (int)(now - e->retry_at) < 0) return 1;   // after a failed request: again in a second
     if (e->have_sent && e->sent_on == on && (!on || (e->sent_bri == bri && e->sent_a == a && e->sent_b == bb)) && now - e->sent_at < 5000) return 1;
-    if (!put_lights(d, light)) return ++e->fails < 3;   // one lost request is not a lost light
+    if (!put_lights(d, light)) { e->fails++; e->have_sent = 0; e->retry_at = GetTickCount() + 1000; return e->fails < 5; }   // one lost request is not a lost light
     e->fails = 0; e->have_sent = 1; e->sent_on = on; e->sent_bri = bri; e->sent_a = a; e->sent_b = bb; e->sent_at = now;
     return 1;
 }
@@ -127,7 +136,7 @@ static void elg_leave(ext_dev *d, int how) {
     if (how == LEAVE_OFF) { put_lights(d, "{\"on\":0}"); return; }
     if (how != LEAVE_RESTORE || !e->saved[0]) return;
     char buf[1024];
-    http_request(e->ip, e->port, "PUT", "/elgato/lights", e->saved, buf, sizeof(buf));   // the state as it was read
+    http_call(e->ip, e->port, "PUT", "/elgato/lights", e->saved, buf, sizeof(buf), NULL, 0);   // the state as it was read
 }
 
 static void elg_close(ext_dev *d) { free(d->priv); d->priv = NULL; }
@@ -144,7 +153,7 @@ static void elg_discover(int ms, void (*found)(const disc_t *)) {
     mdns_browse("_elg._tcp.local", ms / 2, elg_hit, &h);
     for (int i = 0; i < h.n; i++) {
         char buf[2048];
-        if (http_request(h.ips[i], ELG_PORT, "GET", "/elgato/accessory-info", NULL, buf, sizeof(buf)) != 200) continue;
+        if (http_call(h.ips[i], ELG_PORT, "GET", "/elgato/accessory-info", NULL, buf, sizeof(buf), NULL, 0) != 200) continue;
         disc_t x = { "elgato" };
         strcpy_s(x.host, sizeof(x.host), h.ips[i]);
         x.sub = -1; x.nleds = 1;
