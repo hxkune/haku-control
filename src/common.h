@@ -159,6 +159,8 @@ void update_start(void);
 void update_stop(void);
 void update_check_now(void);
 void update_open_page(void);
+int  policy_blocked(char *msg, int mcap, char *url, int ucap);   // this version stopped by its author (update.c)
+void app_blocked(const char *msg, const char *url);               // (main.c) let go of the lights, say so, quit
 int  update_json(char *out, int cap);
 
 // ---- mood.c (describe a mood -> palette, effect, speed through a local Ollama model)

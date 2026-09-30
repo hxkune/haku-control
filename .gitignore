@@ -23,3 +23,7 @@ art/out/
 bin-dev/
 obj-dev/
 dist/
+
+# signing keys (the policy key lives in %USERPROFILE%\.haku-policy, never here)
+*.pem
+*.key

@@ -179,6 +179,13 @@ purposes:
 - **Update check:** once a day it asks the GitHub API for the latest release of this repository (no data about
   you or your PC is sent). *Settings → Check for updates* turns it off. *Update* downloads that release's installer
   from GitHub, only when you press it.
+- **Supported versions:** at start and once a day it reads `policy/policy.txt` from this repository (nothing about
+  you or your PC is sent). It is a list, signed with the author's key, of versions the author has stopped supporting:
+  a version on it lets go of the lights, shows the author's message with a download link and closes. Nothing is
+  published there now. An unsigned or altered list is ignored, and without internet access the last list checked
+  applies. Versions before 0.3.12 do not read it.
+- **Ollama setup:** *Download and set up* downloads Ollama's installer from ollama.com and the model from Ollama's
+  library, only when you press it.
 - **Your lights:** it talks to the lights you added, on your local network.
 - **Sign-ins you start:** AiDot or Tuya receive the sign-in data you enter, once, to hand out your lights' local
   keys. Nothing is sent to them otherwise.

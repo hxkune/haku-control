@@ -32,6 +32,7 @@
 #define ID_PROFILE   1500   // + profile number 1..PROFILE_MAX
 #define WM_REHOTKEY  (WM_APP + 2)
 #define WM_REMOTE_CMD (WM_APP + 3)
+#define WM_BLOCKED   (WM_APP + 4)
 #define SAVE_TIMER   1
 enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN, HK_PROFILE_NEXT, HK_PROFILE = 100 /* + profile number */ };
 
@@ -1059,6 +1060,9 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_REMOTE_CMD:
         ui_dispatch((const char *)lp);
         return 0;
+    case WM_BLOCKED:   // this version was stopped by its author: the lights are let go of as on quit
+        DestroyWindow(h);
+        return 0;
     case WM_REHOTKEY:
         register_hotkeys();
         update_tip();
@@ -1122,6 +1126,25 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
+// ---- this version stopped by its author (update.c reads the signed list): the message, a download link, quit
+static char blocked_msg[1024], blocked_url[256];
+static void show_blocked(void) {
+    wchar_t m[1400], w[1100], u[256];
+    MultiByteToWideChar(CP_UTF8, 0, blocked_msg, -1, w, 1100);
+    MultiByteToWideChar(CP_UTF8, 0, blocked_url, -1, u, 256);
+    swprintf(m, 1400, L"%s\n\n%s", w, TR(L"Open the download page?", L"Открыть страницу загрузки?"));
+#ifdef HAKU_DEV
+    if (cfg_geti("general", "policy_quiet", 0)) { logf_("policy: would show: %ls", m); return; }   // tests: no dialog
+#endif
+    if (MessageBoxW(NULL, m, L"haku control", MB_YESNO | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND) == IDYES && !wcsncmp(u, L"https://", 8))
+        ShellExecuteW(NULL, L"open", u, NULL, NULL, SW_SHOWNORMAL);
+}
+void app_blocked(const char *msg, const char *url) {
+    snprintf(blocked_msg, sizeof(blocked_msg), "%s", msg);
+    snprintf(blocked_url, sizeof(blocked_url), "%s", url);
+    PostMessageW(hwnd, WM_BLOCKED, 0, 0);
+}
+
 // Tray icon: the haku control mark (res/), white on a dark taskbar, black on a light one.
 static int light_taskbar(void) {
     DWORD v = 0, n = sizeof(v);
@@ -1163,6 +1186,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS);
 
     cfg_load(p);
+    if (policy_blocked(blocked_msg, sizeof(blocked_msg), blocked_url, sizeof(blocked_url))) {   // before any device is touched
+        logf_("this version was stopped by its author");
+        show_blocked();
+        if (logfile) fclose(logfile);
+        CloseHandle(single);
+        return 0;
+    }
     open_devices();
     lights_start();
     nano_start();
@@ -1215,6 +1245,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     sensors_close();
     timeEndPeriod(1);
     logf_("exit");
+    if (blocked_msg[0]) show_blocked();
     if (logfile) fclose(logfile);
     CloseHandle(single);
     return 0;

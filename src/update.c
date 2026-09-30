@@ -12,6 +12,7 @@
 #include <softpub.h>
 #include <wintrust.h>
 #include <bcrypt.h>
+#include <wincrypt.h>
 #include <process.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,8 +51,9 @@ static long long ver_num(const char *s) {
     return v;
 }
 
-static int https_get(const wchar_t *host, const wchar_t *path, char *out, int cap) {
+static int https_get_status(const wchar_t *host, const wchar_t *path, char *out, int cap, int *status) {
     int n = 0, ok = 0;
+    if (status) *status = 0;
     HINTERNET ses = WinHttpOpen(L"haku-control/" HAKU_VER_WSTR, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, NULL, NULL, 0);
     if (!ses) return -1;
     WinHttpSetTimeouts(ses, 5000, 5000, 10000, 10000);
@@ -64,12 +66,115 @@ static int https_get(const wchar_t *host, const wchar_t *path, char *out, int ca
         DWORD got;
         while (n < cap - 1 && WinHttpReadData(req, out + n, cap - 1 - n, &got) && got) n += got;
         ok = code == 200;
+        if (status) *status = (int)code;
     }
     out[n] = 0;
     if (req) WinHttpCloseHandle(req);
     if (con) WinHttpCloseHandle(con);
     WinHttpCloseHandle(ses);
     return ok ? n : -1;
+}
+
+static int https_get(const wchar_t *host, const wchar_t *path, char *out, int cap) { return https_get_status(host, path, out, cap, NULL); }
+
+// ---------------------------------------------------------------- versions the author has stopped
+// policy/policy.txt in the official repository, signed with the author's key (tools/policy/sign.ps1): a version
+// below "min", or one named in "blocked", lets go of the lights, shows the author's message with a download link
+// and quits. Read at start from the copy kept at the last check (so it holds offline too) and online a minute after
+// start and then daily. Unlike the update check it is not switched off by update_check and does not follow
+// update_repo. A missing file (404) lifts an earlier block; an unsigned or wrongly signed one changes nothing.
+#define POLICY_HOST L"raw.githubusercontent.com"
+#define POLICY_PATH L"/hxkune/haku-control/main/policy/policy.txt"
+// ECDSA P-256 public key, X then Y (tools/policy/new-key.ps1)
+static const char POLICY_KEY[] = "26bcaa7201ce992cc851f0a20ad1a6fb882d7d2b8a8e8bcdc1f7676c9b5e368cce635985a2c333138ffc4d31507449cbe39ea36ff52385d9ce5dc11894d3a2d2";
+
+// line 1: base64 signature (r||s) of everything after it. Returns the signed JSON, or NULL.
+static const char *policy_verify(const char *txt) {
+    const char *nl = strchr(txt, '\n');
+    if (!nl || nl - txt > 200) return NULL;
+    char b64[208]; int bl = (int)(nl - txt); memcpy(b64, txt, bl); b64[bl] = 0;
+    if (bl && b64[bl - 1] == '\r') b64[--bl] = 0;
+    BYTE sig[80]; DWORD sl = sizeof(sig);
+    if (!CryptStringToBinaryA(b64, 0, CRYPT_STRING_BASE64, sig, &sl, NULL, NULL) || sl != 64) return NULL;
+    const char *json = nl + 1;
+    BYTE hash[32];
+    if (BCryptHash(BCRYPT_SHA256_ALG_HANDLE, NULL, 0, (PUCHAR)json, (ULONG)strlen(json), hash, 32)) return NULL;
+    struct { BCRYPT_ECCKEY_BLOB h; BYTE xy[64]; } blob = { { BCRYPT_ECDSA_PUBLIC_P256_MAGIC, 32 } };
+    for (int i = 0; i < 64; i++) { unsigned v; sscanf_s(POLICY_KEY + 2 * i, "%2x", &v); blob.xy[i] = (BYTE)v; }
+    BCRYPT_ALG_HANDLE alg = NULL; BCRYPT_KEY_HANDLE key = NULL; int ok = 0;
+    if (!BCryptOpenAlgorithmProvider(&alg, BCRYPT_ECDSA_P256_ALGORITHM, NULL, 0) &&
+        !BCryptImportKeyPair(alg, NULL, BCRYPT_ECCPUBLIC_BLOB, &key, (PUCHAR)&blob, sizeof(blob), 0))
+        ok = BCryptVerifySignature(key, NULL, hash, 32, sig, 64, 0) == 0;
+    if (key) BCryptDestroyKey(key);
+    if (alg) BCryptCloseAlgorithmProvider(alg, 0);
+    return ok ? json : NULL;
+}
+
+// 1: the signed policy stops this version; msg (in the app's language) and url filled
+static int policy_stops(const char *json, char *msg, int mcap, char *url, int ucap) {
+    const char *mine = HAKU_VER_STR;
+#ifdef HAKU_DEV
+    mine = cfg_get("general", "policy_fake_version", mine);   // test builds: pretend to be another version
+#endif
+    char min_v[32] = "";
+    json_get_str(json, "min", min_v, sizeof(min_v));
+    int stop = ver_num(min_v) > 0 && ver_num(mine) < ver_num(min_v);
+    const char *b = strstr(json, "\"blocked\""), *e = b ? strchr(b, ']') : NULL;
+    char q[40]; snprintf(q, sizeof(q), "\"%s\"", mine);
+    if (b && e) { const char *f = strstr(b, q); if (f && f < e) stop = 1; }
+    if (!stop) return 0;
+    if (!json_get_str(json, app_ru() ? "msg_ru" : "msg_en", msg, mcap)) json_get_str(json, "msg_en", msg, mcap);
+    if (!json_get_str(json, "url", url, ucap) || strncmp(url, "https://", 8)) snprintf(url, ucap, "https://github.com/%s/releases/latest", HAKU_REPO);
+    if (!msg[0]) snprintf(msg, mcap, "%s", TR("This version of haku control is no longer supported.", "Эта версия haku control больше не поддерживается."));
+    return 1;
+}
+
+static void policy_cache(wchar_t *p) { app_data_path(L"policy.txt", p); }
+
+static int read_file(const wchar_t *p, char *out, int cap) {
+    FILE *f = _wfopen(p, L"rb"); if (!f) return 0;
+    int n = (int)fread(out, 1, cap - 1, f); fclose(f);
+    out[n > 0 ? n : 0] = 0;
+    return n > 0;
+}
+
+// The published policy: fetched, its signature checked, kept. 1: it stops this version (msg / url filled),
+// 0: it does not (or none is published any more), -1: offline or not signed right (the kept copy stands).
+static int policy_fetch(char *msg, int mcap, char *url, int ucap) {
+    static char txt[16 * 1024];
+    int status = 0, n = -1;
+#ifdef HAKU_DEV
+    const char *pf = cfg_get("general", "policy_file", "");   // test builds: a local file instead
+    if (*pf) { wchar_t w[MAX_PATH]; MultiByteToWideChar(CP_UTF8, 0, pf, -1, w, MAX_PATH); status = read_file(w, txt, sizeof(txt)) ? 200 : 404; n = status == 200 ? (int)strlen(txt) : -1; }
+    else
+#endif
+    n = https_get_status(POLICY_HOST, POLICY_PATH, txt, sizeof(txt), &status);
+    wchar_t p[MAX_PATH]; policy_cache(p);
+    if (status == 404) { if (DeleteFileW(p)) logf_("policy: none published any more"); return 0; }
+    if (n < 0) return -1;
+    const char *json = policy_verify(txt);
+    if (!json) { logf_("policy: the published file is not signed right; ignored"); return -1; }
+    FILE *f = _wfopen(p, L"wb"); if (f) { fwrite(txt, 1, strlen(txt), f); fclose(f); }
+    return policy_stops(json, msg, mcap, url, ucap);
+}
+
+// at start: the policy kept from the last check; when that stops this version, the published one is asked first
+// (the author may have lifted it)
+int policy_blocked(char *msg, int mcap, char *url, int ucap) {
+    static char txt[16 * 1024]; wchar_t p[MAX_PATH]; policy_cache(p);
+    const char *json;
+    if (!read_file(p, txt, sizeof(txt)) || !(json = policy_verify(txt)) || !policy_stops(json, msg, mcap, url, ucap)) return 0;
+    char m2[1024] = "", u2[256] = "";
+    int now = policy_fetch(m2, sizeof(m2), u2, sizeof(u2));
+    if (now == 0) { logf_("policy: lifted"); msg[0] = url[0] = 0; return 0; }
+    if (now == 1) { snprintf(msg, mcap, "%s", m2); snprintf(url, ucap, "%s", u2); }
+    return 1;
+}
+
+// online, daily: tells the app when this version is stopped
+static void policy_check(void) {
+    char msg[1024] = "", url[256] = "";
+    if (policy_fetch(msg, sizeof(msg), url, sizeof(url)) == 1) { logf_("policy: version %s is stopped by its author", HAKU_VER_STR); app_blocked(msg, url); }
 }
 
 static void check(void) {
@@ -113,6 +218,7 @@ static unsigned __stdcall run(void *arg) {
     for (;;) {
         DWORD r = WaitForMultipleObjects(2, ev, FALSE, wait);
         if (r == WAIT_OBJECT_0) break;
+        if (r == WAIT_TIMEOUT) policy_check();   // a minute after start, then daily, whatever update_check says
         if (r == WAIT_OBJECT_0 + 1 || atoi(cfg_get("general", "update_check", "1"))) check();   // asked for, or daily
         if (r == WAIT_TIMEOUT) wait = 24 * 3600 * 1000;
     }
