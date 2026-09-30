@@ -18,6 +18,7 @@
 #include <process.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #ifndef HAKU_REPO
 #define HAKU_REPO "hxkune/haku-control"   // the official repo; build.cmd / CI can point a fork at its own (HAKU_REPO)
@@ -179,12 +180,76 @@ static void policy_check(void) {
     if (policy_fetch(msg, sizeof(msg), url, sizeof(url)) == 1) { logf_("policy: version %s is stopped by its author", HAKU_VER_STR); app_blocked(msg, url); }
 }
 
+// The latest release's tag without the API: github.com/<repo>/releases/latest redirects to .../releases/tag/<tag>
+// (the web pages are not held to the API's 60 requests an hour per address).
+static int latest_tag_by_redirect(const char *r, char *tag, int cap) {
+    wchar_t path[200]; swprintf(path, 200, L"/%hs/releases/latest", r);
+    int ok = 0; tag[0] = 0;
+    HINTERNET ses = WinHttpOpen(L"haku-control/" HAKU_VER_WSTR, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, NULL, NULL, 0);
+    if (!ses) return 0;
+    WinHttpSetTimeouts(ses, 5000, 5000, 10000, 10000);
+    HINTERNET con = WinHttpConnect(ses, L"github.com", INTERNET_DEFAULT_HTTPS_PORT, 0);
+    HINTERNET req = con ? WinHttpOpenRequest(con, L"HEAD", path, NULL, NULL, NULL, WINHTTP_FLAG_SECURE) : NULL;
+    DWORD off = WINHTTP_DISABLE_REDIRECTS;
+    if (req) WinHttpSetOption(req, WINHTTP_OPTION_DISABLE_FEATURE, &off, sizeof(off));
+    if (req && WinHttpSendRequest(req, NULL, 0, NULL, 0, 0, 0) && WinHttpReceiveResponse(req, NULL)) {
+        wchar_t loc[512]; DWORD sz = sizeof(loc);
+        if (WinHttpQueryHeaders(req, WINHTTP_QUERY_LOCATION, NULL, loc, &sz, NULL)) {
+            const wchar_t *t = wcsstr(loc, L"/releases/tag/");
+            if (t) { WideCharToMultiByte(CP_UTF8, 0, t + 14, -1, tag, cap, NULL, NULL); ok = ver_num(tag) >= 0; }
+        }
+    }
+    if (req) WinHttpCloseHandle(req);
+    if (con) WinHttpCloseHandle(con);
+    WinHttpCloseHandle(ses);
+    return ok;
+}
+
+// When the API says no (its limit reached, e.g. after many checks from one address): the tag from the release
+// page, the installer at its fixed address, and its SHA-256 from the .sha256 file each release carries. Without
+// that file (releases before 0.3.20) the update is only shown, not installed.
+static void check_without_api(const char *r) {
+    char tag[32];
+    if (!latest_tag_by_redirect(r, tag, sizeof(tag))) { logf_("update: the release page gave no version either"); return; }
+    const char *mine = HAKU_VER_STR;
+#ifdef HAKU_DEV
+    mine = cfg_get("general", "update_fake_version", mine);
+#endif
+    int newer = ver_num(tag) > ver_num(mine);
+    char au[512] = "", sha[80] = "", page_url[256];
+    snprintf(page_url, sizeof(page_url), "https://github.com/%s/releases/tag/%s", r, tag);
+    if (newer) {
+        wchar_t path[300]; swprintf(path, 300, L"/%hs/releases/download/%hs/haku-control-setup.exe.sha256", r, tag);
+        char body[256]; int st = 0;
+        if (https_get_status(L"github.com", path, body, sizeof(body), &st) >= 64) {
+            int hex = 1;
+            for (int i = 0; i < 64; i++) if (!isxdigit((unsigned char)body[i])) hex = 0;
+            if (hex) { memcpy(sha, body, 64); sha[64] = 0; snprintf(au, sizeof(au), "https://github.com/%s/releases/download/%s/haku-control-setup.exe", r, tag); }
+        }
+        if (!au[0]) logf_("update: %s has no .sha256 file (%d), shown but not installed by itself", tag, st);
+    }
+    AcquireSRWLockExclusive(&lk);
+    if (newer) { snprintf(latest, sizeof(latest), "%s", *tag == 'v' || *tag == 'V' ? tag + 1 : tag); snprintf(page, sizeof(page), "%s", page_url); }
+    else latest[0] = page[0] = 0;
+    snprintf(asset_url, sizeof(asset_url), "%s", au); snprintf(asset_sha, sizeof(asset_sha), "%s", sha); asset_size = 0;
+    ReleaseSRWLockExclusive(&lk);
+    logf_("update: latest release %s%s (from the release page)", tag, newer ? " (newer)" : "");
+}
+
 static void check(void) {
     char r[128]; snprintf(r, sizeof(r), "%s", repo());
     if (!*r || !strchr(r, '/') || strpbrk(r, "?#% ")) return;
     wchar_t path[200]; swprintf(path, 200, L"/repos/%hs/releases/latest", r);
     static char body[64 * 1024];
-    if (https_get(L"api.github.com", path, body, sizeof(body)) < 0) { logf_("update: check failed"); return; }
+    int st = 0, api = 1;
+#ifdef HAKU_DEV
+    if (cfg_geti("general", "update_no_api", 0)) api = 0;   // tests: as if the API's limit were reached
+#endif
+    if (!api || https_get_status(L"api.github.com", path, body, sizeof(body), &st) < 0) {
+        logf_("update: the GitHub API answered %d%s", st, st == 403 || st == 429 ? " (its limit for this address)" : "");
+        check_without_api(r);
+        return;
+    }
     char tag[32] = "", url[256] = "";
     json_get_str(body, "tag_name", tag, sizeof(tag));
     json_get_str(body, "html_url", url, sizeof(url));
@@ -249,7 +314,10 @@ static unsigned __stdcall run(void *arg) {
         DWORD r = WaitForMultipleObjects(2, ev, FALSE, wait);
         if (r == WAIT_OBJECT_0) break;
         if (r == WAIT_TIMEOUT) policy_check();   // a minute after start, then with every check
-        check();
+        // "Check now" pressed again and again asks GitHub at most once a minute (its API allows 60 an hour)
+        static DWORD last; DWORD now = GetTickCount();
+        if (r == WAIT_TIMEOUT || !last || now - last > 60 * 1000) { last = now; check(); }
+        else { wait = 60 * 1000 - (now - last); continue; }
         wait = auto_install() ? 10 * 60 * 1000 : 6 * 3600 * 1000;
     }
     return 0;
