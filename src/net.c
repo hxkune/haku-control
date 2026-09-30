@@ -57,6 +57,37 @@ int net_addresses(ULONG *out, int max) {
     return c.n;
 }
 
+// Addresses a phone on the same network can open, best first: adapters with a default gateway (the home Wi-Fi /
+// Ethernet), then the PC's own hotspot, then the rest. Adapters of virtual machines, WSL and containers (Hyper-V
+// vEthernet, VirtualBox, VMware, Docker...) are left out: no phone is ever on those networks.
+int net_phone_addresses(ULONG *out, int max) {
+    ULONG len = 64 * 1024;
+    IP_ADAPTER_ADDRESSES *all = malloc(len), *aa;
+    ULONG got[3][16]; int ng[3] = { 0, 0, 0 };
+    struct in_addr hs; inet_pton(AF_INET, HOTSPOT_IP, &hs);
+    if (all && GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_GATEWAYS,
+                                    NULL, all, &len) == NO_ERROR)
+        for (aa = all; aa; aa = aa->Next) {
+            if (aa->OperStatus != IfOperStatusUp || aa->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
+            wchar_t nm[512]; swprintf(nm, 512, L"%s | %s", aa->FriendlyName ? aa->FriendlyName : L"", aa->Description ? aa->Description : L"");
+            _wcslwr_s(nm, 512);
+            static const wchar_t *const VIRT[] = { L"vethernet", L"hyper-v", L"virtualbox", L"vmware", L"docker", L"wsl", L"vbox", L"parallels", L"npcap" };
+            int virt = 0;
+            for (int i = 0; i < (int)(sizeof(VIRT) / sizeof(VIRT[0])); i++) if (wcsstr(nm, VIRT[i])) virt = 1;
+            if (virt) continue;
+            for (IP_ADAPTER_UNICAST_ADDRESS *u = aa->FirstUnicastAddress; u; u = u->Next) {
+                ULONG a = ((struct sockaddr_in *)u->Address.lpSockaddr)->sin_addr.s_addr;
+                if ((ntohl(a) >> 16) == 0xA9FE) continue;
+                int rank = aa->FirstGatewayAddress ? 0 : a == hs.s_addr ? 1 : 2;
+                if (ng[rank] < 16) got[rank][ng[rank]++] = a;
+            }
+        }
+    free(all);
+    int n = 0;
+    for (int r = 0; r < 3; r++) for (int i = 0; i < ng[r] && n < max; i++) out[n++] = got[r][i];
+    return n;
+}
+
 static int is_hotspot_ip(ULONG a, int prefix, void *p) {
     (void)prefix; (void)p;
     struct in_addr h; inet_pton(AF_INET, HOTSPOT_IP, &h);

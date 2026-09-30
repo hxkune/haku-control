@@ -774,3 +774,11 @@ body.calm nav button { transition: none; }
 .remote .remote-only { display: block; }
 @media (max-width: 760px) { .acc-fields { grid-template-columns: 1fr; } }
 .about .about-lic { color: var(--faint); font-size: 11.5px; margin-top: 4px; user-select: text; }
+
+/* phone card: troubleshooting, folded */
+.trouble { margin-top: 12px; }
+.trouble summary { cursor: pointer; color: var(--muted); font-size: 12.5px; list-style: none; }
+.trouble summary::before { content: "+ "; color: var(--faint); }
+.trouble[open] summary::before { content: "– "; }
+.trouble summary:hover { color: var(--text); }
+.trouble .hint { margin-top: 8px; line-height: 1.6; }

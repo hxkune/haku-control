@@ -234,6 +234,37 @@ static unsigned __stdcall server(void *p) {
     return 0;
 }
 
+// The firewall, repaired once per start while the phone page is on (the app runs as administrator): Windows asks
+// "allow access?" the first time the port opens, and if nobody answered (the app starts hidden at sign-in) it adds
+// rules that *block* haku-control.exe, which win over any allow rule. So: drop every inbound rule for this exe and
+// add the one allow rule again, for the program where it is now, from private addresses only (the app refuses the
+// rest anyway). [remote] firewall=0 leaves the firewall alone.
+static unsigned __stdcall fix_firewall(void *arg) {
+    (void)arg;
+    wchar_t exe[MAX_PATH]; GetModuleFileNameW(NULL, exe, MAX_PATH);
+    wchar_t cmd[2][MAX_PATH + 400];
+    swprintf(cmd[0], MAX_PATH + 400, L"netsh.exe advfirewall firewall delete rule name=all dir=in program=\"%s\"", exe);
+    swprintf(cmd[1], MAX_PATH + 400, L"netsh.exe advfirewall firewall add rule name=\"haku control\" dir=in action=allow enable=yes profile=any "
+             L"program=\"%s\" remoteip=LocalSubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10", exe);
+    DWORD code[2] = { 1, 1 };
+    for (int i = 0; i < 2; i++) {
+        STARTUPINFOW si = { sizeof(si) }; PROCESS_INFORMATION pi;
+        if (!CreateProcessW(NULL, cmd[i], NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) continue;
+        if (WaitForSingleObject(pi.hProcess, 15000) == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code[i]);
+        CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    }
+    logf_("remote: firewall rule %s", code[1] == 0 ? "set" : "could not be set (not running as administrator?)");
+    return 0;
+}
+
+static int elevated(void) {
+    HANDLE t; TOKEN_ELEVATION e = { 0 }; DWORD n = 0;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &t)) return 0;
+    GetTokenInformation(t, TokenElevation, &e, sizeof(e), &n);
+    CloseHandle(t);
+    return e.TokenIsElevated != 0;
+}
+
 void remote_apply(void) {
     int want = cfg_geti("remote", "enabled", 0), port = cfg_geti("remote", "port", 8723);
     if (th && (!want || port != port_now)) {
@@ -261,6 +292,12 @@ void remote_apply(void) {
     port_now = port; run = 1;
     th = (HANDLE)_beginthreadex(NULL, 0, server, NULL, 0, NULL);
     logf_("remote: listening on port %d", port);
+    static int fw_done;
+    if (!fw_done && elevated() && cfg_geti("remote", "firewall", 1)) {
+        fw_done = 1;
+        HANDLE f = (HANDLE)_beginthreadex(NULL, 0, fix_firewall, NULL, 0, NULL);
+        if (f) CloseHandle(f);
+    }
 #ifdef HAKU_DEV
     logf_("remote: PIN %s (shown in the log by test builds only)", pin);
 #endif
@@ -281,7 +318,7 @@ int remote_json(char *out, int cap) {
     int n = snprintf(out, cap, "{\"enabled\":%d,\"on\":%d,\"port\":%d,\"pin\":\"%s\",\"paired\":%d,\"urls\":[",
                      cfg_geti("remote", "enabled", 0), th != NULL, (int)port_now, th ? pin : "", ntokens);
     ReleaseSRWLockShared(&lk);
-    ULONG addrs[16]; int na = th ? net_addresses(addrs, 16) : 0, first = 1;
+    ULONG addrs[16]; int na = th ? net_phone_addresses(addrs, 16) : 0, first = 1;
     for (int i = 0; i < na && n < cap - 64; i++) {
         if (!private_addr(addrs[i]) || (ntohl(addrs[i]) >> 24) == 127) continue;
         char ip[32]; struct in_addr ia; ia.s_addr = addrs[i]; inet_ntop(AF_INET, &ia, ip, sizeof(ip));

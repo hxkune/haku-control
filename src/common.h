@@ -175,6 +175,7 @@ int  accounts_json(char *out, int cap);
 // ---- net.c
 int  net_broadcasts(unsigned long *out, int max);   // directed broadcast address of every IPv4 interface (network order)
 int  net_addresses(unsigned long *out, int max);    // own IPv4 address of every interface (network order)
+int  net_phone_addresses(unsigned long *out, int max);   // the ones a phone can reach, best first (no VM / WSL adapters)
 void hotspot_watch_start(void);
 void hotspot_watch_stop(void);
 int  hotspot_active(void);

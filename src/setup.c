@@ -38,14 +38,15 @@ static int run_wait(const wchar_t *exe, const wchar_t *args, DWORD ms) {
     return (int)code;
 }
 
-// Inbound rule for the phone page and for lights answering a network scan: only from the local network
-// (and Tailscale), only for haku-control.exe. The app itself also refuses anything else.
+// Inbound rule for the phone page and for lights answering a network scan: only from private addresses (the home
+// network, also when it has several subnets, and Tailscale), only for haku-control.exe. The app itself also refuses
+// anything else, and repairs this rule when it starts (remote.c).
 static void firewall_rule(int add) {
     run_wait(L"netsh.exe", L"advfirewall firewall delete rule name=\"haku control\"", 10000);
     if (!add) return;
     wchar_t args[MAX_PATH + 256];
     swprintf(args, MAX_PATH + 256, L"advfirewall firewall add rule name=\"haku control\" dir=in action=allow enable=yes profile=any "
-             L"program=\"%s\\haku-control.exe\" remoteip=LocalSubnet,100.64.0.0/10", dest);
+             L"program=\"%s\\haku-control.exe\" remoteip=LocalSubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10", dest);
     run_wait(L"netsh.exe", args, 10000);
 }
 
