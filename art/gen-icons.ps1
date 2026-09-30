@@ -1,46 +1,27 @@
-# Renders the haku control mark (art/mark.json, made by art/mark.py; the same shapes as ui/mark.svg) into the
-# .ico files and the 256 px PNG with WPF.
+# Renders the haku control mark (ui/mark.svg, the one source of the shape) into the .ico files and the 256 px PNG
+# with WPF.
 # Windows PowerShell 5.1:  powershell -File art\gen-icons.ps1 <outdir>
 #   app.ico        white mark on a black chamfered square (exe, installer)
 #   tray-dark.ico  white mark, transparent (tray, title bar, taskbar button on a dark taskbar)
 #   tray-light.ico black mark, transparent (tray + taskbar button on a light taskbar)
 #   icon-256.png   the app.ico picture (phone home screen, ui/manifest.webmanifest)
-# The orbit passes in front of the h below its long axis and behind it above; where one crosses the other, the one
-# behind gets a gap. Up to 32 px the mark leaves out the inner curl and is drawn bolder.
+# Small sizes are drawn bolder (the outline widened), so the thin spikes and the orbit still show at 16-32 px.
 param([string]$OutDir)
 Add-Type -AssemblyName PresentationCore, WindowsBase
 $M = [Windows.Media.Geometry]
-$J = Get-Content -Raw (Join-Path $PSScriptRoot 'mark.json') | ConvertFrom-Json
+$svg = Get-Content -Raw (Join-Path $PSScriptRoot '..\ui\mark.svg')
+if ($svg -notmatch '<path[^>]*\sd="([^"]+)"') { throw 'no path in ui/mark.svg' }
+$Mark = $M::Parse('F1 ' + $Matches[1])   # viewBox 0 0 256 256
 
-function Round-Pen([double]$w) { $p = New-Object Windows.Media.Pen([Windows.Media.Brushes]::Black, $w); $p.LineJoin = 'Round'; $p.StartLineCap = 'Round'; $p.EndLineCap = 'Round'; return $p }
-function Union($a, $b) { return $M::Combine($a, $b, 'Union', $null) }
-
-# the two halves of the plane on either side of the orbit's long axis
-function Half([bool]$front) {
-    $y = if ($front) { $J.cy - 1 } else { $J.cy - 500 }
-    $r = New-Object Windows.Media.RectangleGeometry((New-Object Windows.Rect(-300, $y, 900, 500)))
-    $r.Transform = New-Object Windows.Media.RotateTransform($J.tilt, $J.cx, $J.cy)
-    return $r
-}
-
-function MarkGeometry([double]$bold, [bool]$small) {
-    $h = $M::Parse('F1 ' + $J.h)
-    $o = $M::Parse('F1 ' + $(if ($small) { $J.orbit_small } else { $J.orbit }))
-    $gap = $J.gap * (1 + $bold / 12)
-    $front = $M::Combine($o, (Half $true), 'Intersect', $null)
-    $back = $M::Combine($o, (Half $false), 'Intersect', $null)
-    # the letter gets a gap where the front of the orbit crosses it, the back of the orbit where the letter does
-    $letter = $M::Combine($h, (Union $front $front.GetWidenedPathGeometry((Round-Pen (2 * $gap)))), 'Exclude', $null)
-    $behind = $M::Combine($back, (Union $h $h.GetWidenedPathGeometry((Round-Pen (2 * $gap)))), 'Exclude', $null)
-    $all = Union (Union $behind $letter) $front
-    if ($bold -gt 0) { $all = Union $all $all.GetWidenedPathGeometry((Round-Pen $bold)) }
-    return $all
+function MarkGeometry([double]$bold) {
+    if ($bold -le 0) { return $Mark }
+    $p = New-Object Windows.Media.Pen([Windows.Media.Brushes]::Black, $bold); $p.LineJoin = 'Round'
+    return $M::Combine($Mark, $Mark.GetWidenedPathGeometry($p), 'Union', $null)
 }
 
 # PNG bytes of the mark at `size` px; badge = on a black chamfered square
 function RenderPng([int]$size, [string]$variant) {
-    $small = $size -le 32
-    $bold = if ($size -le 16) { 14 } elseif ($size -le 20) { 11 } elseif ($size -le 24) { 9 } elseif ($size -le 32) { 6 } elseif ($size -le 48) { 3 } else { 0 }
+    $bold = if ($size -le 16) { 9 } elseif ($size -le 20) { 7 } elseif ($size -le 24) { 6 } elseif ($size -le 32) { 4 } elseif ($size -le 48) { 2 } else { 0 }
     $dv = New-Object Windows.Media.DrawingVisual
     $dc = $dv.RenderOpen()
     $k = $size / 256.0
@@ -58,7 +39,7 @@ function RenderPng([int]$size, [string]$variant) {
         $dc.PushTransform((New-Object Windows.Media.ScaleTransform($k, $k)))
         $brush = if ($variant -eq 'light') { [Windows.Media.Brushes]::Black } else { [Windows.Media.Brushes]::White }
     }
-    $dc.DrawGeometry($brush, $null, (MarkGeometry $bold $small))
+    $dc.DrawGeometry($brush, $null, (MarkGeometry $bold))
     $dc.Pop(); $dc.Pop()
     $dc.Close()
     $bmp = New-Object Windows.Media.Imaging.RenderTargetBitmap($size, $size, 96, 96, [Windows.Media.PixelFormats]::Pbgra32)
