@@ -1558,6 +1558,13 @@ function updateUpdate() {
 $('#upd-on').addEventListener('change', e => { setCfg('general', 'update_check', e.target.checked ? 1 : 0); updateUpdate(); });
 $('#upd-get').addEventListener('click', () => send({ cmd: 'open', what: 'release' }));
 $('#upd-now').addEventListener('click', () => send({ cmd: 'update_check' }));
+// diagnostics: one text file in Downloads (log, settings, devices, network), without keys or passwords
+function updateDiag() {
+  const D = S.diag || {};
+  $('#diag-go').disabled = !!D.busy;
+  $('#diag-note').textContent = D.busy ? t('diag.busy') : D.ok === 1 ? t('diag.done', D.file) : D.ok === 0 ? t('diag.fail') : t('diag.note');
+}
+$('#diag-go').addEventListener('click', () => { S.diag = { busy: 1 }; updateDiag(); send({ cmd: 'diag' }); });
 
 // ------------------------------------------------------------------ mood: describe it, a local model picks the colours
 const MOOD = { base: 0, pending: false, err: '', applied: false, text: '' };
@@ -1606,6 +1613,7 @@ $('#mood-apply').addEventListener('click', () => {
 function updateSettings() {
   updateRemote();
   updateUpdate();
+  updateDiag();
   const a = $('#autostart');
   a.checked = S.autostart === 1; a.disabled = S.autostart < 0;
   $('#hotspot-auto').checked = cv('hotspot', 'auto', '0') !== '0';

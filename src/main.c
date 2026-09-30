@@ -10,6 +10,8 @@
 #include <process.h>
 #include <ctype.h>
 #include <timeapi.h>
+#include <share.h>
+#include "../res/version.h"
 
 // visual styles for the settings window controls
 #pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -142,12 +144,27 @@ static HICON    tray_icon;
 
 void app_data_path(const wchar_t *name, wchar_t *out) { swprintf(out, MAX_PATH, L"%s%s", data_dir, name); }
 
+// The log: this run in haku-control.log, the run before in haku-control.prev.log (so a crash and restart does not
+// wipe what led to it); past 4 MB the current one moves over too and starts again.
+static SRWLOCK log_lk = SRWLOCK_INIT;
+static void log_rotate(void) {
+    wchar_t cur[MAX_PATH], prev[MAX_PATH];
+    app_data_path(L"haku-control.log", cur); app_data_path(L"haku-control.prev.log", prev);
+    if (logfile) { fclose(logfile); logfile = NULL; }
+    MoveFileExW(cur, prev, MOVEFILE_REPLACE_EXISTING);
+    logfile = _wfsopen(cur, L"w", _SH_DENYNO);
+}
+
 void logf_(const char *fmt, ...) {
-    if (!logfile) return;
-    SYSTEMTIME t; GetLocalTime(&t);
-    fprintf(logfile, "%02d:%02d:%02d ", t.wHour, t.wMinute, t.wSecond);
-    va_list ap; va_start(ap, fmt); vfprintf(logfile, fmt, ap); va_end(ap);
-    fputc('\n', logfile); fflush(logfile);
+    AcquireSRWLockExclusive(&log_lk);
+    if (logfile && ftell(logfile) > 4 * 1024 * 1024) { log_rotate(); if (logfile) fprintf(logfile, "(log continued, earlier lines in haku-control.prev.log)\n"); }
+    if (logfile) {
+        SYSTEMTIME t; GetLocalTime(&t);
+        fprintf(logfile, "%02d:%02d:%02d ", t.wHour, t.wMinute, t.wSecond);
+        va_list ap; va_start(ap, fmt); vfprintf(logfile, fmt, ap); va_end(ap);
+        fputc('\n', logfile); fflush(logfile);
+    }
+    ReleaseSRWLockExclusive(&log_lk);
 }
 
 // [layout] switch of Nanoleaf controller k: nanoleaf_enabled, nanoleaf2_enabled...
@@ -611,6 +628,8 @@ static int status_body(char *out, int cap) {
     n += accounts_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"mood\":");
     n += mood_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"diag\":");
+    n += diag_json(out + n, cap - n);
     return n;
 }
 
@@ -930,7 +949,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     ExpandEnvironmentStringsW(L"%APPDATA%\\" APP_ID L"\\", data_dir, MAX_PATH);
     CreateDirectoryW(data_dir, NULL);
     wchar_t p[MAX_PATH];
-    app_data_path(L"haku-control.log", p); logfile = _wfopen(p, L"w");
+    log_rotate();
+    { SYSTEMTIME t; GetLocalTime(&t); logf_("haku control %s, started %04d-%02d-%02d", HAKU_VER_STR, t.wYear, t.wMonth, t.wDay); }
     app_data_path(L"settings.ini", p);
     if (GetFileAttributesW(p) == INVALID_FILE_ATTRIBUTES) {
         FILE *f = _wfopen(p, L"wb"); if (f) { fwrite(default_ini, 1, sizeof(default_ini) - 1, f); fclose(f); }
