@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.29',
+    en: ['New effect: Screen (ambilight). The lights follow what is on the screen: strips run around its edges, a Nanoleaf wall or a keyboard shows it as a mosaic, single lights take its average colour. Each device can take another part of the screen; it barely uses the PC.'],
+    ru: ['Новый эффект: Экран (эмбилайт). Свет повторяет то, что на экране: ленты идут по его краям, стена Nanoleaf или клавиатура показывают его мозаикой, одиночные лампы берут средний цвет. Каждому устройству можно задать свою часть экрана; ПК почти не нагружается.'],
+    fr: ['Nouvel effet : Écran (ambilight). Les lumières suivent ce qui est à l\'écran : les bandes en font le tour, un mur Nanoleaf ou un clavier le montre en mosaïque, les lampes seules prennent sa couleur moyenne. Chaque appareil peut prendre une autre partie de l\'écran ; le PC n\'est presque pas sollicité.'] },
   { v: '0.3.28',
     en: ['Every brand of lights you add gets its own tab in the sidebar, as Nanoleaf has: WLED, Govee, LIFX, Yeelight, Hue, WiZ, Tuya, Elgato, Divoom. PC hardware and finding new devices stay under Devices.'],
     ru: ['У каждого добавленного бренда света теперь своя вкладка в левой панели, как у Nanoleaf: WLED, Govee, LIFX, Yeelight, Hue, WiZ, Tuya, Elgato, Divoom. Железо ПК и поиск новых устройств остаются в «Устройствах».'],
