@@ -1292,7 +1292,8 @@ function label(c, text, x, y, bright) {
 }
 
 // The preview is also the quick-access widget: every device drawn in it is a hit area (HERO.hits, canvas pixels)
-// that opens its settings in a floating sheet. [ui] hero_hide lists groups left out of the preview.
+// that opens its settings in a floating sheet. [ui] hero_hide lists what is left out of the preview: whole groups
+// (ram, gpu, nano, bulbs, ext) or single tiles (nano<slot>, bulb<i>, dev<id>).
 const HERO = { hits: [], hover: '', hoverPw: '', anim: {}, t: 0, k: 1, moving: false, raf: 0 };
 const HERO_GROUPS = [['ram', 0.2], ['gpu', 0.38], ['nano', 0.27], ['bulbs', 0.15], ['ext', 0.3]];
 const heroGroups = () => HERO_GROUPS.filter(([k]) => (k === 'ram' && S.sticks) || (k === 'gpu' && S.msi) || (k === 'nano' && nanoOn()) ||
@@ -1320,15 +1321,16 @@ function heroItems(all) {
   const hide = all ? [] : heroHidden(), items = [];
   if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
   if (S.msi && !hide.includes('gpu')) items.push({ key: 'gpu', k: 'gpu', zone: 'zone.gpu', w: 2.4, name: stripName(), draw: drawGpu });
-  if (!hide.includes('nano')) nanoCtls().forEach(n => {
+  if (!hide.includes('nano')) nanoCtls().filter(n => !hide.includes('nano' + n.slot)).forEach(n => {
     const P = n.panels || [], xs = P.map(p => p[0]), ys = P.map(p => p[1]), sd = n.side || .2;
     const a = P.length ? (Math.max(...xs) - Math.min(...xs) + sd) / (Math.max(...ys) - Math.min(...ys) + sd) : 1;
     items.push({ key: 'nano' + n.slot, k: 'nano', slot: n.slot, zone: nanoZone(n.slot), w: Math.max(1.1, Math.min(3, a * 1.25)), name: nanoCtls().length > 1 ? nanoName(n) : 'Nanoleaf',
       draw: (c, x, y, w, h) => drawNano(c, x, y, w, h, n) });
   });
-  if (!hide.includes('bulbs')) S.bulbs.forEach((b, i) => items.push({ key: 'bulb' + i, k: 'bulb', i, zone: 'zone.light' + (i + 1), w: .85, name: t('bulb', i + 1),
+  if (!hide.includes('bulbs')) S.bulbs.forEach((b, i) => hide.includes('bulb' + i) || items.push({ key: 'bulb' + i, k: 'bulb', i, zone: 'zone.light' + (i + 1), w: .85, name: t('bulb', i + 1),
     draw: (c, x, y, w, h) => { const col = F.bulbs[i], on = lit(col) && b.online; drawFixture(c, x, y, w, h, bulbType(i), [on ? col : OFF], on); } }));
   if (!hide.includes('ext')) S.ext.devs.forEach((dv, k) => {
+    if (hide.includes('dev' + dv.id)) return;
     const ty = dv.type || (dv.per_led ? 'strip' : 'bulb');
     items.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, zone: 'zone.dev' + dv.id, name: dv.name,
       w: HERO_EXT_W[ty] || Math.min(2.4, .55 + .35 * Math.max(1, dv.leds || 1)), draw: (c, x, y, w, h) => drawExt(c, x, y, w, h, k) });
@@ -1682,16 +1684,31 @@ $('#sheet-head').addEventListener('pointerdown', e => {
   addEventListener('pointermove', move); addEventListener('pointerup', up);
 });
 
-// ---- customize the preview: which groups it shows, and a way to add devices
+// ---- customize the preview: which tiles it shows (every device on its own; the memory and the strip as they are),
+// and a way to add devices
+function heroMenuEntries() {
+  const out = [];
+  for (const [k] of heroGroups()) {
+    if (k === 'nano' && nanoCtls().length > 1) nanoCtls().forEach(n => out.push({ k: 'nano' + n.slot, group: 'nano', name: nanoName(n) }));
+    else if (k === 'bulbs' && S.bulbs.length > 1) S.bulbs.forEach((b, i) => out.push({ k: 'bulb' + i, group: 'bulbs', name: t('bulb', i + 1) }));
+    else if (k === 'ext') S.ext.devs.forEach(d => out.push({ k: 'dev' + d.id, group: 'ext', name: d.name }));
+    else out.push({ k, group: k, name: groupName(k) });
+  }
+  return out;
+}
 function buildHeroMenu() {
-  const hide = heroHidden();
-  $('#hero-menu').innerHTML = `<div class="lbl"><span>${t('hero.show')}</span></div>` +
-    heroGroups().map(([k]) => `<label class="check"><input type="checkbox" data-hg="${k}" ${hide.includes(k) ? '' : 'checked'}><span></span><em>${groupName(k)}</em></label>`).join('') +
+  const hide = heroHidden(), entries = heroMenuEntries();
+  $('#hero-menu').innerHTML = `<div class="lbl"><span>${t('hero.show')}</span></div><div class="hero-checks">` +
+    entries.map(e => `<label class="check"><input type="checkbox" data-hg="${e.k}" ${hide.includes(e.k) || hide.includes(e.group) ? '' : 'checked'}><span></span><em>${esc(e.name)}</em></label>`).join('') + '</div>' +
     `<div class="btn-row"><button class="btn small ghost" id="hero-add"><span>+ ${t('hero.add')}</span></button>` +
     `<button class="btn small ghost" id="hero-group"><span>+ ${t('group.add')}</span></button></div><p class="hint">${t('hero.hint')}</p>`;
   $$('[data-hg]').forEach(i => i.addEventListener('change', () => {
-    const h = new Set(heroHidden()); i.checked ? h.delete(i.dataset.hg) : h.add(i.dataset.hg);
-    if (h.size >= heroGroups().length) { i.checked = true; return; }   // keep at least one
+    const h = new Set(heroHidden()), e = entries.find(x => x.k === i.dataset.hg);
+    if (e.group !== e.k && h.has(e.group)) {   // a whole group was hidden (older setting): its tiles one by one now
+      h.delete(e.group); entries.filter(x => x.group === e.group).forEach(x => h.add(x.k));
+    }
+    i.checked ? h.delete(e.k) : h.add(e.k);
+    if (entries.every(x => h.has(x.k) || h.has(x.group))) { i.checked = true; return; }   // keep at least one
     setCfg('ui', 'hero_hide', [...h].join(','));
     drawHero();
   }));

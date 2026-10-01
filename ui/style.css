@@ -1061,3 +1061,6 @@ body.glitching > *:not(.vglitch):not(.vchat) {
 body.calm .vchat { animation: vchat-calm 7s steps(1) forwards; }
 @keyframes vchat-calm { 0% { opacity: 1; } 100% { opacity: 0; } }
 :root[data-theme="verity"] body.calm .watermark, :root[data-theme="verity"] body.calm .watermark::after { animation: none; }
+
+/* the preview's menu: one line per device, scrolling when there are many */
+.hero-checks { display: flex; flex-direction: column; gap: 2px; max-height: min(46vh, 380px); overflow-y: auto; margin-right: -6px; padding-right: 6px; }
