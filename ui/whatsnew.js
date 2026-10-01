@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.25',
+    en: ['Ten new effects: Rainbow, Fire, Ocean, Twinkle, Meteor, Plasma, Aurora, Ripple, Matrix and Candle. They span every device as one picture (Nanoleaf included), each with its own colours, which you can change.',
+      'A device\'s own brightness now goes down to 1%, and Elgato Key Lights to 3%, as in Elgato\'s app.'],
+    ru: ['Десять новых эффектов: Радуга, Огонь, Океан, Мерцание, Метеор, Плазма, Северное сияние, Капли, Матрица и Свеча. Они идут через все устройства одной картинкой (включая Nanoleaf), у каждого свои цвета, их можно поменять.',
+      'Своя яркость устройства теперь опускается до 1%, а у Elgato Key Light — до 3%, как в приложении Elgato.'],
+    fr: ['Dix nouveaux effets : Arc-en-ciel, Feu, Océan, Scintillement, Météore, Plasma, Aurore, Gouttes, Matrice et Bougie. Ils parcourent tous les appareils comme une seule image (Nanoleaf compris), chacun avec ses couleurs, modifiables.',
+      'La luminosité propre d\'un appareil descend maintenant à 1 %, et les Elgato Key Light à 3 %, comme dans l\'app Elgato.'] },
   { v: '0.3.24',
     en: ['Show in the preview: every device has its own line now, so a graphics card or a lamp can be left out on its own.',
       'After installing or updating by hand, haku\'s window opens by itself (with what is new).',
