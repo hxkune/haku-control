@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.23',
+    en: ['Lighting in this PC (PC tab, at the top): haku finds the board, the memory, the graphics cards and the USB lighting devices, and says for each how it is lit: by haku itself, through OpenRGB, or what is still missing (with the button for it).',
+      'After an update installed by hand, haku starts by itself again.'],
+    ru: ['Подсветка в этом ПК (вкладка «ПК», сверху): haku находит плату, память, видеокарты и USB-устройства с подсветкой и показывает, как подсвечивается каждое: самой haku, через OpenRGB, или чего ещё не хватает (с кнопкой для этого).',
+      'После обновления, установленного вручную, haku снова запускается сама.'],
+    fr: ['L\'éclairage de ce PC (onglet PC, en haut) : haku trouve la carte mère, la mémoire, les cartes graphiques et les appareils USB éclairés, et dit pour chacun comment il est éclairé : par haku, via OpenRGB, ou ce qui manque encore (avec le bouton pour ça).',
+      'Après une mise à jour installée à la main, haku redémarre tout seul.'] },
   { v: '0.3.22',
     en: ['Divoom Times Gate and Times Frame: the screens stay off with the lights (they used to come back on right away).'],
     ru: ['Divoom Times Gate и Times Frame: экраны остаются выключенными вместе со светом (раньше сразу включались обратно).'],
