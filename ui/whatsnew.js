@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.27',
+    en: ['Nanoleaf Shapes triangles are drawn the right way round in the preview (they used to come out turned over), mirrored layouts included.'],
+    ru: ['Треугольники Nanoleaf Shapes рисуются в превью правильной стороной (раньше выходили перевёрнутыми), в том числе в зеркальных раскладках.'],
+    fr: ['Les triangles Nanoleaf Shapes sont dessinés dans le bon sens dans l\'aperçu (ils sortaient retournés), dispositions en miroir comprises.'] },
   { v: '0.3.26',
     en: ['The PC tab is now on every PC, not only with an MSI board or RGB memory: Lighting in this PC and the OpenRGB set-up are there for any hardware. The Memory and ARGB strip cards show only where that hardware is found.',
       'Clicking the memory or the ARGB strip in the preview opens the right card again.'],
