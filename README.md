@@ -84,6 +84,10 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
   and *Start server* in its general settings, then *PC → Other PC hardware* lists its controllers (*Add* / *Add all*).
   Hardware haku control drives itself (the MSI board, ENE memory) is not offered there. If OpenRGB still drives
   the same MSI board or memory as haku control's own drivers, set `[devices] msi=0` / `ene=0`.
+- **Lighting in this PC** (*PC*, at the top) lists what haku control finds in the PC (the board, the memory, the
+  graphics cards, USB devices of lighting makers) and says for each which way it is lit: by haku control itself,
+  through OpenRGB (with *Add* when OpenRGB found it but it is not added yet), OpenRGB still to set up, PawnIO
+  missing for the memory, or no lighting known. Nothing is written to any device to find this out.
 - **Diagnostics** (*Settings → Files*) list the PC's hardware (board, BIOS, memory sticks, graphics cards and their
   maker, SMBus controller, USB devices of RGB makers, what OpenRGB sees): send it to ask for support of a device.
 

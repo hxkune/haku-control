@@ -134,6 +134,14 @@
   <!-- ============ PC ============ -->
   <section class="tab" id="tab-pc">
     <div class="pc-grid">
+      <!-- what lighting hardware this PC has, and which way haku lights each -->
+      <div class="card hw-card">
+        <div class="card-head">
+          <div><h3 data-i18n="hw.title">Lighting in this PC</h3><p class="muted" id="hw-status"></p></div>
+          <button class="btn small ghost" id="hw-scan"><span data-i18n="hw.scan">Look again</span></button>
+        </div>
+        <div class="found hw-list" id="hw-list"></div>
+      </div>
       <div class="card">
         <div class="card-head">
           <div><h3 data-i18n="pc.memory">Memory</h3><p class="muted" id="ram-status"></p></div>

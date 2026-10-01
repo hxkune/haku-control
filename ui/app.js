@@ -2080,6 +2080,71 @@ function updateOrgb() {
     }));
   }
 }
+// ---- lighting in this PC: what haku found (hw, from hwinfo.c) and which way each is lit: by haku itself, through
+// OpenRGB (found there, added or not), OpenRGB still to set up, PawnIO missing, or nothing known
+const HW_KEYS = {   // USB maker -> words its OpenRGB controllers carry in their names
+  '048D': ['gigabyte', 'rgb fusion', 'aorus'], '0B05': ['asus', 'aura', 'rog'], '1462': ['msi', 'mystic'], '26CE': ['asrock', 'polychrome'],
+  '1B1C': ['corsair'], '1E71': ['nzxt'], '1532': ['razer'], '046D': ['logitech'], '1038': ['steelseries'], '0CF2': ['lian li', 'strimer'],
+  '2516': ['cooler master'], '3633': ['deepcool'], '0951': ['hyperx', 'kingston'], '03F0': ['hyperx'], '1044': ['gigabyte', 'aorus'],
+  '2F68': ['thermaltake'], '264A': ['thermaltake'], '0416': ['lian li', 'thermalright'], '3402': ['glorious'], '2433': ['asetek'],
+};
+function hwRoute(it) {
+  const O = S.orgb || { state: 0, ctls: [] }, ctls = O.ctls || [], vid = (it.id || '').slice(0, 4);
+  const lc = x => (x || '').toLowerCase();
+  // haku's own drivers first
+  if (it.cat === 'board' && S.msi) return { cls: 'on', text: t('hw.haku') };
+  if (it.cat === 'ram' && S.sticks > 0) return { cls: 'on', text: t('hw.haku') };
+  if (it.cat === 'usb' && vid === '1462' && S.msi) return { cls: 'on', text: t('hw.haku') };
+  const own = { '31E3': 'wooting', '1B80': 'wooting', '37FA': 'nlusb' }[vid];
+  if (own) return S.ext.devs.some(d => d.kind === own && lc(d.host).startsWith(lc(vid)))
+    ? { cls: 'on', text: t('hw.haku') } : { cls: 'warn', text: t('hw.haku.add'), act: 'scan' };
+  // then what OpenRGB found for it
+  let match = [];
+  if (it.cat === 'board') match = ctls.filter(c => c.type === 0);
+  else if (it.cat === 'ram') match = ctls.filter(c => c.type === 1);
+  else if (it.cat === 'gpu') {
+    const words = [lc(it.maker), ...lc(it.name).split(/\s+/).filter(w => /\d/.test(w) && w.length >= 3)].filter(Boolean);
+    match = ctls.filter(c => c.type === 2 && words.some(w => lc(c.name).includes(w)));
+  } else match = ctls.filter(c => c.type > 2 && (HW_KEYS[vid] || []).some(k => lc(c.name).includes(k)));
+  const mine = match.filter(c => !orgbOwn(c));
+  if (mine.length) {
+    const free = mine.filter(c => !orgbAdded(c));
+    return free.length ? { cls: 'warn', text: t('hw.orgb.found'), act: 'add', ctls: free } : { cls: 'on', text: t('hw.orgb') };
+  }
+  if (it.cat === 'ram' && !S.pawnio) return { cls: 'warn', text: t('hw.pawnio'), act: 'pawnio' };
+  if (it.cat === 'gpu' && /^(nvidia|amd|intel)$/i.test(it.maker || '')) return { cls: 'off', text: t('hw.none') };   // reference cards
+  if (O.state === 4) return { cls: 'warn', text: t('hw.orgb.need'), act: 'setup' };
+  if (O.state === 3) return { cls: 'warn', text: t('hw.orgb.off'), act: 'check' };
+  if (O.state < 2) return { cls: 'off', text: t('hw.looking') };
+  return { cls: 'off', text: t('hw.orgb.nothing') };
+}
+function updateHw() {
+  const H = S.hw || { busy: 0, done: 0, items: [] }, items = H.items || [];
+  const routes = items.map(hwRoute);
+  const lit = routes.filter(r => r.cls === 'on').length;
+  $('#hw-status').textContent = H.busy || !H.done ? t('hw.busy') : t('hw.sum', items.length, lit);
+  $('#hw-scan').disabled = !!H.busy;
+  const html = items.map((it, i) => {
+    const r = routes[i];
+    const btn = r.act === 'add' ? t('dev.add') : r.act === 'setup' ? t('orgb.setup') : r.act === 'pawnio' ? 'pawnio.eu' : r.act === 'scan' ? t('hw.find') : r.act === 'check' ? t('orgb.check') : '';
+    return `<div class="found-row"><span class="kind">${t('hw.cat.' + it.cat)}</span>
+      <div class="what"><b>${esc([it.maker, it.name].filter(Boolean).join(' · ') || it.id)}</b><small><span class="dot ${r.cls}"></span> ${esc(r.text)}${it.id ? ' · ' + esc(it.id) : ''}</small></div>
+      ${btn ? `<button class="btn small${r.act === 'add' || r.act === 'setup' ? '' : ' ghost'}" data-hw="${i}">${esc(btn)}</button>` : ''}</div>`;
+  }).join('');
+  const list = $('#hw-list');
+  if (list.dataset.html === html) return;
+  list.dataset.html = html; list.innerHTML = html;
+  list.querySelectorAll('[data-hw]').forEach(b => b.addEventListener('click', () => {
+    const r = routes[+b.dataset.hw];
+    if (r.act === 'add') { b.disabled = true; r.ctls.forEach(orgbAdd); }
+    else if (r.act === 'setup') { $('#orgb-setup').click(); $('#orgb-guide').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    else if (r.act === 'check') $('#orgb-check').click();
+    else if (r.act === 'pawnio') send({ cmd: 'open', what: 'pawnio' });
+    else if (r.act === 'scan') { send({ cmd: 'scan' }); showTab('devices'); }
+  }));
+}
+$('#hw-scan').addEventListener('click', () => { S.hw = Object.assign({}, S.hw, { busy: 1 }); updateHw(); send({ cmd: 'hw_scan' }); });
+
 $('#orgb-check').addEventListener('click', () => { S.orgb = Object.assign({}, S.orgb, { state: 1 }); updateOrgb(); send({ cmd: 'orgb_check' }); });
 $('#orgb-setup').addEventListener('click', () => { S.orgb = Object.assign({}, S.orgb, { setup: 1, pct: 0 }); updateOrgb(); send({ cmd: 'orgb_setup' }); });
 $('#orgb-locate').addEventListener('click', () => send({ cmd: 'orgb_locate' }));
@@ -2446,6 +2511,7 @@ function updateChips() {
   $('#chips').innerHTML = h.join('');
   $('#ram-status').textContent = S.sticks ? t('ram.status', S.sticks) : t('ram.none');
   updateOrgb();
+  updateHw();
   $('#gpu-status').textContent = S.msi ? t('gpu.status') : t('gpu.none');
   $('#strip-title').textContent = stripName();
   const sn = $('#strip-name'); if (document.activeElement !== sn) sn.value = cv('layout', 'strip_name', '');

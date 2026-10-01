@@ -238,6 +238,8 @@ int   diag_json(char *out, int cap);
 void  orgb_check_start(void);          // looks for OpenRGB on this PC (drv_openrgb.c), the page is told
 int   orgb_json(char *out, int cap);
 int   hw_inventory(char *out, int cap);  // the PC hardware as text lines, for the diagnostics (hwinfo.c)
+void  hw_scan_start(void);              // the PC's lighting hardware, as a list for the window (in the background)
+int   hw_scan_json(char *out, int cap);  // "hw":{...}
 int   app_frame_json(char *out, int cap);    // live LED colours
 void  app_set(const char *section, const char *key, const char *value);
 void  app_power(void);                       // off <-> previous effect

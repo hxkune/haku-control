@@ -125,6 +125,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "nano_forget") { nano_forget(atoi(field(js, "slot").c_str())); post_state(); }
     else if (cmd == "scan") { ext_scan(); orgb_check_start(); post_status(); }
     else if (cmd == "orgb_check") { orgb_check_start(); post_status(); }
+    else if (cmd == "hw_scan") { hw_scan_start(); orgb_check_start(); post_status(); }
     else if (cmd == "ai_setup") { ollama_setup(); post_status(); }
     else if (cmd == "theme") title_bar(field(js, "v").c_str());
     else if (cmd == "orgb_setup") { orgbapp_setup(); post_status(); }

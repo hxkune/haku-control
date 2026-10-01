@@ -819,6 +819,8 @@ static int status_body(char *out, int cap) {
     n += diag_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",");
     n += orgb_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",");
+    n += hw_scan_json(out + n, cap - n);
     return n;
 }
 
@@ -901,6 +903,7 @@ void app_open(const char *what) {
     else if (!strcmp(what, "folder")) ShellExecuteW(NULL, L"open", data_dir, NULL, NULL, SW_SHOWNORMAL);
     else if (!strcmp(what, "release")) update_open_page();
     else if (!strcmp(what, "openrgb")) ShellExecuteW(NULL, L"open", L"https://openrgb.org", NULL, NULL, SW_SHOWNORMAL);
+    else if (!strcmp(what, "pawnio")) ShellExecuteW(NULL, L"open", L"https://pawnio.eu", NULL, NULL, SW_SHOWNORMAL);
 }
 
 void app_remote_cmd(const char *json) {
@@ -1236,6 +1239,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     if (wcsstr(GetCommandLineW(), L"--scan")) ext_scan();   // look for LAN lights right away (results in the log)
     orgb_check_start();   // OpenRGB on this PC: the PC page offers what it has
     ollama_init();
+    hw_scan_start();   // the PC's lighting hardware, for the PC tab (in the background)
 
     ram_event = CreateEventW(NULL, FALSE, FALSE, NULL);
     th_ram = (HANDLE)_beginthreadex(NULL, 0, ram_thread, NULL, 0, NULL);
