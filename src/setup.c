@@ -89,6 +89,8 @@ static void stop_app(void) {
     }
     for (int t = 0; t < 100 && (process_running(L"haku-control.exe") || process_running(L"rgbfx.exe")); t++) Sleep(100);
     kill_process(L"haku-control.exe"); kill_process(L"rgbfx.exe");
+    // the logon task may still count the old one as running, and it ignores a new start while it does
+    run_wait(L"schtasks.exe", L"/End /TN haku-control", 10000);
     Sleep(300);
 }
 
@@ -309,8 +311,13 @@ static int install(int quiet, int quiet_autostart) {
     register_uninstall(bytes);
     SetCursor(old);
 
-    // start it the way it runs at sign-in (through the task), or directly if autostart is off
-    if (!task || !autostart || run_wait(L"schtasks.exe", L"/Run /TN haku-control", 10000) != 0) {
+    // start it the way it runs at sign-in (through the task), or directly if autostart is off. The task answers
+    // "done" even when it ignores the start (it still counted the old one as running), so it is checked that the
+    // program is really there, and started directly when it is not.
+    int started = 0;
+    if (task && autostart && run_wait(L"schtasks.exe", L"/Run /TN haku-control", 10000) == 0)
+        for (int t = 0; t < 80 && !(started = process_running(L"haku-control.exe")); t++) Sleep(100);
+    if (!started) {
         STARTUPINFOW si = { sizeof(si) }; PROCESS_INFORMATION pi;
         if (CreateProcessW(exe, NULL, NULL, NULL, FALSE, 0, NULL, dest, &si, &pi)) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
     }
