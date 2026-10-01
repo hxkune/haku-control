@@ -1067,7 +1067,8 @@ function nanoGeometry(N) {
     const share = n === 3 ? a / Math.sqrt(3) : n === 4 ? a : a * Math.sqrt(3);   // centre distance of two panels sharing an edge
     let a0;
     if (near && n !== 4 && Math.abs(nd - share) < share * 0.2) a0 = Math.atan2(near[1] - y, near[0] - x) + Math.PI / n;
-    else a0 = (n === 3 ? 90 : n === 6 ? -90 : 45) * deg + ang * deg;   // base shape: triangle pointing down, hexagon pointy top
+    else a0 = (n === 3 ? 90 : n === 6 ? 0 : 45) * deg + ang * deg;   // at 0: triangle pointing down, hexagon flat top (as a
+    // Shapes layout's hexagons sharing edges have it: their angle as it is)
     return { x, y, n, r, a0, bar: 0 };
   });
 }
