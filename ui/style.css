@@ -593,7 +593,8 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
   }
   .brand, .side-toggle, .watermark { display: none; }
   nav { flex-direction: row; gap: 0; }
-  nav button { flex: 1; flex-direction: column; gap: 3px; padding: 8px 0 7px; justify-content: center; --cut: 0px; clip-path: none; }
+  nav { overflow-x: auto; scrollbar-width: none; }
+  nav button { flex: 1 0 64px; flex-direction: column; gap: 3px; padding: 8px 0 7px; justify-content: center; --cut: 0px; clip-path: none; }
   nav button span { font-size: 10px; }
   nav button i { display: none; }
   nav button.active { background: none; color: var(--strong); }

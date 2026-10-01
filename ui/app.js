@@ -277,6 +277,50 @@ document.addEventListener('pointerup', () => { dragging = false; });
 // PC stays because its hardware list and OpenRGB set-up are for every PC, not only MSI boards and ENE memory.
 // Nanoleaf and AiDot are reached from Devices until they are set up.
 const NAV_NEED = { nano: nanoOn, bulbs: () => S.bulbs.length > 0 };
+
+// ---- a tab for every brand of lights added (as Nanoleaf has its own): their device cards move there. PC hardware
+// (OpenRGB, Wooting, the Nanoleaf desk dock) and everything to find and add devices stay under Devices.
+const BRAND_ICON = {
+  panel: '<rect x="5" y="3" width="14" height="10" rx="1.5"/><path d="M12 13v6M8 21h8"/>',
+  bar: '<rect x="3" y="10" width="18" height="4" rx="2"/><path d="M6 17v2M18 17v2"/>',
+  strip: '<path d="M3 15c3-6 6 6 9 0s6 6 9 0"/>',
+  grid: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9.3 4v16M14.7 4v16M4 9.3h16M4 14.7h16"/>',
+  bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
+  plug: '<path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0zM12 17v4"/>',
+};
+const BRANDS = {
+  wled: ['wled', 'WLED', 'strip'], govee: ['govee', 'Govee', 'bar'], goveecloud: ['govee', 'Govee', 'bar'], lifx: ['lifx', 'LIFX', 'bulb'],
+  yeelight: ['yeelight', 'Yeelight', 'bulb'], hue: ['hue', 'Philips Hue', 'bulb'], wiz: ['wiz', 'WiZ', 'bulb'], tuya: ['tuya', 'Tuya', 'plug'],
+  elgato: ['elgato', 'Elgato', 'panel'], divoom: ['divoom', 'Divoom', 'grid'],
+};
+const brandOf = kind => BRANDS[kind] || null;   // null: PC hardware, under Devices
+const brandTab = d => { const b = brandOf(d.kind); return b ? 'brand-' + b[0] : 'devices'; };
+let wantTab = '';   // a brand tab remembered from last time, shown once its devices are there
+function buildBrandTabs() {
+  const seen = new Map();
+  S.ext.devs.forEach(d => { const b = brandOf(d.kind); if (b && !seen.has(b[0])) seen.set(b[0], b); });
+  const keys = [...seen.keys()].join(',');
+  if ($('#nav').dataset.brands === keys) return;
+  $('#nav').dataset.brands = keys;
+  $$('#nav [data-brand], .tab[data-brand]').forEach(e => e.remove());
+  let after = $('#nav [data-tab="bulbs"]');
+  const host = $('#tab-devices').parentElement;
+  for (const [key, [, name, icon]] of seen) {
+    const b = document.createElement('button');
+    b.dataset.tab = 'brand-' + key; b.dataset.brand = key;
+    b.innerHTML = `<svg viewBox="0 0 24 24">${BRAND_ICON[icon]}</svg><span>${esc(name)}</span><i></i>`;
+    b.addEventListener('click', () => showTab(b.dataset.tab));
+    after.after(b); after = b;
+    const sec = document.createElement('section');
+    sec.className = 'tab'; sec.id = 'tab-brand-' + key; sec.dataset.brand = key;
+    sec.innerHTML = `<div class="bulb-grid dev-grid" data-brand-grid="${key}"></div>`;
+    host.appendChild(sec);
+  }
+  if (tab.startsWith('brand-') && !seen.has(tab.slice(6))) showTab('devices');
+  else if (wantTab && seen.has(wantTab.slice(6))) { const w = wantTab; wantTab = ''; showTab(w); }
+  else updateNav();
+}
+const brandName = tb => { const b = Object.values(BRANDS).find(x => 'brand-' + x[0] === tb); return b ? b[1] : ''; };
 function updateNav() {
   let n = 0;
   $$('#nav button').forEach(b => {
@@ -398,8 +442,10 @@ function showTab(t) {
   $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
   updateNav();
-  $('#title').textContent = window.t('nav.' + t);
-  $('#subtitle').textContent = window.t('sub.' + t);
+  $('#nav button.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });   // the bottom bar of a narrow window scrolls
+  const bn = brandName(t);
+  $('#title').textContent = bn || window.t('nav.' + t);
+  $('#subtitle').textContent = bn ? window.t('sub.brand', S.ext.devs.filter(d => brandTab(d) === t).length) : window.t('sub.' + t);
   requestAnimationFrame(sizeCanvases);
   $$(`#tab-${t} .card, #tab-${t} .fx`).forEach((c, i) => c.style.setProperty('--i', Math.min(i, 14)));
   try { localStorage.setItem('tab', t); } catch (e) { }
@@ -1704,7 +1750,7 @@ function sheetCards(h) {
   if (h.k === 'gpu') return [[$('#gpu-card')], 'pc'];
   if (h.k === 'nano') { if (h.slot) { nanoSlot = h.slot; updateNano(); } return [nanoOn() ? $$('#nano-main > .card') : [$('#nano-empty')], 'nano']; }
   if (h.k === 'bulb') return [[$('#bulb-grid').children[h.i]], 'bulbs'];
-  if (h.k === 'ext') return [[$(`#dev-live-${h.id}`)?.closest('.card')], 'devices'];
+  if (h.k === 'ext') { const d = S.ext.devs.find(x => x.id === h.id); return [[$(`#dev-live-${h.id}`)?.closest('.card')], d ? brandTab(d) : 'devices']; }
   if (h.k === 'add') return [[], 'devices'];
   return [[], ''];
 }
@@ -1852,7 +1898,7 @@ function drawAll() {
   if (tab === 'effects') drawHero();
   if (tab === 'pc' || sh === 'ram' || sh === 'gpu') { drawCanvas('#live-ram', drawRam); drawCanvas('#live-gpu', drawGpu); }
   if (tab === 'nano' || sh === 'nano') drawCanvas('#live-nano', (c, x, y, w, h) => drawNano(c, x, y, w, h, curNano() || {}));
-  if (tab === 'devices' || sh === 'ext') S.ext.devs.forEach((d, k) => drawCanvas('#dev-live-' + d.id, (c, x, y, w, h) => drawExt(c, x, y, w, h, k)));
+  if (tab === 'devices' || tab.startsWith('brand-') || sh === 'ext') S.ext.devs.forEach((d, k) => { if (sh === 'ext' || brandTab(d) === tab) drawCanvas('#dev-live-' + d.id, (c, x, y, w, h) => drawExt(c, x, y, w, h, k)); });
   if (tab === 'bulbs' || sh === 'bulb') S.bulbs.forEach((b, i) => {
     const o = $('#bulb-orb-' + i); if (!o) return;
     const col = F.bulbs[i], on = lit(col) && b.online;
@@ -2044,8 +2090,10 @@ function devStatus(d) {
 }
 function buildDevices() {
   if (SHEET.kind === 'ext') closeSheet();
+  buildBrandTabs();
   const grid = $('#dev-grid');
   grid.innerHTML = '';
+  $$('[data-brand-grid]').forEach(g => { g.innerHTML = ''; });
   $('#dev-empty').classList.toggle('hidden', S.ext.devs.length > 0);
   S.ext.devs.forEach(d => {
     const el = document.createElement('div');
@@ -2080,7 +2128,7 @@ function buildDevices() {
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
-    grid.appendChild(el);
+    ($(`[data-brand-grid="${(brandOf(d.kind) || [])[0]}"]`) || grid).appendChild(el);
     renderZone(el.querySelector('.zone'));
     el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
     el.querySelector('.dev-name').addEventListener('change', e => {
@@ -2659,6 +2707,6 @@ $('#side-toggle').addEventListener('click', () => setSide(!document.body.classLi
 try { if (localStorage.getItem('side') === '1') { document.body.classList.add('no-anim'); setSide(true); requestAnimationFrame(() => document.body.classList.remove('no-anim')); } } catch (e) { }
 
 applyI18n();
-try { const tb = localStorage.getItem('tab'); showTab(TABS.includes(tb) ? tb : 'effects'); } catch (e) { showTab('effects'); }
+try { const tb = localStorage.getItem('tab') || ''; if (tb.startsWith('brand-')) wantTab = tb; showTab(TABS.includes(tb) ? tb : 'effects'); } catch (e) { showTab('effects'); }
 $$('.range').forEach(fill);
 send({ cmd: 'hello' });
