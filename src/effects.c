@@ -143,7 +143,7 @@ static void load_params(void) {
         zmode[z] = !_stricmp(m, "white") ? ZMODE_WHITE
                  : !znpal[z] ? ZMODE_EFFECT : !_stricmp(m, "static") ? ZMODE_STATIC : !_stricmp(m, "palette") ? ZMODE_PALETTE : ZMODE_EFFECT;
         zkelvin[z] = (int)clampf(cfg_getf(zs, "kelvin", 4000), 2000, 7000);
-        zlevel[z]  = clampf(cfg_getf(zs, "brightness", 100) / 100.0f, 0.05f, 1);
+        zlevel[z]  = clampf(cfg_getf(zs, "brightness", 100) / 100.0f, 0.01f, 1);   // down to 1% (Key Lights go to 3)
         const char *e = cfg_get(zs, "effect", "");
         zeffect[z] = !e[0] || !_stricmp(e, "sync") ? -1 : effect_index(e);
     }

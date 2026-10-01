@@ -553,7 +553,7 @@ function renderZone(el) {
     <div class="zbody"></div>
     <div class="field">
       <div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
-      <input type="range" class="range zb" min="5" max="100" value="${br}">
+      <input type="range" class="range zb" min="1" max="100" value="${br}">
     </div>`;
   const body = el.querySelector('.zbody');
   el.querySelector('.zfx').addEventListener('change', e => { setCfg(section, 'effect', e.target.value); renderZone(el); renderOwnList(); });
@@ -586,7 +586,7 @@ function renderWhiteZone(el, section, caps) {
     <div class="field"><div class="lbl"><span>${t('kelvin')}</span><b>${k} K</b></div>
       <input type="range" class="range kelvin" min="${caps.kmin}" max="${caps.kmax}" step="100" value="${k}"></div>
     <div class="field"><div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
-      <input type="range" class="range zb" min="5" max="100" value="${br}"></div>
+      <input type="range" class="range zb" min="3" max="100" value="${Math.max(3, br)}"></div>
     <p class="note">${t('zone.white')}</p>`;
   const r = el.querySelector('.kelvin'), zb = el.querySelector('.zb'); fill(r); fill(zb);
   r.addEventListener('input', () => { r.parentElement.querySelector('b').textContent = r.value + ' K'; setCfgSoon(section, 'kelvin', r.value); });

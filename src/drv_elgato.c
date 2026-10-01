@@ -109,7 +109,7 @@ static int elg_send(ext_dev *d, const rgbf *c, int n) {
     elg_t *e = d->priv;
     float r = clampf(c[0].r, 0, 1), g = clampf(c[0].g, 0, 1), b = clampf(c[0].b, 0, 1), mx = max(r, max(g, b));
     int on = mx >= 0.02f, bri = (int)(mx * 100 + 0.5f), a = 0, bb = 0;
-    if (bri < 1) bri = 1;
+    if (bri < 3) bri = 3;   // the lights' own floor (their app goes down to 3%)
     char light[128];
     if (!on) snprintf(light, sizeof(light), "{\"on\":0}");
     else if (e->colour) {   // hue 0..360, saturation 0..100
