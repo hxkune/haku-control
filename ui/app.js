@@ -1108,8 +1108,8 @@ const NANO_SHAPES = {
   17: [2, 154], 18: [2, 77],                     // Lines (a bar)
 };
 // Every panel as a polygon: centre, circumradius r, and the angle of its first corner (canvas, radians).
-// A triangle or hexagon turns so that the edge it shares with its nearest neighbour faces that neighbour: this
-// follows the real layout whatever the angle conventions. A panel on its own uses the angle from the controller.
+// Shapes panels turn by their own angle (see below); other triangles and hexagons so that the edge they share with
+// their nearest neighbour faces it, and a panel on its own by the angle from the controller.
 function nanoGeometry(N) {
   const P = (N && N.panels) || [], unit = N.unit || 0, side = N.side || 0.25;
   const deg = Math.PI / 180;
@@ -1128,9 +1128,13 @@ function nanoGeometry(N) {
     const r = n === 3 ? a / Math.sqrt(3) : n === 4 ? a / Math.SQRT2 : a;
     const share = n === 3 ? a / Math.sqrt(3) : n === 4 ? a : a * Math.sqrt(3);   // centre distance of two panels sharing an edge
     let a0;
-    if (near && n !== 4 && Math.abs(nd - share) < share * 0.2) a0 = Math.atan2(near[1] - y, near[0] - x) + Math.PI / n;
-    else a0 = (n === 3 ? 90 : n === 6 ? 0 : 45) * deg + ang * deg;   // at 0: triangle pointing down, hexagon flat top (as a
-    // Shapes layout's hexagons sharing edges have it: their angle as it is)
+    if (shape === 7 || shape === 8 || shape === 9)
+      // Shapes: the panel's own angle. Their corners sit at angle + 30 degrees (triangles) or + 0 (hexagons): with
+      // these, two layouts (one mirrored) have no panel over another (found by checking every angle on them). Their
+      // panels are not always edge to edge (a triangle's edge is two hexagon edges long), so no guessing from neighbours.
+      a0 = ((n === 3 ? 30 : 0) + ang) * deg;
+    else if (near && n !== 4 && Math.abs(nd - share) < share * 0.2) a0 = Math.atan2(near[1] - y, near[0] - x) + Math.PI / n;
+    else a0 = (n === 3 ? 90 : n === 6 ? 0 : 45) * deg + ang * deg;
     return { x, y, n, r, a0, bar: 0 };
   });
 }

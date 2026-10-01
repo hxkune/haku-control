@@ -246,6 +246,9 @@ static void parse_layout(ctl_t *c, const char *js) {
             float o = (float)jnum(one, "o", 0) - rot;
             if (flip) o = 180 - o;
             o = fmodf(-o + 720, 360);
+            // mirrored, a Shapes triangle's corners (at its angle + 30 on the page) would come out 2 x 30 degrees off:
+            // the mirror has to take the 30 with it
+            if (flip && (shape == 8 || shape == 9)) o = fmodf(o + 300, 360);
             p[n].id = id; p[n].shape = shape; p[n].o = o;
             p[n].x = x * cs + y * sn;          // layout y points up
             p[n].y = -x * sn + y * cs;
