@@ -273,9 +273,10 @@ document.addEventListener('pointerdown', e => { if (e.target.type === 'range') d
 document.addEventListener('pointerup', () => { dragging = false; });
 
 // ------------------------------------------------------------------ navigation
-// Sidebar: only the tabs for hardware this PC has (Effects, Devices and Settings always; the open tab stays too).
+// Sidebar: only the tabs for hardware this PC has (Effects, PC, Devices and Settings always; the open tab stays too).
+// PC stays because its hardware list and OpenRGB set-up are for every PC, not only MSI boards and ENE memory.
 // Nanoleaf and AiDot are reached from Devices until they are set up.
-const NAV_NEED = { pc: () => S.msi || S.sticks, nano: nanoOn, bulbs: () => S.bulbs.length > 0 };
+const NAV_NEED = { nano: nanoOn, bulbs: () => S.bulbs.length > 0 };
 function updateNav() {
   let n = 0;
   $$('#nav button').forEach(b => {
@@ -1695,9 +1696,8 @@ function heroPowerButton(c, h) {
 // ---- device sheet: the real settings cards are moved in (placeholders mark their place) and back on close,
 // so everything keeps working exactly as on its own page
 function sheetCards(h) {
-  const pc = $$('#tab-pc .pc-grid > .card');
-  if (h.k === 'ram') return [[pc[0]], 'pc'];
-  if (h.k === 'gpu') return [[pc[1]], 'pc'];
+  if (h.k === 'ram') return [[$('#ram-card')], 'pc'];
+  if (h.k === 'gpu') return [[$('#gpu-card')], 'pc'];
   if (h.k === 'nano') { if (h.slot) { nanoSlot = h.slot; updateNano(); } return [nanoOn() ? $$('#nano-main > .card') : [$('#nano-empty')], 'nano']; }
   if (h.k === 'bulb') return [[$('#bulb-grid').children[h.i]], 'bulbs'];
   if (h.k === 'ext') return [[$(`#dev-live-${h.id}`)?.closest('.card')], 'devices'];
@@ -2589,6 +2589,12 @@ function updateChips() {
   if (ed.length) { const on = ed.filter(d => d.online).length; h.push(chip(on === ed.length ? 'on' : on ? 'warn' : 'off', `${t('chip.devs')} <b>${on}/${ed.length}</b>`)); }
   $('#chips').innerHTML = h.join('');
   $('#ram-status').textContent = S.sticks ? t('ram.status', S.sticks) : t('ram.none');
+  // the Memory and ARGB strip cards only where there is such hardware; the rest of the PC tab is for every PC
+  const rc = $('#ram-card'), gc = $('#gpu-card');
+  if (rc.classList.contains('hidden') === !!S.sticks || gc.classList.contains('hidden') === !!S.msi) {
+    rc.classList.toggle('hidden', !S.sticks); gc.classList.toggle('hidden', !S.msi);
+    requestAnimationFrame(sizeCanvases);
+  }
   updateOrgb();
   updateHw();
   $('#gpu-status').textContent = S.msi ? t('gpu.status') : t('gpu.none');
