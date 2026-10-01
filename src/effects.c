@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Effects. Every effect is a pure function of (led position, time, sensors, palette),
-// except bubbles which keeps a tiny particle list.
+// except bubbles which keeps a tiny particle list. Where an effect needs chance (twinkles, drops, flames) it comes
+// from a hash of the LED and of whole time steps, so it still is a pure function: it looks the same on every
+// device kind, and baked loops (Nanoleaf) get it too.
+// Rainbow, Fire, Ocean, Twinkle, Meteor, Plasma, Aurora, Ripple, Matrix and Candle follow well-known LED effects
+// (FastLED's Fire2012 and Pacifica, MIT; WLED's effects, EUPL-1.2), written anew as fields over the whole scene:
+// every LED of every device takes its colour from its place in the room, so a strip, a keyboard, a Nanoleaf wall
+// and a single bulb all show one picture.
 // Each colour zone (RAM, GPU block, Nanoleaf, every bulb) either follows the main effect or runs
 // its own one ([zone.*] effect=...). With [general] sync=1 the main effect spans all devices as one
 // chain; zones on their own effect, or everything with sync=0, run on their own position and clock.
@@ -14,6 +20,16 @@ const effect_info g_effects[] = {
     { "comet",       L"Comet",        L"Комета",          L"Comète" },
     { "lava",        L"Lava",         L"Лава",            L"Lave" },
     { "breathe",     L"Breathe",      L"Дыхание",         L"Respiration" },
+    { "rainbow",     L"Rainbow",      L"Радуга",          L"Arc-en-ciel" },
+    { "fire",        L"Fire",         L"Огонь",           L"Feu" },
+    { "ocean",       L"Ocean",        L"Океан",           L"Océan" },
+    { "twinkle",     L"Twinkle",      L"Мерцание",        L"Scintillement" },
+    { "meteor",      L"Meteor",       L"Метеор",          L"Météore" },
+    { "plasma",      L"Plasma",       L"Плазма",          L"Plasma" },
+    { "aurora",      L"Aurora",       L"Северное сияние", L"Aurore" },
+    { "ripple",      L"Ripple",       L"Капли",           L"Gouttes" },
+    { "matrix",      L"Matrix",       L"Матрица",         L"Matrice" },
+    { "candle",      L"Candle",       L"Свеча",           L"Bougie" },
     { "temperature", L"Temperature",  L"Температура",     L"Température" },
     { "pump",        L"Pump flow",    L"Поток по насосу", L"Flux de la pompe" },
     { "audio",       L"Audio",        L"Звук",            L"Audio" },
@@ -22,7 +38,23 @@ const effect_info g_effects[] = {
 };
 const int g_effect_count = sizeof(g_effects) / sizeof(g_effects[0]);
 
-enum { FX_FLOW, FX_CAUSTIC, FX_BUBBLES, FX_COMET, FX_LAVA, FX_BREATHE, FX_TEMP, FX_PUMP, FX_AUDIO, FX_STATIC, FX_OFF, FX_N };
+enum { FX_FLOW, FX_CAUSTIC, FX_BUBBLES, FX_COMET, FX_LAVA, FX_BREATHE,
+       FX_RAINBOW, FX_FIRE, FX_OCEAN, FX_TWINKLE, FX_METEOR, FX_PLASMA, FX_AURORA, FX_RIPPLE, FX_MATRIX, FX_CANDLE,
+       FX_TEMP, FX_PUMP, FX_AUDIO, FX_STATIC, FX_OFF, FX_N };
+
+// the newer effects' own colours when they have none set (fire is not blue and pink); the others take [general]
+static const struct { int fx; int n; unsigned rgb[6]; } FX_DEFAULT[] = {
+    { FX_RAINBOW, 6, { 0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF, 0x0000FF, 0xFF00FF } },
+    { FX_FIRE,    5, { 0x200000, 0xC01000, 0xFF5000, 0xFFB020, 0xFFF0A0 } },
+    { FX_OCEAN,   5, { 0x000820, 0x003070, 0x0070B0, 0x00B0D0, 0xA0F0FF } },
+    { FX_TWINKLE, 3, { 0xFFFFFF, 0xFFE8A0, 0xA0C8FF } },
+    { FX_METEOR,  3, { 0xFFFFFF, 0x80C0FF, 0x3040FF } },
+    { FX_PLASMA,  4, { 0xFF0080, 0x8000FF, 0x0080FF, 0x00FFC0 } },
+    { FX_AURORA,  4, { 0x00FF90, 0x00C0FF, 0x7040FF, 0xFF40C0 } },
+    { FX_RIPPLE,  3, { 0x40E0FF, 0x4060FF, 0xC040FF } },
+    { FX_MATRIX,  2, { 0x00FF40, 0xC0FFC0 } },
+    { FX_CANDLE,  3, { 0xFF7A1A, 0xFFB347, 0xFF5500 } },
+};
 
 const wchar_t *effect_title(int i) { return TR(g_effects[i].title, g_effects[i].title_ru, g_effects[i].title_fr); }
 
@@ -92,6 +124,14 @@ static void load_params(void) {
     for (int e = 0; e < FX_N; e++) {
         const char *sec = g_effects[e].id;
         fx_npal[e] = cfg_palette(sec, fx_pal[e], MAX_PALETTE);
+        for (int d = 0; !fx_npal[e] && d < (int)(sizeof(FX_DEFAULT) / sizeof(FX_DEFAULT[0])); d++)
+            if (FX_DEFAULT[d].fx == e) {
+                for (int k = 0; k < FX_DEFAULT[d].n && k < MAX_PALETTE; k++) {
+                    unsigned v = FX_DEFAULT[d].rgb[k];
+                    fx_pal[e][k].r = ((v >> 16) & 255) / 255.0f; fx_pal[e][k].g = ((v >> 8) & 255) / 255.0f; fx_pal[e][k].b = (v & 255) / 255.0f;
+                }
+                fx_npal[e] = FX_DEFAULT[d].n;
+            }
         if (!fx_npal[e]) fx_npal[e] = cfg_palette("general", fx_pal[e], MAX_PALETTE);
         if (!fx_npal[e]) { rgbf d[3] = { { 0, .78f, 1 }, { .48f, .24f, 1 }, { 1, .18f, .58f } }; memcpy(fx_pal[e], d, sizeof(d)); fx_npal[e] = 3; }
         fx_speed[e] = cfg_getf(sec, "speed", cfg_getf("general", "speed", 5)) / 5.0f;
@@ -132,6 +172,28 @@ static rgbf grad(float p) {
 }
 
 static float smooth01(float x) { x = clampf(x, 0, 1); return x * x * (3 - 2 * x); }
+
+// chance without state: a hash of whole numbers, and smooth value noise over it
+static unsigned hash32(unsigned x) { x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16; return x; }
+static float hashf(unsigned x) { return (hash32(x) & 0xFFFFFF) / 16777216.0f; }
+static float vnoise(float x, unsigned seed) {
+    float i = floorf(x), f = x - i; unsigned k = (unsigned)(int)i;
+    float a = hashf(k * 0x9E3779B1U ^ seed), b = hashf((k + 1) * 0x9E3779B1U ^ seed);
+    return a + (b - a) * smooth01(f);
+}
+static float vnoise2(float x, float y, unsigned seed) {
+    float j = floorf(y), f = y - j; unsigned k = (unsigned)(int)j;
+    return vnoise(x, seed ^ hash32(k)) * (1 - smooth01(f)) + vnoise(x, seed ^ hash32(k + 1)) * smooth01(f);
+}
+// one LED, the same every frame
+static unsigned led_key(const led_t *l) { return hash32((unsigned)l->dev * 100003U + (unsigned)l->zone * 1009U + (unsigned)l->index); }
+static rgbf hsv(float h, float s, float v) {
+    h = fractf(h) * 6; int i = (int)h; float f = h - i, p = v * (1 - s), q = v * (1 - s * f), u = v * (1 - s * (1 - f));
+    rgbf c;
+    switch (i % 6) { case 0: c.r = v; c.g = u; c.b = p; break; case 1: c.r = q; c.g = v; c.b = p; break; case 2: c.r = p; c.g = v; c.b = u; break;
+                     case 3: c.r = p; c.g = q; c.b = v; break; case 4: c.r = u; c.g = p; c.b = v; break; default: c.r = v; c.g = p; c.b = q; }
+    return c;
+}
 
 static float caustic_n(float x, float y, float t) {
     float n = 0.5f + 0.5f * sinf(x * 13 + t * 1.7f) * sinf(y * 9 - t * 1.3f + sinf(x * 5 + t));
@@ -201,6 +263,84 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
         float pos = l->dev == DEV_GPU || l->dev == DEV_EXT ? fabsf(l->fill - 0.5f) * 2 : l->fill;
         float lit = smooth01((level_smooth * 1.15f - pos) / 0.12f + 0.5f);
         c = scalec(grad(pos * 0.7f + bass_smooth * 0.3f), 0.1f + 0.9f * lit * (0.6f + 0.4f * bass_smooth));
+        break;
+    }
+    case FX_RAINBOW:   // the whole hue circle along the chain, turning
+        c = hsv(path * 0.9f - t * 0.15f, 1, 1);
+        break;
+    case FX_FIRE: {    // flames from the bottom (y = 1) up, flickering; the palette runs from embers to the hottest
+        float n = vnoise2(x * 7 + vnoise(t * 0.7f, 11) * 2, y * 5 + t * 1.9f, 3);
+        float h = clampf(y * 1.15f - 0.3f + (n - 0.5f) * 0.75f + 0.12f * vnoise(t * 9 + x * 13, led_key(l) & 1023), 0, 1);
+        c = grad(h);
+        break;
+    }
+    case FX_OCEAN: {   // after FastLED's Pacifica: layers of slow waves, foam where they meet
+        float u = path + y * 0.35f;
+        float w = 0.4f * sinf(u * 9 + t * 0.71f) + 0.3f * sinf(u * 13 - t * 1.13f + 1.3f) + 0.2f * sinf(u * 21 + t * 1.7f + 2.1f) + 0.1f * sinf(u * 31 - t * 2.3f);
+        float v = 0.5f + 0.5f * w;
+        c = grad(v * 0.85f);
+        if (v > 0.8f) c = addc(c, scalec(pal[npal - 1], (v - 0.8f) * 2.5f));
+        break;
+    }
+    case FX_TWINKLE: { // every LED twinkles on its own, a palette colour on a dark sky
+        unsigned k = led_key(l);
+        float ph = hashf(k) * 6.2832f, rate = 0.6f + hashf(k ^ 0x55u) * 1.6f, s = sinf(t * rate * 1.6f + ph);
+        float b = s > 0 ? powf(s, 7) : 0;
+        c = addc(scalec(pal[npal - 1], 0.025f), scalec(palc(hashf(k ^ 0xAAu)), b));
+        break;
+    }
+    case FX_METEOR: {  // two meteors through the chain, their tails breaking up
+        c = scalec(pal[npal - 1], 0.02f);
+        for (int m = 0; m < 2; m++) {
+            float head = fractf(t * 0.22f + m * 0.5f) * 1.5f - 0.1f, d = head - path;
+            if (d < 0 || d > 0.4f) continue;
+            float k = 1 - d / 0.4f, crumb = d < 0.03f ? 1 : 0.35f + 0.65f * hashf(led_key(l) ^ (unsigned)(int)floorf(t * 14) * 2654435761U);
+            c = addc(c, scalec(mixc(pal[0], pal[npal > 1 ? 1 : 0], d / 0.4f), k * k * crumb));
+        }
+        break;
+    }
+    case FX_PLASMA: {
+        float v = sinf(x * 10 + t) + sinf(y * 8 - t * 1.3f) + sinf((x + y) * 7 + t * 0.7f) + sinf(sqrtf((x - 0.5f) * (x - 0.5f) + (y - 0.5f) * (y - 0.5f)) * 14 - t * 1.6f);
+        c = palc(v * 0.125f + 0.5f + t * 0.04f);
+        break;
+    }
+    case FX_AURORA: {  // curtains of light drifting along, brighter at the top
+        float u = path;
+        float wave = sinf(u * 6 + t * 0.5f + 2 * sinf(u * 2.3f - t * 0.3f));
+        float curtain = smooth01((wave + 1) * 0.5f); curtain *= curtain;
+        float shimmer = 0.75f + 0.25f * vnoise(u * 30 + t * 3, 7);
+        rgbf col = grad(clampf(0.5f + 0.5f * sinf(u * 2 + t * 0.2f + y * 1.5f), 0, 1));
+        c = addc(scalec(pal[0], 0.03f), scalec(col, curtain * shimmer * (0.35f + 0.65f * (1 - y))));
+        break;
+    }
+    case FX_RIPPLE: {  // drops: rings spreading from places in the room
+        c = scalec(pal[0], 0.03f);
+        for (int k = 0; k < 4; k++) {
+            float tt = t * 0.45f + k * 0.25f, slot = floorf(tt), age = tt - slot;
+            unsigned id = (unsigned)(int)slot * 4U + (unsigned)k;
+            float cx = hashf(id * 2654435761U), cy = hashf(id * 2654435761U ^ 0x1234u), d = sqrtf((x - cx) * (x - cx) + (y - cy) * (y - cy));
+            float e = (d - age * 0.9f) / 0.06f, ring = expf(-e * e) * (1 - age) * (1 - age);
+            c = addc(c, scalec(palc(hashf(id ^ 0x77u)), ring));
+        }
+        break;
+    }
+    case FX_MATRIX: {  // code rain: columns falling at their own pace, a bright head and a fading trail
+        unsigned col = (unsigned)(int)floorf(x * 24);
+        float sp = 0.35f + hashf(col * 31u) * 0.5f, head = fractf(t * sp * 0.6f + hashf(col * 17u)) * 1.6f - 0.3f, dist = head - y;
+        c = scalec(pal[0], 0.01f);
+        if (dist >= 0 && dist < 0.45f) {
+            float b = 1 - dist / 0.45f; b *= b;
+            float flick = 0.7f + 0.3f * hashf(led_key(l) ^ (unsigned)(int)floorf(t * 15) * 2246822519U);
+            c = scalec(dist < 0.03f && npal > 1 ? pal[1] : pal[0], b * flick);
+        }
+        break;
+    }
+    case FX_CANDLE: {  // a warm flame: each device flickers on its own, now and then it dips
+        unsigned zs = (unsigned)z * 13u;
+        float f = vnoise(t * 6, zs + 1) * 0.6f + vnoise(t * 13, zs + 2) * 0.4f;
+        float dip = vnoise(t * 1.3f, zs + 5) < 0.18f ? 0.6f : 1;
+        float b = (0.55f + 0.45f * f) * dip * (0.93f + 0.07f * hashf(led_key(l)));
+        c = scalec(mixc(pal[0], pal[npal > 1 ? 1 : 0], vnoise(t * 2, zs + 9)), b);
         break;
     }
     case FX_STATIC:

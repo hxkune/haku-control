@@ -48,7 +48,14 @@ function setCfg(s, k, v) {
 }
 const parsePal = str => (str || '').match(/#[0-9a-fA-F]{6}/g)?.map(x => x.toUpperCase()) || [];
 const palStr = a => a.join(', ');
-const effPal = id => { const p = parsePal(cv(id, 'palette')); if (p.length) return p; const g = parsePal(cv('general', 'palette')); return g.length ? g : DEFAULT_PAL; };
+// the newer effects' own colours when none are set (as effects.c FX_DEFAULT); the others take the general palette
+const FX_DEFAULT_PAL = {
+  rainbow: ['#FF0000', '#FFFF00', '#00FF00', '#00FFFF', '#0000FF', '#FF00FF'], fire: ['#200000', '#C01000', '#FF5000', '#FFB020', '#FFF0A0'],
+  ocean: ['#000820', '#003070', '#0070B0', '#00B0D0', '#A0F0FF'], twinkle: ['#FFFFFF', '#FFE8A0', '#A0C8FF'], meteor: ['#FFFFFF', '#80C0FF', '#3040FF'],
+  plasma: ['#FF0080', '#8000FF', '#0080FF', '#00FFC0'], aurora: ['#00FF90', '#00C0FF', '#7040FF', '#FF40C0'], ripple: ['#40E0FF', '#4060FF', '#C040FF'],
+  matrix: ['#00FF40', '#C0FFC0'], candle: ['#FF7A1A', '#FFB347', '#FF5500'],
+};
+const effPal = id => { const p = parsePal(cv(id, 'palette')); if (p.length) return p; if (FX_DEFAULT_PAL[id]) return FX_DEFAULT_PAL[id]; const g = parsePal(cv('general', 'palette')); return g.length ? g : DEFAULT_PAL; };
 
 // throttled sender for continuous edits (colour dragging)
 const pendingSets = new Map();
@@ -889,6 +896,12 @@ function grad(pal, p) {
   p = Math.max(0, Math.min(1, p)) * (pal.length - 1);
   const i = Math.floor(p); return i >= pal.length - 1 ? pal[pal.length - 1] : mix(pal[i], pal[i + 1], p - i);
 }
+// chance without state, as in effects.c: a hash of whole numbers and smooth noise over it
+const hashf = n => { let x = Math.imul((n | 0) ^ 0x9E3779B9, 0x85EBCA6B); x ^= x >>> 13; x = Math.imul(x, 0xC2B2AE35); x ^= x >>> 16; return (x >>> 8) / 16777216; };
+const vnoise = (x, seed) => { const i = Math.floor(x), f = x - i; const a = hashf(i * 7919 + seed), b = hashf((i + 1) * 7919 + seed); return a + (b - a) * smooth01(f); };
+const hsvRgb = (h, s, v) => { h = fract(h) * 6; const i = Math.floor(h), f = h - i, p = v * (1 - s), q = v * (1 - s * f), u = v * (1 - s * (1 - f));
+  return [[v, u, p], [q, v, p], [p, v, u], [p, q, v], [u, p, v], [v, p, q]][i % 6].map(k => k * 255); };
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const causticN = (x, y, t) => { const n = 0.5 + 0.5 * Math.sin(x * 13 + t * 1.7) * Math.sin(y * 9 - t * 1.3 + Math.sin(x * 5 + t)); return n * n; };
 function preview(id, pal, t, n) {
   const out = [];
@@ -918,6 +931,54 @@ function preview(id, pal, t, n) {
       case 'breathe': { const ph = t * 0.35, k = Math.floor(ph); c = mix(pal[k % pal.length], pal[(k + 1) % pal.length], smooth01(ph - k)); break; }
       case 'temperature': c = scale(grad(pal, 0.5 + 0.5 * Math.sin(t * 0.25)), 0.8 + 0.2 * causticN(x, 0.5, t * 0.5)); break;
       case 'audio': { const lv = Math.abs(Math.sin(t * 2.3) * Math.sin(t * 0.9 + 1)); c = scale(grad(pal, x), x < lv ? 1 : 0.1); break; }
+      case 'rainbow': c = hsvRgb(x * 0.9 - t * 0.15, 1, 1); break;
+      case 'fire': {   // the strip as the middle of a flame
+        const n = vnoise(x * 7 + t * 1.9, 3), h = Math.max(0, Math.min(1, 0.55 + (n - 0.5) * 0.9 + 0.12 * vnoise(t * 9 + x * 13, i)));
+        c = grad(pal, h); break;
+      }
+      case 'ocean': {
+        const u = x + 0.17, w = 0.4 * Math.sin(u * 9 + t * 0.71) + 0.3 * Math.sin(u * 13 - t * 1.13 + 1.3) + 0.2 * Math.sin(u * 21 + t * 1.7 + 2.1) + 0.1 * Math.sin(u * 31 - t * 2.3), v = 0.5 + 0.5 * w;
+        c = grad(pal, v * 0.85); if (v > 0.8) c = add(c, scale(pal[pal.length - 1], (v - 0.8) * 2.5)); break;
+      }
+      case 'twinkle': {
+        const ph = hashf(i * 31) * 6.2832, rate = 0.6 + hashf(i * 31 + 5) * 1.6, sn = Math.sin(t * rate * 1.6 + ph);
+        c = add(scale(pal[pal.length - 1], 0.025), scale(palc(pal, hashf(i * 31 + 9)), sn > 0 ? Math.pow(sn, 7) : 0)); break;
+      }
+      case 'meteor': {
+        c = scale(pal[pal.length - 1], 0.02);
+        for (let m = 0; m < 2; m++) {
+          const head = fract(t * 0.22 + m * 0.5) * 1.5 - 0.1, d = head - x;
+          if (d < 0 || d > 0.4) continue;
+          const k = 1 - d / 0.4, crumb = d < 0.03 ? 1 : 0.35 + 0.65 * hashf(i * 131 + Math.floor(t * 14));
+          c = add(c, scale(mix(pal[0], pal[Math.min(1, pal.length - 1)], d / 0.4), k * k * crumb));
+        }
+        break;
+      }
+      case 'plasma': { const v = Math.sin(x * 10 + t) + Math.sin(4 - t * 1.3) + Math.sin((x + 0.5) * 7 + t * 0.7) + Math.sin(Math.abs(x - 0.5) * 14 - t * 1.6); c = palc(pal, v * 0.125 + 0.5 + t * 0.04); break; }
+      case 'aurora': {
+        const wave = Math.sin(x * 6 + t * 0.5 + 2 * Math.sin(x * 2.3 - t * 0.3)); let cu = smooth01((wave + 1) * 0.5); cu *= cu;
+        const sh = 0.75 + 0.25 * vnoise(x * 30 + t * 3, 7), col = grad(pal, 0.5 + 0.5 * Math.sin(x * 2 + t * 0.2 + 0.4));
+        c = add(scale(pal[0], 0.03), scale(col, cu * sh * 0.8)); break;
+      }
+      case 'ripple': {
+        c = scale(pal[0], 0.03);
+        for (let k = 0; k < 4; k++) {
+          const tt = t * 0.45 + k * 0.25, slot = Math.floor(tt), age = tt - slot, id = slot * 4 + k;
+          const cx = hashf(id * 97), d = Math.abs(x - cx), e = (d - age * 0.9) / 0.06, ring = Math.exp(-e * e) * (1 - age) * (1 - age);
+          c = add(c, scale(palc(pal, hashf(id * 97 + 3)), ring));
+        }
+        break;
+      }
+      case 'matrix': {   // the strip as a row of columns: each lights up as its drop passes the middle
+        const col = Math.floor(x * 24), sp = 0.35 + hashf(col * 31) * 0.5, head = fract(t * sp * 0.6 + hashf(col * 17)) * 1.6 - 0.3, dist = head - 0.5;
+        c = scale(pal[0], 0.01);
+        if (dist >= 0 && dist < 0.45) { const b = (1 - dist / 0.45) ** 2; c = scale(dist < 0.03 && pal.length > 1 ? pal[1] : pal[0], b * (0.7 + 0.3 * hashf(i * 13 + Math.floor(t * 15)))); }
+        break;
+      }
+      case 'candle': {
+        const f = vnoise(t * 6, 1) * 0.6 + vnoise(t * 13, 2) * 0.4, dip = vnoise(t * 1.3, 5) < 0.18 ? 0.6 : 1;
+        c = scale(mix(pal[0], pal[Math.min(1, pal.length - 1)], vnoise(t * 2, 9)), (0.55 + 0.45 * f) * dip * (0.93 + 0.07 * hashf(i))); break;
+      }
       case 'static': c = pal[0]; break;
       default: c = [14, 15, 19];
     }

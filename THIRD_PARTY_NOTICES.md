@@ -10,6 +10,15 @@
 GNU LGPL 2.1, see `third_party/pawnio/COPYING`. The source code is available from that repository.
 The PawnIO driver itself is not bundled; it is installed separately from https://pawnio.eu.
 
+## Effects
+
+No code from these projects is copied. Ten of the effects (Rainbow, Fire, Ocean, Twinkle, Meteor, Plasma, Aurora,
+Ripple, Matrix, Candle) follow well-known LED effects and were written anew for haku control's scene (every LED
+takes its colour from its place in the room); they are credited for the ideas.
+
+- [FastLED](https://github.com/FastLED/FastLED) (MIT): Fire2012 (Mark Kriegsman) and Pacifica (Mark Kriegsman and Mary Corey March).
+- [WLED](https://github.com/wled/WLED) (EUPL-1.2): its effect collection (Aurora, Ripple, Meteor, Matrix, Twinkle and others).
+
 ## Protocol references
 
 No code from these projects is included. They are credited because their public documentation and research
