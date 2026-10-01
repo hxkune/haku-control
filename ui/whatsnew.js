@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.28',
+    en: ['Every brand of lights you add gets its own tab in the sidebar, as Nanoleaf has: WLED, Govee, LIFX, Yeelight, Hue, WiZ, Tuya, Elgato, Divoom. PC hardware and finding new devices stay under Devices.'],
+    ru: ['У каждого добавленного бренда света теперь своя вкладка в левой панели, как у Nanoleaf: WLED, Govee, LIFX, Yeelight, Hue, WiZ, Tuya, Elgato, Divoom. Железо ПК и поиск новых устройств остаются в «Устройствах».'],
+    fr: ['Chaque marque de lumières ajoutée a maintenant son onglet dans la barre latérale, comme Nanoleaf : WLED, Govee, LIFX, Yeelight, Hue, WiZ, Tuya, Elgato, Divoom. Le matériel du PC et la recherche d\'appareils restent dans Appareils.'] },
   { v: '0.3.27',
     en: ['Nanoleaf Shapes triangles are drawn the right way round in the preview (they used to come out turned over), mirrored layouts included.'],
     ru: ['Треугольники Nanoleaf Shapes рисуются в превью правильной стороной (раньше выходили перевёрнутыми), в том числе в зеркальных раскладках.'],
