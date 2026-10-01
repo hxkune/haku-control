@@ -32,11 +32,11 @@ rc /nologo /c65001 /fo %OBJ%\haku-control.res res\haku-control.rc || exit /b 1
 cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE %DEFS% /std:c++17 /EHsc /Fo%OBJ%\ ^
    src\main.c src\config.c src\effects.c src\dev_msi.c src\dev_ene.c src\sensors.c src\dev_aidot.c src\dev_nanoleaf.c src\net.c ^
    src\netutil.c src\devices.c src\drv_wled.c src\drv_openrgb.c src\drv_govee.c src\drv_lifx.c src\drv_yeelight.c src\drv_hue.c src\drv_wiz.c src\drv_tuya.c src\drv_nlusb.c src\drv_goveecloud.c src\drv_elgato.c src\drv_wooting.c src\drv_divoom.c src\openrgb_app.c src\remote.c src\update.c src\mood.c src\ollama.c src\accounts.c src\diag.c src\hwinfo.c ^
-   src\ui_web.cpp src\audio.cpp ^
+   src\ui_web.cpp src\audio.cpp src\screen.cpp ^
    /Fe:%OUT%\haku-control.exe ^
    /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='%UAC%' uiAccess='false'" ^
    user32.lib shell32.lib gdi32.lib setupapi.lib hid.lib winmm.lib comctl32.lib comdlg32.lib ws2_32.lib bcrypt.lib iphlpapi.lib winhttp.lib crypt32.lib wintrust.lib ^
-   advapi32.lib ole32.lib third_party\webview2\WebView2LoaderStatic.lib %OBJ%\haku-control.res || exit /b 1
+   advapi32.lib ole32.lib d3d11.lib dxgi.lib third_party\webview2\WebView2LoaderStatic.lib %OBJ%\haku-control.res || exit /b 1
 rem helper that switches the Windows Mobile Hotspot on (WinRT), started only when needed
 cl /nologo /utf-8 /O2 /GS /W3 /MT %WINRT_STD% /EHsc /Fo%OBJ%\ src\hotspot.cpp /Fe:%OUT%\haku-control-hotspot.exe ^
    /link /SUBSYSTEM:CONSOLE %OBJ%\haku-control.res || exit /b 1

@@ -30,6 +30,7 @@ const effect_info g_effects[] = {
     { "ripple",      L"Ripple",       L"Капли",           L"Gouttes" },
     { "matrix",      L"Matrix",       L"Матрица",         L"Matrice" },
     { "candle",      L"Candle",       L"Свеча",           L"Bougie" },
+    { "screen",      L"Screen",       L"Экран",           L"Écran" },
     { "temperature", L"Temperature",  L"Температура",     L"Température" },
     { "pump",        L"Pump flow",    L"Поток по насосу", L"Flux de la pompe" },
     { "audio",       L"Audio",        L"Звук",            L"Audio" },
@@ -39,7 +40,7 @@ const effect_info g_effects[] = {
 const int g_effect_count = sizeof(g_effects) / sizeof(g_effects[0]);
 
 enum { FX_FLOW, FX_CAUSTIC, FX_BUBBLES, FX_COMET, FX_LAVA, FX_BREATHE,
-       FX_RAINBOW, FX_FIRE, FX_OCEAN, FX_TWINKLE, FX_METEOR, FX_PLASMA, FX_AURORA, FX_RIPPLE, FX_MATRIX, FX_CANDLE,
+       FX_RAINBOW, FX_FIRE, FX_OCEAN, FX_TWINKLE, FX_METEOR, FX_PLASMA, FX_AURORA, FX_RIPPLE, FX_MATRIX, FX_CANDLE, FX_SCREEN,
        FX_TEMP, FX_PUMP, FX_AUDIO, FX_STATIC, FX_OFF, FX_N };
 
 // the newer effects' own colours when they have none set (fire is not blue and pink); the others take [general]
@@ -81,6 +82,12 @@ static int   znpal[MAX_ZONES];
 static int   sync_all = 1;
 static int   last_fx = -1;
 static int   used_temp, used_audio;       // some LED shows the temperature / audio effect
+// Screen: which part of the screen a zone takes ([zone.*] screen=): auto picks by the device's shape (a strip runs
+// around the edges, a flat device like Nanoleaf or a keyboard is a mosaic of the screen, one light its average)
+enum { SCR_AUTO, SCR_WHOLE, SCR_BORDER, SCR_LEFT, SCR_RIGHT, SCR_TOP, SCR_BOTTOM };
+static int   zscreen[MAX_ZONES];
+static int   zn[MAX_ZONES];                                 // LEDs of each zone in the scene
+static float zbox[MAX_ZONES][4];                            // and their extent: min x, min y, max x, max y
 
 // Colour temperature -> RGB (Tanner Helland's approximation), for LEDs without a white channel.
 static rgbf kelvin_rgb(int k) {
@@ -144,6 +151,9 @@ static void load_params(void) {
                  : !znpal[z] ? ZMODE_EFFECT : !_stricmp(m, "static") ? ZMODE_STATIC : !_stricmp(m, "palette") ? ZMODE_PALETTE : ZMODE_EFFECT;
         zkelvin[z] = (int)clampf(cfg_getf(zs, "kelvin", 4000), 2000, 7000);
         zlevel[z]  = clampf(cfg_getf(zs, "brightness", 100) / 100.0f, 0.01f, 1);   // down to 1% (Key Lights go to 3)
+        const char *sa = cfg_get(zs, "screen", "auto");
+        zscreen[z] = !_stricmp(sa, "whole") ? SCR_WHOLE : !_stricmp(sa, "border") ? SCR_BORDER : !_stricmp(sa, "left") ? SCR_LEFT
+                   : !_stricmp(sa, "right") ? SCR_RIGHT : !_stricmp(sa, "top") ? SCR_TOP : !_stricmp(sa, "bottom") ? SCR_BOTTOM : SCR_AUTO;
         const char *e = cfg_get(zs, "effect", "");
         zeffect[z] = !e[0] || !_stricmp(e, "sync") ? -1 : effect_index(e);
     }
@@ -192,6 +202,39 @@ static rgbf hsv(float h, float s, float v) {
     rgbf c;
     switch (i % 6) { case 0: c.r = v; c.g = u; c.b = p; break; case 1: c.r = q; c.g = v; c.b = p; break; case 2: c.r = p; c.g = v; c.b = u; break;
                      case 3: c.r = p; c.g = q; c.b = v; break; case 4: c.r = u; c.g = p; c.b = v; break; default: c.r = v; c.g = p; c.b = q; }
+    return c;
+}
+
+// a point on the screen's edge, going round from the bottom left, clockwise (as a backlight strip is laid), and
+// the patch of screen just inside it
+static int screen_edge(float f, rgbf *c) {
+    f = fractf(f) * 4; int e = (int)f; float q = f - e, d = 0.2f, w = 0.08f;
+    float u = e == 0 ? 0 : e == 1 ? q : e == 2 ? 1 : 1 - q, v = e == 0 ? 1 - q : e == 1 ? 0 : e == 2 ? q : 1;
+    if (e == 0 || e == 2) return screen_area(u ? 1 - d : 0, v - w, u ? 1 : d, v + w, c);
+    return screen_area(u - w, v ? 1 - d : 0, u + w, v ? 1 : d, c);
+}
+static rgbf screen_led(const led_t *l, int z) {
+    rgbf c = { 0, 0, 0 };
+    int m = zscreen[z];
+    float w = zbox[z][2] - zbox[z][0], h = zbox[z][3] - zbox[z][1];
+    if (m == SCR_AUTO) m = zn[z] <= 1 ? SCR_WHOLE : (w > 0.05f && h > 0.05f) ? -1 : SCR_BORDER;
+    int ok;
+    switch (m) {
+    case -1: {   // a mosaic: the device's own extent laid over the screen
+        float u = (l->x - zbox[z][0]) / w, v = (l->y - zbox[z][1]) / h, k = 0.12f;
+        ok = screen_area(u - k, v - k, u + k, v + k, &c); break;
+    }
+    case SCR_BORDER: ok = screen_edge(l->fill, &c); break;
+    case SCR_LEFT:   ok = screen_area(0, 0, 0.25f, 1, &c); break;
+    case SCR_RIGHT:  ok = screen_area(0.75f, 0, 1, 1, &c); break;
+    case SCR_TOP:    ok = screen_area(0, 0, 1, 0.25f, &c); break;
+    case SCR_BOTTOM: ok = screen_area(0, 0.75f, 1, 1, &c); break;
+    default:         ok = screen_area(0, 0, 1, 1, &c); break;
+    }
+    if (!ok) return c;
+    // a little more colour than the average gives (averages go grey)
+    float g = (c.r + c.g + c.b) / 3, s = 1.35f;
+    c.r = g + (c.r - g) * s; c.g = g + (c.g - g) * s; c.b = g + (c.b - g) * s;
     return c;
 }
 
@@ -343,6 +386,9 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
         c = scalec(mixc(pal[0], pal[npal > 1 ? 1 : 0], vnoise(t * 2, zs + 9)), b);
         break;
     }
+    case FX_SCREEN:
+        c = screen_led(l, z);
+        break;
     case FX_STATIC:
         c = pal[0];
         break;
@@ -368,6 +414,18 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
     }
     used_temp = uses[FX_TEMP];
     used_audio = uses[FX_AUDIO];
+    if (uses[FX_SCREEN]) {
+        screen_use();
+        // each zone's LED count and extent, for the screen's mosaic / edge / average choice
+        for (int z = 0; z < MAX_ZONES; z++) { zn[z] = 0; zbox[z][0] = zbox[z][1] = 1e9f; zbox[z][2] = zbox[z][3] = -1e9f; }
+        for (int i = 0; i < sc->count; i++) {
+            const led_t *l = &sc->leds[i]; int z = l->zone;
+            if (z < 0 || z >= MAX_ZONES) continue;
+            zn[z]++;
+            if (l->x < zbox[z][0]) zbox[z][0] = l->x; if (l->y < zbox[z][1]) zbox[z][1] = l->y;
+            if (l->x > zbox[z][2]) zbox[z][2] = l->x; if (l->y > zbox[z][3]) zbox[z][3] = l->y;
+        }
+    }
 
     // effect clocks; the pump effect follows the flow sensor (0..1) when there is one
     for (int e = 0; e < FX_N; e++) {
@@ -413,7 +471,7 @@ int effects_bake(int fx, const scene_t *sc, int dev, int zone, int max_frames, i
         const led_t *l = &sc->leds[i];
         if (l->dev != dev || (zone >= 0 && l->zone != zone) || l->index >= stride) continue;
         int z = l->zone >= 0 && l->zone < MAX_ZONES ? l->zone : ZONE_GPU, e = fx == FX_OFF ? FX_OFF : zone_fx(z);
-        if (e == FX_TEMP || e == FX_AUDIO) return 0;
+        if (e == FX_TEMP || e == FX_AUDIO || e == FX_SCREEN) return 0;   // live: streamed
         if (e0 < 0) { e0 = e; z0 = z; } else if (e != e0) mixed = 1;
         idx[n++] = i;
     }

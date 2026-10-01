@@ -604,6 +604,14 @@ function renderZone(el) {
     </div>`;
   const body = el.querySelector('.zbody');
   el.querySelector('.zfx').addEventListener('change', e => { setCfg(section, 'effect', e.target.value); renderZone(el); renderOwnList(); });
+  if ((own || S.effect) === 'screen' && mode === 'effect') {
+    const sa = cv(section, 'screen', 'auto'), f = document.createElement('div');
+    f.className = 'field';
+    f.innerHTML = `<div class="lbl"><span>${t('zone.screen')}</span></div><select class="select zscr">${['auto', 'whole', 'border', 'left', 'right', 'top', 'bottom'].map(v =>
+      `<option value="${v}"${sa === v ? ' selected' : ''}>${t('scr.' + v)}</option>`).join('')}</select>`;
+    body.after(f);
+    f.querySelector('.zscr').addEventListener('change', e => setCfg(section, 'screen', e.target.value));
+  }
   const fxT = fxName(own || S.effect);
   if (mode === 'effect') body.innerHTML = `<p class="note">${t('zone.note', fxT)}</p>`;
   else if (mode === 'white') {
@@ -894,13 +902,15 @@ function renderEffectSide() {
   const id = S.effect, P = activePreset();
   $('#fx-name').textContent = P ? P.name : fxName(id);
   $('#fx-desc').textContent = (P ? t('preset.based', fxName(id)) + ' ' : '') + t('desc.' + id);
-  $('#fx-pal-field').classList.toggle('hidden', id === 'off');
+  $('#fx-pal-field').classList.toggle('hidden', id === 'off' || id === 'screen');
   renderPalette($('#fx-pal'), id, false, effPal(id));
   const hasSpeed = !['static', 'off', 'temperature'].includes(id);
   $('#fx-speed-field').classList.toggle('hidden', !hasSpeed);
   const sp = +cv(id, 'speed', cv('general', 'speed', 5));
   setRange($('#fx-speed'), sp); $('#fx-speed-val').textContent = sp;
   $('#fx-temp').classList.toggle('hidden', id !== 'temperature');
+  $('#fx-screen').classList.toggle('hidden', id !== 'screen');
+  if (id === 'screen') updateScreen();
   if (id === 'temperature') {
     const src = cv('temperature', 'source', 'gpu');
     $$('#temp-src button').forEach(b => b.classList.toggle('on', b.dataset.v === src));
@@ -929,6 +939,18 @@ function renderOwnList() {
 }
 $('#fx-sync').addEventListener('change', e => { setCfg('general', 'sync', e.target.checked ? 1 : 0); renderEffectSide(); });
 $('#fx-speed').addEventListener('input', e => { $('#fx-speed-val').textContent = e.target.value; setCfgSoon(S.effect, 'speed', e.target.value); });
+// Screen effect: which screen ([screen] monitor, 1..), and how the copy is doing
+function updateScreen() {
+  const C = S.screen || {}, n = C.monitors || 0, cur = +cv('screen', 'monitor', 1);
+  $('#scr-mon-field').classList.toggle('hidden', n < 2);
+  const html = Array.from({ length: n }, (_, i) => `<button data-v="${i + 1}" class="${cur === i + 1 ? 'on' : ''}">${t('scr.mon.n', i + 1)}</button>`).join('');
+  const seg = $('#scr-mon');
+  if (seg.dataset.html !== html) {
+    seg.dataset.html = html; seg.innerHTML = html;
+    seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setCfg('screen', 'monitor', b.dataset.v); updateScreen(); }));
+  }
+  $('#scr-note').textContent = C.err ? t('scr.err', C.err) : C.have ? t('scr.on', C.w, C.h) : t('scr.note');
+}
 $$('#temp-src button').forEach(b => b.addEventListener('click', () => { setCfg('temperature', 'source', b.dataset.v); renderEffectSide(); }));
 ['cold', 'hot'].forEach(k => $('#temp-' + k).addEventListener('change', e => { const v = +e.target.value; if (v > 0 && v < 120) setCfg('temperature', k, v); }));
 
@@ -1025,6 +1047,10 @@ function preview(id, pal, t, n) {
       case 'candle': {
         const f = vnoise(t * 6, 1) * 0.6 + vnoise(t * 13, 2) * 0.4, dip = vnoise(t * 1.3, 5) < 0.18 ? 0.6 : 1;
         c = scale(mix(pal[0], pal[Math.min(1, pal.length - 1)], vnoise(t * 2, 9)), (0.55 + 0.45 * f) * dip * (0.93 + 0.07 * hashf(i))); break;
+      }
+      case 'screen': {   // a moving picture, seen along the edge
+        const v = 0.5 + 0.5 * Math.sin(x * 5 + t * 0.9) * Math.sin(t * 0.37 + x * 2);
+        c = hsvRgb(0.58 + 0.25 * Math.sin(t * 0.21 + x * 1.5), 0.55, 0.25 + 0.6 * v); break;
       }
       case 'static': c = pal[0]; break;
       default: c = [14, 15, 19];
@@ -2649,6 +2675,7 @@ function updateChips() {
   }
   updateOrgb();
   updateHw();
+  if (S.effect === 'screen') updateScreen();
   $('#gpu-status').textContent = S.msi ? t('gpu.status') : t('gpu.none');
   $('#strip-title').textContent = stripName();
   const sn = $('#strip-name'); if (document.activeElement !== sn) sn.value = cv('layout', 'strip_name', '');

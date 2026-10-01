@@ -130,6 +130,16 @@ Download and set up* installs Ollama (its installer from ollama.com, checked for
 Ollama itself out of Windows startup: haku control starts it for a request and closes it half a minute later.
 Any chat model Ollama has works; `[mood] model=` picks one. Works from the phone page too.
 
+### Screen (ambilight)
+
+The *Screen* effect lights the room with what is on the screen. Strips run around its edges (from the bottom left,
+clockwise, as a backlight strip is laid), flat devices such as a Nanoleaf wall or a keyboard show it as a mosaic, and
+single lights take its average colour; each device's card can pick another part (the whole screen, the edges, left,
+right, top, bottom). The effect's speed sets how fast the lights follow. The screen is copied with DXGI Desktop
+Duplication and shrunk by the graphics card, so it costs next to nothing (about 0.1 % of an 8-core processor at
+2560x1440); it runs only while the effect is on. With more than one screen, the effect's panel picks which. Video
+protected against copying comes out dark, as in any screen capture.
+
 ## Build
 
 Needs Visual Studio 2019 or newer (or Build Tools) with *Desktop development with C++* and a Windows 10/11 SDK.
@@ -197,6 +207,10 @@ purposes:
 - **Govee (cloud):** only if you enter a Govee API key: the key and the commands for the Govee devices you added
   (on / off, colour, brightness, screen sync) go to Govee's cloud API, as those devices cannot be reached locally.
 - **Describe a mood:** the text goes to Ollama on your own PC, if you use it.
+- **Screen effect:** the screen is read on your PC to colour the lights; no picture is kept or sent anywhere.
+- **Divoom:** a device scan, and a Divoom device added by its Device ID, ask Divoom's service which Divoom devices are
+  on your network (it sees your internet address, as the Divoom app does); a Times Frame's list of dials comes from
+  Divoom's cloud. The Times Frame's own screen background is fetched by the frame from this repository.
 - **Phone control:** off by default; when on, it serves the settings page on your local network only.
 - **Diagnostics:** *Save* under *Settings → Files* writes a text file to your Downloads folder (log, settings without
   keys or passwords, devices, network adapters). It is not sent anywhere; you decide whether to share it.

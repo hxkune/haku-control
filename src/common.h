@@ -199,6 +199,10 @@ void sensors_poll(sensors_t *s, int need_gpu, int need_audio);
 
 // ---- audio.cpp (WASAPI loopback, own thread while needed)
 void audio_start(void);
+// ---- screen.cpp: the desktop, small, for the Screen effect
+void screen_use(void);                     // keeps the copy running (it stops a few seconds after the last call)
+int  screen_area(float u0, float v0, float u1, float v1, rgbf *out);   // average colour; 0 when none yet
+int  screen_json(char *out, int cap);
 void audio_stop(void);
 void audio_read(float *level, float *bass);
 void sensors_close(void);

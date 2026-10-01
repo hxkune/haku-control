@@ -821,6 +821,8 @@ static int status_body(char *out, int cap) {
     n += orgb_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",");
     n += hw_scan_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",");
+    n += screen_json(out + n, cap - n);
     return n;
 }
 
