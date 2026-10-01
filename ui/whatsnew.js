@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.24',
+    en: ['Show in the preview: every device has its own line now, so a graphics card or a lamp can be left out on its own.',
+      'After installing or updating by hand, haku\'s window opens by itself (with what is new).',
+      'Nanoleaf Shapes: hexagons next to triangles are no longer drawn turned in the preview.'],
+    ru: ['«Показывать в превью»: у каждого устройства теперь своя галочка, можно убрать отдельно видеокарту или лампу.',
+      'После ручной установки или обновления окно haku открывается само (с «Что нового»).',
+      'Nanoleaf Shapes: шестиугольники рядом с треугольниками больше не рисуются повёрнутыми в превью.'],
+    fr: ['Afficher dans l\'aperçu : chaque appareil a maintenant sa ligne, une carte graphique ou une lampe peut être retirée seule.',
+      'Après une installation ou une mise à jour à la main, la fenêtre de haku s\'ouvre toute seule (avec les nouveautés).',
+      'Nanoleaf Shapes : les hexagones à côté de triangles ne sont plus dessinés tournés dans l\'aperçu.'] },
   { v: '0.3.23',
     en: ['Lighting in this PC (PC tab, at the top): haku finds the board, the memory, the graphics cards and the USB lighting devices, and says for each how it is lit: by haku itself, through OpenRGB, or what is still missing (with the button for it).',
       'After an update installed by hand, haku starts by itself again.'],
