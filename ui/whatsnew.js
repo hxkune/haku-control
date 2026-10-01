@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.26',
+    en: ['The PC tab is now on every PC, not only with an MSI board or RGB memory: Lighting in this PC and the OpenRGB set-up are there for any hardware. The Memory and ARGB strip cards show only where that hardware is found.',
+      'Clicking the memory or the ARGB strip in the preview opens the right card again.'],
+    ru: ['Вкладка «ПК» теперь есть на любом компьютере, а не только с платой MSI или RGB-памятью: «Подсветка в этом ПК» и установка OpenRGB доступны для любого железа. Карточки «Память» и ARGB-ленты показываются, только если такое железо найдено.',
+      'Клик по памяти или ARGB-ленте в превью снова открывает нужную карточку.'],
+    fr: ['L\'onglet PC est maintenant là sur tous les PC, pas seulement avec une carte mère MSI ou de la mémoire RGB : l\'éclairage de ce PC et l\'installation d\'OpenRGB servent pour tout matériel. Les cartes Mémoire et bande ARGB n\'apparaissent que si ce matériel est trouvé.',
+      'Un clic sur la mémoire ou la bande ARGB dans l\'aperçu ouvre de nouveau la bonne carte.'] },
   { v: '0.3.25',
     en: ['Ten new effects: Rainbow, Fire, Ocean, Twinkle, Meteor, Plasma, Aurora, Ripple, Matrix and Candle. They span every device as one picture (Nanoleaf included), each with its own colours, which you can change.',
       'A device\'s own brightness now goes down to 1%, and Elgato Key Lights to 3%, as in Elgato\'s app.'],
