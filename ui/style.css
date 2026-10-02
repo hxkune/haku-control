@@ -66,6 +66,18 @@
   --chrome: linear-gradient(180deg, #fff27a 0%, #ffd83a 55%, #ffe96a 100%);
   --display: "Consolas", "Cascadia Mono", monospace;
 }
+/* kyōka suigetsu (hidden, opened with its code): Bleach. Black and white like a shihakushō, violet spiritual
+   pressure, a white blade's sheen on the buttons, Mincho headings, the Hōgyoku glowing in the corner and hell
+   butterflies now and then; the rest is at the end of this file */
+:root[data-theme="kyoka"] {
+  --bg: #060509; --panel: #0e0c13; --panel2: #15121c; --menu: #110f17; --glass: 14, 12, 19; --scrim: 3, 2, 6;
+  --ink: 214, 196, 255; --strong: #b48cff; --on-strong: #0a0710; --on-strong-dim: #57458a; --sel: #d9c8ff;
+  --line: rgba(180, 140, 255, .1); --line2: rgba(180, 140, 255, .2); --line3: rgba(180, 140, 255, .42);
+  --text: #f4f0ff; --muted: #a79bc6; --faint: #5d5378;
+  --chrome: linear-gradient(115deg, #ffffff 0%, #d9ccff 38%, #9c74ff 52%, #e9e2ff 68%, #ffffff 100%);
+  --display: "Yu Mincho", "YuMincho", "MS Mincho", "Segoe UI", serif;
+  --ky-fly: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 32'><g fill='%23080510' stroke='%23b48cff' stroke-width='.8'><path d='M20 16 C14 2 2 0 3 9 C4 15 12 16 20 16Z'/><path d='M20 16 C26 2 38 0 37 9 C36 15 28 16 20 16Z'/><path d='M20 17 C14 19 7 26 11 30 C15 31 18 24 20 17Z'/><path d='M20 17 C26 19 33 26 29 30 C25 31 22 24 20 17Z'/></g><path d='M20 9 L20 25' stroke='%23d9c8ff' stroke-width='1.6' stroke-linecap='round'/></svg>");
+}
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -1082,6 +1094,66 @@ body.glitching > *:not(.vglitch):not(.vchat) {
 body.calm .vchat { animation: vchat-calm 7s steps(1) forwards; }
 @keyframes vchat-calm { 0% { opacity: 1; } 100% { opacity: 0; } }
 :root[data-theme="verity"] body.calm .watermark, :root[data-theme="verity"] body.calm .watermark::after { animation: none; }
+
+/* ---- kyōka suigetsu */
+:root[data-theme="kyoka"] body {
+  background: radial-gradient(900px circle at 92% 108%, rgba(140, 90, 255, .16), transparent 62%),
+              radial-gradient(700px circle at 0% -10%, rgba(255, 255, 255, .04), transparent 60%), var(--bg);
+}
+:root[data-theme="kyoka"] h3::before { content: ""; display: inline-block; width: 16px; height: 13px; margin-right: 2px; vertical-align: -1px;
+  background: var(--ky-fly) center / contain no-repeat; filter: drop-shadow(0 0 4px rgba(180, 140, 255, .6)); }
+:root[data-theme="kyoka"] header h1 { letter-spacing: .02em; }
+:root[data-theme="kyoka"] header h1::after { content: " 鏡花水月"; color: var(--strong); font-size: .55em; letter-spacing: .3em; vertical-align: .35em; opacity: .8; }
+:root[data-theme="kyoka"] .brand .word { color: var(--strong); letter-spacing: .4em; }
+:root[data-theme="kyoka"] nav button.active { color: var(--strong); }
+:root[data-theme="kyoka"] .fx.on { box-shadow: 0 0 0 1px rgba(180, 140, 255, .35), 0 0 28px -6px rgba(140, 90, 255, .55); }
+:root[data-theme="kyoka"] .fx.on canvas { filter: drop-shadow(0 0 8px rgba(180, 140, 255, .5)); }
+:root[data-theme="kyoka"] #theme button[data-v="kyoka"]:not(.on) { color: var(--strong); }
+:root[data-theme="kyoka"] .btn.primary, :root[data-theme="kyoka"] .seg button.on { background-size: 220% 100%; animation: ky-sheen 7s ease-in-out infinite; }
+@keyframes ky-sheen { 0%, 100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
+/* the Hōgyoku in the corner, breathing; the name of the zanpakutō runs down the right edge */
+:root[data-theme="kyoka"] .watermark {
+  -webkit-mask: none; mask: none; width: 340px; aspect-ratio: 1; right: -70px; bottom: -70px; border-radius: 50%; opacity: .32; transform: none;
+  background: radial-gradient(circle at 38% 34%, #ffffff 0 4%, #e2d4ff 9%, #a879ff 24%, #5a24c9 46%, #210c45 64%, transparent 71%);
+  box-shadow: 0 0 120px 30px rgba(140, 90, 255, .25);
+  animation: ky-orb 5s ease-in-out infinite;
+}
+:root[data-theme="kyoka"] .ambient::after { content: "鏡花水月"; position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
+  writing-mode: vertical-rl; font: 600 64px "Yu Mincho", "MS Mincho", serif; letter-spacing: .4em; color: rgba(180, 140, 255, .07); }
+@keyframes ky-orb { 0%, 100% { opacity: .26; filter: saturate(1); } 50% { opacity: .38; filter: saturate(1.3) brightness(1.15); } }
+.ky-fly { position: fixed; left: 0; top: 0; width: 34px; height: 27px; z-index: 55; pointer-events: none;
+  background: var(--ky-fly) center / contain no-repeat; filter: drop-shadow(0 0 6px rgba(180, 140, 255, .8)); animation: ky-flap .32s ease-in-out infinite alternate; }
+@keyframes ky-flap { from { scale: 1 1; } to { scale: .35 1; } }
+
+/* entering its code (app.js drives it): pressure, a cut, cracks, then the illusion shatters */
+.kyoka-ov { position: fixed; inset: 0; z-index: 98; pointer-events: all; cursor: none; overflow: hidden; }
+.kyoka-ov .ky-press { position: absolute; inset: 0; animation: ky-press 1.9s ease-in forwards;
+  background: radial-gradient(circle at 50% 50%, transparent 30%, rgba(60, 20, 140, .55) 100%); }
+@keyframes ky-press { from { opacity: 0; } to { opacity: 1; } }
+body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .09s linear infinite; filter: saturate(.4) brightness(.8); }
+@keyframes ky-shake { 0% { translate: 0 0; } 25% { translate: 2px -1px; } 50% { translate: -2px 1px; } 75% { translate: 1px 2px; } 100% { translate: 0 0; } }
+.kyoka-ov .ky-slash { position: absolute; left: -10%; right: -10%; top: 50%; height: 3px; transform: rotate(-24deg) scaleX(0); transform-origin: 0 50%;
+  background: linear-gradient(90deg, transparent, #fff 20%, #fff 80%, transparent); box-shadow: 0 0 18px 4px rgba(200, 170, 255, .9), 0 0 60px 12px rgba(140, 90, 255, .6); opacity: 0; }
+.kyoka-ov.cut .ky-slash { animation: ky-slash .5s cubic-bezier(.2, .9, .3, 1) forwards; }
+@keyframes ky-slash { 0% { opacity: 1; transform: rotate(-24deg) scaleX(0); } 40% { opacity: 1; transform: rotate(-24deg) scaleX(1); } 100% { opacity: 0; transform: rotate(-24deg) scaleX(1) scaleY(4); } }
+.kyoka-ov.cut { animation: ky-flash .35s ease-out; }
+@keyframes ky-flash { 0% { background: rgba(255, 255, 255, .55); } 100% { background: transparent; } }
+.kyoka-ov .ky-cracks { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: rgba(240, 232, 255, .95);
+  filter: drop-shadow(0 0 3px rgba(180, 140, 255, .9)); }
+.kyoka-ov .ky-cracks path { stroke-width: 1.6; stroke-linejoin: bevel; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.kyoka-ov .ky-cracks path.ring { stroke-width: 1; opacity: .6; }
+.kyoka-ov.crack .ky-cracks path { animation: ky-crack .7s var(--d, 0ms) cubic-bezier(.3, .8, .4, 1) forwards; }
+@keyframes ky-crack { to { stroke-dashoffset: 0; } }
+.kyoka-ov .ky-name { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; opacity: 0; pointer-events: none; }
+.kyoka-ov .ky-name b { display: block; font: 600 clamp(48px, 9vw, 120px) "Yu Mincho", "MS Mincho", serif; letter-spacing: .25em; color: #fff;
+  text-shadow: 0 0 24px rgba(180, 140, 255, .95), 0 0 70px rgba(120, 60, 255, .7); margin-right: -.25em; }
+.kyoka-ov .ky-name small { display: block; margin-top: 10px; font: 13px "Consolas", monospace; letter-spacing: .45em; color: #cdb8ff; text-transform: uppercase; }
+.kyoka-ov.crack .ky-name { animation: ky-name 1.6s ease forwards; }
+@keyframes ky-name { 0% { opacity: 0; filter: blur(8px); } 35% { opacity: 1; filter: none; } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.06); } }
+.kyoka-ov.break .ky-press, .kyoka-ov.break .ky-cracks { transition: opacity .25s; opacity: 0; }
+.kyoka-ov .ky-shard { position: absolute; inset: 0; will-change: transform, opacity;
+  background: linear-gradient(135deg, rgba(235, 225, 255, .22), rgba(22, 16, 36, .94) 32%, rgba(9, 7, 15, .97) 70%, rgba(180, 150, 255, .25)); }
+:root[data-theme="kyoka"] body.calm .watermark, :root[data-theme="kyoka"] body.calm .btn.primary, :root[data-theme="kyoka"] body.calm .seg button.on { animation: none; }
 
 /* the preview's menu: one line per device, scrolling when there are many */
 .hero-checks { display: flex; flex-direction: column; gap: 2px; max-height: min(46vh, 380px); overflow-y: auto; margin-right: -6px; padding-right: 6px; }
