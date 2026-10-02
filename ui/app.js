@@ -2523,6 +2523,7 @@ function updatePro() {
   $('#pro-form button').disabled = !!P.busy;
   $('#pro-remove').classList.toggle('hidden', !P.key);
   $('#pro-buy').classList.toggle('hidden', P.state === 'key' && P.kind === 'gift');
+  $('#pro-buy span').textContent = t(P.state === 'key' && P.kind === 'sub' ? 'pro.manage' : 'pro.buy');
   const err = $('#pro-err'); err.textContent = P.err || ''; err.classList.toggle('hidden', !P.err);
   // a notice on top of the tabs whose lights need Pro, and on the phone card
   const want = proLocked() ? [...PRO_TABS.map(x => '#tab-' + x), ...$$('.tab[data-brand]').filter(s => !['openrgb'].includes(s.dataset.brand)).map(s => '#' + s.id), '#phone-card'] : [];
