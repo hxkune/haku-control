@@ -2501,6 +2501,8 @@ let qrUrl = '';   // the address the QR code points at (the PC may be on several
 const PRO_TABS = ['nano', 'bulbs'];
 function proLocked() { return !!(S.pro && !S.pro.on); }
 function updatePro() {
+  // the open build has no network lights, sign-ins or phone control ("none" in their status): their places go
+  document.body.classList.toggle('no-net', !!(S.nano && S.nano.none));
   const P = S.pro;
   $('#pro-card').classList.toggle('hidden', !P);
   $('#pro-chip').classList.toggle('hidden', !P || P.state === 'key');

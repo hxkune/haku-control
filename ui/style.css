@@ -413,6 +413,7 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 /* ---------------- settings */
 .set-grid { columns: 340px 2; column-gap: 20px; }
 /* haku Pro */
+body.no-net #accounts, body.no-net #phone-card, body.no-net #nav [data-tab="nano"], body.no-net #nav [data-tab="bulbs"] { display: none !important; }
 .pro-chip { display: block; width: 100%; margin: 0 0 14px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line2);
   background: transparent; color: var(--muted); font-size: 11.5px; letter-spacing: .02em; text-align: center; }
 .pro-chip:hover { color: var(--text); border-color: var(--line3); }
