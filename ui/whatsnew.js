@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.30',
+    en: ['Razer, SteelSeries and Logitech devices: with Razer Synapse, SteelSeries GG or Logitech G HUB running, Scan network offers their keyboards, mice, headsets and more; add the ones you have. Their own app gets the lighting back when haku lets go. New, so far tried only against stand-ins: reports are welcome.',
+      'The effects tab switches between the effects and your own presets, so presets no longer get lost among the effects.',
+      'Room for 32 devices instead of 16.'],
+    ru: ['Устройства Razer, SteelSeries и Logitech: если запущен Razer Synapse, SteelSeries GG или Logitech G HUB, «Искать в сети» предлагает их клавиатуры, мыши, гарнитуры и другое; добавьте то, что у вас есть. Когда haku их отпускает, подсветку забирает их собственное приложение. Это новое и пока проверено только на имитациях: напишите, как работает.',
+      'На вкладке эффектов есть переключатель «Эффекты / Мои пресеты», пресеты больше не теряются среди эффектов.',
+      'Можно добавить 32 устройства вместо 16.'],
+    fr: ['Appareils Razer, SteelSeries et Logitech : avec Razer Synapse, SteelSeries GG ou Logitech G HUB lancé, Analyser le réseau propose leurs claviers, souris, casques et plus ; ajoutez ceux que vous avez. Leur propre app reprend l\'éclairage quand haku les libère. Nouveau, essayé seulement sur des imitations : vos retours sont bienvenus.',
+      'L\'onglet des effets bascule entre les effets et vos préréglages, qui ne se perdent plus parmi les effets.',
+      'Place pour 32 appareils au lieu de 16.'] },
   { v: '0.3.29',
     en: ['New effect: Screen (ambilight). The lights follow what is on the screen: strips run around its edges, a Nanoleaf wall or a keyboard shows it as a mosaic, single lights take its average colour. Each device can take another part of the screen; it barely uses the PC.'],
     ru: ['Новый эффект: Экран (эмбилайт). Свет повторяет то, что на экране: ленты идут по его краям, стена Nanoleaf или клавиатура показывают его мозаикой, одиночные лампы берут средний цвет. Каждому устройству можно задать свою часть экрана; ПК почти не нагружается.'],
