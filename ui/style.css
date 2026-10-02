@@ -66,7 +66,8 @@
   --chrome: linear-gradient(180deg, #fff27a 0%, #ffd83a 55%, #ffe96a 100%);
   --display: "Consolas", "Cascadia Mono", monospace;
 }
-/* kyōka suigetsu (hidden, opened with its code): Bleach. Black and white like a shihakushō, violet spiritual
+
+/* kyōka suigetsu (hidden, opened with its code): Bleach. Black and white like a shihakushō, violet spiritual
    pressure, a white blade's sheen on the buttons, Mincho headings, the Hōgyoku glowing in the corner and hell
    butterflies now and then; the rest is at the end of this file */
 :root[data-theme="kyoka"] {
