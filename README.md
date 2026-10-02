@@ -15,8 +15,21 @@ device runs its own effect.
   never sent. The settings window (WebView2) exists only while it is open.
 - **Behaves like a light switch:** switching a device off in the app really turns it off. When the PC shuts down or sleeps,
   the room lights go dark (or keep / restore their own state, as you choose).
-- **Local only:** no account, no cloud, no telemetry. Devices are controlled over USB, SMBus and your LAN.
+- **Local only:** no account, no cloud, no telemetry. Devices are controlled over USB, SMBus and your LAN (a Pro
+  subscription key is checked with the store, see the [privacy policy](#privacy-policy)).
 - English, Russian and French UI; dark, grey and light themes.
+
+## Free and Pro
+
+haku control is free for the PC: the PC's own lighting, USB devices, Razer / SteelSeries / Logitech through their
+apps, and every effect. This repository is that part, open source under the GPL-3.0.
+
+**haku Pro** adds the lights on Wi-Fi and the network (Nanoleaf, Hue, WLED, Govee, LIFX, Yeelight, WiZ, Elgato,
+Divoom, Tuya, AiDot) and phone control: $2 a month or $10 a year, with 14 days to try it in the app (no card, no
+account). The installer from the [releases](https://github.com/hxkune/haku-control/releases/latest) is the full app:
+without a key it runs as the free one once the trial is over, and the room lights simply pause. See
+[hakune.blog/haku-control.html#pro](https://hakune.blog/haku-control.html#pro). The Pro code lives in a private
+repository and is not under the GPL; versions up to 0.3.30 had all of it here, and they stay GPL-3.0.
 
 > **Status: early.** haku control grew out of one person's setup, so the list of supported devices is
 > short. Adding more is the main goal of the next releases (see the [roadmap](#roadmap)).
@@ -36,7 +49,7 @@ device runs its own effect.
 | SteelSeries keyboards (per key), mice, headsets, mousepads (by their number of zones) | through SteelSeries GG: its GameSense API on this PC | **tested against a simulator only** |
 | Logitech keyboards (per key), mice, headsets, speakers (one colour) | through Logitech G HUB: the LED library G HUB installs (Logitech's LED SDK), checked for Logitech's signature | **tested against a stand-in library only** |
 
-**In the room**
+**In the room** (haku Pro)
 
 | Device | How | Status |
 | --- | --- | --- |
@@ -118,7 +131,7 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
 
 ### Phone
 
-*Settings → Phone → Control from your phone* serves the same interface on your home network (port 8723).
+(haku Pro.) *Settings → Phone → Control from your phone* serves the same interface on your home network (port 8723).
 Scan the QR code it shows with the phone camera (or open the address and type the PIN), then add the page to
 the home screen.
 Only private network addresses are served (and Tailscale's, for control from outside through your own tailnet);
@@ -157,7 +170,9 @@ Needs Visual Studio 2019 or newer (or Build Tools) with *Desktop development wit
 build.cmd
 ```
 
-Output goes to `bin\`. `build.cmd dev` makes a test build in `bin-dev\`: it keeps its settings in
+Output goes to `bin\`. From this repository alone that is the free app (the PC's lighting, USB devices, the makers'
+apps, every effect); with the private Pro repository checked out as `pro\` next to `src\`, the full one
+(`set HAKU_FREE=1` builds the free one anyway). `build.cmd dev` makes a test build in `bin-dev\`: it keeps its settings in
 `%APPDATA%\haku-control-dev`, runs without admin rights and never touches the motherboard or memory, so it
 can run next to the installed app. Stop it with `scripts\stop.ps1 -Dev`. `python tools/sim/fake_devices.py` starts
 simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue / Elgato / Divoom devices, Razer Synapse and SteelSeries GG
@@ -212,6 +227,10 @@ purposes:
 - **Ollama setup:** *Download and set up* downloads Ollama's installer from ollama.com and the model from Ollama's
   library, only when you press it.
 - **Your lights:** it talks to the lights you added, on your local network.
+- **haku Pro:** a subscription key is activated with Lemon Squeezy (the store that sells it) and checked there at
+  each start and every 12 hours: the key, this installation's id and the name "haku control" are sent, nothing else.
+  The trial start and the latest date seen are kept on the PC (settings and registry) and sent nowhere. Gift keys
+  are checked on the PC.
 - **Razer, SteelSeries, Logitech:** it talks to Razer Synapse, SteelSeries GG or Logitech G HUB on your PC, only
   for the devices you added; it sends them colours.
 - **Sign-ins you start:** AiDot or Tuya receive the sign-in data you enter, once, to hand out your lights' local
@@ -231,7 +250,7 @@ purposes:
 
 Copyright (C) 2026 haku ([hxkune](https://github.com/hxkune)).
 
-haku control is free software: you can redistribute it and/or modify it under the terms of the
+The code in this repository is free software: you can redistribute it and/or modify it under the terms of the
 [GNU General Public License, version 3](LICENSE) (GPL-3.0-only). In short: you may use, study, change and share it,
 but anything you distribute that is based on it must be released under the same license, with its full source code,
 and must keep the copyright notices. It comes without any warranty.

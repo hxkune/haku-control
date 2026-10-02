@@ -6,8 +6,10 @@ on:
     tags: ['v*']
   pull_request:
 
+# The open build (without haku Pro): checked on every push and pull request. Releases are made by the paid build
+# in the private pro repository, which publishes its installer here (see its .github/workflows/release.yml).
 permissions:
-  contents: write   # release on tags
+  contents: read
 
 jobs:
   build:
@@ -129,14 +131,3 @@ jobs:
           path: |
             ${{ env.PKG }}.zip
             dist/haku-control-setup.exe
-
-      - name: Release
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: false
-          generate_release_notes: true
-          files: |
-            dist/haku-control-setup.exe
-            dist/haku-control-setup.exe.sha256
-            ${{ env.PKG }}.zip
