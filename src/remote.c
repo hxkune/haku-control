@@ -206,7 +206,7 @@ static void handle(SOCKET c) {
         // test builds (loopback only by default): the account sign-in can be driven from a browser for tests
         if (!strcmp(cmd, "aidot_login") || !strcmp(cmd, "tuya_login") || !strcmp(cmd, "govee_login") || !strcmp(cmd, "diag") || !strcmp(cmd, "update_check") || !strcmp(cmd, "update_install") ||
             !strcmp(cmd, "ai_setup") || !strcmp(cmd, "ai_on_demand") ||
-            !strcmp(cmd, "orgb_setup") || !strcmp(cmd, "orgb_auto")) ok = 1;
+            !strcmp(cmd, "orgb_setup") || !strcmp(cmd, "orgb_auto") || !strcmp(cmd, "pro_key")) ok = 1;
 #endif
         if (!ok) { reply_json(c, 400, "{\"error\":\"cmd\"}"); return; }
         app_remote_cmd(body);
@@ -269,6 +269,9 @@ static int elevated(void) {
 
 void remote_apply(void) {
     int want = cfg_geti("remote", "enabled", 0), port = cfg_geti("remote", "port", 8723);
+#ifndef HAKU_DEV
+    if (!pro_active()) want = 0;   // phone control is part of Pro
+#endif
     if (th && (!want || port != port_now)) {
         run = 0; WaitForSingleObject(th, 2000); CloseHandle(th); th = NULL;
         closesocket(lsock); lsock = INVALID_SOCKET;

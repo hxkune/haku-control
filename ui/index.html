@@ -39,6 +39,7 @@
       <span data-i18n="nav.settings">Settings</span><i>06</i></button>
   </nav>
   <div class="side-foot">
+    <button class="pro-chip hidden" id="pro-chip"></button>
     <div class="lbl"><span data-i18n="brightness">Brightness</span><b id="bright-val">100%</b></div>
     <input type="range" class="range" id="bright" min="5" max="100" value="100">
     <button class="power" id="power">
@@ -383,6 +384,20 @@
   <!-- ============ SETTINGS ============ -->
   <section class="tab" id="tab-settings">
     <div class="set-grid">
+      <div class="card pro-card hidden" id="pro-card">
+        <div class="card-head"><h3>haku Pro</h3><span class="pro-badge" id="pro-badge"></span></div>
+        <p class="pro-state" id="pro-state"></p>
+        <p class="muted" data-i18n="pro.what"></p>
+        <form class="pro-form" id="pro-form" autocomplete="off">
+          <input type="text" id="pro-key" spellcheck="false" maxlength="320">
+          <button class="btn small primary" type="submit"><span data-i18n="pro.activate">Activate</span></button>
+        </form>
+        <p class="pro-err hidden" id="pro-err"></p>
+        <div class="btn-row">
+          <button class="btn small primary" id="pro-buy"><span data-i18n="pro.buy">Get Pro</span></button>
+          <button class="btn small ghost hidden" id="pro-remove"><span data-i18n="pro.remove">Remove key</span></button>
+        </div>
+      </div>
       <div class="card pc-only" id="phone-card">
         <h3 data-i18n="phone">Phone</h3>
         <div class="set-row">

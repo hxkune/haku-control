@@ -35,6 +35,13 @@ static disc_t  found[DISC_MAX];
 static int     nfound;
 static volatile LONG scanning;
 
+// The kinds that run without Pro: the PC's own hardware, USB devices and the makers' apps on this PC
+int pro_kind(const char *kind) {
+    static const char *const FREE[] = { "openrgb", "wooting", "nlusb", "razer", "steelseries", "logitech" };
+    for (int i = 0; i < (int)(sizeof(FREE) / sizeof(FREE[0])); i++) if (!_stricmp(kind, FREE[i])) return 0;
+    return 1;
+}
+
 static int leave_mode(void) {
     const char *m = cfg_get("general", "on_exit", "off");
     return !_stricmp(m, "keep") ? LEAVE_KEEP : !_stricmp(m, "restore") ? LEAVE_RESTORE : LEAVE_OFF;
@@ -224,10 +231,15 @@ static unsigned __stdcall worker(void *p) {
             free(o);
             changed_state = 1;   // online state / info text for the UI
         }
+        int pro = pro_active();
         for (int k = 0; k < ndevs; k++) {
             ext_dev *d = &devs[k];
             if (!d->enabled) {
                 if (d->online) { let_go(d, LEAVE_OFF); changed_state = 1; }
+                continue;
+            }
+            if (!pro && pro_kind(d->drv->kind)) {   // without Pro: let go of it as on quit
+                if (d->online) { let_go(d, leave_mode()); changed_state = 1; }
                 continue;
             }
             if (!d->online) {
@@ -442,8 +454,8 @@ int ext_json(char *out, int cap) {
         json_escape_to(nm, sizeof(nm), s->name); json_escape_to(inf, sizeof(inf), s->info); json_escape_to(host, sizeof(host), s->host);
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"type\":\"%s\",\"info\":\"%s\"}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, s->type, inf);
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, s->type, inf, pro_kind(s->kind));
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {
@@ -459,7 +471,7 @@ int ext_json(char *out, int cap) {
     ReleaseSRWLockShared(&lk);
     n += snprintf(out + n, cap - n, "],\"scanning\":%d,\"kinds\":[", (int)scanning);
     for (int i = 0; i < NDRV; i++)
-        n += snprintf(out + n, cap - n, "%s{\"kind\":\"%s\",\"title\":\"%s\",\"per_led\":%d}", i ? "," : "", drivers[i]->kind, drivers[i]->title, drivers[i]->per_led);
+        n += snprintf(out + n, cap - n, "%s{\"kind\":\"%s\",\"title\":\"%s\",\"per_led\":%d,\"pro\":%d}", i ? "," : "", drivers[i]->kind, drivers[i]->title, drivers[i]->per_led, pro_kind(drivers[i]->kind));
     n += snprintf(out + n, cap - n, "]}");
     return n;
 }

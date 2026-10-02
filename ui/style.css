@@ -412,6 +412,20 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 
 /* ---------------- settings */
 .set-grid { columns: 340px 2; column-gap: 20px; }
+/* haku Pro */
+.pro-chip { display: block; width: 100%; margin: 0 0 14px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line2);
+  background: transparent; color: var(--muted); font-size: 11.5px; letter-spacing: .02em; text-align: center; }
+.pro-chip:hover { color: var(--text); border-color: var(--line3); }
+.pro-chip.off { color: var(--strong); border-color: var(--strong); }
+.pro-badge { font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line2); color: var(--muted); }
+.pro-badge.on { border-color: var(--strong); color: var(--strong); }
+.pro-state { margin-top: 8px; font-size: 13.5px; }
+.pro-form { display: flex; gap: 8px; margin-top: 14px; }
+.pro-form input { flex: 1; min-width: 0; font-family: var(--mono, monospace); font-size: 12px; }
+.pro-err { color: var(--strong); font-size: 12px; margin-top: 8px; }
+.pro-lock { margin-bottom: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border-color: var(--strong); }
+.pro-lock > div { flex: 1; min-width: 220px; }
+.pro-lock .btn-row { margin-top: 0; }
 .set-grid .card { break-inside: avoid; margin-bottom: 20px; }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 0; border-bottom: 1px solid var(--line); }
 .set-row b { font-size: 13.5px; font-weight: 600; }

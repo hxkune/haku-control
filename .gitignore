@@ -27,3 +27,6 @@ dist/
 # signing keys (the policy key lives in %USERPROFILE%\.haku-policy, never here)
 *.pem
 *.key
+
+# haku Pro: the private repository (github.com/hxkune/haku-control-pro) checked out here; never in this one
+pro/

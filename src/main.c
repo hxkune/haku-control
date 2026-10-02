@@ -33,6 +33,8 @@
 #define WM_REHOTKEY  (WM_APP + 2)
 #define WM_REMOTE_CMD (WM_APP + 3)
 #define WM_BLOCKED   (WM_APP + 4)
+#define WM_PRO       (WM_APP + 5)   // haku Pro came or went
+static int sleeping, pro_off;   // the Wi-Fi lights are let go of: PC asleep / no Pro (main thread)
 #define SAVE_TIMER   1
 enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN, HK_PROFILE_NEXT, HK_PROFILE = 100 /* + profile number */ };
 
@@ -397,8 +399,16 @@ static unsigned __stdcall render_thread(void *p) {
         if (!gpu_on) gn = gpu_leds;
         if (!ram_on) for (int st = 0; st < 2 && st < ene_count(); st++) rn[st] = 8;
 
-        if (lights_count()) { if (lights_on) bn = min(lights_count(), 8); lights_submit(bulb, bulb_k, bn, lights_on); }
-        for (int k = 0; k < NANO_MAX; k++) {
+        // without Pro the Wi-Fi lights are let go of (main thread, WM_PRO); nothing is sent to them meanwhile
+        static int pro_was = -1; static DWORD pro_at;
+        if (GetTickCount() - pro_at >= 1000 || pro_was < 0) {
+            pro_at = GetTickCount();
+            int p = pro_active();
+            if (p != pro_was && hwnd) { pro_was = p; PostMessageW(hwnd, WM_PRO, p, 0); }   // (once the window is there)
+        }
+        int pro_on = pro_was > 0;
+        if (lights_count() && pro_on) { if (lights_on) bn = min(lights_count(), 8); lights_submit(bulb, bulb_k, bn, lights_on); }
+        for (int k = 0; k < NANO_MAX && pro_on; k++) {
             if (!nano_present(k)) continue;
             nano_submit(k, nano[k], nn[k], nano_on[k]);
             // the panels play the effect themselves: bake a new loop when what they show changed (debounced, so a
@@ -805,6 +815,8 @@ static int status_body(char *out, int cap) {
     n += nano_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"ext\":");
     n += ext_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"pro\":");
+    n += pro_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"remote\":");
     n += remote_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"update\":");
@@ -906,6 +918,7 @@ void app_open(const char *what) {
     else if (!strcmp(what, "release")) update_open_page();
     else if (!strcmp(what, "openrgb")) ShellExecuteW(NULL, L"open", L"https://openrgb.org", NULL, NULL, SW_SHOWNORMAL);
     else if (!strcmp(what, "pawnio")) ShellExecuteW(NULL, L"open", L"https://pawnio.eu", NULL, NULL, SW_SHOWNORMAL);
+    else if (!strcmp(what, "pro")) pro_buy();
 }
 
 void app_remote_cmd(const char *json) {
@@ -1073,6 +1086,13 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_REMOTE_CMD:
         ui_dispatch((const char *)lp);
         return 0;
+    case WM_PRO:   // haku Pro came or went: the Wi-Fi lights are let go of / taken again, phone control follows
+        pro_off = !wp;
+        logf_("pro: %s", wp ? "on" : "off (Wi-Fi lights let go of)");
+        nano_suspend(sleeping || pro_off); lights_suspend(sleeping || pro_off);
+        remote_apply();
+        ui_refresh_state();
+        return 0;
     case WM_BLOCKED:   // this version was stopped by its author: the lights are let go of as on quit
         DestroyWindow(h);
         return 0;
@@ -1115,9 +1135,9 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_POWERBROADCAST:
-        if (wp == PBT_APMSUSPEND) { logf_("sleep"); nano_suspend(1); lights_suspend(1); ext_suspend(1); }
+        if (wp == PBT_APMSUSPEND) { logf_("sleep"); sleeping = 1; nano_suspend(1); lights_suspend(1); ext_suspend(1); }
         if (wp == PBT_APMRESUMEAUTOMATIC) { InterlockedExchange(&need_reinit, 1); logf_("resume"); }
-        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { nano_suspend(0); lights_suspend(0); ext_suspend(0); }
+        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { sleeping = 0; nano_suspend(pro_off); lights_suspend(pro_off); ext_suspend(0); }
         return TRUE;
     case WM_QUERYENDSESSION:
         return TRUE;
@@ -1216,6 +1236,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
         return 0;
     }
     open_devices();
+    pro_start();
     lights_start();
     nano_start();
     ext_start();

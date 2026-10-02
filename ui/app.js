@@ -2128,6 +2128,7 @@ let devSig = '';
 const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).title;
 function devStatus(d) {
   if (!d.enabled) return t('dev.off');
+  if (d.pro && proLocked()) return t('dev.pro');
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
 }
@@ -2496,6 +2497,64 @@ function hotkeyButton(b, s, k) {
 }
 
 let qrUrl = '';   // the address the QR code points at (the PC may be on several networks)
+// ---- haku Pro: the trial / key in Settings, the chip in the sidebar, a notice on the tabs whose lights wait for Pro
+const PRO_TABS = ['nano', 'bulbs'];
+function proLocked() { return !!(S.pro && !S.pro.on); }
+function updatePro() {
+  const P = S.pro;
+  $('#pro-card').classList.toggle('hidden', !P);
+  $('#pro-chip').classList.toggle('hidden', !P || P.state === 'key');
+  if (!P) { $$('.pro-lock').forEach(e => e.remove()); return; }
+  const chip = $('#pro-chip');
+  chip.textContent = P.state === 'trial' ? t('pro.chip.trial', P.days) : t('pro.chip.off');
+  chip.classList.toggle('off', P.state === 'free');
+  const badge = $('#pro-badge');
+  badge.textContent = t('pro.badge.' + P.state); badge.classList.toggle('on', !!P.on);
+  let st = P.state === 'trial' ? (P.days <= 1 ? t('pro.trial.last') : t('pro.trial', P.days))
+    : P.state === 'key' ? t(P.kind === 'gift' ? 'pro.on.gift' : 'pro.on.sub') + (P.until ? ' ' + t('pro.until', P.until) : '')
+    : t('pro.off');
+  if (P.kind === 'sub' && P.checked) st += ' · ' + t('pro.checked', P.checked);
+  if (P.stale) st += ' · ' + t('pro.stale');
+  $('#pro-state').textContent = st;
+  const inp = $('#pro-key');
+  inp.placeholder = P.key ? t('pro.key.have', P.key) : t('pro.key.ph');
+  inp.disabled = !!P.busy;
+  $('#pro-form button span').textContent = P.busy ? t('pro.busy') : t('pro.activate');
+  $('#pro-form button').disabled = !!P.busy;
+  $('#pro-remove').classList.toggle('hidden', !P.key);
+  $('#pro-buy').classList.toggle('hidden', P.state === 'key' && P.kind === 'gift');
+  const err = $('#pro-err'); err.textContent = P.err || ''; err.classList.toggle('hidden', !P.err);
+  // a notice on top of the tabs whose lights need Pro, and on the phone card
+  const want = proLocked() ? [...PRO_TABS.map(x => '#tab-' + x), ...$$('.tab[data-brand]').filter(s => !['openrgb'].includes(s.dataset.brand)).map(s => '#' + s.id), '#phone-card'] : [];
+  $$('.pro-lock').forEach(e => { if (!want.includes('#' + e.parentElement.id)) e.remove(); });
+  want.forEach(sel => {
+    const host = $(sel); if (!host || host.querySelector(':scope > .pro-lock')) return;
+    const el = document.createElement('div');
+    el.className = 'card pro-lock';
+    el.innerHTML = `<div><h3>${t(sel === '#phone-card' ? 'pro.lock.phone' : 'pro.lock')}</h3><p class="muted">${t('pro.lock.text')}</p></div>
+      <div class="btn-row"><button class="btn small primary" data-pro-buy>${t('pro.buy')}</button><button class="btn small ghost" data-pro-key>${t('pro.lock.key')}</button></div>`;
+    el.querySelector('[data-pro-buy]').addEventListener('click', () => send({ cmd: 'open', what: 'pro' }));
+    el.querySelector('[data-pro-key]').addEventListener('click', proGoKey);
+    host.prepend(el);
+  });
+}
+function proGoKey() { showTab('settings'); setTimeout(() => { $('#pro-card').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('#pro-key').focus(); }, 60); }
+$('#pro-chip').addEventListener('click', proGoKey);
+$('#pro-buy').addEventListener('click', () => send({ cmd: 'open', what: 'pro' }));
+$('#pro-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const k = $('#pro-key').value.trim();
+  if (!k) { $('#pro-key').focus(); return; }
+  send({ cmd: 'pro_key', key: k }); $('#pro-key').value = '';
+  S.pro.busy = 1; updatePro();
+});
+$('#pro-remove').addEventListener('click', () => {
+  const b = $('#pro-remove');
+  if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.querySelector('span').textContent = t('preset.delete.sure'); return; }
+  b.classList.remove('confirm'); b.querySelector('span').textContent = t('pro.remove');
+  send({ cmd: 'pro_key', key: '' });
+});
+
 function updateRemote() {
   const R = S.remote || {};
   $('#remote-on').checked = cv('remote', 'enabled', '0') === '1';
@@ -2716,7 +2775,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav();
+  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro();
   if (nanoLayoutChanged) drawAll();
 }
 

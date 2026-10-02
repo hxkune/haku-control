@@ -154,6 +154,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "autostart") { app_autostart(atoi(field(js, "v").c_str())); post_state(); }
     else if (cmd == "open") app_open(field(js, "what").c_str());
     else if (cmd == "update_check") update_check_now();
+    else if (cmd == "pro_key") { pro_set_key(field(js, "key").c_str()); post_status(); }
     else if (cmd == "diag") { diag_save(); post_status(); }
     else if (cmd == "update_install") { update_install(); post_status(); }
     else if (cmd == "govee_login") {   // PC window only, like aidot_login

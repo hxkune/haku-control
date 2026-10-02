@@ -244,6 +244,14 @@ int   orgb_json(char *out, int cap);
 int   hw_inventory(char *out, int cap);  // the PC hardware as text lines, for the diagnostics (hwinfo.c)
 void  hw_scan_start(void);              // the PC's lighting hardware, as a list for the window (in the background)
 int   hw_scan_json(char *out, int cap);  // "hw":{...}
+// haku Pro (pro/license.c in the paid build, src/pro_free.c in the open one): the lights on Wi-Fi / the network
+// and phone control run with a key or during the trial; the PC's own hardware and USB devices always do.
+void  pro_start(void);
+int   pro_active(void);
+void  pro_set_key(const char *key);   // from the window ("" removes the key); checked in the background
+void  pro_buy(void);                  // the store's page in the browser
+int   pro_json(char *out, int cap);
+int   pro_kind(const char *kind);     // 1: a device kind that needs Pro (devices.c)
 int   app_frame_json(char *out, int cap);    // live LED colours
 void  app_set(const char *section, const char *key, const char *value);
 void  app_power(void);                       // off <-> previous effect

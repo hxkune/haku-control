@@ -204,7 +204,10 @@ int https_download(const wchar_t *url, const wchar_t *to, long long max, volatil
 
 // One request to an http:// or https:// URL (WinHTTP, so proxies and TLS are Windows'): POST with a JSON body,
 // or GET when body is NULL. The answer goes to out; returns the HTTP status, 0 when there was no answer.
-int web_call(const char *url, const char *body, char *out, int cap) {
+int web_call(const char *url, const char *body, char *out, int cap) { return web_post(url, body ? "application/json" : NULL, body, out, cap); }
+
+// The same with the body's type given (form posts: "application/x-www-form-urlencoded"); asks for JSON back
+int web_post(const char *url, const char *ctype, const char *body, char *out, int cap) {
     wchar_t wurl[512], host[256], path[1024];
     MultiByteToWideChar(CP_UTF8, 0, url, -1, wurl, 512);
     URL_COMPONENTS uc = { sizeof(uc) };
@@ -219,7 +222,9 @@ int web_call(const char *url, const char *body, char *out, int cap) {
     HINTERNET req = con ? WinHttpOpenRequest(con, body ? L"POST" : L"GET", path, NULL, NULL, NULL,
                                              uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0) : NULL;
     DWORD bl = body ? (DWORD)strlen(body) : 0;
-    if (req && WinHttpSendRequest(req, body ? L"Content-Type: application/json\r\n" : NULL, (DWORD)-1, (LPVOID)body, bl, bl, 0)
+    wchar_t hdr[160];
+    swprintf(hdr, 160, L"Accept: application/json\r\n%s%hs%s", ctype ? L"Content-Type: " : L"", ctype ? ctype : "", ctype ? L"\r\n" : L"");
+    if (req && WinHttpSendRequest(req, hdr, (DWORD)-1, (LPVOID)body, bl, bl, 0)
             && WinHttpReceiveResponse(req, NULL)) {
         DWORD sz = sizeof(code);
         WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, NULL, &code, &sz, NULL);

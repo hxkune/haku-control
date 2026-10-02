@@ -25,13 +25,16 @@ rem C++/WinRT (hotspot helper): C++20 coroutines; the old Windows SDK next to VS
 set "WINRT_STD=/std:c++20"
 if "%VisualStudioVersion%"=="16.0" set "WINRT_STD=/std:c++17"
 if /i "%~1"=="setup" goto setup
+rem haku Pro: with pro\ (the private repository) next to src\ the paid build is made, else the open one
+set "PRO_SRC=src\pro_free.c" & set "PRO_DEF="
+if exist pro\license.c set "PRO_SRC=pro\license.c" & set "PRO_DEF=/DHAKU_PRO"
 if not exist %OUT% mkdir %OUT%
 if not exist %OBJ% mkdir %OBJ%
 rem icons + version info
 rc /nologo /c65001 /fo %OBJ%\haku-control.res res\haku-control.rc || exit /b 1
-cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE %DEFS% /std:c++17 /EHsc /Fo%OBJ%\ ^
+cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE %DEFS% %PRO_DEF% /std:c++17 /EHsc /Fo%OBJ%\ ^
    src\main.c src\config.c src\effects.c src\dev_msi.c src\dev_ene.c src\sensors.c src\dev_aidot.c src\dev_nanoleaf.c src\net.c ^
-   src\netutil.c src\devices.c src\drv_wled.c src\drv_openrgb.c src\drv_govee.c src\drv_lifx.c src\drv_yeelight.c src\drv_hue.c src\drv_wiz.c src\drv_tuya.c src\drv_nlusb.c src\drv_goveecloud.c src\drv_elgato.c src\drv_wooting.c src\drv_divoom.c src\drv_razer.c src\drv_steelseries.c src\drv_logitech.c src\openrgb_app.c src\remote.c src\update.c src\mood.c src\ollama.c src\accounts.c src\diag.c src\hwinfo.c ^
+   src\netutil.c src\devices.c src\drv_wled.c src\drv_openrgb.c src\drv_govee.c src\drv_lifx.c src\drv_yeelight.c src\drv_hue.c src\drv_wiz.c src\drv_tuya.c src\drv_nlusb.c src\drv_goveecloud.c src\drv_elgato.c src\drv_wooting.c src\drv_divoom.c src\drv_razer.c src\drv_steelseries.c src\drv_logitech.c src\openrgb_app.c src\remote.c src\update.c src\mood.c src\ollama.c src\accounts.c src\diag.c src\hwinfo.c %PRO_SRC% ^
    src\ui_web.cpp src\audio.cpp src\screen.cpp ^
    /Fe:%OUT%\haku-control.exe ^
    /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='%UAC%' uiAccess='false'" ^
