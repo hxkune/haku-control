@@ -6,6 +6,8 @@
 #include <ctype.h>
 #include <winhttp.h>
 #include <bcrypt.h>
+#include <softpub.h>
+#include <wintrust.h>
 #include "../res/version.h"
 #include <ws2tcpip.h>
 #include <stdlib.h>
@@ -109,7 +111,7 @@ int http_call(const char *ip, int port, const char *method, const char *path, co
     SOCKET s = tcp_connect(ip, port, 1500);
     if (s == INVALID_SOCKET) { if (why) snprintf(why, whycap, "no connection"); return 0; }
     DWORD to = 2000; setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char *)&to, sizeof(to));
-    char req[4608];   // a Divoom Times Frame screen layout is some 2 KB
+    char req[8192];   // a Divoom Times Frame screen layout is some 2 KB, SteelSeries GG events up to 3 KB
     int bl = body ? (int)strlen(body) : 0;
     int n = snprintf(req, sizeof(req), "%s %s HTTP/1.1\r\nHost: %s:%d\r\nAccept: application/json\r\n%s"
                      "Content-Length: %d\r\nConnection: close\r\n\r\n%s", method, path, ip, port,
@@ -396,4 +398,25 @@ int json_escape_to(char *out, int cap, const char *s) {
     }
     out[n] = 0;
     return n;
+}
+
+// A valid Authenticode signature (no revocation lookups over the network): 1, and its signer's name in `name`
+int file_signer(const wchar_t *file, wchar_t *name, int cap) {
+    WINTRUST_FILE_INFO fi = { sizeof(fi) }; fi.pcwszFilePath = file;
+    WINTRUST_DATA wd = { sizeof(wd) };
+    wd.dwUIChoice = WTD_UI_NONE; wd.fdwRevocationChecks = WTD_REVOKE_NONE; wd.dwUnionChoice = WTD_CHOICE_FILE;
+    wd.pFile = &fi; wd.dwStateAction = WTD_STATEACTION_VERIFY; wd.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
+    GUID act = WINTRUST_ACTION_GENERIC_VERIFY_V2;
+    int ok = 0;
+    name[0] = 0;
+    if (WinVerifyTrust(NULL, &act, &wd) == 0) {
+        CRYPT_PROVIDER_DATA *pd = WTHelperProvDataFromStateData(wd.hWVTStateData);
+        CRYPT_PROVIDER_SGNR *sg = pd ? WTHelperGetProvSignerFromChain(pd, 0, FALSE, 0) : NULL;
+        if (sg && sg->csCertChain && sg->pasCertChain[0].pCert) {
+            CertGetNameStringW(sg->pasCertChain[0].pCert, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, name, cap);
+            ok = 1;
+        }
+    }
+    wd.dwStateAction = WTD_STATEACTION_CLOSE; WinVerifyTrust(NULL, &act, &wd);
+    return ok;
 }

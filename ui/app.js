@@ -2272,6 +2272,9 @@ function hwRoute(it) {
   const own = { '31E3': 'wooting', '1B80': 'wooting', '37FA': 'nlusb' }[vid];
   if (own) return S.ext.devs.some(d => d.kind === own && lc(d.host).startsWith(lc(vid)))
     ? { cls: 'on', text: t('hw.haku') } : { cls: 'warn', text: t('hw.haku.add'), act: 'scan' };
+  // through the maker's own app (Synapse, GG, G HUB), when one of its devices is added
+  const bridge = { '1532': ['razer', 'Razer Synapse'], '1038': ['steelseries', 'SteelSeries GG'], '046D': ['logitech', 'Logitech G HUB'] }[vid];
+  if (bridge && S.ext.devs.some(d => d.kind === bridge[0])) return { cls: 'on', text: t('hw.bridge', bridge[1]) };
   // then what OpenRGB found for it
   let match = [];
   if (it.cat === 'board') match = ctls.filter(c => c.type === 0);
@@ -2285,6 +2288,7 @@ function hwRoute(it) {
     const free = mine.filter(c => !orgbAdded(c));
     return free.length ? { cls: 'warn', text: t('hw.orgb.found'), act: 'add', ctls: free } : { cls: 'on', text: t('hw.orgb') };
   }
+  if (bridge && S.ext.found.some(f => f.kind === bridge[0])) return { cls: 'warn', text: t('hw.bridge.add', bridge[1]), act: 'scan' };
   if (it.cat === 'ram' && !S.pawnio) return { cls: 'warn', text: t('hw.pawnio'), act: 'pawnio' };
   if (it.cat === 'gpu' && /^(nvidia|amd|intel)$/i.test(it.maker || '')) return { cls: 'off', text: t('hw.none') };   // reference cards
   if (O.state === 4) return { cls: 'warn', text: t('hw.orgb.need'), act: 'setup' };

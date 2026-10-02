@@ -32,6 +32,9 @@ device runs its own effect.
 | MSI Mystic Light: onboard LED + JRAINBOW1 ARGB header | own driver, USB HID, 185-byte protocol | verified on MPG B650I EDGE WIFI (MS-7D73); other boards are not touched |
 | ENE DRAM RGB, controller `AUDA0-E6K5-0101` (e.g. G.Skill Trident Z5 RGB) | own driver, SMBus via [PawnIO](https://pawnio.eu), AMD chipsets | verified; other controllers are detected and left alone |
 | NVIDIA GPU temperature (for the temperature effect) | NVML | verified |
+| Razer keyboards, mice, mousepads, headsets, keypads, Chroma Link | through Razer Synapse: its Chroma SDK REST API on this PC | **tested against a simulator only** |
+| SteelSeries keyboards (per key), mice, headsets, mousepads (by their number of zones) | through SteelSeries GG: its GameSense API on this PC | **tested against a simulator only** |
+| Logitech keyboards (per key), mice, headsets, speakers (one colour) | through Logitech G HUB: the LED library G HUB installs (Logitech's LED SDK), checked for Logitech's signature | **tested against a stand-in library only** |
 
 **In the room**
 
@@ -84,6 +87,12 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
   and *Start server* in its general settings, then *PC → Other PC hardware* lists its controllers (*Add* / *Add all*).
   Hardware haku control drives itself (the MSI board, ENE memory) is not offered there. If OpenRGB still drives
   the same MSI board or memory as haku control's own drivers, set `[devices] msi=0` / `ene=0`.
+- **Razer, SteelSeries, Logitech:** with the maker's own app running (Razer Synapse, SteelSeries GG, Logitech G
+  HUB), *Devices → Scan network* offers its devices: *Add* the ones you have. Their apps do not say which devices
+  are plugged in, so each kind is offered (Razer: keyboard, mouse, mousepad, headset, keypad, Chroma Link;
+  SteelSeries and Logitech: the keyboard and the other devices). The maker's app keeps running and gets the lighting
+  back when haku control lets go. For Logitech, G HUB's *Allow games & applications to control my lighting* has to
+  be on.
 - **Lighting in this PC** (*PC*, at the top) lists what haku control finds in the PC (the board, the memory, the
   graphics cards, USB devices of lighting makers) and says for each which way it is lit: by haku control itself,
   through OpenRGB (with *Add* when OpenRGB found it but it is not added yet), OpenRGB still to set up, PawnIO
@@ -151,7 +160,8 @@ build.cmd
 Output goes to `bin\`. `build.cmd dev` makes a test build in `bin-dev\`: it keeps its settings in
 `%APPDATA%\haku-control-dev`, runs without admin rights and never touches the motherboard or memory, so it
 can run next to the installed app. Stop it with `scripts\stop.ps1 -Dev`. `python tools/sim/fake_devices.py` starts
-simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue / Elgato devices on this PC for it to talk to, and
+simulated WLED / OpenRGB / Govee / LIFX / Yeelight / Hue / Elgato / Divoom devices, Razer Synapse and SteelSeries GG
+on this PC for it to talk to (`tools/sim/fake_logiled.c` stands in for G HUB's LED library), and
 `python tools/sim/fake_ollama.py` / `fake_nanoleaf.py` / `fake_aidot.py` / `fake_govee_cloud.py` stand-ins for Ollama, a Nanoleaf controller, the AiDot cloud and the Govee cloud.
 
 For UI work without the app, serve `ui\` with any static server and open
@@ -202,6 +212,8 @@ purposes:
 - **Ollama setup:** *Download and set up* downloads Ollama's installer from ollama.com and the model from Ollama's
   library, only when you press it.
 - **Your lights:** it talks to the lights you added, on your local network.
+- **Razer, SteelSeries, Logitech:** it talks to Razer Synapse, SteelSeries GG or Logitech G HUB on your PC, only
+  for the devices you added; it sends them colours.
 - **Sign-ins you start:** AiDot or Tuya receive the sign-in data you enter, once, to hand out your lights' local
   keys. Nothing is sent to them otherwise.
 - **Govee (cloud):** only if you enter a Govee API key: the key and the commands for the Govee devices you added

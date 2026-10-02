@@ -217,26 +217,12 @@ static void fail(const char *why) {
 }
 static void set_stage(int s, int p) { InterlockedExchange(&stage, s); InterlockedExchange(&pct, p); ui_refresh(); }
 
-// A valid Authenticode signature whose signer's name has `who` in it (no revocation lookups over the network)
+// A valid Authenticode signature whose signer's name has `who` in it
 static int signed_by(const wchar_t *file, const wchar_t *who) {
-    WINTRUST_FILE_INFO fi = { sizeof(fi) }; fi.pcwszFilePath = file;
-    WINTRUST_DATA wd = { sizeof(wd) };
-    wd.dwUIChoice = WTD_UI_NONE; wd.fdwRevocationChecks = WTD_REVOKE_NONE; wd.dwUnionChoice = WTD_CHOICE_FILE;
-    wd.pFile = &fi; wd.dwStateAction = WTD_STATEACTION_VERIFY; wd.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
-    GUID act = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-    int ok = 0;
-    if (WinVerifyTrust(NULL, &act, &wd) == 0) {
-        CRYPT_PROVIDER_DATA *pd = WTHelperProvDataFromStateData(wd.hWVTStateData);
-        CRYPT_PROVIDER_SGNR *sg = pd ? WTHelperGetProvSignerFromChain(pd, 0, FALSE, 0) : NULL;
-        if (sg && sg->csCertChain && sg->pasCertChain[0].pCert) {
-            wchar_t nm[256] = L"";
-            CertGetNameStringW(sg->pasCertChain[0].pCert, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, nm, 256);
-            logf_("ollama setup: installer signed by %ls", nm);
-            ok = wcsstr(nm, who) != NULL;
-        }
-    }
-    wd.dwStateAction = WTD_STATEACTION_CLOSE; WinVerifyTrust(NULL, &act, &wd);
-    return ok;
+    wchar_t nm[256];
+    int ok = file_signer(file, nm, 256);
+    if (ok) logf_("ollama setup: installer signed by %ls", nm);
+    return ok && wcsstr(nm, who) != NULL;
 }
 
 static int install_ollama(void) {

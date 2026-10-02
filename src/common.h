@@ -7,7 +7,7 @@
 #include <math.h>
 
 #define MAX_LEDS     2048   // whole scene (LAN strips can be long)
-#define EXT_SLOTS    16     // LAN / bridge devices (devices.c)
+#define EXT_SLOTS    32     // LAN / bridge devices (devices.c)
 #define MAX_PALETTE  8
 #define NANO_MAX     8      // Nanoleaf controllers
 

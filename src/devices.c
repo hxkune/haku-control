@@ -7,7 +7,7 @@
 #include <process.h>
 #include <stdlib.h>
 
-static const ext_driver *drivers[] = { &drv_wled, &drv_openrgb, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz, &drv_tuya, &drv_nlusb, &drv_goveecloud, &drv_elgato, &drv_wooting, &drv_divoom };
+static const ext_driver *drivers[] = { &drv_wled, &drv_openrgb, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz, &drv_tuya, &drv_nlusb, &drv_goveecloud, &drv_elgato, &drv_wooting, &drv_divoom, &drv_razer, &drv_steelseries, &drv_logitech };
 #define NDRV (int)(sizeof(drivers) / sizeof(drivers[0]))
 
 const ext_driver *ext_driver_by_kind(const char *kind) {
@@ -361,7 +361,7 @@ static unsigned __stdcall disc_one(void *p) {
 static unsigned __stdcall disc_all(void *p) {
     (void)p;
     net_init();
-    HANDLE h[16]; int nh = 0;
+    HANDLE h[32]; int nh = 0;
     for (int i = 0; i < NDRV; i++)
         if (drivers[i]->discover) h[nh++] = (HANDLE)_beginthreadex(NULL, 0, disc_one, (void *)drivers[i], 0, NULL);
     WaitForMultipleObjects(nh, h, TRUE, 8000);

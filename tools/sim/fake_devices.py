@@ -15,6 +15,10 @@ Every fake prints what it receives (frames per second, a sample colour), so a de
     Hue      127.0.0.1:8081  (pairing succeeds on the second try, 3 colour lights)
     Elgato   127.0.0.1       (Key Light, HTTP 9123, found by mDNS) and 127.0.0.1:9124 (Light Strip, colour)
     Divoom   127.0.0.1:8082  (Times Gate, LocalToken 1234), 127.0.0.1:8083 (Times Frame)
+    Razer    Synapse's Chroma REST API on 127.0.0.1:54235 (found by Scan network; sessions on 54237)
+    SteelSeries GG's GameSense on 127.0.0.1:51248: set [steelseries] address=127.0.0.1:51248 in the dev settings
+             (the real address comes from %PROGRAMDATA%; --gg-old answers 404 to /supports_multiple_game_events)
+    Logitech: not here, see fake_logiled.c (a stand-in for G HUB's LED library)
 """
 import json, os, socket, struct, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -413,6 +417,76 @@ class DivoomFrameHttp(DivoomHttp):
             self.reply(head)
         else: log('divoom-frame', f"unknown {c}"); self.reply({'ReturnCode': 1, 'ReturnMessage': 'Only accept JSON parameters'})
 
+# ------------------------------------------------------------------ Razer Synapse (Chroma SDK REST API)
+RAZER = {'session': 0, 'beat': 0}
+RAZER_RATE = {}
+
+class RazerHttp(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def reply(self, obj, code=200):
+        b = json.dumps(obj).encode()
+        self.send_response(code); self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+    def body(self):
+        n = int(self.headers.get('Content-Length', 0))
+        return json.loads(self.rfile.read(n) or b'{}') if n else {}
+    def do_GET(self):
+        if self.path == '/razer/chromasdk': self.reply({'core': '3.36.1', 'device': '3.36.1', 'version': '3.36.1'})
+        else: self.send_error(404)
+    def do_POST(self):
+        b = self.body()
+        if self.path != '/razer/chromasdk': self.send_error(404); return
+        RAZER['session'] += 1
+        log('razer', f"session {RAZER['session']} for {b.get('title')} ({', '.join(b.get('device_supported', []))})")
+        self.reply({'sessionid': RAZER['session'], 'uri': 'http://localhost:54237/chromasdk'})
+    def do_PUT(self):
+        b = self.body()
+        dev = self.path.rsplit('/', 1)[-1]
+        if dev == 'heartbeat': RAZER['beat'] += 1; self.reply({'tick': RAZER['beat']}); return
+        p = b.get('param')
+        first = p[0][0] if p and isinstance(p[0], list) else p[0] if p else None
+        shape = f'{len(p)}x{len(p[0])}' if p and isinstance(p[0], list) else str(len(p or []))
+        if dev not in RAZER_RATE: RAZER_RATE[dev] = Rate('razer-' + dev)
+        RAZER_RATE[dev].hit(f"{b.get('effect')} {shape} first=#{first or 0:06x} (BGR)")
+        self.reply({'result': 0})
+    def do_DELETE(self):
+        log('razer', f'session ended ({self.path})'); self.reply({'result': 0})
+
+# ------------------------------------------------------------------ SteelSeries GG (GameSense)
+GG_OLD = '--gg-old' in sys.argv
+if GG_OLD: sys.argv.remove('--gg-old')
+GG_RATE = {}
+
+class GameSenseHttp(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def reply(self, obj, code=200):
+        b = json.dumps(obj).encode()
+        self.send_response(code); self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_GET(self):
+        if self.path == '/supports_multiple_game_events' and not GG_OLD: self.reply({})
+        else: self.send_error(404)
+    def event(self, e):
+        f = e.get('data', {}).get('frame', {})
+        name = e.get('event')
+        if name not in GG_RATE: GG_RATE[name] = Rate('gg-' + name)
+        if 'bitmap' in f: GG_RATE[name].hit(f"bitmap {len(f['bitmap'])} first={f['bitmap'][0]}")
+        else: GG_RATE[name].hit(f"{len(f)} colours c0={f.get('c0')}")
+    def do_POST(self):
+        b = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
+        if self.path == '/bind_game_event':
+            hs = b.get('handlers', [])
+            bad = [h for h in hs if h.get('mode') not in ('bitmap', 'context-color')]
+            log('gg', f"bind {b.get('event')}: {len(hs)} handlers ({hs[0].get('device-type')}, zones {hs[0].get('zone')}..{hs[-1].get('zone')}){' BAD' if bad else ''}")
+            self.reply({'game': b.get('game')})
+        elif self.path in ('/game_metadata', '/stop_game', '/game_heartbeat'):
+            log('gg', f"{self.path} {b}"); self.reply({})
+        elif self.path == '/game_event': self.event(b); self.reply({})
+        elif self.path == '/multiple_game_events' and not GG_OLD:
+            for e in b.get('events', []): self.event(e)
+            self.reply({})
+        else: self.send_error(404)
+
 def serve(cls, port, tag):
     try:
         ThreadingHTTPServer(('', port), cls).serve_forever()
@@ -428,6 +502,9 @@ FAKES = {
                        serve(elgato_http('Elgato Key Light Air', False), 9123, 'elgato')],
     'divoom': lambda: [threading.Thread(target=serve, args=(DivoomFrameHttp, 8083, 'divoom-frame'), daemon=True).start(),
                        serve(DivoomHttp, 8082, 'divoom')],
+    'razer': lambda: [threading.Thread(target=serve, args=(RazerHttp, 54237, 'razer'), daemon=True).start(),
+                      serve(RazerHttp, 54235, 'razer')],
+    'steelseries': lambda: serve(GameSenseHttp, 51248, 'gg'),
     'mdns': lambda: mdns_responder([b'_wled', b'_hue', b'_elg']),
 }
 
