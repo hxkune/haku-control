@@ -279,6 +279,11 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .hero::after { right: 12px; bottom: 12px; border-right-width: 1px; border-bottom-width: 1px; }
 .hero::before, .hero::after { display: none; }   /* the tiles have their own frames */
 .fx-layout { display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
+.fx-col { min-width: 0; }
+.fx-tabs { margin: 0 0 12px; max-width: 340px; }
+.fx-tabs button { position: relative; }
+.fx-tabs i { font: 500 10.5px var(--mono, monospace); font-style: normal; opacity: .55; margin-left: 7px; }
+.fx-tabs button.lit:not(.on)::after { content: ""; position: absolute; top: 7px; right: 10px; width: 5px; height: 5px; border-radius: 50%; background: var(--strong); }
 .fx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
 .fx {
   position: relative; text-align: left; padding: 14px 16px 16px; border-radius: 16px;

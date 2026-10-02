@@ -61,7 +61,7 @@ const STR = {
     'sub.bulbs': 'room light · aidot', 'sub.settings': 'startup · network · keys',
     'brightness': 'Brightness', 'power.off': 'Lights off', 'power.on': 'Lights on',
 
-    'fx.colors': 'Effect colours', 'speed': 'Speed',
+    'fx.colors': 'Effect colours', 'speed': 'Speed', 'fx.tab.fx': 'Effects', 'fx.tab.presets': 'My presets',
     'temp.source': 'Temperature source', 'temp.gpu': 'Graphics card', 'temp.water': 'Water (QUADRO)', 'temp.cold': 'Cold, °C', 'temp.hot': 'Hot, °C',
     'sync': 'Sync devices', 'sync.on': 'The effect runs as one chain through all devices', 'sync.off': 'Each device plays the effect on its own',
     'fx.hint': 'On the device tabs, each device can get its own effect, palette, colour or white light.',
@@ -316,7 +316,7 @@ const STR = {
     'sub.bulbs': 'комнатный свет · aidot', 'sub.settings': 'запуск · сеть · клавиши',
     'brightness': 'Яркость', 'power.off': 'Выключить свет', 'power.on': 'Включить свет',
 
-    'fx.colors': 'Цвета эффекта', 'speed': 'Скорость',
+    'fx.colors': 'Цвета эффекта', 'speed': 'Скорость', 'fx.tab.fx': 'Эффекты', 'fx.tab.presets': 'Мои пресеты',
     'temp.source': 'Источник температуры', 'temp.gpu': 'Видеокарта', 'temp.water': 'Вода (QUADRO)', 'temp.cold': 'Холодно, °C', 'temp.hot': 'Горячо, °C',
     'sync': 'Синхронизировать устройства', 'sync.on': 'Эффект идёт единой цепочкой через все устройства', 'sync.off': 'Каждое устройство играет эффект само по себе',
     'fx.hint': 'На вкладках устройств можно выбрать каждому свой эффект, палитру, цвет или белый свет.',
@@ -638,6 +638,8 @@ const STR = {
     'power.off': 'Éteindre',
     'power.on': 'Allumer',
     'fx.colors': 'Couleurs de l\'effet',
+    'fx.tab.fx': 'Effets',
+    'fx.tab.presets': 'Mes préréglages',
     'speed': 'Vitesse',
     'temp.source': 'Source de température',
     'temp.gpu': 'Carte graphique',

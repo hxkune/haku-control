@@ -650,18 +650,32 @@ function renderWhiteZone(el, section, caps) {
 const renderZones = () => $$('.zone').forEach(renderZone);
 
 // ------------------------------------------------------------------ effects tab
+// the grid shows one group at a time: the built-in effects, or the user's own presets (and the + tile)
+let FX_TAB = null;
+try { FX_TAB = localStorage.getItem('fxTab'); } catch (e) { }
+function fxTab(v) {
+  FX_TAB = v;
+  try { localStorage.setItem('fxTab', v); } catch (e) { }
+  buildEffects();
+}
+$('#fx-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.v !== FX_TAB) fxTab(b.dataset.v); });
 function buildEffects() {
   const grid = $('#fx-grid');
   grid.innerHTML = '';
-  S.effects.forEach((e, n) => {
+  if (FX_TAB !== 'fx' && FX_TAB !== 'presets') FX_TAB = activePreset() ? 'presets' : 'fx';
+  const tabs = $$('#fx-tabs button');
+  tabs.forEach(b => b.classList.toggle('on', b.dataset.v === FX_TAB));
+  tabs[0].querySelector('i').textContent = S.effects.length;
+  tabs[1].querySelector('i').textContent = presets().length || '';
+  if (FX_TAB === 'fx') S.effects.forEach((e, n) => {
     const b = document.createElement('button');
     b.className = 'fx'; b.dataset.id = e.id;
     b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><span class="num-i">${String(n + 1).padStart(2, '0')}</span></div><small>${t('short.' + e.id)}</small><canvas></canvas>`;
     b.addEventListener('click', () => { S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect(); });
     grid.appendChild(b);
   });
-  // own presets after the effects, then the + tile that makes a new one
-  presets().forEach(P => {
+  // own presets, then the + tile that makes a new one
+  if (FX_TAB === 'presets') presets().forEach(P => {
     const b = document.createElement('button');
     b.className = 'fx preset'; b.dataset.preset = P.id;
     const sub = [fxName(P.effect)].concat(P.bri ? [P.bri + '%'] : [], P.zones ? [t('preset.sub.zones')] : []).join(' · ');
@@ -677,7 +691,7 @@ function buildEffects() {
     b.addEventListener('contextmenu', e => { e.preventDefault(); presetDialog(P.id); });
     grid.appendChild(b);
   });
-  if (presets().length < 32) {
+  if (FX_TAB === 'presets' && presets().length < 32) {
     const add = document.createElement('button');
     add.className = 'fx add'; add.title = t('preset.new');
     add.innerHTML = `<span class="plus">+</span><b>${t('preset.add')}</b><small>${t('preset.add.sub')}</small>`;
@@ -701,6 +715,8 @@ function activePreset() {
 function markEffect() {
   const P = activePreset();
   $$('.fx').forEach(b => b.classList.toggle('on', b.dataset.preset ? !!P && +b.dataset.preset === P.id : !P && b.dataset.id === S.effect));
+  // a dot on the other group's switch when what is showing lives there
+  $$('#fx-tabs button').forEach(b => b.classList.toggle('lit', b.dataset.v === 'presets' ? !!P : !P && S.effect !== 'off'));
   const off = S.effect === 'off';
   $('#power').classList.toggle('off', off);
   $('#power span').textContent = off ? t('power.on') : t('power.off');
@@ -887,6 +903,7 @@ $('#pdlg-form').addEventListener('submit', e => {
   send({ cmd: 'preset_save', id: String(PDLG.id), name: pdlgName(), effect: PDLG.effect, palette: palStr(pal), speed: String(PDLG.speed),
     brightness: $('#pdlg-bri').checked ? String(PDLG.bri) : '', zones: z ? (PDLG.id && PDLG.zonesHad && !PDLG.retake ? 'keep' : '1') : '0', apply: '1' });
   closePresetDialog();
+  if (FX_TAB !== 'presets') fxTab('presets');
 });
 $('#pdlg-del').addEventListener('click', () => {
   const b = $('#pdlg-del');

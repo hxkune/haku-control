@@ -99,7 +99,10 @@
         <button class="btn small primary pc-only hidden" id="mood-setup" type="button"><span data-i18n="ai.go">Download and set up</span></button></div>
     </div>
     <div class="fx-layout">
-      <div class="fx-grid" id="fx-grid"></div>
+      <div class="fx-col">
+        <div class="seg fx-tabs" id="fx-tabs"><button data-v="fx"><span data-i18n="fx.tab.fx">Effects</span><i></i></button><button data-v="presets"><span data-i18n="fx.tab.presets">My presets</span><i></i></button></div>
+        <div class="fx-grid" id="fx-grid"></div>
+      </div>
       <div class="card fx-side">
         <h3 id="fx-name" class="fx-title"></h3>
         <p class="muted" id="fx-desc"></p>
