@@ -121,7 +121,7 @@ function groupNew() {
 // Hidden themes are opened with a code typed next to the switch ([general] unlocked = their names); the codes
 // are kept as hashes so the source does not give them away.
 const THEMES = ['dark', 'grey', 'light'];
-const CODES = { '9kr8dk': 'verity', '1se99dm': 'bubblegum' };
+const CODES = { '9kr8dk': 'verity', '1se99dm': 'bubblegum', '4eco40': 'kyoka' };
 const THEME = { ink: '255, 255, 255', hi: '#d8d8d8', mid: '#8a8a8a', lo: '#4e4e4e', tip: '#121212' };
 const inkA = a => `rgba(${THEME.ink}, ${a})`;
 const unlocked = () => cv('general', 'unlocked', '').split(',').filter(v => Object.values(CODES).includes(v));
@@ -238,6 +238,86 @@ setInterval(() => {
   if (!verityNext) verityNext = Date.now() + 2 * 60000;
   else if (Date.now() > verityNext) veritySays();
 }, 20000);
+
+// kyōka suigetsu (the hidden Bleach theme): entering its code, the spiritual pressure rises, a blade cuts across the
+// window, the window cracks like a mirror and the illusion breaks into shards that fall away, showing the theme.
+// Afterwards hell butterflies cross the window now and then. Without animations the theme just comes on.
+let kyokaBusy = false;
+function kyokaArrives() {
+  if (kyokaBusy) return;
+  if (stillMotion()) { setTheme('kyoka'); return; }
+  kyokaBusy = true;
+  const body = document.body, rnd = (a, b) => a + Math.random() * (b - a);
+  // cracks: jagged lines from the middle out past the edges, and broken rings round the point of impact (pixels)
+  const W = innerWidth, H = innerHeight, cx = W / 2, cy = H / 2, R = Math.hypot(W, H) / 2;
+  let paths = '';
+  for (let i = 0; i < 16; i++) {
+    let a = i / 16 * Math.PI * 2 + rnd(-.15, .15), d = `M${cx} ${cy}`, r = 0;
+    while (r < R) { r += rnd(.07, .16) * R; a += rnd(-.2, .2); d += ` L${(cx + Math.cos(a) * r).toFixed(0)} ${(cy + Math.sin(a) * r).toFixed(0)}`; }
+    paths += `<path pathLength="1" d="${d}" style="--d:${(i % 5) * 60}ms"/>`;
+  }
+  for (let k = 1; k <= 3; k++) {
+    let d = '';
+    for (let i = 0; i <= 18; i++) { const a = i / 18 * Math.PI * 2, r = (k * .14 + rnd(-.025, .025)) * R; d += `${i ? 'L' : 'M'}${(cx + Math.cos(a) * r).toFixed(0)} ${(cy + Math.sin(a) * r).toFixed(0)} `; }
+    paths += `<path class="ring" pathLength="1" d="${d}" style="--d:${200 + k * 90}ms"/>`;
+  }
+  const ov = document.createElement('div');
+  ov.className = 'kyoka-ov';
+  ov.innerHTML = `<div class="ky-press"></div><div class="ky-slash"></div><svg class="ky-cracks" viewBox="0 0 ${W} ${H}">${paths}</svg>
+    <div class="ky-name"><b>鏡花水月</b><small>kyōka suigetsu · complete hypnosis</small></div>`;
+  body.appendChild(ov); body.classList.add('ky-pressing');
+  setTimeout(() => ov.classList.add('cut'), 650);
+  setTimeout(() => ov.classList.add('crack'), 900);
+  setTimeout(() => {
+    // the illusion breaks: shards of dark glass (a jittered grid cut into triangles) fly out from the middle and fall
+    setTheme('kyoka');
+    body.classList.remove('ky-pressing');
+    ov.classList.add('break');
+    const N = 7, M = 5, P = [];
+    for (let j = 0; j <= M; j++) for (let i = 0; i <= N; i++)
+      P.push([i / N * 100 + (i % N ? rnd(-5, 5) : 0), j / M * 100 + (j % M ? rnd(-6, 6) : 0)]);
+    const at = (i, j) => P[j * (N + 1) + i];
+    const tri = [];
+    for (let j = 0; j < M; j++) for (let i = 0; i < N; i++) {
+      const a = at(i, j), b = at(i + 1, j), c = at(i + 1, j + 1), d = at(i, j + 1);
+      if ((i + j) % 2) tri.push([a, b, c], [a, c, d]); else tri.push([a, b, d], [b, c, d]);
+    }
+    tri.forEach(t => {
+      const s = document.createElement('i');
+      s.className = 'ky-shard';
+      s.style.clipPath = `polygon(${t.map(p => p[0].toFixed(1) + '% ' + p[1].toFixed(1) + '%').join(',')})`;
+      const mx = (t[0][0] + t[1][0] + t[2][0]) / 3 - 50, my = (t[0][1] + t[1][1] + t[2][1]) / 3 - 50, dist = Math.hypot(mx, my);
+      s.style.transformOrigin = `${(mx + 50).toFixed(1)}% ${(my + 50).toFixed(1)}%`;
+      ov.appendChild(s);
+      s.animate([{ transform: 'none', opacity: 1 },
+                 { transform: `translate(${(mx * rnd(.5, 1.1)).toFixed(1)}vw, ${(my * rnd(.4, .9) + rnd(40, 90)).toFixed(1)}vh) rotate(${rnd(-160, 160).toFixed(0)}deg) scale(${rnd(.6, .95).toFixed(2)})`, opacity: 0 }],
+                { duration: rnd(900, 1500), delay: dist * 9 + rnd(0, 120), easing: 'cubic-bezier(.4,0,.8,.6)', fill: 'forwards' });
+    });
+  }, 1900);
+  setTimeout(() => { ov.remove(); kyokaBusy = false; hellButterflies(4); }, 3900);
+}
+// hell butterflies (jigokuchō): black, with a violet glow, crossing the window on a wavering path
+function hellButterflies(n) {
+  for (let k = 0; k < n; k++) {
+    const f = document.createElement('i');
+    f.className = 'ky-fly';
+    document.body.appendChild(f);
+    const W = innerWidth, H = innerHeight, left = Math.random() < .5, y0 = H * (.35 + Math.random() * .6);
+    const pts = [];
+    for (let s = 0; s <= 6; s++) {
+      const x = left ? -60 + (W + 120) * s / 6 : W + 60 - (W + 120) * s / 6;
+      pts.push({ transform: `translate(${x.toFixed(0)}px, ${(y0 - H * .55 * s / 6 + (Math.random() - .5) * 120).toFixed(0)}px) rotate(${left ? 20 : -20}deg) scaleX(${left ? 1 : -1})` });
+    }
+    f.animate(pts, { duration: 9000 + Math.random() * 5000, delay: k * 700 + Math.random() * 600, easing: 'ease-in-out', fill: 'both' })
+      .finished.then(() => f.remove());
+  }
+}
+(function butterflyTimer() {
+  setTimeout(() => {
+    if (document.documentElement.dataset.theme === 'kyoka' && !document.hidden && !stillMotion()) hellButterflies(1 + Math.floor(Math.random() * 2));
+    butterflyTimer();
+  }, 45000 + Math.random() * 60000);
+})();
 
 // ------------------------------------------------------------------ colour helpers
 const hex2rgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -2444,6 +2524,7 @@ $('#code').addEventListener('submit', e => {
   if (!unlocked().includes(th)) setCfg('general', 'unlocked', unlocked().concat(th).join(','));
   inp.value = ''; inp.classList.add('ok'); inp.blur();
   if (th === 'verity') { verityArrives(); return; }
+  if (th === 'kyoka') { kyokaArrives(); return; }
   setTheme(th);
   if (!document.body.classList.contains('calm')) burst($('#code'), ['✨', '💖', '⭐', '💜', '🌈', '💫']);
 });
