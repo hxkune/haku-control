@@ -1710,7 +1710,9 @@ function heroLayout(W) {
   return { tiles, frames, height: rows.length ? y : (phone ? 150 : 180) };
 }
 function heroHeight() {
-  const el = $('#tab-effects .hero'), h = Math.round(heroLayout($('#hero').clientWidth || el.clientWidth).height);
+  const el = $('#tab-effects .hero'), bar = $('#arrange-bar');
+  bar.classList.toggle('hidden', !HERO.arrange);
+  const h = Math.round(heroLayout($('#hero').clientWidth || el.clientWidth).height + (HERO.arrange ? bar.offsetHeight + 12 : 0));
   if (+el.dataset.h !== h) { el.dataset.h = h; el.style.height = h + 'px'; }
 }
 // a tile's outline: faceted like the cards (top-left and bottom-right corners cut)
@@ -1774,7 +1776,9 @@ function drawHero() {
     const x = p.x * d, y = p.y * d, w = p.w * d, h = p.h * d, hot = HERO.hover === it.key || (to && to.key === it.key);
     c.save();
     c.globalAlpha = drag && drag.src.key === it.key ? v * .35 : v;
-    const sc = .92 + .08 * v; c.translate(x + w / 2, y + h / 2); c.scale(sc, sc); c.translate(-x - w / 2, -y - h / 2);
+    const sc = .92 + .08 * v; c.translate(x + w / 2, y + h / 2); c.scale(sc, sc);
+    if (HERO.arrange && !calm && !(drag && drag.src.key === it.key)) { c.rotate(Math.sin(now / 95 + it.key.length * 1.7 + x * .01) * .011); HERO.moving = true; }
+    c.translate(-x - w / 2, -y - h / 2);
     tilePath(c, x, y, w, h, 8 * d);
     c.fillStyle = hot ? inkA(.04) : inkA(.015); c.fill();
     c.strokeStyle = to && to.key === it.key ? inkA(.6) : hot ? inkA(.28) : inkA(.06); c.lineWidth = d;
@@ -1794,10 +1798,10 @@ function drawHero() {
     hits.push({ key: 'add', k: 'add', x: W * .3, y: H * .3, w: W * .4, h: H * .4 });
   }
   HERO.hits = hits;   // (before the power buttons: a group's button asks its devices)
-  hits.forEach(h => heroPowerButton(c, h));
+  if (!HERO.arrange) hits.forEach(h => heroPowerButton(c, h));
   if (drag && drag.px != null) {   // the device being dragged: its name under the pointer, and what dropping does
     const msg = to && to.group ? t('group.drop.in', groupTitle(groups().find(g => g.n === to.group) || { n: to.group }))
-      : to && to.tile ? t('hero.drop.move') : drag.src.group ? t('group.drop.out') : '';
+      : to && to.swap ? t('hero.drop.move') : to && to.tile ? t('group.drop.new') : drag.src.group && !HERO.arrange ? t('group.drop.out') : '';
     c.save();
     c.font = `${11 * d}px ${WIDE}`; c.textAlign = 'left';
     const s = drag.src.name + (msg ? '  ·  ' + msg : ''), tw = c.measureText(s).width, px = Math.min(drag.px + 14 * d, W - tw - 24 * d), py = drag.py + 18 * d;
@@ -1827,7 +1831,8 @@ const heroOnPower = (h, e) => { if (!h || !h.pw) return false; const [px, py] = 
 function heroDropTarget(e) {
   const [px, py] = heroXY(e), src = HERO.drag.src, inside = h => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h;
   const tile = HERO.hits.find(h => h.zone && h.key !== src.key && inside(h));
-  if (tile) return tile.group && tile.group !== src.group ? { group: tile.group, key: 'g' + tile.group } : { tile, key: tile.key };
+  if (HERO.arrange) return tile ? { tile, key: tile.key, swap: true } : null;   // arranging: only swaps
+  if (tile) return tile.group ? (tile.group === src.group ? null : { group: tile.group, key: 'g' + tile.group }) : { tile, key: tile.key };
   const fr = HERO.hits.find(h => h.k === 'group' && inside(h));
   if (fr) return fr.g === src.group ? null : { group: fr.g, key: fr.key };
   return src.group ? { out: true } : null;
@@ -1837,7 +1842,13 @@ function heroDrop(d) {
   if (!to) return;
   if (to.group) groupAdd(to.group, z);
   else if (to.out) groupRemove(z);
-  else if (to.tile) heroMove(d.src.key, to.tile.key);   // swaps places (a new group: + New group in the menu)
+  else if (to.swap) heroMove(d.src.key, to.tile.key);
+  else if (to.tile) {
+    const n = groupNew(); if (!n) return;
+    groupRemove(z);
+    setMembers(n, [to.tile.zone, z]);
+    groupDialog(n, true);   // a name for it
+  }
 }
 $('#hero').addEventListener('pointerdown', e => {
   if (e.button !== 0 || e.pointerType === 'touch') return;
@@ -1875,7 +1886,7 @@ $('#hero').addEventListener('pointerup', () => heroDragEnd(true));
 $('#hero').addEventListener('pointercancel', () => heroDragEnd(false));
 $('#hero').addEventListener('pointerleave', () => { if (HERO.hover && !HERO.drag) { HERO.hover = HERO.hoverPw = ''; drawHero(); } });
 $('#hero').addEventListener('click', e => {
-  if (HERO.noClick) return;
+  if (HERO.noClick || HERO.arrange) return;
   const h = heroHit(e);
   if (!h) return;
   if (heroOnPower(h, e)) { togglePower(h); drawHero(); }
@@ -2002,7 +2013,8 @@ function buildHeroMenu() {
   $('#hero-menu').innerHTML = `<div class="lbl"><span>${t('hero.show')}</span></div><div class="hero-checks">` +
     entries.map(e => `<label class="check"><input type="checkbox" data-hg="${e.k}" ${hide.includes(e.k) || hide.includes(e.group) ? '' : 'checked'}><span></span><em>${esc(e.name)}</em></label>`).join('') + '</div>' +
     `<div class="btn-row"><button class="btn small ghost" id="hero-add"><span>+ ${t('hero.add')}</span></button>` +
-    `<button class="btn small ghost" id="hero-group"><span>+ ${t('group.add')}</span></button></div><p class="hint">${t('hero.hint')}</p>`;
+    `<button class="btn small ghost" id="hero-group"><span>+ ${t('group.add')}</span></button>` +
+    `<button class="btn small ghost" id="hero-arrange"><span>${t('hero.arrange')}</span></button></div><p class="hint">${t('hero.hint')}</p>`;
   $$('[data-hg]').forEach(i => i.addEventListener('change', () => {
     const h = new Set(heroHidden()), e = entries.find(x => x.k === i.dataset.hg);
     if (e.group !== e.k && h.has(e.group)) {   // a whole group was hidden (older setting): its tiles one by one now
@@ -2014,6 +2026,7 @@ function buildHeroMenu() {
     drawHero();
   }));
   $('#hero-add').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); showTab('devices'); send({ cmd: 'scan' }); });
+  $('#hero-arrange').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); heroArrange(true); });
   $('#hero-group').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); const n = groupNew(); if (n) groupDialog(n, true); });
 }
 
@@ -2067,6 +2080,10 @@ $('#gdlg-del').addEventListener('click', () => {
 });
 $('#gdlg').addEventListener('pointerdown', e => { if (e.target.id === 'gdlg') closeGroupDialog(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#gdlg').classList.contains('hidden') && pk.classList.contains('hidden')) $('#gdlg-cancel').click(); });
+// arranging the preview: drag a device onto another to swap their places (Done or Esc ends it)
+function heroArrange(on) { HERO.arrange = on; HERO.hover = HERO.hoverPw = ''; drawHero(); }
+$('#arrange-done').addEventListener('click', () => heroArrange(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && HERO.arrange) heroArrange(false); });
 $('#hero-edit').addEventListener('click', e => {
   e.stopPropagation();
   const m = $('#hero-menu');
