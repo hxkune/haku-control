@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.32',
+    en: ['The hidden theme from 0.3.31 got prettier: its butterflies beat their wings, the light in the corner glows without a dark ring, and its name is written with a brush, stroke after stroke.'],
+    ru: ['Скрытая тема из 0.3.31 стала красивее: бабочки машут крыльями, свет в углу светится без тёмного кольца, а её название пишется кистью, черта за чертой.'],
+    fr: ['Le thème caché de la 0.3.31 est plus beau : ses papillons battent des ailes, la lumière du coin brille sans anneau sombre et son nom s\'écrit au pinceau, trait après trait.'] },
   { v: '0.3.31',
     en: ['A new hidden theme. Those who have its code will know what to type next to the theme switch.'],
     ru: ['Новая скрытая тема. У кого есть её код, тот знает, что вписать рядом с переключателем темы.'],

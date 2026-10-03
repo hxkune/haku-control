@@ -139,6 +139,7 @@ function applyTheme() {
   const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
   Object.assign(THEME, { ink: g('--ink'), hi: g('--text'), mid: g('--muted'), lo: g('--faint'), tip: g('--menu') });
   $$('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === th));
+  if (th === 'kyoka' && !kyTimer) kyTimer = setTimeout(kyWrite, 0); else if (th !== 'kyoka') { clearTimeout(kyTimer); kyTimer = 0; }
 }
 
 // verity (the hidden smiley theme) says something in game-chat style now and then: first a hello, later every few
@@ -327,6 +328,54 @@ function hellButterflies(n) {
     butterflyTimer();
   }, 45000 + Math.random() * 60000);
 })();
+
+// kyōka suigetsu: 鏡花水月 down the right edge, written with a brush. Each sign is the font's own glyph, uncovered
+// by a mask of its strokes drawn one after another in the usual stroke order (rough centre lines in a 100 x 100
+// box, as wide as a brush); then the name stays, fades and is written again.
+const KY_STROKES = {
+  '鏡': ['M24 6 L7 30', 'M24 6 L40 26', 'M12 36 L36 36', 'M10 50 L38 50', 'M24 36 L24 88', 'M13 62 L18 73', 'M35 60 L30 73', 'M6 91 L40 82',
+         'M69 3 L71 12', 'M50 17 L90 17', 'M58 23 L62 32', 'M83 22 L77 32', 'M46 37 L95 37',
+         'M54 43 L54 65', 'M54 43 L84 43 L84 65', 'M56 54 L82 54', 'M56 65 L82 65', 'M64 67 Q62 86 46 95', 'M76 67 L76 88 Q78 95 95 92'],
+  '花': ['M8 22 L92 22', 'M32 7 L35 37', 'M67 7 L64 37', 'M42 40 L16 72', 'M28 56 L28 95', 'M82 44 L54 66', 'M58 40 L58 82 Q60 93 90 90'],
+  '水': ['M50 6 L50 90 L41 83', 'M14 36 L40 36 L14 76', 'M80 26 L57 48', 'M55 46 L90 88'],
+  '月': ['M30 12 L30 68 Q28 86 13 94', 'M30 12 L72 12 L72 88 L61 82', 'M32 38 L70 38', 'M32 61 L70 61'],
+};
+let kyTimer = 0;
+function kyScript() {
+  const box = $('.ky-script');
+  if (!box || box.dataset.built) return box;
+  box.dataset.built = '1';
+  const defs = `<defs><linearGradient id="ky-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6f0ff"/><stop offset=".45" stop-color="#c3a2ff"/><stop offset="1" stop-color="#7344e0"/></linearGradient>
+    <filter id="ky-ink" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.5" xChannelSelector="R" yChannelSelector="G" result="d"/>
+    <feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 -.9 1.4" result="g"/><feComposite in="d" in2="g" operator="in"/></filter></defs>`;
+  box.innerHTML = [...'鏡花水月'].map((c, n) => `<svg viewBox="0 0 100 100">${n ? '' : defs}<mask id="ky-m${n}" maskUnits="userSpaceOnUse" x="-10" y="-10" width="120" height="120">${
+    KY_STROKES[c].map(d => `<path pathLength="1" d="${d}"/>`).join('')}</mask><text x="50" y="52" fill="url(#ky-grad)" filter="url(#ky-ink)" mask="url(#ky-m${n})">${c}</text></svg>`).join('');
+  return box;
+}
+function kyWrite() {
+  clearTimeout(kyTimer); kyTimer = 0;
+  const box = $('.ky-script');
+  if (!box || document.documentElement.dataset.theme !== 'kyoka') return;
+  kyScript();
+  box.getAnimations({ subtree: true }).forEach(a => a.cancel());
+  const paths = $$('.ky-script mask path');
+  if (stillMotion()) { paths.forEach(p => { p.style.strokeDashoffset = 0; }); return; }
+  paths.forEach(p => { p.style.strokeDashoffset = ''; });
+  let t = 400, last = null;
+  paths.forEach(p => {
+    const svg = p.closest('svg');
+    if (last && svg !== last) t += 350;   // a breath between the signs
+    last = svg;
+    const dur = 160 + p.getTotalLength() * 5.5;
+    p.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: dur, delay: t, easing: 'cubic-bezier(.45, .05, .3, 1)', fill: 'both' });
+    t += dur + 60;
+  });
+  const hold = 4500, fade = 1600;
+  box.animate([{ opacity: .5 }, { opacity: .5, offset: (t + hold) / (t + hold + fade) }, { opacity: 0 }], { duration: t + hold + fade, fill: 'forwards' });
+  kyTimer = setTimeout(kyWrite, t + hold + fade + 900);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && document.documentElement.dataset.theme === 'kyoka' && !kyTimer) kyWrite(); });
 
 // ------------------------------------------------------------------ colour helpers
 const hex2rgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
