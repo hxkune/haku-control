@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.31',
+    en: ['A new hidden theme. Those who have its code will know what to type next to the theme switch.'],
+    ru: ['Новая скрытая тема. У кого есть её код, тот знает, что вписать рядом с переключателем темы.'],
+    fr: ['Un nouveau thème caché. Ceux qui ont son code savent quoi taper à côté du choix du thème.'] },
   { v: '0.3.30',
     en: ['Razer, SteelSeries and Logitech devices: with Razer Synapse, SteelSeries GG or Logitech G HUB running, Scan network offers their keyboards, mice, headsets and more; add the ones you have. Their own app gets the lighting back when haku lets go. New, so far tried only against stand-ins: reports are welcome.',
       'The effects tab switches between the effects and your own presets, so presets no longer get lost among the effects.',
