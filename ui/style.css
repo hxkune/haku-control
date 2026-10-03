@@ -433,8 +433,7 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .map-bar > span { flex: 1; min-width: 180px; color: var(--muted); font-size: 12px; }
 .map-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .map-row small { color: var(--faint); font-size: 11px; }
-#hero-menu .map-row { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
-#hero-menu .map-row + .hint { margin: 0; }
+#hero-menu .map-row + .hint { margin: 0 0 12px; }
 /* haku Pro */
 .pro-chip { display: block; width: 100%; margin: 0 0 14px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line2);
   background: transparent; color: var(--muted); font-size: 11.5px; letter-spacing: .02em; text-align: center; }
@@ -1180,4 +1179,4 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .09s linear infinite; 
 :root[data-theme="kyoka"] body.calm .watermark, :root[data-theme="kyoka"] body.calm .btn.primary, :root[data-theme="kyoka"] body.calm .seg button.on { animation: none; }
 
 /* the preview's menu: one line per device, scrolling when there are many */
-.hero-checks { display: flex; flex-direction: column; gap: 2px; max-height: min(30vh, 300px); overflow-y: auto; margin-right: -6px; padding-right: 6px; }
+.hero-checks { display: flex; flex-direction: column; gap: 2px; max-height: min(46vh, 380px); overflow-y: auto; margin-right: -6px; padding-right: 6px; }

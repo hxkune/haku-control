@@ -1644,116 +1644,49 @@ function heroEntries() {
 }
 // ---- room map ([map] on=1, haku Pro): the preview becomes the room. Every device has a box on it, [map] <key> =
 // "x,y,w,h,turn" (0..1 of the map, y down, quarter turns clockwise), the same keys the core reads (main.c, room_map):
-// ram, gpu, nano<slot>, bulb<i>, dev<id>. Arranging (HERO.arrange) works like widgets on a phone: the map is a grid,
-// a device takes whole cells, and moving or sizing one moves the ones in its way to the nearest free cells, so nothing
-// overlaps; a frame shows where it will land. ↻ turns a device; the arrow in the middle is the way the chain effects
-// run ([map] flow, degrees), a click turns it.
+// ram, gpu, nano<slot>, bulb<i>, dev<id>. Arranging (HERO.arrange): drag a device to move it, its corner to size it,
+// ↻ to turn it; the arrow in the middle is the way the chain effects run ([map] flow, degrees), a click turns it.
 const mapAllowed = () => !S.pro || !!S.pro.on;
 const mapOn = () => cv('map', 'on', '0') === '1' && mapAllowed();
 const mapKey = it => it.k === 'ext' ? 'dev' + it.id : it.key;
-const MAP_PAD = 14, MAP_COLS = 24, MAP_ROWS = 12, MAP_GAP = 6;
+const MAP_PAD = 14;
 const mapHeight = W => Math.round(Math.max(260, Math.min(620, W * .5)));
-const mapGeo = W => { const H = mapHeight(W), iw = W - MAP_PAD * 2, ih = H - MAP_PAD * 2; return { H, iw, ih, cw: iw / MAP_COLS, ch: ih / MAP_ROWS }; };
-const clampI = (v, a, b) => Math.max(a, Math.min(b, Math.round(v)));
-const gridOf = b => {
-  const gx = clampI(b.x * MAP_COLS, 0, MAP_COLS - 1), gy = clampI(b.y * MAP_ROWS, 0, MAP_ROWS - 1);
-  return { gx, gy, gw: clampI(b.w * MAP_COLS, 1, MAP_COLS - gx), gh: clampI(b.h * MAP_ROWS, 1, MAP_ROWS - gy), turn: (b.turn | 0) & 3 };
-};
-const boxOf = g => ({ x: g.gx / MAP_COLS, y: g.gy / MAP_ROWS, w: g.gw / MAP_COLS, h: g.gh / MAP_ROWS, turn: g.turn | 0 });
-const mapStr = b => [b.x, b.y, b.w, b.h].map(n => (+n).toFixed(4)).join(',') + ',' + (b.turn | 0);
-const gEq = (a, b) => a.gx === b.gx && a.gy === b.gy && a.gw === b.gw && a.gh === b.gh && (a.turn | 0) === (b.turn | 0);
-const gHit = (a, b) => a.gx < b.gx + b.gw && b.gx < a.gx + a.gw && a.gy < b.gy + b.gh && b.gy < a.gy + a.gh;
-function mapSaved(key) {
-  const a = String(cv('map', key, '')).split(',').map(Number);
-  return a.length >= 4 && a.slice(0, 4).every(n => isFinite(n)) && a[2] > 0 && a[3] > 0 ? gridOf({ x: a[0], y: a[1], w: a[2], h: a[3], turn: a[4] }) : null;
+function mapBox(it, def) {
+  const v = (HERO.mapEdit && HERO.mapEdit[mapKey(it)]) || cv('map', mapKey(it), '');
+  const a = String(v).split(',').map(Number);
+  return a.length >= 4 && a.slice(0, 4).every(n => isFinite(n)) && a[2] > 0 && a[3] > 0 ? { x: a[0], y: a[1], w: a[2], h: a[3], turn: (a[4] | 0) & 3 } : def;
 }
-// the nearest place for g (its size kept) that touches nobody in G but itself; null if the map is full
-function mapFree(G, key, g) {
-  let best = null, bd = Infinity;
-  for (let y = 0; y + g.gh <= MAP_ROWS; y++) for (let x = 0; x + g.gw <= MAP_COLS; x++) {
-    const dd = (x - g.gx) ** 2 + (y - g.gy) ** 2 * 1.3;
-    if (dd >= bd) continue;
-    const c = { ...g, gx: x, gy: y };
-    if (Object.keys(G).some(o => o !== key && gHit(G[o], c))) continue;
-    bd = dd; best = c;
-  }
-  return best;
-}
-// key takes g; whoever is in its way moves to the nearest free cells (the biggest first), smaller if there is no room
-function mapResolve(G0, key, g) {
-  const G = {};
-  for (const k in G0) G[k] = { ...G0[k] };
-  G[key] = g;
-  const inWay = Object.keys(G).filter(k => k !== key && gHit(G[k], g)).sort((a, b) => G[b].gw * G[b].gh - G[a].gw * G[a].gh);
-  for (const k of inWay) {
-    const o = G[k];
-    G[k] = mapFree(G, k, o) || mapFree(G, k, { ...o, gw: Math.min(o.gw, 3), gh: Math.min(o.gh, 2) }) || mapFree(G, k, { ...o, gw: 1, gh: 1 }) || o;
-  }
-  return G;
-}
-// every shown device's cells: saved ones as saved, new ones packed in rows from the top left, as wide as their tiles
-function mapGrid(items) {
-  const G = {};
-  items.forEach(it => { const g = mapSaved(mapKey(it)); if (g) G[mapKey(it)] = g; });
-  for (const it of items) {
-    const k = mapKey(it);
-    if (G[k]) continue;
-    let g = null;
-    for (const [w, h] of [[clampI(it.w * 2.4, 2, 8), 3], [2, 2], [1, 1]]) {
-      for (let y = 0; !g && y + h <= MAP_ROWS; y++) for (let x = 0; !g && x + w <= MAP_COLS; x++) {
-        const c = { gx: x, gy: y, gw: w, gh: h, turn: 0 };
-        if (!Object.values(G).some(o => gHit(o, c))) g = c;
-      }
-      if (g) break;
-    }
-    G[k] = g || { gx: 0, gy: 0, gw: 1, gh: 1, turn: 0 };
-  }
-  return G;
-}
-const mapRect = (geo, g) => ({ x: MAP_PAD + g.gx * geo.cw + MAP_GAP / 2, y: MAP_PAD + g.gy * geo.ch + MAP_GAP / 2, w: g.gw * geo.cw - MAP_GAP, h: g.gh * geo.ch - MAP_GAP });
+const mapStr = b => [b.x, b.y, b.w, b.h].map(n => (+n).toFixed(3)).join(',') + ',' + (b.turn | 0);
+// tiles on the map: saved boxes, or (not placed yet) where the tile preview would put them, squeezed onto the map
 function mapLayout(W) {
-  const geo = mapGeo(W), items = heroItems(), M = HERO.mapDrag;
-  const G = M ? M.G : mapGrid(items);
-  const tiles = items.map(it => {
-    const k = mapKey(it), g = G[k] || { gx: 0, gy: 0, gw: 1, gh: 1, turn: 0 };
-    let r = mapRect(geo, g);
-    if (M && M.key === k && M.mode === 'move' && M.free) r = { ...r, x: M.free.x, y: M.free.y };   // follows the pointer
-    return { it, ...r, turn: g.turn, g, placed: !!mapSaved(k) };
+  const H = mapHeight(W), iw = W - MAP_PAD * 2, ih = H - MAP_PAD * 2;
+  // (laid out as the tile preview would be in a window wide enough to have the map's proportions, then scaled down)
+  let Wv = W, auto = heroLayout(Wv);
+  for (let n = 0; n < 14 && auto.height - MAP_PAD * 2 > (Wv - MAP_PAD * 2) * ih / iw; n++) auto = heroLayout(Wv *= 1.15);
+  const vw = Wv - MAP_PAD * 2, vh = vw * ih / iw;
+  const tiles = auto.tiles.map(T => {
+    const def = { x: (T.x - MAP_PAD) / vw, y: (T.y - MAP_PAD) / vh, w: T.w / vw, h: T.h / vh, turn: 0 };
+    const b = mapBox(T.it, def);
+    return { it: T.it, x: MAP_PAD + b.x * iw, y: MAP_PAD + b.y * ih, w: b.w * iw, h: b.h * ih, turn: b.turn, box: b, placed: b !== def };
   });
-  return { tiles, frames: [], height: geo.H, map: true, geo };
+  return { tiles, frames: [], height: H, map: true };
 }
-// cells not saved yet are saved as they are shown, so the core lights the room the way the map shows it
+// boxes not saved yet are saved as they are shown, so the core lights the room the way the map shows it
 function mapSaveMissing(tiles) {
   const miss = tiles.filter(T => !T.placed);
-  if (!miss.length || HERO.mapSaving || HERO.mapDrag) return;
+  if (!miss.length || HERO.mapSaving) return;
   HERO.mapSaving = true;
-  miss.forEach(T => setCfg('map', mapKey(T.it), mapStr(boxOf(T.g))));
+  miss.forEach(T => setCfg('map', mapKey(T.it), mapStr(T.box)));
   setTimeout(() => { HERO.mapSaving = false; }, 400);
 }
-// the room behind the devices: the cells (clearer while arranging) and the floor line
+// the room behind the devices: a floor line and a faint grid; while arranging, the flow arrow in the middle
 function drawMapRoom(c, W, H, d) {   // H: the map's own height (the canvas may be taller, with the bar under it)
-  const geo = mapGeo(W / d);
   c.save();
-  if (HERO.arrange) {   // a dot on every cell corner
-    c.fillStyle = inkA(.22);
-    for (let j = 0; j <= MAP_ROWS; j++) for (let i = 0; i <= MAP_COLS; i++)
-      c.fillRect((MAP_PAD + i * geo.cw) * d - d, (MAP_PAD + j * geo.ch) * d - d, 2 * d, 2 * d);
-  } else {
-    c.strokeStyle = inkA(.03); c.lineWidth = d;
-    for (let i = 4; i < MAP_COLS; i += 4) { const x = (MAP_PAD + i * geo.cw) * d; c.beginPath(); c.moveTo(x, MAP_PAD * d); c.lineTo(x, H - MAP_PAD * d); c.stroke(); }
-    for (let j = 4; j < MAP_ROWS; j += 4) { const y = (MAP_PAD + j * geo.ch) * d; c.beginPath(); c.moveTo(MAP_PAD * d, y); c.lineTo(W - MAP_PAD * d, y); c.stroke(); }
-  }
-  c.strokeStyle = inkA(.18); c.lineWidth = d; c.beginPath(); c.moveTo(MAP_PAD * d, H - MAP_PAD * d); c.lineTo(W - MAP_PAD * d, H - MAP_PAD * d); c.stroke();
-  c.restore();
-}
-// while dragging: where the device will land, a clear frame on the cells
-function drawMapGhost(c, W, d) {
-  const M = HERO.mapDrag; if (!M || !M.G[M.key]) return;
-  const r = mapRect(mapGeo(W / d), M.G[M.key]);
-  c.save();
-  tilePath(c, r.x * d, r.y * d, r.w * d, r.h * d, 6 * d);
-  c.fillStyle = inkA(.07); c.fill();
-  c.strokeStyle = THEME.hi; c.lineWidth = 1.5 * d; c.stroke();
+  c.strokeStyle = inkA(HERO.arrange ? .07 : .035); c.lineWidth = d;
+  const step = 40 * d;
+  for (let x = MAP_PAD * d; x < W - MAP_PAD * d; x += step) { c.beginPath(); c.moveTo(x, MAP_PAD * d); c.lineTo(x, H - MAP_PAD * d); c.stroke(); }
+  for (let y = MAP_PAD * d; y < H - MAP_PAD * d; y += step) { c.beginPath(); c.moveTo(MAP_PAD * d, y); c.lineTo(W - MAP_PAD * d, y); c.stroke(); }
+  c.strokeStyle = inkA(.18); c.beginPath(); c.moveTo(MAP_PAD * d, H - MAP_PAD * d); c.lineTo(W - MAP_PAD * d, H - MAP_PAD * d); c.stroke();
   c.restore();
 }
 function drawMapArrow(c, W, H, d) {
@@ -1767,8 +1700,8 @@ function drawMapArrow(c, W, H, d) {
   c.fillText(t('map.flow').toUpperCase(), cx, cy + L * .55 + 22 * d); c.letterSpacing = '0px';
   return { key: 'map:flow', k: 'map-flow', x: cx - L, y: cy - L * .5, w: L * 2, h: L };
 }
-// arranging: the handles of a tile (canvas pixels): the corner to size it, ↻ to turn it
-const mapHandles = (x, y, w, h, d) => ({ size: { x: x + w - 20 * d, y: y + h - 20 * d, w: 20 * d, h: 20 * d }, turn: { x: x + w - 26 * d, y: y + 3 * d, w: 23 * d, h: 23 * d } });
+// arranging: the handles of a tile (canvas pixels)
+const mapHandles = (x, y, w, h, d) => ({ size: { x: x + w - 14 * d, y: y + h - 14 * d, w: 14 * d, h: 14 * d }, turn: { x: x + w - 26 * d, y: y + 4 * d, w: 22 * d, h: 22 * d } });
 const inRect = (px, py, r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 // Tile rectangles in CSS pixels for a preview W wide; returns { tiles: [{ it, x, y, w, h, group }], frames: [{ g, x,
 // y, w, h }], height }. A group is a frame with a header around its devices: as wide as they are, or the full width
@@ -1896,9 +1829,8 @@ function drawHero() {
     const sc = .92 + .08 * v; c.translate(x + w / 2, y + h / 2); c.scale(sc, sc); c.translate(-x - w / 2, -y - h / 2);
     if (onMap) {   // on the map: the device itself, turned as it hangs; a frame and handles only while arranging
       if (HERO.arrange) {
-        const dragged = HERO.mapDrag && HERO.mapDrag.key === mapKey(it);
-        tilePath(c, x, y, w, h, 6 * d); c.fillStyle = inkA(dragged ? .09 : hot ? .05 : .025); c.fill();
-        c.strokeStyle = inkA(dragged ? .6 : hot ? .45 : .2); c.lineWidth = d; c.stroke();
+        tilePath(c, x, y, w, h, 6 * d); c.fillStyle = inkA(hot ? .05 : .02); c.fill();
+        c.strokeStyle = inkA(hot ? .5 : .22); c.lineWidth = d; c.setLineDash([5 * d, 4 * d]); c.stroke(); c.setLineDash([]);
       }
       const tn = T.turn || 0, odd = tn & 1, lab = Math.min(16 * d, h * .2), dw = odd ? h - lab : w, dh = odd ? w : h - lab;
       c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
@@ -1907,9 +1839,8 @@ function drawHero() {
       c.restore();
       tileLabel(c, it.name, x, y + h - 4 * d, w, hot || HERO.arrange);
       if (HERO.arrange) {
-        const hd = mapHandles(x, y, w, h, d), hs = HERO.hover === it.key + ':size';
-        c.strokeStyle = hs ? THEME.hi : inkA(.6); c.lineWidth = 2 * d; c.lineCap = 'round';
-        c.beginPath(); c.moveTo(x + w - 5 * d, y + h - 15 * d); c.lineTo(x + w - 5 * d, y + h - 5 * d); c.lineTo(x + w - 15 * d, y + h - 5 * d); c.stroke();
+        const hd = mapHandles(x, y, w, h, d);
+        c.fillStyle = inkA(.55); c.fillRect(hd.size.x + 4 * d, hd.size.y + 4 * d, 8 * d, 8 * d);
         c.font = `${14 * d}px ${WIDE}`; c.textAlign = 'center'; c.fillStyle = HERO.hover === it.key + ':turn' ? THEME.hi : THEME.mid;
         c.fillText('↻', hd.turn.x + hd.turn.w / 2, hd.turn.y + 16 * d);
       }
@@ -1926,7 +1857,7 @@ function drawHero() {
     c.restore();
     hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, zone: it.zone, name: it.name, group: T.group || 0, x, y, w, h });
   }
-  if (onMap && HERO.arrange) { drawMapGhost(c, W, d); hits.unshift(drawMapArrow(c, W, mapHeight(W / d) * d, d)); }
+  if (onMap && HERO.arrange) hits.unshift(drawMapArrow(c, W, mapHeight(W / d) * d, d));
   hits.push(...ghits);   // a device in a group is found before its group
   for (const k of Object.keys(HERO.pos)) if (!seen.has(k)) { delete HERO.pos[k]; delete HERO.anim['a:' + k]; }
   if (!tiles.length && S.effects.length) {   // nothing to show yet: the whole preview invites to add a device
@@ -1985,60 +1916,48 @@ function heroDrop(d) {
     groupDialog(n, true);   // a name for it
   }
 }
-// arranging the room on its grid: move / size / turn a device (the others make room), turn the flow arrow
+// arranging the room: move / size / turn a device, turn the flow arrow
 function mapPointer(e, phase) {
-  const [px, py] = heroXY(e), d = devicePixelRatio, cvs = $('#hero'), W = cvs.width / d, geo = mapGeo(W), M = HERO.mapDrag;
+  const [px, py] = heroXY(e), d = devicePixelRatio, cvs = $('#hero');
+  const W = cvs.width / d, H = mapHeight(W), iw = (W - MAP_PAD * 2) * d, ih = (H - MAP_PAD * 2) * d;
+  const M = HERO.mapDrag;
   if (phase === 'down') {
     const flow = HERO.hits.find(h => h.k === 'map-flow' && inRect(px, py, h));
-    if (flow) { setCfg('map', 'flow', String(((+cv('map', 'flow', '0') || 0) + 45) % 360)); drawHero(); return; }
+    if (flow) { setCfg('map', 'flow', String(((+cv('map', 'flow', '0') || 0) + 45) % 360)); drawHero(); return true; }
     const h = HERO.hits.find(x => x.zone && inRect(px, py, x));
-    if (!h) return;
-    const items = heroItems(), it = items.find(i => i.key === h.key); if (!it) return;
-    const key = mapKey(it), G0 = mapGrid(items), g0 = G0[key], hd = mapHandles(h.x, h.y, h.w, h.h, d);
-    if (inRect(px, py, hd.turn)) {   // a quarter turn: the cells swap width and height, the others make room
-      const g = { ...g0, turn: (g0.turn + 1) & 3, gw: Math.min(g0.gh, MAP_COLS), gh: Math.min(g0.gw, MAP_ROWS) };
-      g.gx = Math.min(g.gx, MAP_COLS - g.gw); g.gy = Math.min(g.gy, MAP_ROWS - g.gh);
-      mapSaveAll(G0, mapResolve(G0, key, g)); drawHero(); return;
-    }
-    const r = mapRect(geo, g0);
-    HERO.mapDrag = { key, mode: inRect(px, py, hd.size) ? 'size' : 'move', G0, G: G0, g0, ox: px / d - r.x, oy: py / d - r.y };
+    if (!h) return true;
+    const it = heroItems().find(i => i.key === h.key); if (!it) return true;
+    const T = mapLayout(W).tiles.find(x => x.it.key === h.key); if (!T) return true;
+    const hd = mapHandles(h.x, h.y, h.w, h.h, d);
+    if (inRect(px, py, hd.turn)) { const b = { ...T.box, turn: ((T.box.turn | 0) + 1) & 3 }; [b.w, b.h] = [Math.min(1, b.h * ih / iw), Math.min(1, b.w * iw / ih)]; b.x = Math.max(0, Math.min(1 - b.w, b.x)); b.y = Math.max(0, Math.min(1 - b.h, b.y)); setCfg('map', mapKey(it), mapStr(b)); drawHero(); return true; }
+    HERO.mapDrag = { key: mapKey(it), mode: inRect(px, py, hd.size) ? 'size' : 'move', b0: { ...T.box }, px, py, id: e.pointerId };
+    HERO.mapEdit = { [mapKey(it)]: mapStr(T.box) };
     try { cvs.setPointerCapture(e.pointerId); } catch (x) { }
-    drawHero();
-    return;
+    return true;
   }
   if (phase === 'move') {
     if (!M) {   // the cursor tells what a press would do
       const h = HERO.hits.find(x => (x.zone || x.k === 'map-flow') && inRect(px, py, x));
       let cur = h ? 'grab' : '', hov = h ? h.key : '';
-      if (h && h.zone) { const hd = mapHandles(h.x, h.y, h.w, h.h, d); if (inRect(px, py, hd.size)) { cur = 'nwse-resize'; hov = h.key + ':size'; } else if (inRect(px, py, hd.turn)) { cur = 'pointer'; hov = h.key + ':turn'; } }
+      if (h && h.zone) { const hd = mapHandles(h.x, h.y, h.w, h.h, d); if (inRect(px, py, hd.size)) cur = 'nwse-resize'; else if (inRect(px, py, hd.turn)) { cur = 'pointer'; hov = h.key + ':turn'; } }
       if (h && h.k === 'map-flow') cur = 'pointer';
       cvs.style.cursor = cur;
       if (hov !== HERO.hover) { HERO.hover = hov; drawHero(); }
-      return;
+      return true;
     }
-    const g0 = M.g0, x = px / d - M.ox, y = py / d - M.oy;
-    let g;
-    if (M.mode === 'move') {
-      M.free = { x: Math.max(0, Math.min(W - 20, x)), y: Math.max(0, Math.min(geo.H - 20, y)) };
-      g = { ...g0, gx: clampI((x - MAP_PAD) / geo.cw, 0, MAP_COLS - g0.gw), gy: clampI((y - MAP_PAD) / geo.ch, 0, MAP_ROWS - g0.gh) };
-    } else {
-      const r0 = mapRect(geo, g0);
-      g = { ...g0, gw: clampI((px / d - r0.x) / geo.cw + .3, 1, MAP_COLS - g0.gx), gh: clampI((py / d - r0.y) / geo.ch + .3, 1, MAP_ROWS - g0.gy) };
-    }
-    if (!M.ghost || !gEq(M.ghost, g)) { M.ghost = g; M.G = mapResolve(M.G0, M.key, g); }
+    const dx = (px - M.px) / iw, dy = (py - M.py) / ih, b = { ...M.b0 }, snap = v => Math.round(v * 200) / 200;
+    if (M.mode === 'move') { b.x = snap(Math.max(0, Math.min(1 - b.w, b.x + dx))); b.y = snap(Math.max(0, Math.min(1 - b.h, b.y + dy))); }
+    else { b.w = snap(Math.max(.04, Math.min(1 - b.x, b.w + dx))); b.h = snap(Math.max(.06, Math.min(1 - b.y, b.h + dy))); }
+    HERO.mapEdit = { [M.key]: mapStr(b) };
     cvs.style.cursor = M.mode === 'move' ? 'grabbing' : 'nwse-resize';
     drawHero();
-    return;
+    return true;
   }
-  if (phase === 'up' && M) {
-    HERO.mapDrag = null;
-    mapSaveAll(M.G0, M.G);
-    drawHero();
+  if (phase === 'up') {
+    if (M) { if (HERO.mapEdit && HERO.mapEdit[M.key] !== mapStr(M.b0)) setCfg('map', M.key, HERO.mapEdit[M.key]); HERO.mapDrag = null; HERO.mapEdit = null; drawHero(); }
+    return true;
   }
-}
-// the cells that changed go to the settings
-function mapSaveAll(G0, G) {
-  for (const k in G) if (!G0[k] || !gEq(G0[k], G[k])) setCfg('map', k, mapStr(boxOf(G[k])));
+  return false;
 }
 $('#hero').addEventListener('pointerdown', e => {
   if (HERO.arrange && e.button === 0) { mapPointer(e, 'down'); return; }
@@ -2204,10 +2123,10 @@ function buildHeroMenu() {
   const hide = heroHidden(), entries = heroMenuEntries();
   const mapRow = `<div class="map-row"><label class="check"><input type="checkbox" id="map-on" ${mapOn() ? 'checked' : ''} ${mapAllowed() ? '' : 'disabled'}><span></span><em>${t('map.on')}</em></label>` +
     (mapAllowed() ? `<button class="btn small ghost" id="map-arrange"><span>${t('map.arrange')}</span></button>` : `<small>${t('map.pro')}</small>`) + `</div><p class="hint">${t('map.note')}</p>`;
-  $('#hero-menu').innerHTML = `<div class="lbl"><span>${t('hero.show')}</span></div><div class="hero-checks">` +
+  $('#hero-menu').innerHTML = mapRow + `<div class="lbl"><span>${t('hero.show')}</span></div><div class="hero-checks">` +
     entries.map(e => `<label class="check"><input type="checkbox" data-hg="${e.k}" ${hide.includes(e.k) || hide.includes(e.group) ? '' : 'checked'}><span></span><em>${esc(e.name)}</em></label>`).join('') + '</div>' +
     `<div class="btn-row"><button class="btn small ghost" id="hero-add"><span>+ ${t('hero.add')}</span></button>` +
-    `<button class="btn small ghost" id="hero-group"><span>+ ${t('group.add')}</span></button></div><p class="hint">${t('hero.hint')}</p>` + mapRow;   // (the map last: next to the button, never off the screen)
+    `<button class="btn small ghost" id="hero-group"><span>+ ${t('group.add')}</span></button></div><p class="hint">${t('hero.hint')}</p>`;
   $$('[data-hg]').forEach(i => i.addEventListener('change', () => {
     const h = new Set(heroHidden()), e = entries.find(x => x.k === i.dataset.hg);
     if (e.group !== e.k && h.has(e.group)) {   // a whole group was hidden (older setting): its tiles one by one now
