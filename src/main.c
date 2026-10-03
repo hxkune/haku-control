@@ -817,6 +817,8 @@ static int status_body(char *out, int cap) {
     n += ext_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"pro\":");
     n += pro_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"mqtt\":");
+    n += mqtt_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"remote\":");
     n += remote_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"update\":");
@@ -899,11 +901,15 @@ void app_set(const char *s, const char *k, const char *v) {
         !_stricmp(s, g_effects[cur_effect].id) && (!_stricmp(k, "palette") || !_stricmp(k, "speed")))) cfg_set("general", "preset", "");
     if (!_strnicmp(s, "dev.", 4)) { cfg_save_if_dirty(); ext_reload(); }
     if (!_stricmp(s, "remote")) { cfg_save_if_dirty(); remote_apply(); }
+    if (!_stricmp(s, "mqtt")) { cfg_save_if_dirty(); mqtt_apply(); }
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
 }
 
 int app_lang(void) { const char *l = cfg_get("general", "lang", "en"); return !_stricmp(l, "ru") ? 1 : !_stricmp(l, "fr") ? 2 : 0; }
 int app_ru(void) { return app_lang() == 1; }
+
+int app_effect_now(void) { return cur_effect; }
+float app_brightness_now(void) { return brightness; }
 
 void app_power(void) {
     int off = effect_index("off");
@@ -1091,12 +1097,14 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         logf_("pro: %s", wp ? "on" : "off (Wi-Fi lights let go of)");
         nano_suspend(sleeping || pro_off); lights_suspend(sleeping || pro_off);
         remote_apply();
+        mqtt_apply();
         ui_refresh_state();
         return 0;
     case WM_BLOCKED:   // this version was stopped by its author: the lights are let go of as on quit
         DestroyWindow(h);
         return 0;
     case WM_REHOTKEY:
+        mqtt_refresh();   // (profiles, language: Home Assistant gets the new names)
         register_hotkeys();
         update_tip();
         return 0;
@@ -1241,6 +1249,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     nano_start();
     ext_start();
     remote_apply();
+    mqtt_apply();
     update_start();
     hotspot_watch_start();
     sensors_init();
@@ -1284,6 +1293,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     nano_stop();
     ext_stop();
     remote_stop();
+    mqtt_stop();
     update_stop();
     hotspot_watch_stop();
     sensors_close();

@@ -28,7 +28,7 @@ if /i "%~1"=="setup" goto setup
 rem haku Pro: with pro\ (the private repository) next to src\ the paid build is made, with the lights on the network,
 rem phone control and the licence; else (or with HAKU_FREE=1) the open one, src\pro_free.c in their place
 set "PRO_SRC=src\pro_free.c" & set "PRO_DEF="
-if not defined HAKU_FREE if exist pro\license.c set "PRO_SRC=pro\license.c pro\dev_nanoleaf.c pro\dev_aidot.c pro\accounts.c pro\remote.c pro\drv_wled.c pro\drv_govee.c pro\drv_goveecloud.c pro\drv_lifx.c pro\drv_yeelight.c pro\drv_hue.c pro\drv_wiz.c pro\drv_tuya.c pro\drv_elgato.c pro\drv_divoom.c" & set "PRO_DEF=/DHAKU_PRO /Isrc"
+if not defined HAKU_FREE if exist pro\license.c set "PRO_SRC=pro\license.c pro\mqtt.c pro\dev_nanoleaf.c pro\dev_aidot.c pro\accounts.c pro\remote.c pro\drv_wled.c pro\drv_govee.c pro\drv_goveecloud.c pro\drv_lifx.c pro\drv_yeelight.c pro\drv_hue.c pro\drv_wiz.c pro\drv_tuya.c pro\drv_elgato.c pro\drv_divoom.c" & set "PRO_DEF=/DHAKU_PRO /Isrc"
 if not exist %OUT% mkdir %OUT%
 if not exist %OBJ% mkdir %OBJ%
 rem icons + version info

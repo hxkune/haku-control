@@ -2722,6 +2722,27 @@ $('#pro-remove').addEventListener('click', () => {
   send({ cmd: 'pro_key', key: '' });
 });
 
+// ---- Home Assistant (MQTT, haku Pro): the broker's address and login in [mqtt], the connection's state from the core
+function updateHa() {
+  const M = S.mqtt, card = $('#ha-card');
+  card.classList.toggle('hidden', !M);   // (the open build has no MQTT)
+  if (!M) return;
+  const locked = !!(S.pro && !S.pro.on);
+  $('#ha-badge').textContent = 'Pro'; $('#ha-badge').classList.toggle('on', !locked);
+  const on = $('#ha-on'); on.checked = cv('mqtt', 'on', '0') === '1'; on.disabled = locked;
+  [['#ha-host', 'host'], ['#ha-port', 'port'], ['#ha-user', 'user'], ['#ha-pass', 'password']].forEach(([id, k]) => {
+    const el = $(id); el.disabled = locked;
+    if (document.activeElement !== el) el.value = cv('mqtt', k, '');
+  });
+  const st = $('#ha-state');
+  st.textContent = locked ? t('ha.pro') : !on.checked ? '' : M.state === 'connected' ? t('ha.connected', M.topic) :
+    M.state === 'connecting' ? t('ha.connecting') : M.state === 'error' ? t('ha.error', M.err) : '';
+  st.className = 'ha-state ' + (M.state === 'connected' && on.checked && !locked ? 'ok' : M.state === 'error' && on.checked ? 'bad' : '');
+}
+$('#ha-on').addEventListener('change', e => { setCfg('mqtt', 'on', e.target.checked ? '1' : '0'); updateHa(); });
+[['#ha-host', 'host'], ['#ha-port', 'port'], ['#ha-user', 'user'], ['#ha-pass', 'password']].forEach(([id, k]) =>
+  $(id).addEventListener('change', e => setCfg('mqtt', k, e.target.value.trim())));
+
 function updateRemote() {
   const R = S.remote || {};
   $('#remote-on').checked = cv('remote', 'enabled', '0') === '1';
@@ -2942,7 +2963,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro();
+  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa();
   if (nanoLayoutChanged) drawAll();
 }
 

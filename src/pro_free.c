@@ -49,6 +49,12 @@ int  accounts_json(char *out, int cap) {
                     "\"tuya\":{\"state\":0,\"msg\":\"\",\"found\":0,\"regions\":[]},\"govee\":{\"state\":0,\"msg\":\"\",\"found\":0,\"saved\":0}}");
 }
 
+// Home Assistant (MQTT)
+void mqtt_apply(void) {}
+void mqtt_refresh(void) {}
+void mqtt_stop(void) {}
+int  mqtt_json(char *out, int cap) { return snprintf(out, cap, "null"); }
+
 // phone control
 void remote_apply(void) {}
 void remote_stop(void) {}

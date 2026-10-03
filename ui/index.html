@@ -399,6 +399,21 @@
           <button class="btn small ghost hidden" id="pro-remove"><span data-i18n="pro.remove">Remove key</span></button>
         </div>
       </div>
+      <div class="card pc-only hidden" id="ha-card">
+        <div class="card-head"><h3>Home Assistant</h3><span class="pro-badge" id="ha-badge"></span></div>
+        <div class="set-row">
+          <div><b data-i18n="ha.on">Connect through MQTT</b><p class="muted" data-i18n="ha.note"></p></div>
+          <label class="switch"><input type="checkbox" id="ha-on"><span></span></label>
+        </div>
+        <div class="ha-fields">
+          <label class="num"><span data-i18n="ha.host">Broker (Home Assistant's address)</span><input type="text" id="ha-host" spellcheck="false" placeholder="homeassistant.local"></label>
+          <label class="num ha-port"><span data-i18n="ha.port">Port</span><input type="text" id="ha-port" inputmode="numeric" maxlength="5" placeholder="1883"></label>
+          <label class="num"><span data-i18n="ha.user">User</span><input type="text" id="ha-user" spellcheck="false" autocomplete="off"></label>
+          <label class="num"><span data-i18n="ha.pass">Password</span><input type="password" id="ha-pass" autocomplete="new-password"></label>
+        </div>
+        <p class="ha-state" id="ha-state"></p>
+        <details class="trouble"><summary data-i18n="ha.how">How to set it up</summary><p class="hint" data-i18n="ha.how.text"></p></details>
+      </div>
       <div class="card pc-only" id="phone-card">
         <h3 data-i18n="phone">Phone</h3>
         <div class="set-row">

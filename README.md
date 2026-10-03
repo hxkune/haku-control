@@ -152,6 +152,14 @@ Download and set up* installs Ollama (its installer from ollama.com, checked for
 Ollama itself out of Windows startup: haku control starts it for a request and closes it half a minute later.
 Any chat model Ollama has works; `[mood] model=` picks one. Works from the phone page too.
 
+### Home Assistant (haku Pro)
+
+*Settings → Home Assistant*: haku connects to the MQTT broker Home Assistant uses (usually its *Mosquitto broker*
+add-on; a Home Assistant user's name and password) and appears by itself through MQTT discovery as a light (on / off,
+brightness, the effects by name, an RGB colour as the Static effect) and a select with the profiles, for automations,
+dashboards and voice. The state goes back to Home Assistant as it changes, in haku or there. Topics: `haku/<pc>/…`.
+`python tools/sim/fake_mqtt.py --script` stands in for a broker with Home Assistant behind it.
+
 ### Screen (ambilight)
 
 The *Screen* effect lights the room with what is on the screen. Strips run around its edges (from the bottom left,
@@ -242,6 +250,7 @@ purposes:
 - **Divoom:** a device scan, and a Divoom device added by its Device ID, ask Divoom's service which Divoom devices are
   on your network (it sees your internet address, as the Divoom app does); a Times Frame's list of dials comes from
   Divoom's cloud. The Times Frame's own screen background is fetched by the frame from this repository.
+- **Home Assistant:** off by default; when on, the light's state (on / off, brightness, effect, colour) and the profile names go to the MQTT broker you entered, on your network, with the user name and password you gave.
 - **Phone control:** off by default; when on, it serves the settings page on your local network only.
 - **Diagnostics:** *Save* under *Settings → Files* writes a text file to your Downloads folder (log, settings without
   keys or passwords, devices, network adapters). It is not sent anywhere; you decide whether to share it.

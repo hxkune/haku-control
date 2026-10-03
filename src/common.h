@@ -252,6 +252,13 @@ void  pro_set_key(const char *key);   // from the window ("" removes the key); c
 void  pro_buy(void);                  // the store's page in the browser
 int   pro_json(char *out, int cap);
 int   pro_kind(const char *kind);     // 1: a device kind that needs Pro (devices.c)
+// Home Assistant through MQTT (pro/mqtt.c; nothing in the open build)
+void  mqtt_apply(void);               // start / connect again after [mqtt] changed
+void  mqtt_refresh(void);             // the profiles or the language changed: announce again
+void  mqtt_stop(void);
+int   mqtt_json(char *out, int cap);
+int   app_effect_now(void);           // the effect showing (index into g_effects)
+float app_brightness_now(void);       // 0..1
 int   app_frame_json(char *out, int cap);    // live LED colours
 void  app_set(const char *section, const char *key, const char *value);
 void  app_power(void);                       // off <-> previous effect
