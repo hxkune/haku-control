@@ -1629,7 +1629,20 @@ function heroItems(all) {
     items.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, zone: 'zone.dev' + dv.id, name: dv.name,
       w: HERO_EXT_W[ty] || Math.min(2.4, .55 + .35 * Math.max(1, dv.leds || 1)), draw: (c, x, y, w, h) => drawExt(c, x, y, w, h, k) });
   });
+  // the order the user chose by dragging ([ui] hero_order); devices not in it keep their places after those that are
+  const ord = cv('ui', 'hero_order', '').split(',').filter(Boolean);
+  if (ord.length) {
+    const at = it => { const i = ord.indexOf(it.key); return i < 0 ? ord.length + items.indexOf(it) : i; };
+    items.sort((a, b) => at(a) - at(b));
+  }
   return items;
+}
+// two devices swap their places in the preview
+function heroMove(key, toKey) {
+  const keys = heroItems(true).map(it => it.key), from = keys.indexOf(key), to = keys.indexOf(toKey);
+  if (from < 0 || to < 0 || from === to) return;
+  [keys[from], keys[to]] = [keys[to], keys[from]];
+  setCfg('ui', 'hero_order', keys.join(','));
 }
 // What the preview shows, in reading order: single devices and groups (a group sits where its first device would).
 function heroEntries() {
@@ -1784,7 +1797,7 @@ function drawHero() {
   hits.forEach(h => heroPowerButton(c, h));
   if (drag && drag.px != null) {   // the device being dragged: its name under the pointer, and what dropping does
     const msg = to && to.group ? t('group.drop.in', groupTitle(groups().find(g => g.n === to.group) || { n: to.group }))
-      : to && to.tile ? t('group.drop.new') : drag.src.group ? t('group.drop.out') : '';
+      : to && to.tile ? t('hero.drop.move') : drag.src.group ? t('group.drop.out') : '';
     c.save();
     c.font = `${11 * d}px ${WIDE}`; c.textAlign = 'left';
     const s = drag.src.name + (msg ? '  ·  ' + msg : ''), tw = c.measureText(s).width, px = Math.min(drag.px + 14 * d, W - tw - 24 * d), py = drag.py + 18 * d;
@@ -1814,7 +1827,7 @@ const heroOnPower = (h, e) => { if (!h || !h.pw) return false; const [px, py] = 
 function heroDropTarget(e) {
   const [px, py] = heroXY(e), src = HERO.drag.src, inside = h => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h;
   const tile = HERO.hits.find(h => h.zone && h.key !== src.key && inside(h));
-  if (tile) return tile.group ? (tile.group === src.group ? null : { group: tile.group, key: 'g' + tile.group }) : { tile, key: tile.key };
+  if (tile) return tile.group && tile.group !== src.group ? { group: tile.group, key: 'g' + tile.group } : { tile, key: tile.key };
   const fr = HERO.hits.find(h => h.k === 'group' && inside(h));
   if (fr) return fr.g === src.group ? null : { group: fr.g, key: fr.key };
   return src.group ? { out: true } : null;
@@ -1824,12 +1837,7 @@ function heroDrop(d) {
   if (!to) return;
   if (to.group) groupAdd(to.group, z);
   else if (to.out) groupRemove(z);
-  else if (to.tile) {
-    const n = groupNew(); if (!n) return;
-    groupRemove(z);
-    setMembers(n, [to.tile.zone, z]);
-    groupDialog(n, true);   // a name for it
-  }
+  else if (to.tile) heroMove(d.src.key, to.tile.key);   // swaps places (a new group: + New group in the menu)
 }
 $('#hero').addEventListener('pointerdown', e => {
   if (e.button !== 0 || e.pointerType === 'touch') return;
