@@ -1114,14 +1114,23 @@ body.calm .vchat { animation: vchat-calm 7s steps(1) forwards; }
 :root[data-theme="kyoka"] .btn.primary, :root[data-theme="kyoka"] .seg button.on { background-size: 220% 100%; animation: ky-sheen 7s ease-in-out infinite; }
 @keyframes ky-sheen { 0%, 100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
 /* the Hōgyoku in the corner, breathing; the name of the zanpakutō runs down the right edge */
+/* the Hōgyoku's light from the corner (in the gradient itself: the faceted look squares every box-shadow) */
 :root[data-theme="kyoka"] .watermark {
-  -webkit-mask: none; mask: none; width: 340px; aspect-ratio: 1; right: -70px; bottom: -70px; border-radius: 50%; opacity: .32; transform: none;
-  background: radial-gradient(circle at 38% 34%, #ffffff 0 4%, #e2d4ff 9%, #a879ff 24%, #5a24c9 46%, #210c45 64%, transparent 71%);
-  box-shadow: 0 0 120px 30px rgba(140, 90, 255, .25);
+  -webkit-mask: none; mask: none; width: 820px; aspect-ratio: 1; right: -410px; bottom: -410px; opacity: .5; transform: none;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .95) 0, rgba(226, 212, 255, .85) 3%, rgba(168, 121, 255, .62) 9%,
+    rgba(130, 80, 245, .4) 18%, rgba(120, 70, 240, .22) 30%, rgba(110, 60, 230, .1) 44%, rgba(110, 60, 230, .03) 58%, transparent 70%);
   animation: ky-orb 5s ease-in-out infinite;
 }
-:root[data-theme="kyoka"] .ambient::after { content: "鏡花水月"; position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
-  writing-mode: vertical-rl; font: 600 64px "Yu Mincho", "MS Mincho", serif; letter-spacing: .4em; color: rgba(180, 140, 255, .07); }
+/* the name of the zanpakutō down the right edge, written with a brush stroke after stroke (app.js, kyWrite): the
+   font gives each sign its shape, a mask of the strokes in their order uncovers it. Rough, grainy edges like ink;
+   one column always (the signs get smaller in a low window). */
+.ky-script { display: none; }
+:root[data-theme="kyoka"] .ky-script { display: flex; flex-direction: column; align-items: center; gap: min(6px, 1vh); position: absolute;
+  right: 12px; top: 50%; transform: translateY(-50%); opacity: .5; filter: drop-shadow(0 0 9px rgba(140, 90, 255, .45)); }
+.ky-script svg { display: block; width: min(76px, 14vh); height: min(76px, 14vh); overflow: visible; }
+.ky-script text { font: 700 88px "Yu Mincho", "YuMincho", "MS Mincho", serif; text-anchor: middle; dominant-baseline: central; }
+.ky-script mask path { fill: none; stroke: #fff; stroke-width: 17; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1; }
 @keyframes ky-orb { 0%, 100% { opacity: .26; filter: saturate(1); } 50% { opacity: .38; filter: saturate(1.3) brightness(1.15); } }
 .ky-fly { position: fixed; left: -17px; top: -14px; width: 34px; height: 28px; z-index: 55; pointer-events: none; perspective: 90px;
   filter: drop-shadow(0 0 6px rgba(180, 140, 255, .85)); }
