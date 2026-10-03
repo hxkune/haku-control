@@ -427,13 +427,6 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 
 /* ---------------- settings */
 .set-grid { columns: 340px 2; column-gap: 20px; }
-/* room map: the bar while arranging, the switch in the preview's menu */
-.map-bar { position: absolute; left: 12px; right: 56px; bottom: 10px; z-index: 3; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 8px 10px; background: rgba(var(--glass), .88); border: 1px solid var(--line2); backdrop-filter: blur(8px); }
-.map-bar > span { flex: 1; min-width: 180px; color: var(--muted); font-size: 12px; }
-.map-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
-.map-row small { color: var(--faint); font-size: 11px; }
-#hero-menu .map-row + .hint { margin: 0 0 12px; }
 /* haku Pro */
 .pro-chip { display: block; width: 100%; margin: 0 0 14px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line2);
   background: transparent; color: var(--muted); font-size: 11.5px; letter-spacing: .02em; text-align: center; }
