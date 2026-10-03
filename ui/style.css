@@ -77,6 +77,8 @@
   --text: #f4f0ff; --muted: #a79bc6; --faint: #5d5378;
   --chrome: linear-gradient(115deg, #ffffff 0%, #d9ccff 38%, #9c74ff 52%, #e9e2ff 68%, #ffffff 100%);
   --display: "Yu Mincho", "YuMincho", "MS Mincho", "Segoe UI", serif;
+  --ky-wing-l: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 32'><g fill='%23080510' stroke='%23b48cff' stroke-width='.8'><path d='M20 16 C14 2 2 0 3 9 C4 15 12 16 20 16Z'/><path d='M20 17 C14 19 7 26 11 30 C15 31 18 24 20 17Z'/></g></svg>");
+  --ky-wing-r: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='20 0 20 32'><g fill='%23080510' stroke='%23b48cff' stroke-width='.8'><path d='M20 16 C26 2 38 0 37 9 C36 15 28 16 20 16Z'/><path d='M20 17 C26 19 33 26 29 30 C25 31 22 24 20 17Z'/></g></svg>");
   --ky-fly: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 32'><g fill='%23080510' stroke='%23b48cff' stroke-width='.8'><path d='M20 16 C14 2 2 0 3 9 C4 15 12 16 20 16Z'/><path d='M20 16 C26 2 38 0 37 9 C36 15 28 16 20 16Z'/><path d='M20 17 C14 19 7 26 11 30 C15 31 18 24 20 17Z'/><path d='M20 17 C26 19 33 26 29 30 C25 31 22 24 20 17Z'/></g><path d='M20 9 L20 25' stroke='%23d9c8ff' stroke-width='1.6' stroke-linecap='round'/></svg>");
 }
 
@@ -1121,9 +1123,14 @@ body.calm .vchat { animation: vchat-calm 7s steps(1) forwards; }
 :root[data-theme="kyoka"] .ambient::after { content: "鏡花水月"; position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
   writing-mode: vertical-rl; font: 600 64px "Yu Mincho", "MS Mincho", serif; letter-spacing: .4em; color: rgba(180, 140, 255, .07); }
 @keyframes ky-orb { 0%, 100% { opacity: .26; filter: saturate(1); } 50% { opacity: .38; filter: saturate(1.3) brightness(1.15); } }
-.ky-fly { position: fixed; left: 0; top: 0; width: 34px; height: 27px; z-index: 55; pointer-events: none;
-  background: var(--ky-fly) center / contain no-repeat; filter: drop-shadow(0 0 6px rgba(180, 140, 255, .8)); animation: ky-flap .32s ease-in-out infinite alternate; }
-@keyframes ky-flap { from { scale: 1 1; } to { scale: .35 1; } }
+.ky-fly { position: fixed; left: -17px; top: -14px; width: 34px; height: 28px; z-index: 55; pointer-events: none; perspective: 90px;
+  filter: drop-shadow(0 0 6px rgba(180, 140, 255, .85)); }
+.ky-fly b { position: absolute; top: 0; width: 50%; height: 100%; background: center / contain no-repeat; }
+.ky-fly b.l { left: 0; transform-origin: 100% 50%; background-image: var(--ky-wing-l); animation: ky-wing-l var(--beat, .22s) ease-in-out infinite alternate; }
+.ky-fly b.r { right: 0; transform-origin: 0 50%; background-image: var(--ky-wing-r); animation: ky-wing-r var(--beat, .22s) ease-in-out infinite alternate; }
+.ky-fly::after { content: ""; position: absolute; left: calc(50% - 1px); top: 26%; width: 2px; height: 52%; border-radius: 2px; background: #d9c8ff; }
+@keyframes ky-wing-l { from { transform: rotateY(8deg); } to { transform: rotateY(72deg); } }
+@keyframes ky-wing-r { from { transform: rotateY(-8deg); } to { transform: rotateY(-72deg); } }
 
 /* entering its code (app.js drives it): pressure, a cut, cracks, then the illusion shatters */
 .kyoka-ov { position: fixed; inset: 0; z-index: 98; pointer-events: all; cursor: none; overflow: hidden; }

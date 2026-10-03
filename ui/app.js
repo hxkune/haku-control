@@ -296,20 +296,29 @@ function kyokaArrives() {
   }, 1900);
   setTimeout(() => { ov.remove(); kyokaBusy = false; hellButterflies(4); }, 3900);
 }
-// hell butterflies (jigokuchō): black, with a violet glow, crossing the window on a wavering path
+// hell butterflies (jigokuchō): black, with a violet glow, crossing the window on a wavering path, head first,
+// each wing beating on its own
 function hellButterflies(n) {
   for (let k = 0; k < n; k++) {
     const f = document.createElement('i');
     f.className = 'ky-fly';
+    f.innerHTML = '<b class="l"></b><b class="r"></b>';
+    f.style.setProperty('--beat', (.18 + Math.random() * .1).toFixed(2) + 's');
     document.body.appendChild(f);
-    const W = innerWidth, H = innerHeight, left = Math.random() < .5, y0 = H * (.35 + Math.random() * .6);
-    const pts = [];
-    for (let s = 0; s <= 6; s++) {
-      const x = left ? -60 + (W + 120) * s / 6 : W + 60 - (W + 120) * s / 6;
-      pts.push({ transform: `translate(${x.toFixed(0)}px, ${(y0 - H * .55 * s / 6 + (Math.random() - .5) * 120).toFixed(0)}px) rotate(${left ? 20 : -20}deg) scaleX(${left ? 1 : -1})` });
+    const W = innerWidth, H = innerHeight, fromLeft = Math.random() < .5;
+    const x0 = fromLeft ? -50 : W + 50, x1 = fromLeft ? W + 50 : -50;
+    const y0 = H * (.45 + Math.random() * .5), y1 = H * (.05 + Math.random() * .45);
+    const amp = 30 + Math.random() * 50, waves = 2 + Math.random() * 2, ph = Math.random() * 6.3;
+    const at = t => [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t + Math.sin(t * waves * 6.283 + ph) * amp];
+    const frames = [];
+    for (let s = 0; s <= 48; s++) {
+      const t = s / 48, [x, y] = at(t), [nx, ny] = at(Math.min(1, t + .01)), [px, py] = at(Math.max(0, t - .01));
+      const head = Math.atan2(ny - py, nx - px) * 180 / Math.PI + 90;   // the drawing faces up
+      frames.push({ transform: `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px) rotate(${head.toFixed(0)}deg)` });
     }
-    f.animate(pts, { duration: 9000 + Math.random() * 5000, delay: k * 700 + Math.random() * 600, easing: 'ease-in-out', fill: 'both' })
-      .finished.then(() => f.remove());
+    const dur = 10000 + Math.random() * 5000, delay = k * 800 + Math.random() * 600;
+    f.animate(frames, { duration: dur, delay, easing: 'linear', fill: 'both' });
+    setTimeout(() => f.remove(), dur + delay + 300);
   }
 }
 (function butterflyTimer() {
