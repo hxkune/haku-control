@@ -1629,7 +1629,20 @@ function heroItems(all) {
     items.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, zone: 'zone.dev' + dv.id, name: dv.name,
       w: HERO_EXT_W[ty] || Math.min(2.4, .55 + .35 * Math.max(1, dv.leds || 1)), draw: (c, x, y, w, h) => drawExt(c, x, y, w, h, k) });
   });
+  // the order the user chose by dragging ([ui] hero_order); devices not in it keep their places after those that are
+  const ord = cv('ui', 'hero_order', '').split(',').filter(Boolean);
+  if (ord.length) {
+    const at = it => { const i = ord.indexOf(it.key); return i < 0 ? ord.length + items.indexOf(it) : i; };
+    items.sort((a, b) => at(a) - at(b));
+  }
   return items;
+}
+// two devices swap their places in the preview
+function heroMove(key, toKey) {
+  const keys = heroItems(true).map(it => it.key), from = keys.indexOf(key), to = keys.indexOf(toKey);
+  if (from < 0 || to < 0 || from === to) return;
+  [keys[from], keys[to]] = [keys[to], keys[from]];
+  setCfg('ui', 'hero_order', keys.join(','));
 }
 // What the preview shows, in reading order: single devices and groups (a group sits where its first device would).
 function heroEntries() {
@@ -1642,67 +1655,6 @@ function heroEntries() {
   }
   return out;
 }
-// ---- room map ([map] on=1, haku Pro): the preview becomes the room. Every device has a box on it, [map] <key> =
-// "x,y,w,h,turn" (0..1 of the map, y down, quarter turns clockwise), the same keys the core reads (main.c, room_map):
-// ram, gpu, nano<slot>, bulb<i>, dev<id>. Arranging (HERO.arrange): drag a device to move it, its corner to size it,
-// ↻ to turn it; the arrow in the middle is the way the chain effects run ([map] flow, degrees), a click turns it.
-const mapAllowed = () => !S.pro || !!S.pro.on;
-const mapOn = () => cv('map', 'on', '0') === '1' && mapAllowed();
-const mapKey = it => it.k === 'ext' ? 'dev' + it.id : it.key;
-const MAP_PAD = 14;
-const mapHeight = W => Math.round(Math.max(260, Math.min(620, W * .5)));
-function mapBox(it, def) {
-  const v = (HERO.mapEdit && HERO.mapEdit[mapKey(it)]) || cv('map', mapKey(it), '');
-  const a = String(v).split(',').map(Number);
-  return a.length >= 4 && a.slice(0, 4).every(n => isFinite(n)) && a[2] > 0 && a[3] > 0 ? { x: a[0], y: a[1], w: a[2], h: a[3], turn: (a[4] | 0) & 3 } : def;
-}
-const mapStr = b => [b.x, b.y, b.w, b.h].map(n => (+n).toFixed(3)).join(',') + ',' + (b.turn | 0);
-// tiles on the map: saved boxes, or (not placed yet) where the tile preview would put them, squeezed onto the map
-function mapLayout(W) {
-  const H = mapHeight(W), iw = W - MAP_PAD * 2, ih = H - MAP_PAD * 2;
-  // (laid out as the tile preview would be in a window wide enough to have the map's proportions, then scaled down)
-  let Wv = W, auto = heroLayout(Wv);
-  for (let n = 0; n < 14 && auto.height - MAP_PAD * 2 > (Wv - MAP_PAD * 2) * ih / iw; n++) auto = heroLayout(Wv *= 1.15);
-  const vw = Wv - MAP_PAD * 2, vh = vw * ih / iw;
-  const tiles = auto.tiles.map(T => {
-    const def = { x: (T.x - MAP_PAD) / vw, y: (T.y - MAP_PAD) / vh, w: T.w / vw, h: T.h / vh, turn: 0 };
-    const b = mapBox(T.it, def);
-    return { it: T.it, x: MAP_PAD + b.x * iw, y: MAP_PAD + b.y * ih, w: b.w * iw, h: b.h * ih, turn: b.turn, box: b, placed: b !== def };
-  });
-  return { tiles, frames: [], height: H, map: true };
-}
-// boxes not saved yet are saved as they are shown, so the core lights the room the way the map shows it
-function mapSaveMissing(tiles) {
-  const miss = tiles.filter(T => !T.placed);
-  if (!miss.length || HERO.mapSaving) return;
-  HERO.mapSaving = true;
-  miss.forEach(T => setCfg('map', mapKey(T.it), mapStr(T.box)));
-  setTimeout(() => { HERO.mapSaving = false; }, 400);
-}
-// the room behind the devices: a floor line and a faint grid; while arranging, the flow arrow in the middle
-function drawMapRoom(c, W, H, d) {   // H: the map's own height (the canvas may be taller, with the bar under it)
-  c.save();
-  c.strokeStyle = inkA(HERO.arrange ? .07 : .035); c.lineWidth = d;
-  const step = 40 * d;
-  for (let x = MAP_PAD * d; x < W - MAP_PAD * d; x += step) { c.beginPath(); c.moveTo(x, MAP_PAD * d); c.lineTo(x, H - MAP_PAD * d); c.stroke(); }
-  for (let y = MAP_PAD * d; y < H - MAP_PAD * d; y += step) { c.beginPath(); c.moveTo(MAP_PAD * d, y); c.lineTo(W - MAP_PAD * d, y); c.stroke(); }
-  c.strokeStyle = inkA(.18); c.beginPath(); c.moveTo(MAP_PAD * d, H - MAP_PAD * d); c.lineTo(W - MAP_PAD * d, H - MAP_PAD * d); c.stroke();
-  c.restore();
-}
-function drawMapArrow(c, W, H, d) {
-  const a = (+cv('map', 'flow', '0') || 0) * Math.PI / 180, cx = W / 2, cy = H / 2, L = Math.min(W, H) * .16;
-  c.save(); c.translate(cx, cy); c.rotate(a);
-  c.strokeStyle = HERO.hover === 'map:flow' ? THEME.hi : inkA(.45); c.fillStyle = c.strokeStyle; c.lineWidth = 3 * d; c.lineCap = 'round';
-  c.setLineDash([8 * d, 7 * d]); c.beginPath(); c.moveTo(-L, 0); c.lineTo(L - 12 * d, 0); c.stroke(); c.setLineDash([]);
-  c.beginPath(); c.moveTo(L, 0); c.lineTo(L - 16 * d, -10 * d); c.lineTo(L - 16 * d, 10 * d); c.closePath(); c.fill();
-  c.restore();
-  c.font = `${9 * d}px ${WIDE}`; c.letterSpacing = `${2 * d}px`; c.textAlign = 'center'; c.fillStyle = THEME.mid;
-  c.fillText(t('map.flow').toUpperCase(), cx, cy + L * .55 + 22 * d); c.letterSpacing = '0px';
-  return { key: 'map:flow', k: 'map-flow', x: cx - L, y: cy - L * .5, w: L * 2, h: L };
-}
-// arranging: the handles of a tile (canvas pixels)
-const mapHandles = (x, y, w, h, d) => ({ size: { x: x + w - 14 * d, y: y + h - 14 * d, w: 14 * d, h: 14 * d }, turn: { x: x + w - 26 * d, y: y + 4 * d, w: 22 * d, h: 22 * d } });
-const inRect = (px, py, r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 // Tile rectangles in CSS pixels for a preview W wide; returns { tiles: [{ it, x, y, w, h, group }], frames: [{ g, x,
 // y, w, h }], height }. A group is a frame with a header around its devices: as wide as they are, or the full width
 // with its devices in rows of their own when they do not fit in one. A row is as tall as its tallest entry.
@@ -1758,10 +1710,7 @@ function heroLayout(W) {
   return { tiles, frames, height: rows.length ? y : (phone ? 150 : 180) };
 }
 function heroHeight() {
-  const el = $('#tab-effects .hero'), cw = $('#hero').clientWidth || el.clientWidth, bar = $('#map-bar');
-  if (!mapOn()) HERO.arrange = false;
-  bar.classList.toggle('hidden', !HERO.arrange);   // (arranging: the map's bar goes under the map)
-  const h = Math.round(mapOn() ? mapHeight(cw) + (HERO.arrange ? bar.offsetHeight + 14 : 0) : heroLayout(cw).height);
+  const el = $('#tab-effects .hero'), h = Math.round(heroLayout($('#hero').clientWidth || el.clientWidth).height);
   if (+el.dataset.h !== h) { el.dataset.h = h; el.style.height = h + 'px'; }
 }
 // a tile's outline: faceted like the cards (top-left and bottom-right corners cut)
@@ -1788,8 +1737,7 @@ function drawHero() {
   heroHeight();
   const c = cvs.getContext('2d'), W = cvs.width, H = cvs.height, d = devicePixelRatio;
   c.clearRect(0, 0, W, H);
-  const onMap = mapOn(), { tiles, frames } = onMap ? mapLayout(W / d) : heroLayout(W / d), calm = document.body.classList.contains('calm'), hits = [], ghits = [];
-  if (onMap) { drawMapRoom(c, W, mapHeight(W / d) * d, d); mapSaveMissing(tiles); }
+  const { tiles, frames } = heroLayout(W / d), calm = document.body.classList.contains('calm'), hits = [], ghits = [];
   HERO.pos = HERO.pos || {};
   const seen = new Set(), drag = HERO.drag, to = drag && drag.to;
   const glide = (key, T) => {   // eased position of a tile or frame (a new one starts in place)
@@ -1827,24 +1775,6 @@ function drawHero() {
     c.save();
     c.globalAlpha = drag && drag.src.key === it.key ? v * .35 : v;
     const sc = .92 + .08 * v; c.translate(x + w / 2, y + h / 2); c.scale(sc, sc); c.translate(-x - w / 2, -y - h / 2);
-    if (onMap) {   // on the map: the device itself, turned as it hangs; a frame and handles only while arranging
-      if (HERO.arrange) {
-        tilePath(c, x, y, w, h, 6 * d); c.fillStyle = inkA(hot ? .05 : .02); c.fill();
-        c.strokeStyle = inkA(hot ? .5 : .22); c.lineWidth = d; c.setLineDash([5 * d, 4 * d]); c.stroke(); c.setLineDash([]);
-      }
-      const tn = T.turn || 0, odd = tn & 1, lab = Math.min(16 * d, h * .2), dw = odd ? h - lab : w, dh = odd ? w : h - lab;
-      c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
-      c.translate(x + w / 2, y + (h - lab) / 2); c.rotate(tn * Math.PI / 2);
-      try { it.draw(c, -dw / 2 + 4 * d, -dh / 2 + 4 * d, dw - 8 * d, dh - 8 * d); } catch (e) { console.warn('map', it.key, e); }
-      c.restore();
-      tileLabel(c, it.name, x, y + h - 4 * d, w, hot || HERO.arrange);
-      if (HERO.arrange) {
-        const hd = mapHandles(x, y, w, h, d);
-        c.fillStyle = inkA(.55); c.fillRect(hd.size.x + 4 * d, hd.size.y + 4 * d, 8 * d, 8 * d);
-        c.font = `${14 * d}px ${WIDE}`; c.textAlign = 'center'; c.fillStyle = HERO.hover === it.key + ':turn' ? THEME.hi : THEME.mid;
-        c.fillText('↻', hd.turn.x + hd.turn.w / 2, hd.turn.y + 16 * d);
-      }
-    } else {
     tilePath(c, x, y, w, h, 8 * d);
     c.fillStyle = hot ? inkA(.04) : inkA(.015); c.fill();
     c.strokeStyle = to && to.key === it.key ? inkA(.6) : hot ? inkA(.28) : inkA(.06); c.lineWidth = d;
@@ -1853,11 +1783,9 @@ function drawHero() {
     try { it.draw(c, x + 8 * d, y + 22 * d, w - 16 * d, h - 50 * d); } catch (e) { console.warn('preview', it.key, e); }
     c.restore();
     tileLabel(c, it.name, x + 8 * d, y + h - 12 * d, w - 16 * d, hot);
-    }
     c.restore();
     hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, zone: it.zone, name: it.name, group: T.group || 0, x, y, w, h });
   }
-  if (onMap && HERO.arrange) hits.unshift(drawMapArrow(c, W, mapHeight(W / d) * d, d));
   hits.push(...ghits);   // a device in a group is found before its group
   for (const k of Object.keys(HERO.pos)) if (!seen.has(k)) { delete HERO.pos[k]; delete HERO.anim['a:' + k]; }
   if (!tiles.length && S.effects.length) {   // nothing to show yet: the whole preview invites to add a device
@@ -1866,10 +1794,10 @@ function drawHero() {
     hits.push({ key: 'add', k: 'add', x: W * .3, y: H * .3, w: W * .4, h: H * .4 });
   }
   HERO.hits = hits;   // (before the power buttons: a group's button asks its devices)
-  if (!HERO.arrange) hits.forEach(h => heroPowerButton(c, h));
+  hits.forEach(h => heroPowerButton(c, h));
   if (drag && drag.px != null) {   // the device being dragged: its name under the pointer, and what dropping does
     const msg = to && to.group ? t('group.drop.in', groupTitle(groups().find(g => g.n === to.group) || { n: to.group }))
-      : to && to.tile ? t('group.drop.new') : drag.src.group ? t('group.drop.out') : '';
+      : to && to.tile ? t('hero.drop.move') : drag.src.group ? t('group.drop.out') : '';
     c.save();
     c.font = `${11 * d}px ${WIDE}`; c.textAlign = 'left';
     const s = drag.src.name + (msg ? '  ·  ' + msg : ''), tw = c.measureText(s).width, px = Math.min(drag.px + 14 * d, W - tw - 24 * d), py = drag.py + 18 * d;
@@ -1899,7 +1827,7 @@ const heroOnPower = (h, e) => { if (!h || !h.pw) return false; const [px, py] = 
 function heroDropTarget(e) {
   const [px, py] = heroXY(e), src = HERO.drag.src, inside = h => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h;
   const tile = HERO.hits.find(h => h.zone && h.key !== src.key && inside(h));
-  if (tile) return tile.group ? (tile.group === src.group ? null : { group: tile.group, key: 'g' + tile.group }) : { tile, key: tile.key };
+  if (tile) return tile.group && tile.group !== src.group ? { group: tile.group, key: 'g' + tile.group } : { tile, key: tile.key };
   const fr = HERO.hits.find(h => h.k === 'group' && inside(h));
   if (fr) return fr.g === src.group ? null : { group: fr.g, key: fr.key };
   return src.group ? { out: true } : null;
@@ -1909,66 +1837,16 @@ function heroDrop(d) {
   if (!to) return;
   if (to.group) groupAdd(to.group, z);
   else if (to.out) groupRemove(z);
-  else if (to.tile) {
-    const n = groupNew(); if (!n) return;
-    groupRemove(z);
-    setMembers(n, [to.tile.zone, z]);
-    groupDialog(n, true);   // a name for it
-  }
-}
-// arranging the room: move / size / turn a device, turn the flow arrow
-function mapPointer(e, phase) {
-  const [px, py] = heroXY(e), d = devicePixelRatio, cvs = $('#hero');
-  const W = cvs.width / d, H = mapHeight(W), iw = (W - MAP_PAD * 2) * d, ih = (H - MAP_PAD * 2) * d;
-  const M = HERO.mapDrag;
-  if (phase === 'down') {
-    const flow = HERO.hits.find(h => h.k === 'map-flow' && inRect(px, py, h));
-    if (flow) { setCfg('map', 'flow', String(((+cv('map', 'flow', '0') || 0) + 45) % 360)); drawHero(); return true; }
-    const h = HERO.hits.find(x => x.zone && inRect(px, py, x));
-    if (!h) return true;
-    const it = heroItems().find(i => i.key === h.key); if (!it) return true;
-    const T = mapLayout(W).tiles.find(x => x.it.key === h.key); if (!T) return true;
-    const hd = mapHandles(h.x, h.y, h.w, h.h, d);
-    if (inRect(px, py, hd.turn)) { const b = { ...T.box, turn: ((T.box.turn | 0) + 1) & 3 }; [b.w, b.h] = [Math.min(1, b.h * ih / iw), Math.min(1, b.w * iw / ih)]; b.x = Math.max(0, Math.min(1 - b.w, b.x)); b.y = Math.max(0, Math.min(1 - b.h, b.y)); setCfg('map', mapKey(it), mapStr(b)); drawHero(); return true; }
-    HERO.mapDrag = { key: mapKey(it), mode: inRect(px, py, hd.size) ? 'size' : 'move', b0: { ...T.box }, px, py, id: e.pointerId };
-    HERO.mapEdit = { [mapKey(it)]: mapStr(T.box) };
-    try { cvs.setPointerCapture(e.pointerId); } catch (x) { }
-    return true;
-  }
-  if (phase === 'move') {
-    if (!M) {   // the cursor tells what a press would do
-      const h = HERO.hits.find(x => (x.zone || x.k === 'map-flow') && inRect(px, py, x));
-      let cur = h ? 'grab' : '', hov = h ? h.key : '';
-      if (h && h.zone) { const hd = mapHandles(h.x, h.y, h.w, h.h, d); if (inRect(px, py, hd.size)) cur = 'nwse-resize'; else if (inRect(px, py, hd.turn)) { cur = 'pointer'; hov = h.key + ':turn'; } }
-      if (h && h.k === 'map-flow') cur = 'pointer';
-      cvs.style.cursor = cur;
-      if (hov !== HERO.hover) { HERO.hover = hov; drawHero(); }
-      return true;
-    }
-    const dx = (px - M.px) / iw, dy = (py - M.py) / ih, b = { ...M.b0 }, snap = v => Math.round(v * 200) / 200;
-    if (M.mode === 'move') { b.x = snap(Math.max(0, Math.min(1 - b.w, b.x + dx))); b.y = snap(Math.max(0, Math.min(1 - b.h, b.y + dy))); }
-    else { b.w = snap(Math.max(.04, Math.min(1 - b.x, b.w + dx))); b.h = snap(Math.max(.06, Math.min(1 - b.y, b.h + dy))); }
-    HERO.mapEdit = { [M.key]: mapStr(b) };
-    cvs.style.cursor = M.mode === 'move' ? 'grabbing' : 'nwse-resize';
-    drawHero();
-    return true;
-  }
-  if (phase === 'up') {
-    if (M) { if (HERO.mapEdit && HERO.mapEdit[M.key] !== mapStr(M.b0)) setCfg('map', M.key, HERO.mapEdit[M.key]); HERO.mapDrag = null; HERO.mapEdit = null; drawHero(); }
-    return true;
-  }
-  return false;
+  else if (to.tile) heroMove(d.src.key, to.tile.key);   // swaps places (a new group: + New group in the menu)
 }
 $('#hero').addEventListener('pointerdown', e => {
-  if (HERO.arrange && e.button === 0) { mapPointer(e, 'down'); return; }
   if (e.button !== 0 || e.pointerType === 'touch') return;
   const h = heroHit(e);
   HERO.press = h && h.zone && !heroOnPower(h, e) ? { h, x: e.clientX, y: e.clientY, id: e.pointerId } : null;
 });
 $('#hero').addEventListener('pointermove', e => {
-  if (HERO.arrange) { mapPointer(e, 'move'); return; }
   const P = HERO.press;
-  if (P && !HERO.drag && e.buttons === 1 && !mapOn() && Math.hypot(e.clientX - P.x, e.clientY - P.y) > 6) {   // (groups: not on the map)
+  if (P && !HERO.drag && e.buttons === 1 && Math.hypot(e.clientX - P.x, e.clientY - P.y) > 6) {
     HERO.drag = { src: P.h };
     try { $('#hero').setPointerCapture(P.id); } catch (x) { }
   }
@@ -1993,11 +1871,11 @@ const heroDragEnd = drop => {
   if (drop) heroDrop(d);
   drawHero();
 };
-$('#hero').addEventListener('pointerup', e => { if (HERO.arrange) { mapPointer(e, 'up'); return; } heroDragEnd(true); });
+$('#hero').addEventListener('pointerup', () => heroDragEnd(true));
 $('#hero').addEventListener('pointercancel', () => heroDragEnd(false));
 $('#hero').addEventListener('pointerleave', () => { if (HERO.hover && !HERO.drag) { HERO.hover = HERO.hoverPw = ''; drawHero(); } });
 $('#hero').addEventListener('click', e => {
-  if (HERO.noClick || HERO.arrange) return;
+  if (HERO.noClick) return;
   const h = heroHit(e);
   if (!h) return;
   if (heroOnPower(h, e)) { togglePower(h); drawHero(); }
@@ -2121,9 +1999,7 @@ function heroMenuEntries() {
 }
 function buildHeroMenu() {
   const hide = heroHidden(), entries = heroMenuEntries();
-  const mapRow = `<div class="map-row"><label class="check"><input type="checkbox" id="map-on" ${mapOn() ? 'checked' : ''} ${mapAllowed() ? '' : 'disabled'}><span></span><em>${t('map.on')}</em></label>` +
-    (mapAllowed() ? `<button class="btn small ghost" id="map-arrange"><span>${t('map.arrange')}</span></button>` : `<small>${t('map.pro')}</small>`) + `</div><p class="hint">${t('map.note')}</p>`;
-  $('#hero-menu').innerHTML = mapRow + `<div class="lbl"><span>${t('hero.show')}</span></div><div class="hero-checks">` +
+  $('#hero-menu').innerHTML = `<div class="lbl"><span>${t('hero.show')}</span></div><div class="hero-checks">` +
     entries.map(e => `<label class="check"><input type="checkbox" data-hg="${e.k}" ${hide.includes(e.k) || hide.includes(e.group) ? '' : 'checked'}><span></span><em>${esc(e.name)}</em></label>`).join('') + '</div>' +
     `<div class="btn-row"><button class="btn small ghost" id="hero-add"><span>+ ${t('hero.add')}</span></button>` +
     `<button class="btn small ghost" id="hero-group"><span>+ ${t('group.add')}</span></button></div><p class="hint">${t('hero.hint')}</p>`;
@@ -2138,10 +2014,6 @@ function buildHeroMenu() {
     drawHero();
   }));
   $('#hero-add').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); showTab('devices'); send({ cmd: 'scan' }); });
-  const mo = $('#map-on');
-  if (mo) mo.addEventListener('change', () => { setCfg('map', 'on', mo.checked ? '1' : '0'); if (!mo.checked) HERO.arrange = false; drawHero(); buildHeroMenu(); });
-  const ma = $('#map-arrange');
-  if (ma) ma.addEventListener('click', () => { if (!mapOn()) setCfg('map', 'on', '1'); HERO.arrange = true; $('#hero-menu').classList.add('hidden'); drawHero(); });
   $('#hero-group').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); const n = groupNew(); if (n) groupDialog(n, true); });
 }
 
@@ -2195,14 +2067,6 @@ $('#gdlg-del').addEventListener('click', () => {
 });
 $('#gdlg').addEventListener('pointerdown', e => { if (e.target.id === 'gdlg') closeGroupDialog(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#gdlg').classList.contains('hidden') && pk.classList.contains('hidden')) $('#gdlg-cancel').click(); });
-$('#map-done').addEventListener('click', () => { HERO.arrange = false; $('#hero').style.cursor = ''; drawHero(); });
-$('#map-reset').addEventListener('click', () => {
-  const b = $('#map-reset');
-  if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.querySelector('span').textContent = t('preset.delete.sure'); return; }
-  b.classList.remove('confirm'); b.querySelector('span').textContent = t('map.reset');
-  heroItems().forEach(it => setCfg('map', mapKey(it), ''));
-  drawHero();
-});
 $('#hero-edit').addEventListener('click', e => {
   e.stopPropagation();
   const m = $('#hero-menu');
