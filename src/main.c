@@ -177,6 +177,58 @@ void logf_(const char *fmt, ...) {
 // [layout] switch of Nanoleaf controller k: nanoleaf_enabled, nanoleaf2_enabled...
 static void nano_key(int k, char *out, int cap) { if (k) snprintf(out, cap, "nanoleaf%d_enabled", k + 1); else snprintf(out, cap, "nanoleaf_enabled"); }
 
+// ---- room map ([map] on=1, haku Pro): every device drawn on the map of the room has a box there, "x,y,w,h,turn"
+// (0..1 of the map, y down, quarter turns clockwise) under its key: ram, gpu (the strip and the board LED), bulb<i>,
+// nano<slot>, dev<id>. Its LEDs keep their places inside the device (from the automatic layout) and move into that
+// box, so effects run across the room as it is. [map] flow (degrees, 0 = to the right, 90 = down) is the way the
+// chain effects run (path) instead of the order of the devices.
+static void map_key(const led_t *l, char *out, int cap) {
+    switch (l->dev) {
+    case DEV_RAM0: case DEV_RAM1: snprintf(out, cap, "ram"); break;
+    case DEV_GPU: case DEV_BOARD: snprintf(out, cap, "gpu"); break;
+    case DEV_LIGHT: snprintf(out, cap, "bulb%d", l->index); break;
+    case DEV_NANO: snprintf(out, cap, "nano%d", l->zone - ZONE_NANO0 + 1); break;
+    case DEV_EXT: snprintf(out, cap, "dev%d", ext_slot_id(l->zone - ZONE_EXT0)); break;
+    default: out[0] = 0;
+    }
+}
+
+static void room_map(scene_t *s) {
+    typedef struct { char key[16]; float x0, y0, x1, y1, bx, by, bw, bh; int turn, have; } box_t;
+    static box_t B[64]; static short of[MAX_LEDS];
+    int nb = 0;
+    for (int i = 0; i < s->count; i++) {
+        led_t *l = &s->leds[i]; char k[16]; map_key(l, k, sizeof(k));
+        int b = -1;
+        for (int j = 0; j < nb && b < 0; j++) if (!strcmp(B[j].key, k)) b = j;
+        if (b < 0 && nb < 64) { b = nb++; memset(&B[b], 0, sizeof(B[b])); strcpy_s(B[b].key, sizeof(B[b].key), k); B[b].x0 = B[b].y0 = 1e9f; B[b].x1 = B[b].y1 = -1e9f; }
+        of[i] = (short)b;
+        if (b < 0) continue;
+        if (l->x < B[b].x0) B[b].x0 = l->x; if (l->x > B[b].x1) B[b].x1 = l->x;
+        if (l->y < B[b].y0) B[b].y0 = l->y; if (l->y > B[b].y1) B[b].y1 = l->y;
+    }
+    for (int j = 0; j < nb; j++) {
+        const char *v = B[j].key[0] ? cfg_get("map", B[j].key, NULL) : NULL;
+        B[j].have = v && sscanf_s(v, "%f,%f,%f,%f,%d", &B[j].bx, &B[j].by, &B[j].bw, &B[j].bh, &B[j].turn) >= 4 && B[j].bw > 0 && B[j].bh > 0;
+    }
+    for (int i = 0; i < s->count; i++) {
+        if (of[i] < 0 || !B[of[i]].have) continue;
+        led_t *l = &s->leds[i]; const box_t *b = &B[of[i]];
+        float u = b->x1 - b->x0 > 1e-4f ? (l->x - b->x0) / (b->x1 - b->x0) : .5f;
+        float v = b->y1 - b->y0 > 1e-4f ? (l->y - b->y0) / (b->y1 - b->y0) : .5f, t;
+        switch (((b->turn % 4) + 4) % 4) {   // a quarter turn clockwise: the left edge goes to the top
+        case 1: t = u; u = 1 - v; v = t; break;
+        case 2: u = 1 - u; v = 1 - v; break;
+        case 3: t = u; u = v; v = 1 - t; break;
+        }
+        l->x = b->bx + u * b->bw; l->y = b->by + v * b->bh;
+    }
+    // the chain effects run along the flow direction across the room
+    float a = cfg_getf("map", "flow", 0) * 3.14159265f / 180, ca = cosf(a), sa = sinf(a), lo = 1e9f, hi = -1e9f;
+    for (int i = 0; i < s->count; i++) { float q = s->leds[i].x * ca + s->leds[i].y * sa; if (q < lo) lo = q; if (q > hi) hi = q; }
+    for (int i = 0; i < s->count && hi - lo > 1e-4f; i++) s->leds[i].path = (s->leds[i].x * ca + s->leds[i].y * sa - lo) / (hi - lo);
+}
+
 // ---- scene layout: RAM0 bottom->top, RAM1 bottom->top, then GPU left->right
 static void build_scene(void) {
     gpu_leds  = cfg_geti("layout", "gpu_leds", 8);
@@ -271,6 +323,7 @@ static void build_scene(void) {
         led_t *l = &s.leds[s.count++];
         l->dev = DEV_BOARD; l->index = 0; l->zone = ZONE_GPU; l->x = 0.2f; l->y = 0.5f; l->fill = 0.5f; l->path = 0.5f; l->zpath = 0.5f;
     }
+    if (cfg_geti("map", "on", 0) && pro_active()) room_map(&s);
     EnterCriticalSection(&cs); scene = s; LeaveCriticalSection(&cs);
 }
 
@@ -899,7 +952,7 @@ void app_set(const char *s, const char *k, const char *v) {
         !_stricmp(s, g_effects[cur_effect].id) && (!_stricmp(k, "palette") || !_stricmp(k, "speed")))) cfg_set("general", "preset", "");
     if (!_strnicmp(s, "dev.", 4)) { cfg_save_if_dirty(); ext_reload(); }
     if (!_stricmp(s, "remote")) { cfg_save_if_dirty(); remote_apply(); }
-    app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
+    app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration") || !_stricmp(s, "map"));
 }
 
 int app_lang(void) { const char *l = cfg_get("general", "lang", "en"); return !_stricmp(l, "ru") ? 1 : !_stricmp(l, "fr") ? 2 : 0; }
@@ -1091,6 +1144,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         logf_("pro: %s", wp ? "on" : "off (Wi-Fi lights let go of)");
         nano_suspend(sleeping || pro_off); lights_suspend(sleeping || pro_off);
         remote_apply();
+        app_config_changed(1);   // the room map comes and goes with it
         ui_refresh_state();
         return 0;
     case WM_BLOCKED:   // this version was stopped by its author: the lights are let go of as on quit
