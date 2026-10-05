@@ -800,11 +800,12 @@ $('#fx-tabs').addEventListener('click', e => { const b = e.target.closest('butto
 function buildEffects() {
   const grid = $('#fx-grid');
   grid.innerHTML = '';
-  if (FX_TAB !== 'fx' && FX_TAB !== 'presets') FX_TAB = activePreset() ? 'presets' : 'fx';
+  if (FX_TAB !== 'fx' && FX_TAB !== 'presets' && FX_TAB !== 'community') FX_TAB = activePreset() ? 'presets' : 'fx';
   const tabs = $$('#fx-tabs button');
   tabs.forEach(b => b.classList.toggle('on', b.dataset.v === FX_TAB));
   tabs[0].querySelector('i').textContent = S.effects.length;
   tabs[1].querySelector('i').textContent = presets().length || '';
+  if (FX_TAB === 'community') { buildCommunity(grid); return; }
   if (FX_TAB === 'fx') S.effects.forEach((e, n) => {
     const b = document.createElement('button');
     b.className = 'fx'; b.dataset.id = e.id;
@@ -1086,6 +1087,8 @@ function shareDialog(P) {
   ta.value = P ? presetCode(P) : ''; ta.readOnly = !!P; ta.placeholder = P ? '' : 'haku:…';
   $('#share-ok span').textContent = t(P ? 'share.copy' : 'import.go');
   $('#share-msg').textContent = '';
+  $('#pub-row').classList.toggle('hidden', !P);
+  $('#pub-author').value = cv('community', 'author', ''); $('#pub-author').placeholder = t('pub.author');
   $('#share-dlg').classList.remove('hidden');
   setTimeout(() => { ta.focus(); if (P) ta.select(); }, 30);
 }
@@ -1111,6 +1114,107 @@ $('#share-form').addEventListener('submit', async e => {
   closeShare();
   if (FX_TAB !== 'presets') fxTab('presets');
 });
+
+// ---- community presets (docs/community-api.md): presets people published, on hakune.blog. The list comes in
+// pages of 24 (popular or new, a search, an effect); Add makes one a preset of one's own; ♥ likes it; Publish (in a
+// preset's Share window) sends one for review. Only the look travels, plus a random install id (likes and
+// downloads count once per install) and the author name typed in.
+const COMM = { sort: 'top', q: '', effect: '', items: [], page: 0, more: false, busy: false, err: false, loaded: false, added: new Set() };
+const commApi = () => cv('community', 'api', '') || 'https://hakune.blog/api/presets.php';
+function commInstall() {
+  let id = cv('community', 'install', '');
+  if (!/^[0-9a-f]{32}$/.test(id)) {
+    id = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+    setCfg('community', 'install', id);
+  }
+  return id;
+}
+async function commPost(body) {
+  const r = await fetch(commApi(), { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ ...body, install: commInstall() }) });
+  return r.json();
+}
+async function commLoad(more) {
+  if (COMM.busy) return;
+  COMM.busy = true; COMM.err = false;
+  if (!more) { COMM.page = 0; }
+  const q = new URLSearchParams({ sort: COMM.sort, q: COMM.q, effect: COMM.effect, page: more ? COMM.page + 1 : 0, install: commInstall() });
+  try {
+    const r = await fetch(commApi() + '?' + q, { cache: 'no-store' }), j = await r.json();
+    const items = (j.items || []).filter(x => x && x.id && S.effects.some(e => e.id === x.effect));
+    COMM.items = more ? COMM.items.concat(items) : items;
+    if (more) COMM.page++;
+    COMM.more = !!j.more;
+  } catch (e) { COMM.err = true; if (!more) COMM.items = []; }
+  COMM.busy = false; COMM.loaded = true;
+  if (FX_TAB === 'community') buildEffects();
+}
+let commSearchTimer = 0;
+function buildCommunity(grid) {
+  const bar = document.createElement('div');
+  bar.className = 'comm-bar';
+  bar.innerHTML = `<div class="seg"><button data-s="top" class="${COMM.sort === 'top' ? 'on' : ''}">${t('comm.top')}</button><button data-s="new" class="${COMM.sort === 'new' ? 'on' : ''}">${t('comm.new')}</button></div>
+    <input type="text" class="comm-q" placeholder="${t('comm.search')}" value="${esc(COMM.q)}" spellcheck="false">
+    <select class="select comm-fx"><option value="">${t('comm.all')}</option>${S.effects.filter(e => e.id !== 'off').map(e => `<option value="${e.id}" ${COMM.effect === e.id ? 'selected' : ''}>${esc(fxName(e.id))}</option>`).join('')}</select>`;
+  bar.querySelectorAll('[data-s]').forEach(b => b.addEventListener('click', () => { COMM.sort = b.dataset.s; commLoad(false); buildEffects(); }));
+  const q = bar.querySelector('.comm-q');
+  q.addEventListener('input', () => { COMM.q = q.value.trim(); clearTimeout(commSearchTimer); commSearchTimer = setTimeout(() => commLoad(false), 350); });
+  bar.querySelector('.comm-fx').addEventListener('change', e => { COMM.effect = e.target.value; commLoad(false); });
+  grid.appendChild(bar);
+  if (!COMM.loaded && !COMM.busy) commLoad(false);
+  const note = text => { const n = document.createElement('div'); n.className = 'comm-note'; n.innerHTML = text; grid.appendChild(n); return n; };
+  if (!COMM.loaded || (COMM.busy && !COMM.items.length)) { note(t('comm.loading')); return; }
+  if (COMM.err && !COMM.items.length) {
+    const n = note(`${t('comm.offline')} <button class="btn small ghost">${t('comm.retry')}</button>`);
+    n.querySelector('button').addEventListener('click', () => { COMM.loaded = false; buildEffects(); });
+    return;
+  }
+  if (!COMM.items.length) { note(t('comm.empty')); return; }
+  COMM.items.forEach(C => {
+    const b = document.createElement('div');
+    b.className = 'fx comm'; b.dataset.comm = C.id;
+    const added = COMM.added.has(C.id);
+    b.innerHTML = `<div class="top"><b>${esc(C.name)}</b><button class="comm-like ${C.liked ? 'on' : ''}" title="${t('comm.like')}">♥ ${C.likes | 0}</button></div>
+      <small>${esc(t('comm.by', C.author))} · ${esc(fxName(C.effect))}</small><canvas></canvas>
+      <div class="comm-foot"><span>⇩ ${C.dl | 0}</span><button class="btn small ${added ? 'ghost' : 'primary'}" ${added ? 'disabled' : ''}>${t(added ? 'comm.added' : 'comm.add')}</button></div>`;
+    b.querySelector('.comm-foot .btn').addEventListener('click', () => commAdd(C));
+    b.querySelector('.comm-like').addEventListener('click', () => commLike(C));
+    grid.appendChild(b);
+  });
+  if (COMM.more) {
+    const m = document.createElement('button');
+    m.className = 'fx add comm-more'; m.innerHTML = `<span class="plus">⋯</span><b>${t('comm.more')}</b>`;
+    m.addEventListener('click', () => commLoad(true));
+    grid.appendChild(m);
+  }
+}
+function commAdd(C) {
+  if (presets().length >= 32) { alertNote(t('import.full')); return; }
+  send({ cmd: 'preset_save', id: '0', name: String(C.name).slice(0, 40), effect: C.effect, palette: (C.palette || []).join(', '), speed: String(C.speed || 5),
+    brightness: C.bri ? String(C.bri) : '', zones: '0', apply: '1' });
+  COMM.added.add(C.id);
+  commPost({ action: 'download', id: C.id }).then(j => { if (j && j.dl != null) C.dl = j.dl; buildEffects(); }).catch(() => {});
+  buildEffects();
+}
+function commLike(C) {
+  C.liked = !C.liked; C.likes = (C.likes | 0) + (C.liked ? 1 : -1); buildEffects();
+  commPost({ action: 'like', id: C.id }).then(j => { if (j && j.ok) { C.liked = !!j.liked; C.likes = j.likes | 0; buildEffects(); } }).catch(() => {});
+}
+const alertNote = s => { $('#share-msg').textContent = s; };
+async function commPublish(P) {
+  const author = $('#pub-author').value.replace(/[\u0000-\u001f]/g, '').trim();
+  if (!author) { $('#pub-author').focus(); return; }
+  setCfg('community', 'author', author);
+  const btn = $('#pub-go'); btn.disabled = true;
+  let msg;
+  try {
+    const j = await commPost({ action: 'publish', name: P.name, author, effect: P.effect, palette: parsePal(P.palette), speed: +P.speed || 5, bri: +P.bri || 0, version: S.update && S.update.version || '' });
+    msg = j.ok ? t(j.status === 'approved' ? 'pub.live' : 'pub.sent') : t(j.error === 'rate' ? 'pub.rate' : j.error === 'invalid' ? 'pub.bad' : 'pub.err');
+    if (j.ok && j.status === 'approved') COMM.loaded = false;
+  } catch (e) { msg = t('pub.err'); }
+  btn.disabled = false;
+  $('#share-msg').textContent = msg;
+}
+$('#pub-go').addEventListener('click', () => { if (SHARE) commPublish(SHARE); });
 
 // ---- the settings' backup (backup.c): saved / restored through the PC's own file dialogs
 function updateBackup() {
@@ -1309,7 +1413,8 @@ function animate(now) {
   const PR = presets();
   for (const b of $$('.fx')) {
     const cvs = b.querySelector('canvas'); if (!cvs) continue;
-    const P = b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null, id = P ? P.effect : b.dataset.id;
+    const C = b.dataset.comm ? COMM.items.find(x => x.id === b.dataset.comm) : null;
+    const P = C ? { effect: C.effect, palette: (C.palette || []).join(', '), speed: C.speed } : b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null, id = P ? P.effect : b.dataset.id;
     if (!id) continue;
     if (cvs.width !== cvs.clientWidth * devicePixelRatio) { cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio; }
     const pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(id);

@@ -295,7 +295,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .hero::before, .hero::after { display: none; }   /* the tiles have their own frames */
 .fx-layout { display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
 .fx-col { min-width: 0; }
-.fx-tabs { margin: 0 0 12px; max-width: 340px; }
+.fx-tabs { margin: 0 0 12px; max-width: 480px; }
 .fx-tabs button { position: relative; }
 .fx-tabs i { font: 500 10.5px var(--mono, monospace); font-style: normal; opacity: .55; margin-left: 7px; }
 .fx-tabs button.lit:not(.on)::after { content: ""; position: absolute; top: 7px; right: 10px; width: 5px; height: 5px; border-radius: 50%; background: var(--strong); }
@@ -444,6 +444,21 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .share-dlg textarea { width: 100%; margin-top: 12px; padding: 10px 12px; resize: vertical; background-color: transparent; border: 1px solid var(--line2);
   color: var(--text); font: 12px/1.5 var(--mono, monospace); outline: none; word-break: break-all; }
 .share-dlg textarea:focus { border-color: var(--strong); }
+/* community presets */
+.comm-bar { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.comm-bar .seg { margin-top: 0; }
+.comm-bar .comm-q { flex: 1; min-width: 140px; }
+.comm-bar .select { max-width: 200px; }
+.comm-note { grid-column: 1 / -1; padding: 30px 10px; text-align: center; color: var(--muted); font-size: 13px; }
+.comm-note .btn { margin-left: 10px; }
+.fx.comm { cursor: default; }
+.comm-like { border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 2px 4px; }
+.comm-like:hover, .comm-like.on { color: var(--strong); }
+.comm-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; color: var(--faint); font-size: 11.5px; }
+.comm-foot .btn { padding: 4px 12px; }
+.pub-row { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.pub-line { display: flex; gap: 8px; margin-top: 6px; }
+.pub-line input { flex: 1; min-width: 0; }
 /* haku Pro */
 body.no-net #accounts, body.no-net #phone-card, body.no-net #nav [data-tab="nano"], body.no-net #nav [data-tab="bulbs"] { display: none !important; }
 .pro-chip { display: block; width: 100%; margin: 0 0 14px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line2);

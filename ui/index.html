@@ -102,7 +102,7 @@
     </div>
     <div class="fx-layout">
       <div class="fx-col">
-        <div class="seg fx-tabs" id="fx-tabs"><button data-v="fx"><span data-i18n="fx.tab.fx">Effects</span><i></i></button><button data-v="presets"><span data-i18n="fx.tab.presets">My presets</span><i></i></button></div>
+        <div class="seg fx-tabs" id="fx-tabs"><button data-v="fx"><span data-i18n="fx.tab.fx">Effects</span><i></i></button><button data-v="presets"><span data-i18n="fx.tab.presets">My presets</span><i></i></button><button data-v="community"><span data-i18n="fx.tab.community">Community</span><i></i></button></div>
         <div class="fx-grid" id="fx-grid"></div>
       </div>
       <div class="card fx-side">
@@ -529,6 +529,10 @@
     <h3 id="share-title"></h3>
     <p class="muted" id="share-note"></p>
     <textarea id="share-code" spellcheck="false" rows="4"></textarea>
+    <div class="pub-row hidden" id="pub-row">
+      <div class="lbl"><span data-i18n="pub.title">Publish to the community</span></div>
+      <div class="pub-line"><input type="text" id="pub-author" maxlength="24" spellcheck="false"><button class="btn small" type="button" id="pub-go"><span data-i18n="pub.go">Publish</span></button></div>
+    </div>
     <p class="hint" id="share-msg"></p>
     <div class="btn-row">
       <button class="btn primary" type="submit" id="share-ok"><span></span></button>
