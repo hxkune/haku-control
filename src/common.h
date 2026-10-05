@@ -258,6 +258,12 @@ void  mqtt_refresh(void);             // the profiles or the language changed: a
 void  mqtt_stop(void);
 int   mqtt_json(char *out, int cap);
 int   app_effect_now(void);           // the effect showing (index into g_effects)
+void  app_profiles_flush(void);       // the profile in use writes what changed in it to its file
+void  app_reload_all(void);           // settings replaced on disk (a restored backup): everything reads them again
+// a backup of the settings without this PC's secrets (backup.c); owner: the window for the file dialogs
+void  backup_save(void *owner);
+void  backup_load(void *owner);
+int   backup_json(char *out, int cap);
 float app_brightness_now(void);       // 0..1
 int   app_frame_json(char *out, int cap);    // live LED colours
 void  app_set(const char *section, const char *key, const char *value);

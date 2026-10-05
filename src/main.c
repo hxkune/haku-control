@@ -749,6 +749,21 @@ void app_profile_delete(int id) {
     PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
 }
 
+void app_profiles_flush(void) {
+    int cur = cfg_geti("general", "profile", 0);
+    if (profile_exists(cur)) profile_capture(cur);
+}
+
+void app_reload_all(void) {
+    InterlockedExchange(&need_reload, 1);   // the render thread: effect, brightness, layout
+    app_config_changed(1);
+    ext_reload();
+    remote_apply();
+    mqtt_apply();
+    PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
+    ui_refresh_state();
+}
+
 // the next profile after the one in use (hotkey)
 static void profile_next(void) {
     int cur = cfg_geti("general", "profile", 0);
@@ -817,6 +832,8 @@ static int status_body(char *out, int cap) {
     n += ext_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"pro\":");
     n += pro_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"backup\":");
+    n += backup_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"mqtt\":");
     n += mqtt_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"remote\":");

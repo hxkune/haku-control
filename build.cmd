@@ -35,7 +35,7 @@ rem icons + version info
 rc /nologo /c65001 /fo %OBJ%\haku-control.res res\haku-control.rc || exit /b 1
 cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE %DEFS% %PRO_DEF% /std:c++17 /EHsc /Fo%OBJ%\ ^
    src\main.c src\config.c src\effects.c src\dev_msi.c src\dev_ene.c src\sensors.c src\net.c ^
-   src\netutil.c src\devices.c src\drv_openrgb.c src\drv_nlusb.c src\drv_wooting.c src\drv_razer.c src\drv_steelseries.c src\drv_logitech.c src\openrgb_app.c src\update.c src\mood.c src\ollama.c src\diag.c src\hwinfo.c %PRO_SRC% ^
+   src\netutil.c src\devices.c src\drv_openrgb.c src\drv_nlusb.c src\drv_wooting.c src\drv_razer.c src\drv_steelseries.c src\drv_logitech.c src\openrgb_app.c src\update.c src\mood.c src\ollama.c src\diag.c src\hwinfo.c src\backup.c %PRO_SRC% ^
    src\ui_web.cpp src\audio.cpp src\screen.cpp ^
    /Fe:%OUT%\haku-control.exe ^
    /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='%UAC%' uiAccess='false'" ^

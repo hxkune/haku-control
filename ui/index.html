@@ -498,6 +498,10 @@
           <button class="btn ghost" data-open="log" data-i18n="f.log">Log</button>
           <button class="btn ghost" data-open="folder" data-i18n="f.folder">App folder</button>
         </div>
+        <div class="set-row pc-only bk-row">
+          <div><b data-i18n="bk">Backup</b><p class="muted" id="bk-note"></p></div>
+          <div class="bk-btns"><button class="btn small ghost" id="bk-save"><span data-i18n="bk.save">Save</span></button><button class="btn small ghost" id="bk-load"><span data-i18n="bk.load">Restore</span></button></div>
+        </div>
         <div class="set-row pc-only diag-row">
           <div><b data-i18n="diag">Diagnostics for the developer</b><p class="muted" id="diag-note"></p></div>
           <button class="btn small ghost" id="diag-go"><span data-i18n="diag.go">Save</span></button>
@@ -520,6 +524,18 @@
 </main>
 
 <!-- a preset: made and changed here (effect, colours, speed, brightness), opened from the Effects tab -->
+<div class="sheet-wrap pdlg-wrap hidden" id="share-dlg">
+  <form class="card pdlg share-dlg" id="share-form" role="dialog" aria-modal="true" autocomplete="off">
+    <h3 id="share-title"></h3>
+    <p class="muted" id="share-note"></p>
+    <textarea id="share-code" spellcheck="false" rows="4"></textarea>
+    <p class="hint" id="share-msg"></p>
+    <div class="btn-row">
+      <button class="btn primary" type="submit" id="share-ok"><span></span></button>
+      <button class="btn ghost" type="button" id="share-close"><span data-i18n="cancel">Cancel</span></button>
+    </div>
+  </form>
+</div>
 <div class="sheet-wrap pdlg-wrap hidden" id="pdlg">
   <form class="card pdlg" id="pdlg-form" role="dialog" aria-modal="true" autocomplete="off">
     <div class="pdlg-head">
@@ -552,6 +568,7 @@
       <button class="btn primary" type="submit" id="pdlg-save"><span></span></button>
       <span class="grow"></span>
       <button class="btn danger small hidden" type="button" id="pdlg-del"><span></span></button>
+      <button class="btn ghost small hidden" type="button" id="pdlg-share"><span data-i18n="preset.share">Share</span></button>
       <button class="btn ghost" type="button" id="pdlg-cancel"><span data-i18n="cancel">Cancel</span></button>
     </div>
   </form>

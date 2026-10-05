@@ -437,6 +437,13 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .ha-state { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
 .ha-state.ok { color: var(--strong); }
 .ha-state.bad { color: #ff7a7a; }
+/* backup, sharing presets */
+.bk-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+#bk-note.bad, #share-msg { color: var(--strong); }
+.share-dlg { width: min(460px, 100%); }
+.share-dlg textarea { width: 100%; margin-top: 12px; padding: 10px 12px; resize: vertical; background-color: transparent; border: 1px solid var(--line2);
+  color: var(--text); font: 12px/1.5 var(--mono, monospace); outline: none; word-break: break-all; }
+.share-dlg textarea:focus { border-color: var(--strong); }
 /* haku Pro */
 body.no-net #accounts, body.no-net #phone-card, body.no-net #nav [data-tab="nano"], body.no-net #nav [data-tab="bulbs"] { display: none !important; }
 .pro-chip { display: block; width: 100%; margin: 0 0 14px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line2);

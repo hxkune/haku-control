@@ -152,6 +152,14 @@ Download and set up* installs Ollama (its installer from ollama.com, checked for
 Ollama itself out of Windows startup: haku control starts it for a request and closes it half a minute later.
 Any chat model Ollama has works; `[mood] model=` picks one. Works from the phone page too.
 
+### Backup and sharing
+
+*Settings → Files → Backup* saves every setting and profile to one `.hakubackup` file, to keep or to move to another
+PC; *Restore* puts them back. Device keys and tokens, passwords, e-mail addresses, PINs and the licence are left out
+(the same rule as the diagnostics) and stay on each PC: restoring keeps this PC's own, and a device whose key is not
+here is paired once again. A preset's *Share* gives a short code (`haku:…`) with its look only (effect, colours,
+speed, brightness); *Import* on the presets tab adds it as a preset.
+
 ### Home Assistant (haku Pro)
 
 *Settings → Home Assistant*: haku connects to the MQTT broker Home Assistant uses (usually its *Mosquitto broker*

@@ -835,6 +835,11 @@ function buildEffects() {
     add.innerHTML = `<span class="plus">+</span><b>${t('preset.add')}</b><small>${t('preset.add.sub')}</small>`;
     add.addEventListener('click', () => presetDialog(0));
     grid.appendChild(add);
+    const imp = document.createElement('button');
+    imp.className = 'fx add'; imp.title = t('preset.import');
+    imp.innerHTML = `<span class="plus">⇩</span><b>${t('preset.import')}</b><small>${t('preset.import.sub')}</small>`;
+    imp.addEventListener('click', () => shareDialog(null));
+    grid.appendChild(imp);
   }
   markEffect();
 }
@@ -972,6 +977,7 @@ function presetDialog(id, name) {
   $('#pdlg-zones').checked = P ? P.zones : zonesCustom();
   $('#pdlg-save span').textContent = t(P ? 'preset.save' : 'preset.addbtn');
   const del = $('#pdlg-del'); del.classList.toggle('hidden', !P); del.classList.remove('confirm'); del.querySelector('span').textContent = t('preset.delete');
+  $('#pdlg-share').classList.toggle('hidden', !P);
   $('#pdlg').classList.remove('hidden');
   pdlgRender();
   const cvs = $('#pdlg-prev'); cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio;
@@ -1050,6 +1056,76 @@ $('#pdlg-del').addEventListener('click', () => {
   closePresetDialog();
 });
 $('#pdlg-cancel').addEventListener('click', closePresetDialog);
+$('#pdlg-share').addEventListener('click', () => { const P = presets().find(p => p.id === PDLG.id); closePresetDialog(); if (P) shareDialog(P); });
+
+// ---- sharing a preset: a code (haku:<base64url of its JSON>) with the look only (effect, colours, speed,
+// brightness), nothing of the devices; pasted in Import it becomes a preset of its own
+const b64u = s => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0)));
+function presetCode(P) {
+  const o = { v: 1, n: P.name, e: P.effect, p: parsePal(P.palette), s: +P.speed || undefined, b: +P.bri || undefined };
+  return 'haku:' + b64u(JSON.stringify(o));
+}
+function presetFromCode(code) {
+  const m = /haku:([A-Za-z0-9_-]+)/.exec(code.replace(/\s+/g, ''));
+  if (!m) return null;
+  try {
+    const o = JSON.parse(unb64u(m[1]));
+    if (!o || o.v !== 1 || !S.effects.some(e => e.id === o.e)) return null;
+    const pal = (Array.isArray(o.p) ? o.p : []).filter(c => /^#[0-9a-fA-F]{6}$/.test(c)).slice(0, 8);
+    const speed = Math.max(1, Math.min(10, Math.round(+o.s || 5))), bri = o.b ? Math.max(5, Math.min(100, Math.round(+o.b))) : 0;
+    return { name: String(o.n || '').replace(/[;#\[\]=]/g, ' ').trim().slice(0, 40) || fxName(o.e), effect: o.e, palette: pal.join(', '), speed, bri };
+  } catch (e) { return null; }
+}
+let SHARE = null;   // the preset being shared, or null: importing
+function shareDialog(P) {
+  SHARE = P;
+  $('#share-title').textContent = t(P ? 'share.title' : 'import.title');
+  $('#share-note').textContent = t(P ? 'share.note' : 'import.note');
+  const ta = $('#share-code');
+  ta.value = P ? presetCode(P) : ''; ta.readOnly = !!P; ta.placeholder = P ? '' : 'haku:…';
+  $('#share-ok span').textContent = t(P ? 'share.copy' : 'import.go');
+  $('#share-msg').textContent = '';
+  $('#share-dlg').classList.remove('hidden');
+  setTimeout(() => { ta.focus(); if (P) ta.select(); }, 30);
+}
+const closeShare = () => $('#share-dlg').classList.add('hidden');
+$('#share-close').addEventListener('click', closeShare);
+$('#share-dlg').addEventListener('pointerdown', e => { if (e.target.id === 'share-dlg') closeShare(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#share-dlg').classList.contains('hidden')) closeShare(); });
+$('#share-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const ta = $('#share-code');
+  if (SHARE) {   // copy: the clipboard, or the code stays selected for Ctrl+C
+    ta.select();
+    let ok = false;
+    try { await navigator.clipboard.writeText(ta.value); ok = true; } catch (x) { try { ok = document.execCommand('copy'); } catch (y) { } }
+    $('#share-msg').textContent = t(ok ? 'share.copied' : 'share.copyhand');
+    return;
+  }
+  const p = presetFromCode(ta.value);
+  if (!p) { $('#share-msg').textContent = t('import.bad'); ta.focus(); return; }
+  if (presets().length >= 32) { $('#share-msg').textContent = t('import.full'); return; }
+  send({ cmd: 'preset_save', id: '0', name: p.name, effect: p.effect, palette: p.palette, speed: String(p.speed),
+    brightness: p.bri ? String(p.bri) : '', zones: '0', apply: '1' });
+  closeShare();
+  if (FX_TAB !== 'presets') fxTab('presets');
+});
+
+// ---- the settings' backup (backup.c): saved / restored through the PC's own file dialogs
+function updateBackup() {
+  const B = S.backup || {}, note = $('#bk-note');
+  note.textContent = B.res === 'saved' ? t('bk.saved', B.a, B.b) : B.res === 'restored' ? t('bk.restored', B.a, B.b) :
+    B.res ? t('bk.' + B.res) : t('bk.note');
+  note.classList.toggle('bad', !!B.res && B.res !== 'saved' && B.res !== 'restored');
+}
+$('#bk-save').addEventListener('click', () => send({ cmd: 'backup_save' }));
+$('#bk-load').addEventListener('click', () => {
+  const b = $('#bk-load');
+  if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.querySelector('span').textContent = t('bk.load.sure'); setTimeout(() => { b.classList.remove('confirm'); b.querySelector('span').textContent = t('bk.load'); }, 5000); return; }
+  b.classList.remove('confirm'); b.querySelector('span').textContent = t('bk.load');
+  send({ cmd: 'backup_load' });
+});
 $('#pdlg').addEventListener('pointerdown', e => { if (e.target.id === 'pdlg') closePresetDialog(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#pdlg').classList.contains('hidden') && pk.classList.contains('hidden')) closePresetDialog(); });
 
@@ -2963,7 +3039,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa();
+  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup();
   if (nanoLayoutChanged) drawAll();
 }
 
