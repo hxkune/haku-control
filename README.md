@@ -158,7 +158,9 @@ Any chat model Ollama has works; `[mood] model=` picks one. Works from the phone
 PC; *Restore* puts them back. Device keys and tokens, passwords, e-mail addresses, PINs and the licence are left out
 (the same rule as the diagnostics) and stay on each PC: restoring keeps this PC's own, and a device whose key is not
 here is paired once again. A preset's *Share* gives a short code (`haku:…`) with its look only (effect, colours,
-speed, brightness); *Import* on the presets tab adds it as a preset.
+speed, brightness); *Import* on the presets tab adds it as a preset. The *Community* tab (next to *My presets*) lists presets
+people published (popular or new, search, by effect): *Add* takes one, ♥ likes it, and *Publish* in a preset's
+*Share* window sends one for review. The site's side is described in `docs/community-api.md`.
 
 ### Home Assistant (haku Pro)
 
@@ -259,6 +261,9 @@ purposes:
   on your network (it sees your internet address, as the Divoom app does); a Times Frame's list of dials comes from
   Divoom's cloud. The Times Frame's own screen background is fetched by the frame from this repository.
 - **Home Assistant:** off by default; when on, the light's state (on / off, brightness, effect, colour) and the profile names go to the MQTT broker you entered, on your network, with the user name and password you gave.
+- **Community presets:** the *Community* tab reads the list of published presets from hakune.blog. Adding, liking and
+  publishing one send a random id made on first use (so each counts once per install; nothing about you or your PC)
+  and, when publishing, the preset's look and the author name you typed. The site keeps hashes of these ids and IPs only.
 - **Phone control:** off by default; when on, it serves the settings page on your local network only.
 - **Diagnostics:** *Save* under *Settings → Files* writes a text file to your Downloads folder (log, settings without
   keys or passwords, devices, network adapters). It is not sent anywhere; you decide whether to share it.
