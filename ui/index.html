@@ -150,7 +150,10 @@
       <div class="card hw-card">
         <div class="card-head">
           <div><h3 data-i18n="hw.title">Lighting in this PC</h3><p class="muted" id="hw-status"></p></div>
-          <button class="btn small ghost" id="hw-scan"><span data-i18n="hw.scan">Look again</span></button>
+          <div class="btn-row hw-btns">
+            <button class="btn small ghost hidden" id="pc-own"><span></span></button>
+            <button class="btn small ghost" id="hw-scan"><span data-i18n="hw.scan">Look again</span></button>
+          </div>
         </div>
         <div class="found hw-list" id="hw-list"></div>
       </div>
@@ -170,6 +173,8 @@
           <label class="check"><input type="checkbox" data-cal="gamma"><span></span><em data-i18n="gamma">Accurate colours (gamma correction)</em></label>
           <label class="check"><input type="checkbox" data-layout="ram_reverse"><span></span><em data-i18n="reverse">Reverse direction</em></label>
           <label class="check"><input type="checkbox" data-layout="ram_swap"><span></span><em data-i18n="swap">Swap sticks</em></label>
+          <label class="check"><input type="checkbox" data-own="ene_own"><span></span><em data-i18n="own">Its own lighting</em></label>
+          <p class="hint" data-i18n="own.note.ram"></p>
         </div>
       </div>
       <div class="card" id="gpu-card">
@@ -191,6 +196,8 @@
             <button data-step="-1">−</button><b id="gpu-leds">8</b><button data-step="1">+</button></div>
           <label class="check"><input type="checkbox" data-layout="gpu_reverse"><span></span><em data-i18n="reverse">Reverse direction</em></label>
           <label class="check"><input type="checkbox" data-layout="board_led"><span></span><em data-i18n="boardled">Motherboard LED</em></label>
+          <label class="check"><input type="checkbox" data-own="msi_own"><span></span><em data-i18n="own">Its own lighting</em></label>
+          <p class="hint" data-i18n="own.note.gpu"></p>
         </div>
       </div>
       <!-- graphics cards, other boards, RAM, coolers: through OpenRGB on this PC -->

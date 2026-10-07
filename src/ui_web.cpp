@@ -129,6 +129,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "ai_setup") { ollama_setup(); post_status(); }
     else if (cmd == "theme") title_bar(field(js, "v").c_str());
     else if (cmd == "orgb_setup") { orgbapp_setup(); post_status(); }
+    else if (cmd == "pc_own") { app_pc_own(field(js, "v") == "1"); post_state(); }
     else if (cmd == "orgb_auto") { cfg_set_and_save("openrgb", "auto", field(js, "v") == "1" ? "1" : "0"); if (field(js, "v") == "1") orgb_check_start(); post_state(); }
     else if (cmd == "orgb_locate") {   // OpenRGB.exe somewhere else: picked once
         wchar_t file[MAX_PATH] = L"OpenRGB.exe";

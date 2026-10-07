@@ -83,6 +83,7 @@ int  effects_zone_white(int zone, int *kelvin);      // 1 if the zone is in "whi
 
 // ---- dev_msi.c (MSI Mystic Light: onboard LED + JRAINBOW1 ARGB header)
 int  msi_open(void);
+int  msi_probe(void);   // 1: the board is there (not opened)
 int  msi_send(const rgbf *gpu, int n, const rgbf *board);
 void msi_restore(void);
 void msi_close(void);
@@ -145,6 +146,7 @@ void ext_scan(void);                      // look for devices on the LAN (backgr
 int  ext_add(const char *kind, const char *host, int sub, const char *name, int leds);
 void ext_remove(int id);
 int  ext_json(char *out, int cap);
+int  ext_orgb_given_back(void);           // 1: OpenRGB's devices here are all given back to their own lighting ([dev.N] own)
 
 // ---- remote.c (phone / LAN control over HTTP, [remote] enabled=1)
 void remote_apply(void);          // start / stop / move to the configured port
@@ -231,6 +233,8 @@ void  ui_refresh_state(void);   // the open window gets the whole state (setting
 void  app_set_brightness(float b, int save_now);
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
 void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled
+void  app_pc_own(int own);                         // the PC's lighting given back to its own programs (1) / taken by haku (0)
+int   app_pc_own_now(void);                        // 1: all of it is given back
 int   app_hw_own(int orgb_type, const char *name);  // hardware of that OpenRGB type this app drives itself
 void  orgbapp_setup(void);                         // OpenRGB's zip downloaded, checked, unpacked (openrgb_app.c)
 // settings window (ui_web.cpp) <-> core

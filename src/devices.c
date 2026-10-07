@@ -25,7 +25,7 @@ static int     ndevs;
 
 // ---- shared (lock)
 static SRWLOCK lk = SRWLOCK_INIT;
-typedef struct { int id, nleds, per_led, online, enabled; char name[64], host[64], info[96], kind[16], type[12]; int sub; } slot_t;
+typedef struct { int id, nleds, per_led, online, enabled, own; char name[64], host[64], info[96], kind[16], type[12]; int sub; } slot_t;
 static slot_t  slots[EXT_MAX];
 static int     nslots;
 static rgbf    frame[EXT_MAX][EXT_MAX_LEDS];
@@ -88,7 +88,7 @@ static void publish_slots(void) {
         char ty[12]; device_type(d, ty, sizeof(ty));
         if (s->id != d->id || s->nleds != n || strcmp(s->type, ty)) InterlockedExchange(&layout_new, 1);
         strcpy_s(s->type, sizeof(s->type), ty);
-        s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->enabled = d->enabled;
+        s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->enabled = d->enabled; s->own = d->own;
         s->sub = d->sub;
         strcpy_s(s->name, sizeof(s->name), d->name); strcpy_s(s->host, sizeof(s->host), d->host);
         strcpy_s(s->info, sizeof(s->info), d->info); strcpy_s(s->kind, sizeof(s->kind), d->drv->kind);
@@ -157,6 +157,7 @@ static void load_config(void) {
         d->cfg_leds = cfg_geti(sec, "leds", 0);
         d->reverse = cfg_geti(sec, "reverse", 0);
         d->enabled = cfg_geti(sec, "enabled", 1);
+        d->own = cfg_geti(sec, "own", 0);
         strcpy_s(d->key, sizeof(d->key), cfg_get(sec, "key", ""));
     }
     // keep connections of devices whose address (and key) did not change
@@ -166,7 +167,7 @@ static void load_config(void) {
             if (o->id == nd[i].id && o->drv == nd[i].drv && !strcmp(o->host, nd[i].host) && o->sub == nd[i].sub && o->cfg_leds == nd[i].cfg_leds &&
                 !strcmp(o->key, nd[i].key)) {
                 ext_dev keep = *o;
-                keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled;
+                keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own;
                 strcpy_s(keep.name, sizeof(keep.name), nd[i].name);
                 nd[i] = keep;
                 o->id = -1;   // taken over
@@ -191,11 +192,12 @@ static unsigned __stdcall worker(void *p) {
     static BYTE  last8[EXT_MAX][EXT_MAX_LEDS * 3];
     DWORD last_send[EXT_MAX] = { 0 };
     LONG  seen[EXT_MAX] = { 0 };
+    int   orgb_look = 1;
     load_config();
     while (run) {
         WaitForSingleObject(wake, 20);
         if (!run) break;
-        if (InterlockedExchange(&reload_req, 0)) { load_config(); memset(seen, 0, sizeof(seen)); memset(last8, 0, sizeof(last8)); }
+        if (InterlockedExchange(&reload_req, 0)) { load_config(); memset(seen, 0, sizeof(seen)); memset(last8, 0, sizeof(last8)); orgb_look = 1; }
         if (suspend_req) {
             int how = leave_mode();
             for (int k = 0; k < ndevs; k++) let_go(&devs[k], how);
@@ -215,7 +217,7 @@ static unsigned __stdcall worker(void *p) {
             ext_dev *d = NULL;
             for (int k = 0; k < ndevs; k++)
                 if (devs[k].id == o->d.id && devs[k].drv == o->d.drv && !strcmp(devs[k].host, o->d.host) && devs[k].sub == o->d.sub && !devs[k].online) d = &devs[k];
-            if (o->ok && d && d->enabled) {
+            if (o->ok && d && d->enabled && !d->own) {
                 int k = (int)(d - devs);
                 d->sock = o->d.sock; d->priv = o->d.priv; d->nleds = o->d.nleds;
                 strcpy_s(d->info, sizeof(d->info), o->d.info); strcpy_s(d->key, sizeof(d->key), o->d.key);
@@ -240,6 +242,10 @@ static unsigned __stdcall worker(void *p) {
             ext_dev *d = &devs[k];
             if (!d->enabled) {
                 if (d->online) { let_go(d, LEAVE_OFF); changed_state = 1; }
+                continue;
+            }
+            if (d->own) {   // given back to its own lighting: the mode / effect it had, its maker's app can change it
+                if (d->online) { let_go(d, LEAVE_RESTORE); changed_state = 1; }
                 continue;
             }
             if (!pro && pro_kind(d->drv->kind)) {   // without Pro: let go of it as on quit
@@ -277,6 +283,9 @@ static unsigned __stdcall worker(void *p) {
             }
         }
         if (changed_state) publish_slots();
+        // all of OpenRGB's devices given back (after their modes went back, above): the OpenRGB started here is
+        // closed, so it holds nothing their makers' apps want
+        if (orgb_look) { orgb_look = 0; if (ext_orgb_given_back()) { Sleep(300); orgbapp_stop(); } }
     }
     int how = leave_mode();
     for (int k = 0; k < ndevs; k++) let_go(&devs[k], how);
@@ -316,13 +325,25 @@ void ext_suspend(int sleeping) {
     } else InterlockedExchange(&suspend_req, 0);
 }
 
+// 1: there are OpenRGB devices and every one that is on is given back to its own lighting ([dev.N] own)
+int ext_orgb_given_back(void) {
+    int own = 0, ours = 0;
+    for (int id = 1; id <= 64; id++) {
+        char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", id);
+        const char *kind = cfg_get(sec, "kind", NULL);
+        if (!kind || _stricmp(kind, "openrgb") || !cfg_geti(sec, "enabled", 1)) continue;
+        if (cfg_geti(sec, "own", 0)) own++; else ours++;
+    }
+    return own > 0 && !ours;
+}
+
 int ext_layout_changed(void) { return InterlockedExchange(&layout_new, 0); }
 
 int ext_count(void) { AcquireSRWLockShared(&lk); int n = nslots; ReleaseSRWLockShared(&lk); return n; }
 
 int ext_slot_leds(int k) {
     AcquireSRWLockShared(&lk);
-    int n = k < nslots && slots[k].enabled ? slots[k].nleds : 0;
+    int n = k < nslots && slots[k].enabled && !slots[k].own ? slots[k].nleds : 0;
     ReleaseSRWLockShared(&lk);
     return n;
 }
@@ -458,8 +479,8 @@ int ext_json(char *out, int cap) {
         json_escape_to(nm, sizeof(nm), s->name); json_escape_to(inf, sizeof(inf), s->info); json_escape_to(host, sizeof(host), s->host);
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, s->type, inf, pro_kind(s->kind));
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"own\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, s->own, s->type, inf, pro_kind(s->kind));
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {

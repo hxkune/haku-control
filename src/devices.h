@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // LAN / bridge light devices ("ext devices"): WLED, OpenRGB, Govee, LIFX, Yeelight, Elgato, Wooting...
-// Each configured device lives in a settings section [dev.<id>] (kind, host, sub, name, leds, enabled, reverse)
+// Each configured device lives in a settings section [dev.<id>] (kind, host, sub, name, leds, enabled, reverse, own)
 // and becomes one colour zone ("zone.dev<id>"). One worker thread (devices.c) opens, feeds and closes them;
 // drivers (drv_*.c) only implement the protocol.
 #pragma once
@@ -48,6 +48,7 @@ struct ext_dev {
     char  host[64], name[64], info[96];
     char  key[128];           // pairing token (Hue); saved with ext_save_key()
     int   sub, cfg_leds, nleds, reverse, enabled;
+    int   own;                // [dev.N] own=1: given back to its own lighting (its maker's app, the mode it had)
     int   online;
     DWORD next_try;           // reconnect backoff
     int   fails;
@@ -65,6 +66,7 @@ int  orgbapp_ensure(int (*answers)(void));   // 1: the SDK server answers (start
 void orgbapp_add_new(const orgb_ctl *c, int n);
 void orgbapp_removed(const char *name);
 int  orgbapp_json(char *out, int cap);
+void orgbapp_stop(void);                      // OpenRGB started here closed (all its devices went back to their own lighting)
 
 extern const ext_driver drv_wled, drv_openrgb, drv_govee, drv_lifx, drv_yeelight, drv_hue, drv_wiz, drv_tuya, drv_nlusb, drv_goveecloud, drv_elgato, drv_wooting, drv_divoom,
                         drv_razer, drv_steelseries, drv_logitech;

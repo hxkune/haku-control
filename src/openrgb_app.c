@@ -67,10 +67,31 @@ int orgbapp_exe(wchar_t *out, int running) {
 int orgbapp_auto(void) { return cfg_geti("openrgb", "auto", 1); }
 int orgbapp_ours(void) { AcquireSRWLockShared(&lk); int o = job != NULL; ReleaseSRWLockShared(&lk); return o; }
 
+// All of OpenRGB's devices given back to their own lighting: the copy started here is closed (the job ends it),
+// so it holds nothing their makers' apps want. A copy the user runs is left alone.
+void orgbapp_stop(void) {
+    AcquireSRWLockExclusive(&lk);
+    if (job) { CloseHandle(job); job = NULL; logf_("openrgb: closed, its devices have their own lighting"); }
+    ReleaseSRWLockExclusive(&lk);
+}
+
+static int ensure_run(int (*answers)(void));
+
 // Makes sure the SDK server answers: waits for a copy that is starting, or starts one. 1: it answers.
 int orgbapp_ensure(int (*answers)(void)) {
     if (answers()) return 1;
     if (!orgbapp_auto()) return 0;
+    static volatile LONG busy;   // one start at a time (the PC page's check, devices connecting): the others wait for it
+    if (InterlockedCompareExchange(&busy, 1, 0)) {
+        for (int i = 0; i < 40 && busy; i++) Sleep(1000);
+        return answers();
+    }
+    int r = ensure_run(answers);
+    InterlockedExchange(&busy, 0);
+    return r;
+}
+
+static int ensure_run(int (*answers)(void)) {
     wchar_t exe[MAX_PATH], run[MAX_PATH];
     if (running_copy(run)) {   // e.g. OpenRGB's own autostart, still finding the hardware
         for (int i = 0; i < 20; i++) { Sleep(1000); if (answers()) return 1; }

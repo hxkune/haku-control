@@ -19,9 +19,11 @@ enum {
     PKT_DEVICE_LIST_UPDATED      = 100,
     PKT_UPDATELEDS               = 1050,
     PKT_SETCUSTOMMODE            = 1100,
+    PKT_UPDATEMODE               = 1101,
 };
 
-typedef struct { unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; } orgb_t;
+// orig / mode: the colours and the mode the controller had before haku took it, given back when it lets go
+typedef struct { unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; int mode_idx, mode_len; unsigned char mode[512]; } orgb_t;
 
 static int send_pkt(SOCKET s, unsigned dev, unsigned id, const void *data, unsigned len) {
     unsigned char h[16] = { 'O', 'R', 'G', 'B' };
@@ -59,7 +61,8 @@ static void rdstr(rd_t *r, char *out, int cap) {
     rdskip(r, n);
 }
 
-typedef struct { int type, nleds, ncolors; char name[64], vendor_desc[64]; unsigned colors[EXT_MAX_LEDS]; } ctrl_t;
+// mode: the active mode as the protocol describes it (name, value, flags... colours), to send it back as it was
+typedef struct { int type, nleds, ncolors, active, mode_len; char name[64], vendor_desc[64], mode_name[32]; unsigned colors[EXT_MAX_LEDS]; unsigned char mode[512]; } ctrl_t;
 
 static int parse_ctrl(const unsigned char *buf, int len, ctrl_t *c) {
     rd_t r = { buf, buf + len, 0 };
@@ -72,12 +75,14 @@ static int parse_ctrl(const unsigned char *buf, int len, ctrl_t *c) {
     rdstr(&r, NULL, 0);                // serial
     rdstr(&r, NULL, 0);                // location
     unsigned nmodes = rd16(&r);
-    rd32(&r);                          // active mode
+    c->active = (int)rd32(&r);         // active mode
     for (unsigned m = 0; m < nmodes && !r.bad; m++) {
-        rdstr(&r, NULL, 0);            // name
+        const unsigned char *m0 = r.p;
+        rdstr(&r, (int)m == c->active ? c->mode_name : NULL, sizeof(c->mode_name));   // name
         rdskip(&r, 4 * 9);             // value, flags, speed min/max, colors min/max, speed, direction, colour mode
         unsigned nc = rd16(&r);
         rdskip(&r, nc * 4);
+        if ((int)m == c->active && !r.bad && r.p - m0 <= (int)sizeof(c->mode)) { c->mode_len = (int)(r.p - m0); memcpy(c->mode, m0, c->mode_len); }
     }
     unsigned nzones = rd16(&r);
     for (unsigned z = 0; z < nzones && !r.bad; z++) {
@@ -122,9 +127,38 @@ static int read_ctrl(SOCKET s, unsigned idx, ctrl_t *c) {
     return n > 0 && parse_ctrl(buf, n, c);
 }
 
+// The mode to give back when haku lets go (the controller's own effect, as its maker's app or OpenRGB set it). One
+// found still in Direct / Custom was left so by haku (a crash) or another app: then the last other mode seen,
+// kept in [dev.N] orig_mode as "<index>:<hex of its description>" (when it fits a settings line).
+static int direct_mode(const char *name) { return !_stricmp(name, "Direct") || !_stricmp(name, "Custom"); }
+
+static void keep_mode(const char *sec, const ctrl_t *c, orgb_t *o) {
+    char v[256];
+    if (c->mode_len && !direct_mode(c->mode_name)) {
+        o->mode_idx = c->active; o->mode_len = c->mode_len; memcpy(o->mode, c->mode, c->mode_len);
+        int n = snprintf(v, sizeof(v), "%d:", c->active);
+        if (n + c->mode_len * 2 < (int)sizeof(v)) {
+            for (int i = 0; i < c->mode_len; i++) n += snprintf(v + n, sizeof(v) - n, "%02x", c->mode[i]);
+            if (strcmp(cfg_get(sec, "orig_mode", ""), v)) { cfg_set(sec, "orig_mode", v); cfg_save_if_dirty(); }
+        }
+        return;
+    }
+    const char *s = cfg_get(sec, "orig_mode", ""), *h = strchr(s, ':');
+    if (!h) return;
+    int len = (int)strlen(h + 1) / 2;
+    if (len < 1 || len > (int)sizeof(o->mode)) return;
+    for (int i = 0; i < len; i++) { unsigned b; if (sscanf_s(h + 1 + i * 2, "%2x", &b) != 1) return; o->mode[i] = (unsigned char)b; }
+    o->mode_idx = atoi(s); o->mode_len = len;
+}
+
+static int server_answers(void);
+
 static int orgb_open(ext_dev *d) {
     unsigned count = 0;
     SOCKET s = orgb_connect(d->host, &count);
+    // OpenRGB on this PC not running (e.g. closed here when all its devices were given back): started for this one
+    if (s == INVALID_SOCKET && (!_strnicmp(d->host, "127.0.0.1", 9) || !_strnicmp(d->host, "localhost", 9)) && orgbapp_ensure(server_answers))
+        s = orgb_connect(d->host, &count);
     if (s == INVALID_SOCKET) return 0;
     ctrl_t *c = malloc(sizeof(ctrl_t));
     char sec[16], want[64]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
@@ -143,6 +177,7 @@ static int orgb_open(ext_dev *d) {
     orgb_t *o = calloc(1, sizeof(orgb_t));
     if (!o) { free(c); closesocket(s); return 0; }
     memcpy(o->orig, c->colors, sizeof(unsigned) * c->ncolors); o->norig = c->ncolors; o->idx = (unsigned)idx;
+    keep_mode(sec, c, o);
     free(c);
     d->priv = o; d->sock = s;
     send_pkt(s, o->idx, PKT_SETCUSTOMMODE, NULL, 0);   // direct / custom mode
@@ -177,7 +212,15 @@ static void orgb_leave(ext_dev *d, int how) {
     orgb_t *o = d->priv;
     unsigned col[EXT_MAX_LEDS] = { 0 };
     if (how == LEAVE_OFF) send_colors(d, col, d->nleds);
-    else if (how == LEAVE_RESTORE && o->norig) send_colors(d, o->orig, o->norig < d->nleds ? o->norig : d->nleds);
+    else if (how == LEAVE_RESTORE) {
+        if (o->norig) send_colors(d, o->orig, o->norig < d->nleds ? o->norig : d->nleds);
+        if (o->mode_len) {   // its own effect again: the mode it had, as it was described
+            unsigned char buf[8 + sizeof(o->mode)];
+            unsigned size = 8 + o->mode_len;
+            memcpy(buf, &size, 4); memcpy(buf + 4, &o->mode_idx, 4); memcpy(buf + 8, o->mode, o->mode_len);
+            send_pkt(d->sock, o->idx, PKT_UPDATEMODE, buf, size);
+        }
+    }
 }
 
 static void orgb_close(ext_dev *d) {
@@ -243,7 +286,8 @@ static unsigned __stdcall check_fn(void *p) {
     net_init();
     static orgb_ctl tmp[48];
     int n = -1;
-    if (orgbapp_ensure(server_answers)) {
+    // its devices all given back to their own lighting: not started for them, only asked if it runs anyway
+    if (ext_orgb_given_back() ? server_answers() : orgbapp_ensure(server_answers)) {
         for (int i = 0, same = 0, last = -1; i < 20 && same < 2; i++) {
             if (i) Sleep(1500);
             n = orgb_list(tmp, 48);

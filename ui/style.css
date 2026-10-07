@@ -262,6 +262,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .btn.danger:hover { color: var(--strong); border-color: var(--strong); }
 .btn.small { padding: 6px 13px; font-size: 12px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.card-head .hw-btns { margin-top: 0; justify-content: flex-end; flex-shrink: 0; }
 
 .num { display: flex; flex-direction: column; gap: 7px; color: var(--muted); }
 .num span { font-size: 10.5px; }

@@ -27,6 +27,7 @@
 #define ID_RAM_ON    1205
 #define ID_GPU_ON    1206
 #define ID_LIGHTS_ON 1207
+#define ID_PC_OWN    1208
 #define ID_NANO_ON   1300   // + controller 0..NANO_MAX-1
 #define ID_PRESET    1400   // + preset number 1..PRESET_MAX
 #define ID_PROFILE   1500   // + profile number 1..PROFILE_MAX
@@ -142,6 +143,9 @@ static NOTIFYICONDATAW nid;
 static wchar_t  exe_dir[MAX_PATH], data_dir[MAX_PATH];
 static FILE    *logfile;
 static int      have_msi, have_ene, fps = 30;
+// the board's / memory's lighting given back to their own programs ([devices] msi_own / ene_own): their own effect
+// again (the one they keep), nothing sent to them, their makers' apps can change it
+static volatile LONG msi_own, ram_own, need_own;
 static HINSTANCE app_inst;
 static sensors_t last_sensors = { NAN, NAN, NAN, NAN, NAN };
 float app_gpu_temp(void) { return last_sensors.gpu_temp; }   // NAN when unknown (the Times Frame's screen)
@@ -192,9 +196,9 @@ static void build_scene(void) {
     for (int i = 0; i < 8; i++) { char key[32]; snprintf(key, sizeof(key), "light%d_enabled", i + 1); light_on[i] = cfg_geti("layout", key, 1); }
     load_calibration();
     // disabled devices are left out of the scene, so effects span only what is lit
-    int sticks = !ram_on ? 0 : have_ene ? ene_count() : 2;
+    int sticks = !ram_on || ram_own ? 0 : have_ene ? ene_count() : 2;
     if (sticks > 2) sticks = 2;
-    int glit = gpu_on ? gpu_leds : 0;
+    int glit = gpu_on && !msi_own ? gpu_leds : 0;
 
     static scene_t s;   // big: not on the stack
     memset(&s, 0, sizeof(s));
@@ -267,7 +271,7 @@ static void build_scene(void) {
             }
         }
     }
-    if (board_led) {
+    if (board_led && !msi_own) {
         led_t *l = &s.leds[s.count++];
         l->dev = DEV_BOARD; l->index = 0; l->zone = ZONE_GPU; l->x = 0.2f; l->y = 0.5f; l->fill = 0.5f; l->path = 0.5f; l->zpath = 0.5f;
     }
@@ -293,6 +297,9 @@ static unsigned __stdcall ram_thread(void *p) {
     while (running) {
         WaitForSingleObject(ram_event, 1000);
         if (!running) break;
+        static int given;
+        if (ram_own) { if (!given) { ene_restore(); given = 1; } continue; }   // its own effect again
+        given = 0;
         rgbf c[2][8]; int n[2];
         EnterCriticalSection(&cs); memcpy(c, ram_buf, sizeof(c)); memcpy(n, ram_n, sizeof(n)); LeaveCriticalSection(&cs);
         for (int st = 0; st < 2; st++) if (n[st]) ene_send(st, c[st], n[st]);
@@ -301,12 +308,32 @@ static unsigned __stdcall ram_thread(void *p) {
 }
 
 static void open_devices(void) {
+    msi_own = cfg_geti("devices", "msi_own", 0); ram_own = cfg_geti("devices", "ene_own", 0);
 #ifdef HAKU_DEV
     return;   // the test build never touches the board or the memory
 #endif
-    // [devices] msi / ene = 0 leaves that hardware to other software (e.g. OpenRGB)
-    have_msi = cfg_geti("devices", "msi", 1) ? msi_open() : 0;
+    // [devices] msi / ene = 0 leaves that hardware to other software (e.g. OpenRGB); given back, the board is only
+    // looked for, not opened
+    have_msi = cfg_geti("devices", "msi", 1) ? msi_own ? msi_probe() : msi_open() : 0;
     have_ene = cfg_geti("devices", "ene", 1) ? ene_open() > 0 : 0;
+}
+
+// [devices] msi_own / ene_own changed (render thread): the board gets its own configuration back and is let go of,
+// or is taken again (its configuration as it is now, perhaps changed meanwhile in MSI Center, is what goes back
+// next time); the memory thread does the sticks
+static void own_apply(void) {
+    int m = cfg_geti("devices", "msi_own", 0), r = cfg_geti("devices", "ene_own", 0);
+    if (r != ram_own) { ram_own = r; SetEvent(ram_event); logf_("memory: %s", r ? "given back to its own lighting" : "lit by haku"); }
+    if (m != msi_own) {
+        msi_own = m;
+#ifndef HAKU_DEV
+        if (have_msi) {
+            if (m) { msi_restore(); msi_close(); }
+            else if (!msi_open()) have_msi = 0;
+        }
+#endif
+        logf_("board: %s", m ? "given back to its own lighting" : "lit by haku");
+    }
 }
 
 static void close_devices(int restore) {
@@ -328,9 +355,11 @@ static unsigned __stdcall render_thread(void *p) {
             // after resume from sleep: controllers were power-cycled
             close_devices(0); Sleep(1500); open_devices(); build_scene();
         }
+        if (InterlockedExchange(&need_own, 0)) { own_apply(); build_scene(); ui_refresh(); }
         if (nano_layout_changed() | lights_changed() | ext_layout_changed()) { build_scene(); ui_refresh(); }
         if (InterlockedExchange(&need_reload, 0) ||
             (GetTickCount() - last_cfg_check > 1000 && (last_cfg_check = GetTickCount(), cfg_changed_on_disk()))) {
+            own_apply();
             load_config();
             InterlockedIncrement(&cfg_gen);
             logf_("config reloaded, effect=%s", g_effects[cur_effect].id);
@@ -445,7 +474,7 @@ static unsigned __stdcall render_thread(void *p) {
             if (memcmp(prev8 + i * 3, q, 3)) { memcpy(prev8 + i * 3, q, 3); changed = 1; }
         }
         prev_count = sc.count;
-        if (have_msi) changed |= msi_send(gpu, gn, &board) == 1;
+        if (have_msi && !msi_own) changed |= msi_send(gpu, gn, &board) == 1;
         if (have_ene) {
             EnterCriticalSection(&cs);
             if (memcmp(ram_buf, ram, sizeof(ram)) != 0) { memcpy(ram_buf, ram, sizeof(ram)); changed = 1; }
@@ -790,6 +819,38 @@ int app_hw_own(int orgb_type, const char *name) {
     return (orgb_type == 1 && have_ene && ene_count() > 0) || (orgb_type == 0 && have_msi && (strstr(n, "msi") || strstr(n, "mystic")));
 }
 
+// All of the PC's lighting given back to its own programs (own = 1), or taken again (0): the board, the memory and
+// the PC's devices (OpenRGB, USB, the makers' apps); the lights on the network are not the PC's
+void app_pc_own(int own) {
+    const char *v = own ? "1" : "0";
+    cfg_set("devices", "msi_own", v); cfg_set("devices", "ene_own", v);
+    for (int k = 0; k < ext_count(); k++) {
+        char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", ext_slot_id(k));
+        const char *kind = cfg_get(sec, "kind", "");
+        if (*kind && !pro_kind(kind)) cfg_set(sec, "own", v);
+    }
+    cfg_save_if_dirty();
+    InterlockedExchange(&need_own, 1);
+    ext_reload();
+    logf_("the PC's lighting: %s", own ? "given back to its own programs" : "lit by haku");
+    ui_refresh();
+}
+
+// 1: everything of the PC that haku could light has its own lighting
+int app_pc_own_now(void) {
+    if (have_msi && !msi_own) return 0;
+    if (have_ene && ene_count() > 0 && !ram_own) return 0;
+    int any = (have_msi && msi_own) || (have_ene && ene_count() > 0 && ram_own);
+    for (int k = 0; k < ext_count(); k++) {
+        char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", ext_slot_id(k));
+        const char *kind = cfg_get(sec, "kind", "");
+        if (!*kind || pro_kind(kind)) continue;
+        if (!cfg_geti(sec, "own", 0)) return 0;
+        any = 1;
+    }
+    return any;
+}
+
 void app_toggle_device(const char *key) {
     cfg_set_and_save("layout", key, cfg_geti("layout", key, 1) ? "0" : "1");
     build_scene();
@@ -820,8 +881,8 @@ static int pawnio_installed(void) {
 static int status_body(char *out, int cap) {
     char gt[16] = "null";
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"bulbs\":[",
-                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_installed());
+    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"bulbs\":[",
+                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_installed(), msi_own, ram_own, app_pc_own_now());
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
@@ -919,6 +980,7 @@ void app_set(const char *s, const char *k, const char *v) {
     if (!_strnicmp(s, "dev.", 4)) { cfg_save_if_dirty(); ext_reload(); }
     if (!_stricmp(s, "remote")) { cfg_save_if_dirty(); remote_apply(); }
     if (!_stricmp(s, "mqtt")) { cfg_save_if_dirty(); mqtt_apply(); }
+    if (!_stricmp(s, "devices")) { cfg_save_if_dirty(); InterlockedExchange(&need_own, 1); }
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
 }
 
@@ -1024,6 +1086,8 @@ static void show_menu(void) {
         MultiByteToWideChar(CP_UTF8, 0, t, -1, w, 64);
         AppendMenuW(m, MF_STRING | (nano_on[k] ? MF_CHECKED : 0), ID_NANO_ON + k, w);
     }
+    // the PC's lighting back to its own programs (MSI Center, the makers' apps): also when the window is no help
+    AppendMenuW(m, MF_STRING | (app_pc_own_now() ? MF_CHECKED : 0), ID_PC_OWN, TR(L"PC: its own lighting", L"ПК: своя подсветка", L"PC : son propre éclairage"));
     AppendMenuW(m, MF_STRING, ID_SETTINGS, TR(L"Settings file", L"Файл настроек", L"Fichier de réglages"));
     AppendMenuW(m, MF_STRING, ID_LOG, TR(L"Log", L"Журнал", L"Journal"));
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
@@ -1136,6 +1200,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (id == ID_WINDOW) ui_open(app_inst);
         else if (id == ID_RAM_ON) app_toggle_device("ram_enabled");
         else if (id == ID_GPU_ON) app_toggle_device("gpu_enabled");
+        else if (id == ID_PC_OWN) app_pc_own(!app_pc_own_now());
         else if (id == ID_LIGHTS_ON) app_toggle_device("lights_enabled");
         else if (id > ID_PRESET && id <= ID_PRESET + PRESET_MAX) app_preset_apply(id - ID_PRESET);
         else if (id > ID_PROFILE && id <= ID_PROFILE + PROFILE_MAX) app_profile_apply(id - ID_PROFILE);

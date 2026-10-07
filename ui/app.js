@@ -1967,6 +1967,13 @@ function drawHero() {
     c.save(); tilePath(c, x, y, w, h, 8 * d); c.clip();   // a device never draws outside its tile
     try { it.draw(c, x + 8 * d, y + 22 * d, w - 16 * d, h - 50 * d); } catch (e) { console.warn('preview', it.key, e); }
     c.restore();
+    // given back to its own lighting: what it shows is not haku's, said on the tile
+    if (it.k === 'ram' ? S.ram_own : it.k === 'gpu' ? S.msi_own : it.k === 'ext' ? (S.ext.devs[it.i] || {}).own : 0) {
+      c.font = `${8 * d}px ${WIDE}`; c.letterSpacing = `${1.5 * d}px`; c.textAlign = 'center'; c.fillStyle = THEME.mid;
+      let s = t('hero.own').toUpperCase();
+      while (s.length > 1 && c.measureText(s).width > w - 16 * d) s = s.slice(0, -2) + '…';
+      c.fillText(s, x + w / 2, y + h - 26 * d); c.letterSpacing = '0px';
+    }
     tileLabel(c, it.name, x + 8 * d, y + h - 12 * d, w - 16 * d, hot);
     c.restore();
     hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, zone: it.zone, name: it.name, group: T.group || 0, x, y, w, h });
@@ -2344,6 +2351,7 @@ function ambient() {
 // ------------------------------------------------------------------ PC / Nanoleaf / bulbs / settings
 function syncToggles() {
   $$('[data-toggle]').forEach(t => { t.checked = cv('layout', t.dataset.toggle, '1') !== '0'; });
+  $$('[data-own]').forEach(t => { t.checked = cv('devices', t.dataset.own, '0') === '1'; });
   $$('[data-layout]').forEach(t => { t.checked = cv('layout', t.dataset.layout, t.dataset.layout === 'board_led' ? '1' : '0') !== '0'; });
   $('#gpu-leds').textContent = cv('layout', 'gpu_leds', 8);
   $$('[data-cal]').forEach(t => { t.checked = cv('calibration', t.dataset.cal, '1') !== '0'; });
@@ -2362,6 +2370,8 @@ $$('[data-toggle]').forEach(t => t.addEventListener('change', () => {
 }));
 function setCfgLocal(s, k, v) { (S.cfg[s] = S.cfg[s] || {})[k] = v; }
 $$('[data-layout]').forEach(t => t.addEventListener('change', () => setCfg('layout', t.dataset.layout, t.checked ? 1 : 0)));
+// the board / the memory given back to their own lighting ([devices] msi_own / ene_own)
+$$('[data-own]').forEach(t => t.addEventListener('change', () => { setCfg('devices', t.dataset.own, t.checked ? 1 : 0); S[t.dataset.own === 'msi_own' ? 'msi_own' : 'ram_own'] = t.checked ? 1 : 0; updateChips(); drawHero(); }));
 $$('[data-step]').forEach(b => b.addEventListener('click', () => {
   const n = Math.max(1, Math.min(40, +cv('layout', 'gpu_leds', 8) + +b.dataset.step));
   setCfg('layout', 'gpu_leds', n); $('#gpu-leds').textContent = n;
@@ -2470,8 +2480,11 @@ function typeOptions(cur, guess, only) {
 // LAN / bridge devices
 let devSig = '';
 const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).title;
+// the PC's own devices (not the lights on the network): they can be given back to their own lighting
+const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech'].includes(d.kind);
 function devStatus(d) {
   if (!d.enabled) return t('dev.off');
+  if (d.own) return t('own.status');
   if (d.pro && proLocked()) return t('dev.pro');
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
@@ -2514,11 +2527,14 @@ function buildDevices() {
           <p class="hint">${t('dv.lights.note')}</p>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>`}` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
+        ${!pcDev(d) ? '' : `<label class="check"><input type="checkbox" class="dev-own" ${d.own ? 'checked' : ''}><span></span><em>${t('own')}</em></label>
+          <p class="hint">${t('own.note.dev')}</p>`}
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
       </div>`;
     ($(`[data-brand-grid="${(brandOf(d.kind) || [])[0]}"]`) || grid).appendChild(el);
     renderZone(el.querySelector('.zone'));
     el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
+    el.querySelector('.dev-own')?.addEventListener('change', e => { d.own = e.target.checked ? 1 : 0; setCfg(sec, 'own', d.own); updateDevices(); drawHero(); });
     el.querySelector('.dev-name').addEventListener('change', e => {
       const v = e.target.value.replace(/[;#\[\]=]/g, '').trim(); if (!v) return;
       setCfg(sec, 'name', v); el.querySelector('h3').textContent = v; d.name = v; renderOwnList();
@@ -2562,8 +2578,9 @@ const ORGB_TYPES = { 0: 'board', 1: 'ram', 2: 'gpu', 3: 'fan', 4: 'strip', 5: 'k
 const orgbOwn = c => (c.type === 1 && S.sticks > 0) || (c.type === 0 && S.msi && /msi|mystic/i.test(c.name)) ||
   S.ext.devs.some(d => d.kind !== 'openrgb' && (d.title || '').split(' ')[0].length >= 3 && c.name.toLowerCase().includes(d.title.split(' ')[0].toLowerCase())) ||
   (nanoOn() && /nanoleaf/i.test(c.name));
-const orgbAdded = c => S.ext.devs.some(d => d.kind === 'openrgb' && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(d.host) &&
+const orgbDev = c => S.ext.devs.find(d => d.kind === 'openrgb' && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(d.host) &&
   (cv('dev.' + d.id, 'match', '') ? cv('dev.' + d.id, 'match', '') === c.name : d.sub === c.i));
+const orgbAdded = c => !!orgbDev(c);
 const orgbAdd = c => send({ cmd: 'dev_add', kind: 'openrgb', host: '127.0.0.1', sub: c.i, name: c.name, leds: 0 });
 function updateOrgb() {
   const O = S.orgb || { state: 0, ctls: [] }, ctls = O.ctls || [];
@@ -2610,16 +2627,18 @@ const HW_KEYS = {   // USB maker -> words its OpenRGB controllers carry in their
 function hwRoute(it) {
   const O = S.orgb || { state: 0, ctls: [] }, ctls = O.ctls || [], vid = (it.id || '').slice(0, 4);
   const lc = x => (x || '').toLowerCase();
-  // haku's own drivers first
-  if (it.cat === 'board' && S.msi) return { cls: 'on', text: t('hw.haku') };
-  if (it.cat === 'ram' && S.sticks > 0) return { cls: 'on', text: t('hw.haku') };
-  if (it.cat === 'usb' && vid === '1462' && S.msi) return { cls: 'on', text: t('hw.haku') };
+  // haku's own drivers first (or given back to their own lighting)
+  if ((it.cat === 'board' || (it.cat === 'usb' && vid === '1462')) && S.msi) return S.msi_own ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
+  if (it.cat === 'ram' && S.sticks > 0) return S.ram_own ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
   const own = { '31E3': 'wooting', '1B80': 'wooting', '37FA': 'nlusb' }[vid];
-  if (own) return S.ext.devs.some(d => d.kind === own && lc(d.host).startsWith(lc(vid)))
-    ? { cls: 'on', text: t('hw.haku') } : { cls: 'warn', text: t('hw.haku.add'), act: 'scan' };
+  if (own) {
+    const ds = S.ext.devs.filter(d => d.kind === own && lc(d.host).startsWith(lc(vid)));
+    return !ds.length ? { cls: 'warn', text: t('hw.haku.add'), act: 'scan' } : ds.every(d => d.own) ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
+  }
   // through the maker's own app (Synapse, GG, G HUB), when one of its devices is added
   const bridge = { '1532': ['razer', 'Razer Synapse'], '1038': ['steelseries', 'SteelSeries GG'], '046D': ['logitech', 'Logitech G HUB'] }[vid];
-  if (bridge && S.ext.devs.some(d => d.kind === bridge[0])) return { cls: 'on', text: t('hw.bridge', bridge[1]) };
+  const bds = bridge ? S.ext.devs.filter(d => d.kind === bridge[0]) : [];
+  if (bds.length) return bds.every(d => d.own) ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.bridge', bridge[1]) };
   // then what OpenRGB found for it
   let match = [];
   if (it.cat === 'board') match = ctls.filter(c => c.type === 0);
@@ -2631,7 +2650,8 @@ function hwRoute(it) {
   const mine = match.filter(c => !orgbOwn(c));
   if (mine.length) {
     const free = mine.filter(c => !orgbAdded(c));
-    return free.length ? { cls: 'warn', text: t('hw.orgb.found'), act: 'add', ctls: free } : { cls: 'on', text: t('hw.orgb') };
+    if (free.length) return { cls: 'warn', text: t('hw.orgb.found'), act: 'add', ctls: free };
+    return mine.every(c => (orgbDev(c) || {}).own) ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.orgb') };
   }
   if (bridge && S.ext.found.some(f => f.kind === bridge[0])) return { cls: 'warn', text: t('hw.bridge.add', bridge[1]), act: 'scan' };
   if (it.cat === 'ram' && !S.pawnio) return { cls: 'warn', text: t('hw.pawnio'), act: 'pawnio' };
@@ -2666,6 +2686,14 @@ function updateHw() {
     else if (r.act === 'scan') { send({ cmd: 'scan' }); showTab('devices'); }
   }));
 }
+$('#pc-own').addEventListener('click', () => {
+  const v = S.pc_own ? 0 : 1;
+  S.pc_own = S.msi_own = S.ram_own = v;
+  S.ext.devs.forEach(d => { if (pcDev(d)) { d.own = v; setCfgLocal('dev.' + d.id, 'own', String(v)); } });
+  setCfgLocal('devices', 'msi_own', String(v)); setCfgLocal('devices', 'ene_own', String(v));
+  send({ cmd: 'pc_own', v: String(v) });
+  updateChips(); updateDevices(); drawHero();
+});
 $('#hw-scan').addEventListener('click', () => { S.hw = Object.assign({}, S.hw, { busy: 1 }); updateHw(); send({ cmd: 'hw_scan' }); });
 
 $('#orgb-check').addEventListener('click', () => { S.orgb = Object.assign({}, S.orgb, { state: 1 }); updateOrgb(); send({ cmd: 'orgb_check' }); });
@@ -2679,6 +2707,7 @@ function updateDevices() {
   E.devs.forEach(d => {
     const el = $('#dev-st-' + d.id); if (!el) return;
     el.innerHTML = `<span class="dot ${d.enabled && d.online ? 'on' : 'off'}" style="display:inline-block;margin-right:6px"></span>${esc(devStatus(d))}`;
+    const own = el.closest('.card')?.querySelector('.dev-own'); if (own && own !== document.activeElement) own.checked = !!d.own;
   });
   const btn = $('#scan-btn');
   btn.disabled = !!E.scanning;
@@ -3106,8 +3135,8 @@ $$('#lang button').forEach(b => b.addEventListener('click', () => {
 function chip(dot, text) { return `<span class="chip"><span class="dot ${dot}"></span>${text}</span>`; }
 function updateChips() {
   const h = [];
-  if (S.msi) h.push(chip('on', `${t('chip.board')} <b>MSI</b>`));
-  if (S.sticks) h.push(chip('on', `${t('chip.mem')} <b>${S.sticks} ${t('chip.pcs')}</b>`));
+  if (S.msi) h.push(chip(S.msi_own ? 'off' : 'on', `${t('chip.board')} <b>MSI</b>`));
+  if (S.sticks) h.push(chip(S.ram_own ? 'off' : 'on', `${t('chip.mem')} <b>${S.sticks} ${t('chip.pcs')}</b>`));
   if (S.gpu_temp != null) h.push(chip('on', `GPU <b>${S.gpu_temp}°</b>`));
   const nL = nanoCtls();
   if (nL.length) { const on = nL.filter(c => c.online).length; h.push(chip(on === nL.length ? 'on' : on ? 'warn' : 'off', nL.length > 1 ? `Nanoleaf <b>${on}/${nL.length}</b>` : `<b>Nanoleaf</b>`)); }
@@ -3115,7 +3144,13 @@ function updateChips() {
   const ed = S.ext.devs.filter(d => d.enabled);
   if (ed.length) { const on = ed.filter(d => d.online).length; h.push(chip(on === ed.length ? 'on' : on ? 'warn' : 'off', `${t('chip.devs')} <b>${on}/${ed.length}</b>`)); }
   $('#chips').innerHTML = h.join('');
-  $('#ram-status').textContent = S.sticks ? t('ram.status', S.sticks) : t('ram.none');
+  $('#ram-status').textContent = !S.sticks ? t('ram.none') : S.ram_own ? t('own.status') : t('ram.status', S.sticks);
+  $$('[data-own]').forEach(el => { if (el !== document.activeElement) el.checked = !!S[el.dataset.own === 'msi_own' ? 'msi_own' : 'ram_own']; });
+  // all of the PC's lighting given back / taken again: shown once there is something of the PC haku lights
+  const pcDevs = S.sticks || S.msi || S.ext.devs.some(pcDev), pb = $('#pc-own');
+  pb.classList.toggle('hidden', !pcDevs);
+  pb.querySelector('span').textContent = t(S.pc_own ? 'pc.own.take' : 'pc.own.give');
+  pb.title = t('pc.own.tip');
   // the Memory and ARGB strip cards only where there is such hardware; the rest of the PC tab is for every PC
   const rc = $('#ram-card'), gc = $('#gpu-card');
   if (rc.classList.contains('hidden') === !!S.sticks || gc.classList.contains('hidden') === !!S.msi) {
@@ -3125,7 +3160,7 @@ function updateChips() {
   updateOrgb();
   updateHw();
   if (S.effect === 'screen') updateScreen();
-  $('#gpu-status').textContent = S.msi ? t('gpu.status') : t('gpu.none');
+  $('#gpu-status').textContent = !S.msi ? t('gpu.none') : S.msi_own ? t('own.status') : t('gpu.status');
   $('#strip-title').textContent = stripName();
   const sn = $('#strip-name'); if (document.activeElement !== sn) sn.value = cv('layout', 'strip_name', '');
   sn.placeholder = t('pc.block');

@@ -24,6 +24,7 @@ window.chrome = { webview: {
     // profiles: kept in the fake settings only (the core keeps the setups)
     const C = STATE.cfg, G = C.general;
     if (o.cmd === 'set') (C[o.s] = C[o.s] || {})[o.k] = o.v;
+    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'profile') { G.profile = o.id; setTimeout(() => emit(STATE), 120); }
     if (o.cmd === 'profile_save') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; G.profile = String(n); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'profile_delete') { delete C['profile.' + o.id]; if (G.profile === o.id) G.profile = ''; setTimeout(() => emit(STATE), 60); }

@@ -61,6 +61,14 @@ static void build_enable(BYTE *en) {
     en[174 + 4] = 0x2A; en[174 + 8] = 0x80;                        // j_rgb_2
 }
 
+// 1: the board is there (nothing is sent to it: its lighting is given back to Mystic Light / MSI Center)
+int msi_probe(void) {
+    HANDLE h = find_device();
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    CloseHandle(h);
+    return 1;
+}
+
 int msi_open(void) {
     dev = find_device();
     if (dev == INVALID_HANDLE_VALUE) { logf_("msi: device not found"); return 0; }

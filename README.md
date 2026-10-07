@@ -75,6 +75,12 @@ real device. Reports from owners are very welcome.
 The app only writes to hardware it has positively identified. It never writes to the memory controller's
 flash or changes SMBus addresses, and it restores each device's own effect when it exits.
 
+Any of the PC's devices can also be given back while haku runs: **Its own lighting** on a device's card (or **Give
+back to their apps** on the PC tab, or *PC: its own lighting* in the tray menu) puts back the effect it had before
+haku (the board's Mystic Light setup, the memory's stored effect, an OpenRGB device's mode) and haku sends it nothing
+more, so MSI Center, iCUE, Armoury Crate, Synapse and the like can control it again. When every OpenRGB device is
+given back, the OpenRGB that haku started is closed too. The lights on the network are not affected.
+
 ## Install
 
 Requirements: Windows 10/11 x64, [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
