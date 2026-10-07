@@ -984,8 +984,11 @@ body.calm nav button { transition: none; }
 .wn-list li::marker { color: var(--faint); }
 
 /* ---- theme switch with the secret-code field beside it */
-.theme-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.theme-ctl .seg { margin-top: 0; }
+.set-row:has(> .theme-ctl) { flex-wrap: wrap; row-gap: 10px; }
+.theme-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 auto; min-width: 0; }
+.theme-ctl .seg { margin-top: 0; flex: 1 1 auto; flex-wrap: wrap; min-width: 0; border-radius: 18px; }
+.theme-ctl .seg button { flex: 1 1 auto; }
+.theme-ctl .code { margin-left: auto; }
 .code { display: flex; align-items: center; width: 150px; }
 .code input[type=text] { height: 32px; padding: 0 30px 0 10px; font-size: 12px; letter-spacing: .04em; }
 .code button { margin-left: -30px; width: 30px; height: 32px; padding: 0; display: grid; place-items: center; border: 0; background: none; color: var(--muted); }
