@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.3.33',
+    en: ['The devices in the preview can be put in your own order: choose Arrange in the preview\'s menu and drag a device onto another to swap their places. Dragging outside Arrange still makes a group.',
+      'The theme switch in Settings no longer gets cut off when the window is narrow or the hidden themes are open: the buttons move under the label.'],
+    ru: ['Устройства в превью можно расставить в своём порядке: выберите «Расставить» в меню превью и перетащите одно устройство на другое, чтобы поменять их местами. Перетаскивание без «Расставить» по-прежнему делает группу.',
+      'Переключатель темы в настройках больше не обрезается в узком окне или когда открыты скрытые темы: кнопки переходят под надпись.'],
+    fr: ['Les appareils de l\'aperçu se rangent dans votre ordre : choisissez Disposer dans le menu de l\'aperçu et glissez un appareil sur un autre pour les échanger de place. Glisser hors de Disposer crée toujours un groupe.',
+      'Le choix du thème dans les Réglages n\'est plus coupé quand la fenêtre est étroite ou que les thèmes cachés sont ouverts : les boutons passent sous le libellé.'] },
   { v: '0.3.32',
     en: ['The hidden theme from 0.3.31 got prettier: its butterflies beat their wings, the light in the corner glows without a dark ring, and its name is written with a brush, stroke after stroke.'],
     ru: ['Скрытая тема из 0.3.31 стала красивее: бабочки машут крыльями, свет в углу светится без тёмного кольца, а её название пишется кистью, черта за чертой.'],

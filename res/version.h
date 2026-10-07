@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // One place for the version (resources, setup).
-#define HAKU_VER_NUM   0,3,32,0
-#define HAKU_VER_STR   "0.3.32"
-#define HAKU_VER_WSTR  L"0.3.32"
+#define HAKU_VER_NUM   0,3,33,0
+#define HAKU_VER_STR   "0.3.33"
+#define HAKU_VER_WSTR  L"0.3.33"
