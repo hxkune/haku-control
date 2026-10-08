@@ -3,6 +3,22 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.0',
+    en: ['haku Pro: the lights on Wi-Fi and the network (Nanoleaf, WLED, Hue, Govee, LIFX, Yeelight, WiZ, Elgato, Divoom, Tuya, AiDot) and phone control are now part of haku Pro, $2 a month or $10 a year. A free 14-day trial starts with this update, and Settings → haku Pro shows how many days are left. The PC\'s own lighting, USB devices, Razer, SteelSeries, Logitech and every effect stay free.',
+      'The PC\'s lighting can be given back to the programs it came with (MSI Center, iCUE, Armoury Crate, Synapse...): Its own lighting on a device\'s card, or Give back to their apps on the PC tab (also in the tray menu). Its own effect comes back and haku leaves it alone until you take it again.',
+      'Community: a new tab next to Effects and My presets with presets other people shared. Search, sort by popular or new, like, and add one in a click. Your own presets can be published from their Share window.',
+      'Backup: Settings can save all of haku\'s setup to one file and bring it back on another PC (passwords and keys stay on this PC). Presets can be shared as a short code.',
+      'Home Assistant (haku Pro): haku shows up as a light with its effects and brightness, and a profile picker, through MQTT.'],
+    ru: ['haku Pro: лампы по Wi-Fi и в сети (Nanoleaf, WLED, Hue, Govee, LIFX, Yeelight, WiZ, Elgato, Divoom, Tuya, AiDot) и управление с телефона теперь входят в haku Pro — $2 в месяц или $10 в год. С этим обновлением начинается бесплатный пробный период на 14 дней; сколько дней осталось, видно в Настройках → haku Pro. Подсветка самого ПК, USB-устройства, Razer, SteelSeries, Logitech и все эффекты остаются бесплатными.',
+      'Подсветку ПК можно вернуть её родным программам (MSI Center, iCUE, Armoury Crate, Synapse...): «Своя подсветка» в карточке устройства или «Вернуть родным программам» на вкладке ПК (и в меню трея). Возвращается её собственный эффект, и haku её не трогает, пока не заберёте обратно.',
+      'Сообщество: новая вкладка рядом с «Эффектами» и «Моими пресетами» — пресеты, которыми поделились другие. Поиск, популярные и новые, лайки, добавление в один клик. Свои пресеты можно опубликовать из окна «Поделиться».',
+      'Резервная копия: в Настройках можно сохранить всю настройку haku в один файл и восстановить её на другом ПК (пароли и ключи остаются на этом ПК). Пресетами можно делиться коротким кодом.',
+      'Home Assistant (haku Pro): haku появляется там как лампа со своими эффектами и яркостью и с выбором профиля, через MQTT.'],
+    fr: ['haku Pro : les lumières en Wi-Fi et sur le réseau (Nanoleaf, WLED, Hue, Govee, LIFX, Yeelight, WiZ, Elgato, Divoom, Tuya, AiDot) et le contrôle depuis le téléphone font désormais partie de haku Pro, 2 $ par mois ou 10 $ par an. Un essai gratuit de 14 jours commence avec cette mise à jour, et Réglages → haku Pro indique les jours restants. L\'éclairage du PC lui-même, les appareils USB, Razer, SteelSeries, Logitech et tous les effets restent gratuits.',
+      'L\'éclairage du PC peut être rendu aux programmes livrés avec lui (MSI Center, iCUE, Armoury Crate, Synapse...) : Son propre éclairage sur la fiche d\'un appareil, ou Rendre à leurs apps dans l\'onglet PC (aussi dans le menu de la barre des tâches). Son propre effet revient et haku n\'y touche plus jusqu\'à ce que vous le repreniez.',
+      'Communauté : un nouvel onglet à côté d\'Effets et Mes préréglages, avec les préréglages partagés par d\'autres. Recherche, populaires ou récents, j\'aime, et ajout en un clic. Vos propres préréglages se publient depuis leur fenêtre Partager.',
+      'Sauvegarde : les Réglages enregistrent toute la configuration de haku dans un fichier et la restaurent sur un autre PC (mots de passe et clés restent sur ce PC). Les préréglages se partagent avec un code court.',
+      'Home Assistant (haku Pro) : haku y apparaît comme une lumière avec ses effets et sa luminosité, et un choix de profil, via MQTT.'] },
   { v: '0.3.33',
     en: ['The devices in the preview can be put in your own order: choose Arrange in the preview\'s menu and drag a device onto another to swap their places. Dragging outside Arrange still makes a group.',
       'The theme switch in Settings no longer gets cut off when the window is narrow or the hidden themes are open: the buttons move under the label.'],
