@@ -2527,6 +2527,9 @@ function buildDevices() {
           <p class="hint">${t('dv.lights.note')}</p>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>`}` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
+        ${d.kind === 'openrgb' ? `<label class="num"><span>${t('dev.rate')}</span><select class="select dev-rate">${[0, 30, 10, 5, 2].map(v =>
+          `<option value="${v}"${+cv(sec, 'rate', 0) === v ? ' selected' : ''}>${v ? t('dev.rate.n', v) : t('dev.rate.auto')}</option>`).join('')}</select></label>
+          <p class="hint">${t('dev.rate.note')}</p>` : ''}
         ${!pcDev(d) ? '' : `<label class="check"><input type="checkbox" class="dev-own" ${d.own ? 'checked' : ''}><span></span><em>${t('own')}</em></label>
           <p class="hint">${t('own.note.dev')}</p>`}
         <button class="btn danger small dev-del">${t('dev.remove')}</button>
@@ -2543,6 +2546,7 @@ function buildDevices() {
     el.querySelector('.dev-token')?.addEventListener('change', e => { const v = e.target.value.replace(/\D/g, ''); e.target.value = v; setCfg(sec, 'key', v); });
     el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
+    el.querySelector('.dev-rate')?.addEventListener('change', e => setCfg(sec, 'rate', e.target.value));
     el.querySelector('.dev-fx')?.addEventListener('change', e => setCfg(sec, 'frame_fx', e.target.value));
     el.querySelector('.dev-screen')?.addEventListener('change', e => {
       setCfg(sec, 'screen', e.target.value);

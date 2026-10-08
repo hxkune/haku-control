@@ -49,6 +49,8 @@ struct ext_dev {
     char  key[128];           // pairing token (Hue); saved with ext_save_key()
     int   sub, cfg_leds, nleds, reverse, enabled;
     int   own;                // [dev.N] own=1: given back to its own lighting (its maker's app, the mode it had)
+    float rate;               // frames/s this device takes (set by the driver on open; 0: the driver's rate)
+    float cfg_rate;           // [dev.N] rate: chosen in the window (0: auto)
     int   online;
     DWORD next_try;           // reconnect backoff
     int   fails;

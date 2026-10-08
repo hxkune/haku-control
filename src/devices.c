@@ -158,6 +158,7 @@ static void load_config(void) {
         d->reverse = cfg_geti(sec, "reverse", 0);
         d->enabled = cfg_geti(sec, "enabled", 1);
         d->own = cfg_geti(sec, "own", 0);
+        d->cfg_rate = (float)cfg_geti(sec, "rate", 0);
         strcpy_s(d->key, sizeof(d->key), cfg_get(sec, "key", ""));
     }
     // keep connections of devices whose address (and key) did not change
@@ -167,7 +168,7 @@ static void load_config(void) {
             if (o->id == nd[i].id && o->drv == nd[i].drv && !strcmp(o->host, nd[i].host) && o->sub == nd[i].sub && o->cfg_leds == nd[i].cfg_leds &&
                 !strcmp(o->key, nd[i].key)) {
                 ext_dev keep = *o;
-                keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own;
+                keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own; keep.cfg_rate = nd[i].cfg_rate;
                 strcpy_s(keep.name, sizeof(keep.name), nd[i].name);
                 nd[i] = keep;
                 o->id = -1;   // taken over
@@ -219,7 +220,7 @@ static unsigned __stdcall worker(void *p) {
                 if (devs[k].id == o->d.id && devs[k].drv == o->d.drv && !strcmp(devs[k].host, o->d.host) && devs[k].sub == o->d.sub && !devs[k].online) d = &devs[k];
             if (o->ok && d && d->enabled && !d->own) {
                 int k = (int)(d - devs);
-                d->sock = o->d.sock; d->priv = o->d.priv; d->nleds = o->d.nleds;
+                d->sock = o->d.sock; d->priv = o->d.priv; d->nleds = o->d.nleds; d->rate = o->d.rate;
                 strcpy_s(d->info, sizeof(d->info), o->d.info); strcpy_s(d->key, sizeof(d->key), o->d.key);
                 d->online = 1; d->fails = 0; seen[k] = 0;
                 memset(last8[k], 0, sizeof(last8[k]));
@@ -264,7 +265,9 @@ static unsigned __stdcall worker(void *p) {
             if (n) memcpy(cur, frame[k], n * sizeof(rgbf));
             ReleaseSRWLockShared(&lk);
             if (!n) continue;
-            int interval = (int)(1000 / (d->drv->rate > 0 ? d->drv->rate : 10));
+            // frames/s: chosen in the window, else what the device takes (the driver may lower it on open), else the driver's
+            float fps = d->cfg_rate > 0 ? d->cfg_rate : d->rate > 0 ? d->rate : d->drv->rate > 0 ? d->drv->rate : 10;
+            int interval = (int)(1000 / fps);
             if ((int)(now - last_send[k]) < interval - interval / 4) continue;   // frames come every ~33 ms: allow jitter
             BYTE q[EXT_MAX_LEDS * 3];
             for (int i = 0; i < n; i++) { q[i * 3] = to8(cur[i].r); q[i * 3 + 1] = to8(cur[i].g); q[i * 3 + 2] = to8(cur[i].b); }

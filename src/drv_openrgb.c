@@ -22,8 +22,13 @@ enum {
     PKT_UPDATEMODE               = 1101,
 };
 
-// orig / mode: the colours and the mode the controller had before haku took it, given back when it lets go
-typedef struct { unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; int mode_idx, mode_len; unsigned char mode[512]; } orgb_t;
+// orig / mode: the colours and the mode the controller had before haku took it, given back when it lets go;
+// how / use: the way haku lights it (DRIVE_*) and, for its Static mode, that mode's description
+enum { DRIVE_DIRECT, DRIVE_STATIC, DRIVE_ONE, DRIVE_NONE };
+typedef struct {
+    unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; int mode_idx, mode_len; unsigned char mode[512];
+    int how, use_idx, use_len, use_cmin; unsigned char use[512];
+} orgb_t;
 
 static int send_pkt(SOCKET s, unsigned dev, unsigned id, const void *data, unsigned len) {
     unsigned char h[16] = { 'O', 'R', 'G', 'B' };
@@ -61,8 +66,14 @@ static void rdstr(rd_t *r, char *out, int cap) {
     rdskip(r, n);
 }
 
-// mode: the active mode as the protocol describes it (name, value, flags... colours), to send it back as it was
-typedef struct { int type, nleds, ncolors, active, mode_len; char name[64], vendor_desc[64], mode_name[32]; unsigned colors[EXT_MAX_LEDS]; unsigned char mode[512]; } ctrl_t;
+// mode: the active mode as the protocol describes it (name, value, flags... colours), to send it back as it was;
+// md / mraw: every mode (its name, colour mode, minimum colours and description), to choose the one haku lights it in
+enum { COLORS_NONE, COLORS_PER_LED, COLORS_MODE_SPECIFIC, COLORS_RANDOM };   // a mode's colour mode (OpenRGB's MODE_COLORS_*)
+typedef struct { char name[32]; int cm, cmin, off, len; } mode_t_;
+typedef struct {
+    int type, nleds, ncolors, active, mode_len, nmodes, mraw_len; char name[64], vendor_desc[64], mode_name[32];
+    unsigned colors[EXT_MAX_LEDS]; unsigned char mode[512]; mode_t_ md[64]; unsigned char mraw[8192];
+} ctrl_t;
 
 static int parse_ctrl(const unsigned char *buf, int len, ctrl_t *c) {
     rd_t r = { buf, buf + len, 0 };
@@ -78,11 +89,26 @@ static int parse_ctrl(const unsigned char *buf, int len, ctrl_t *c) {
     c->active = (int)rd32(&r);         // active mode
     for (unsigned m = 0; m < nmodes && !r.bad; m++) {
         const unsigned char *m0 = r.p;
-        rdstr(&r, (int)m == c->active ? c->mode_name : NULL, sizeof(c->mode_name));   // name
-        rdskip(&r, 4 * 9);             // value, flags, speed min/max, colors min/max, speed, direction, colour mode
+        char nm[32];
+        rdstr(&r, nm, sizeof(nm));     // name
+        rdskip(&r, 4 * 5);             // value, flags, speed min/max, colors min
+        unsigned cmax = rd32(&r); (void)cmax;
+        rdskip(&r, 4 * 2);             // speed, direction
+        int cm = (int)rd32(&r);        // colour mode
         unsigned nc = rd16(&r);
         rdskip(&r, nc * 4);
-        if ((int)m == c->active && !r.bad && r.p - m0 <= (int)sizeof(c->mode)) { c->mode_len = (int)(r.p - m0); memcpy(c->mode, m0, c->mode_len); }
+        if (r.bad) break;
+        int len = (int)(r.p - m0);
+        if ((int)m == c->active) {
+            strcpy_s(c->mode_name, sizeof(c->mode_name), nm);
+            if (len <= (int)sizeof(c->mode)) { c->mode_len = len; memcpy(c->mode, m0, len); }
+        }
+        if (c->nmodes < 64 && c->mraw_len + len <= (int)sizeof(c->mraw)) {
+            mode_t_ *x = &c->md[c->nmodes++];
+            strcpy_s(x->name, sizeof(x->name), nm); x->cm = cm; x->off = c->mraw_len; x->len = len;
+            unsigned cmin; memcpy(&cmin, m0 + 2 + (m0[0] | m0[1] << 8) + 16, 4); x->cmin = (int)cmin;
+            memcpy(c->mraw + c->mraw_len, m0, len); c->mraw_len += len;
+        }
     }
     unsigned nzones = rd16(&r);
     for (unsigned z = 0; z < nzones && !r.bad; z++) {
@@ -151,6 +177,37 @@ static void keep_mode(const char *sec, const ctrl_t *c, orgb_t *o) {
     o->mode_idx = atoi(s); o->mode_len = len;
 }
 
+// How haku lights a controller. OpenRGB's own choice (SETCUSTOMMODE: a mode named Direct, Custom or Static) leaves a
+// controller with none of them in its own effect (a flashing one, say) and says nothing: haku's colours then only
+// flash over it. So: Direct / Custom with colours per LED, frame by frame; else its Static mode, slower (many such
+// controllers fade or blink at every colour), per LED or one colour for all; else not at all.
+static int pick_mode(const ctrl_t *c, orgb_t *o, float *rate, const char **how) {
+    static const char *const NAMES[] = { "Direct", "Custom" };
+    for (int k = 0; k < 2; k++)
+        for (int m = 0; m < c->nmodes; m++)
+            if (!_stricmp(c->md[m].name, NAMES[k]) && c->md[m].cm == COLORS_PER_LED) { *how = c->md[m].name; return DRIVE_DIRECT; }
+    for (int pass = 0; pass < 2; pass++)
+        for (int m = 0; m < c->nmodes; m++) {
+            const mode_t_ *x = &c->md[m];
+            if (_stricmp(x->name, "Static") || x->len > (int)sizeof(o->use)) continue;
+            if (pass == 0 ? x->cm != COLORS_PER_LED : x->cm != COLORS_MODE_SPECIFIC) continue;
+            o->use_idx = m; o->use_len = x->len; o->use_cmin = x->cmin; memcpy(o->use, c->mraw + x->off, x->len);
+            if (pass == 0) { *rate = 5; *how = "Static, slower"; return DRIVE_STATIC; }
+            *rate = 4; *how = "Static, one colour"; return DRIVE_ONE;
+        }
+    *how = "no mode haku can set";
+    return DRIVE_NONE;
+}
+
+// a mode as it is described (index, then the description), made the active one
+static int send_mode(ext_dev *d, int idx, const unsigned char *desc, int len) {
+    unsigned char buf[8 + 1024];
+    if (len > 1024) return 0;
+    unsigned size = 8 + len;
+    memcpy(buf, &size, 4); memcpy(buf + 4, &idx, 4); memcpy(buf + 8, desc, len);
+    return send_pkt(d->sock, ((orgb_t *)d->priv)->idx, PKT_UPDATEMODE, buf, size);
+}
+
 static int server_answers(void);
 
 static int orgb_open(ext_dev *d) {
@@ -178,9 +235,15 @@ static int orgb_open(ext_dev *d) {
     if (!o) { free(c); closesocket(s); return 0; }
     memcpy(o->orig, c->colors, sizeof(unsigned) * c->ncolors); o->norig = c->ncolors; o->idx = (unsigned)idx;
     keep_mode(sec, c, o);
+    const char *how = ""; float rate = 0;
+    o->how = pick_mode(c, o, &rate, &how);
+    d->rate = rate;
+    snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s · %s", c->name, type_name(c->type), how);
+    if (o->how != DRIVE_DIRECT) logf_("dev.%d (openrgb): '%s' has no Direct mode: %s (%d modes)", d->id, c->name, how, c->nmodes);
     free(c);
     d->priv = o; d->sock = s;
-    send_pkt(s, o->idx, PKT_SETCUSTOMMODE, NULL, 0);   // direct / custom mode
+    if (o->how == DRIVE_DIRECT) send_pkt(s, o->idx, PKT_SETCUSTOMMODE, NULL, 0);   // Direct / Custom
+    else if (o->how == DRIVE_STATIC) send_mode(d, o->use_idx, o->use, o->use_len);
     return 1;
 }
 
@@ -202,6 +265,22 @@ static int orgb_send(ext_dev *d, const rgbf *c, int n) {
         if (id == PKT_DEVICE_LIST_UPDATED) return 0;
         unsigned char tmp[512];
         while (len) { int k = len > sizeof(tmp) ? (int)sizeof(tmp) : (int)len; if (!tcp_recv_all(d->sock, tmp, k)) return 0; len -= k; }
+    }
+    orgb_t *o = d->priv;
+    if (o->how == DRIVE_NONE) return 1;   // nothing it takes: left as it is
+    if (o->how == DRIVE_ONE) {   // one colour for the whole controller: its Static mode, with the frame's average
+        float r = 0, g = 0, b = 0;
+        for (int i = 0; i < n; i++) { r += c[i].r; g += c[i].g; b += c[i].b; }
+        if (n) { r /= n; g /= n; b /= n; }
+        unsigned v = to8(r) | to8(g) << 8 | to8(b) << 16;
+        // the description up to its colour count, then that many colours (at least its minimum, at least one)
+        int head = 2 + (o->use[0] | o->use[1] << 8) + 36, nc = o->use_cmin > 0 ? o->use_cmin : 1;
+        unsigned char m[512];
+        if (head + 2 + nc * 4 > (int)sizeof(m) || head > o->use_len) return 1;
+        memcpy(m, o->use, head);
+        m[head] = (unsigned char)nc; m[head + 1] = (unsigned char)(nc >> 8);
+        for (int i = 0; i < nc; i++) memcpy(m + head + 2 + i * 4, &v, 4);
+        return send_mode(d, o->use_idx, m, head + 2 + nc * 4);
     }
     unsigned col[EXT_MAX_LEDS];
     for (int i = 0; i < n; i++) col[i] = to8(c[i].r) | to8(c[i].g) << 8 | to8(c[i].b) << 16;
