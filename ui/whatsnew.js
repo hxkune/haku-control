@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.1',
+    en: ['Devices through OpenRGB that have no Direct mode (some ASRock graphics cards, for one) no longer just flash: haku lights them in their Static mode, a little slower, or with one colour, and leaves alone the ones it cannot light. The device\'s line says which.',
+      'Each OpenRGB device has an Updates setting: if its lights still blink instead of moving smoothly, choose fewer updates per second.'],
+    ru: ['Устройства через OpenRGB без режима Direct (например, некоторые видеокарты ASRock) больше не просто мигают: haku светит ими в их режиме Static, чуть медленнее, или одним цветом, а те, которыми управлять нельзя, не трогает. В строке устройства написано, как именно.',
+      'У каждого устройства OpenRGB появилась настройка «Обновления»: если подсветка всё равно мигает вместо плавных эффектов, выберите меньше обновлений в секунду.'],
+    fr: ['Les appareils passant par OpenRGB sans mode Direct (certaines cartes graphiques ASRock, par exemple) ne font plus que clignoter : haku les éclaire dans leur mode Static, un peu plus lentement, ou d\'une seule couleur, et laisse tranquilles ceux qu\'il ne peut pas éclairer. La ligne de l\'appareil indique lequel.',
+      'Chaque appareil OpenRGB a un réglage Mises à jour : si ses lumières clignotent encore au lieu de bouger en douceur, choisissez moins de mises à jour par seconde.'] },
   { v: '0.4.0',
     en: ['haku Pro: the lights on Wi-Fi and the network (Nanoleaf, WLED, Hue, Govee, LIFX, Yeelight, WiZ, Elgato, Divoom, Tuya, AiDot) and phone control are now part of haku Pro, $2 a month or $10 a year. A free 14-day trial starts with this update, and Settings → haku Pro shows how many days are left. The PC\'s own lighting, USB devices, Razer, SteelSeries, Logitech and every effect stay free.',
       'The PC\'s lighting can be given back to the programs it came with (MSI Center, iCUE, Armoury Crate, Synapse...): Its own lighting on a device\'s card, or Give back to their apps on the PC tab (also in the tray menu). Its own effect comes back and haku leaves it alone until you take it again.',
