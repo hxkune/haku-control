@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.3',
+    en: ['A new effect, Colour wave: bands of your colours sweep across the whole room, every device taking the wave as it passes, like SignalRGB\'s Color Wave. Choose the direction (left, right, up, down, from or to the middle) and how long the wave is.'],
+    ru: ['Новый эффект «Цветная волна»: полосы ваших цветов идут волной через всю комнату, каждое устройство подхватывает её по очереди, как Color Wave в SignalRGB. Можно выбрать направление (влево, вправо, вверх, вниз, от центра или к центру) и длину волны.'],
+    fr: ['Un nouvel effet, Vague de couleurs : des bandes de vos couleurs balaient toute la pièce, chaque appareil prenant la vague à son passage, comme le Color Wave de SignalRGB. Choisissez la direction (gauche, droite, haut, bas, depuis ou vers le centre) et la longueur de la vague.'] },
   { v: '0.4.2',
     en: ['Report a problem, right from the app: Settings → Report a problem. Say what happened, and it goes straight to the developer with the diagnostics (no keys, tokens or passwords). You can leave a way to reach you, and the diagnostics can still be saved as a file instead.'],
     ru: ['Сообщить о проблеме прямо из приложения: Настройки → «Сообщить о проблеме». Опишите, что случилось, и описание сразу уйдёт разработчику вместе с диагностикой (без ключей, токенов и паролей). Можно оставить контакт для ответа, а диагностику по-прежнему можно сохранить файлом.'],
