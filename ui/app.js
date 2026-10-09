@@ -50,7 +50,7 @@ const parsePal = str => (str || '').match(/#[0-9a-fA-F]{6}/g)?.map(x => x.toUppe
 const palStr = a => a.join(', ');
 // the newer effects' own colours when none are set (as effects.c FX_DEFAULT); the others take the general palette
 const FX_DEFAULT_PAL = {
-  rainbow: ['#FF0000', '#FFFF00', '#00FF00', '#00FFFF', '#0000FF', '#FF00FF'], fire: ['#200000', '#C01000', '#FF5000', '#FFB020', '#FFF0A0'],
+  rainbow: ['#FF0000', '#FFFF00', '#00FF00', '#00FFFF', '#0000FF', '#FF00FF'], wave: ['#FF0050', '#FF9000', '#00FF80', '#0090FF', '#9030FF'], fire: ['#200000', '#C01000', '#FF5000', '#FFB020', '#FFF0A0'],
   ocean: ['#000820', '#003070', '#0070B0', '#00B0D0', '#A0F0FF'], twinkle: ['#FFFFFF', '#FFE8A0', '#A0C8FF'], meteor: ['#FFFFFF', '#80C0FF', '#3040FF'],
   plasma: ['#FF0080', '#8000FF', '#0080FF', '#00FFC0'], aurora: ['#00FF90', '#00C0FF', '#7040FF', '#FF40C0'], ripple: ['#40E0FF', '#4060FF', '#C040FF'],
   matrix: ['#00FF40', '#C0FFC0'], candle: ['#FF7A1A', '#FFB347', '#FF5500'],
@@ -1245,6 +1245,12 @@ function renderEffectSide() {
   setRange($('#fx-speed'), sp); $('#fx-speed-val').textContent = sp;
   $('#fx-temp').classList.toggle('hidden', id !== 'temperature');
   $('#fx-screen').classList.toggle('hidden', id !== 'screen');
+  $('#fx-wave').classList.toggle('hidden', id !== 'wave');
+  if (id === 'wave') {
+    const d = cv('wave', 'dir', 'right'), sz = cv('wave', 'size', '2');
+    $$('#wave-dir button').forEach(b => b.classList.toggle('on', b.dataset.v === d));
+    $$('#wave-size button').forEach(b => b.classList.toggle('on', b.dataset.v === sz));
+  }
   if (id === 'screen') updateScreen();
   if (id === 'temperature') {
     const src = cv('temperature', 'source', 'gpu');
@@ -1287,6 +1293,8 @@ function updateScreen() {
   $('#scr-note').textContent = C.err ? t('scr.err', C.err) : C.have ? t('scr.on', C.w, C.h) : t('scr.note');
 }
 $$('#temp-src button').forEach(b => b.addEventListener('click', () => { setCfg('temperature', 'source', b.dataset.v); renderEffectSide(); }));
+$$('#wave-dir button').forEach(b => b.addEventListener('click', () => { setCfg('wave', 'dir', b.dataset.v); renderEffectSide(); }));
+$$('#wave-size button').forEach(b => b.addEventListener('click', () => { setCfg('wave', 'size', b.dataset.v); renderEffectSide(); }));
 ['cold', 'hot'].forEach(k => $('#temp-' + k).addEventListener('change', e => { const v = +e.target.value; if (v > 0 && v < 120) setCfg('temperature', k, v); }));
 
 function updateBrand() { }   // monochrome UI: the brand does not follow the palette
@@ -1336,6 +1344,10 @@ function preview(id, pal, t, n) {
       case 'temperature': c = scale(grad(pal, 0.5 + 0.5 * Math.sin(t * 0.25)), 0.8 + 0.2 * causticN(x, 0.5, t * 0.5)); break;
       case 'audio': { const lv = Math.abs(Math.sin(t * 2.3) * Math.sin(t * 0.9 + 1)); c = scale(grad(pal, x), x < lv ? 1 : 0.1); break; }
       case 'rainbow': c = hsvRgb(x * 0.9 - t * 0.15, 1, 1); break;
+      case 'wave': {   // as effects.c: the palette in bands sweeping one way (the strip read left to right)
+        const d = cv('wave', 'dir', 'right'), b = Math.max(1, Math.min(4, +cv('wave', 'size', 2))), u = d === 'left' ? 1 - x : d === 'out' ? Math.abs(x - 0.5) * 1.4 : d === 'in' ? 1 - Math.abs(x - 0.5) * 1.4 : x;
+        c = palc(pal, u * b - t * 0.18); break;
+      }
       case 'fire': {   // the strip as the middle of a flame
         const n = vnoise(x * 7 + t * 1.9, 3), h = Math.max(0, Math.min(1, 0.55 + (n - 0.5) * 0.9 + 0.12 * vnoise(t * 9 + x * 13, i)));
         c = grad(pal, h); break;

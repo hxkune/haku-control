@@ -21,6 +21,7 @@ const effect_info g_effects[] = {
     { "lava",        L"Lava",         L"Лава",            L"Lave" },
     { "breathe",     L"Breathe",      L"Дыхание",         L"Respiration" },
     { "rainbow",     L"Rainbow",      L"Радуга",          L"Arc-en-ciel" },
+    { "wave",        L"Colour wave",  L"Цветная волна",   L"Vague de couleurs" },
     { "fire",        L"Fire",         L"Огонь",           L"Feu" },
     { "ocean",       L"Ocean",        L"Океан",           L"Océan" },
     { "twinkle",     L"Twinkle",      L"Мерцание",        L"Scintillement" },
@@ -40,12 +41,13 @@ const effect_info g_effects[] = {
 const int g_effect_count = sizeof(g_effects) / sizeof(g_effects[0]);
 
 enum { FX_FLOW, FX_CAUSTIC, FX_BUBBLES, FX_COMET, FX_LAVA, FX_BREATHE,
-       FX_RAINBOW, FX_FIRE, FX_OCEAN, FX_TWINKLE, FX_METEOR, FX_PLASMA, FX_AURORA, FX_RIPPLE, FX_MATRIX, FX_CANDLE, FX_SCREEN,
+       FX_RAINBOW, FX_WAVE, FX_FIRE, FX_OCEAN, FX_TWINKLE, FX_METEOR, FX_PLASMA, FX_AURORA, FX_RIPPLE, FX_MATRIX, FX_CANDLE, FX_SCREEN,
        FX_TEMP, FX_PUMP, FX_AUDIO, FX_STATIC, FX_OFF, FX_N };
 
 // the newer effects' own colours when they have none set (fire is not blue and pink); the others take [general]
 static const struct { int fx; int n; unsigned rgb[6]; } FX_DEFAULT[] = {
     { FX_RAINBOW, 6, { 0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF, 0x0000FF, 0xFF00FF } },
+    { FX_WAVE,    5, { 0xFF0050, 0xFF9000, 0x00FF80, 0x0090FF, 0x9030FF } },
     { FX_FIRE,    5, { 0x200000, 0xC01000, 0xFF5000, 0xFFB020, 0xFFF0A0 } },
     { FX_OCEAN,   5, { 0x000820, 0x003070, 0x0070B0, 0x00B0D0, 0xA0F0FF } },
     { FX_TWINKLE, 3, { 0xFFFFFF, 0xFFE8A0, 0xA0C8FF } },
@@ -120,6 +122,10 @@ void zone_section(int zone, char *out, int cap) {
 
 static float param_cold, param_hot;
 static int   temp_water;
+// Colour wave: which way it runs through the room ([wave] dir) and how many times the palette fits across ([wave] size)
+enum { WAVE_RIGHT, WAVE_LEFT, WAVE_DOWN, WAVE_UP, WAVE_OUT, WAVE_IN };
+static int   wave_dir;
+static float wave_bands;
 
 typedef struct { float x, y, v, c; } bubble;
 static bubble bub[64];
@@ -158,6 +164,12 @@ static void load_params(void) {
         zeffect[z] = !e[0] || !_stricmp(e, "sync") ? -1 : effect_index(e);
     }
     sync_all   = cfg_geti("general", "sync", 1);
+    {
+        const char *d = cfg_get("wave", "dir", "right");
+        wave_dir = !_stricmp(d, "left") ? WAVE_LEFT : !_stricmp(d, "down") ? WAVE_DOWN : !_stricmp(d, "up") ? WAVE_UP
+                 : !_stricmp(d, "out") ? WAVE_OUT : !_stricmp(d, "in") ? WAVE_IN : WAVE_RIGHT;
+        wave_bands = clampf(cfg_getf("wave", "size", 2), 1, 4);
+    }
     param_cold = cfg_getf("temperature", "cold", 30.0f);
     param_hot  = cfg_getf("temperature", "hot", 75.0f);
     temp_water = _stricmp(cfg_get("temperature", "source", "gpu"), "water") == 0;
@@ -311,6 +323,15 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
     case FX_RAINBOW:   // the whole hue circle along the chain, turning
         c = hsv(path * 0.9f - t * 0.15f, 1, 1);
         break;
+    case FX_WAVE: {    // after SignalRGB's Color Wave: the palette's colours in bands, sweeping across the whole room
+        // one way (by where each LED is, so every device takes the wave as it passes), or from / to the middle;
+        // a device on its own effect runs it along itself
+        float u = solo ? path : wave_dir == WAVE_RIGHT ? x : wave_dir == WAVE_LEFT ? 1 - x : wave_dir == WAVE_DOWN ? y : wave_dir == WAVE_UP ? 1 - y
+                : sqrtf((x - 0.5f) * (x - 0.5f) + (y - 0.5f) * (y - 0.5f)) * 1.4f;
+        if (wave_dir == WAVE_IN && !solo) u = 1 - u;
+        c = palc(u * wave_bands - t * 0.18f);
+        break;
+    }
     case FX_FIRE: {    // flames from the bottom (y = 1) up, flickering; the palette runs from embers to the hottest
         float n = vnoise2(x * 7 + vnoise(t * 0.7f, 11) * 2, y * 5 + t * 1.9f, 3);
         float h = clampf(y * 1.15f - 0.3f + (n - 0.5f) * 0.75f + 0.12f * vnoise(t * 9 + x * 13, led_key(l) & 1023), 0, 1);
