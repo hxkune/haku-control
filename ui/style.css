@@ -328,6 +328,9 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .pdlg::after { display: none; }
 .pdlg-wrap { place-items: center !important; padding: 16px !important; background: rgba(var(--scrim), .72); }
 .pdlg h3 { margin: 0; }
+.report-dlg textarea { width: 100%; min-height: 120px; resize: vertical; }
+.report-dlg .report-file { margin-left: auto; }
+.report-msg.bad { color: #ff8a8a; }
 .pdlg .muted { margin: -4px 0 0; }
 .card.pdlg { max-height: calc(100vh - 32px); overflow-y: auto; }
 .pdlg-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; }

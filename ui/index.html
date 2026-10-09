@@ -510,8 +510,8 @@
           <div class="bk-btns"><button class="btn small ghost" id="bk-save"><span data-i18n="bk.save">Save</span></button><button class="btn small ghost" id="bk-load"><span data-i18n="bk.load">Restore</span></button></div>
         </div>
         <div class="set-row pc-only diag-row">
-          <div><b data-i18n="diag">Diagnostics for the developer</b><p class="muted" id="diag-note"></p></div>
-          <button class="btn small ghost" id="diag-go"><span data-i18n="diag.go">Save</span></button>
+          <div><b data-i18n="report">Report a problem</b><p class="muted" id="diag-note"></p></div>
+          <button class="btn small" id="report-open"><span data-i18n="report.open">Report…</span></button>
         </div>
         <div class="about mt"><div class="mark"></div>
           <div><h3>haku control</h3><p id="about1"></p><p data-i18n="about2"></p><p class="about-lic" data-i18n="about3"></p></div></div>
@@ -531,6 +531,23 @@
 </main>
 
 <!-- a preset: made and changed here (effect, colours, speed, brightness), opened from the Effects tab -->
+<!-- a bug report: what happened, how to reach the person (if they want), the diagnostics; sent to the developer -->
+<div class="sheet-wrap pdlg-wrap hidden" id="report-dlg">
+  <form class="card pdlg report-dlg" id="report-form" role="dialog" aria-modal="true" autocomplete="off">
+    <h3 data-i18n="report.title">Report a problem</h3>
+    <p class="muted" data-i18n="report.intro"></p>
+    <textarea id="report-text" rows="6" maxlength="4000" spellcheck="true"></textarea>
+    <label class="num"><span data-i18n="report.contact">How to reach you (optional)</span><input type="text" id="report-contact" maxlength="120" spellcheck="false"></label>
+    <label class="check"><input type="checkbox" id="report-attach" checked><span></span><em data-i18n="report.attach">Attach diagnostics (recommended)</em></label>
+    <p class="hint" data-i18n="report.what"></p>
+    <p class="hint report-msg" id="report-msg" role="status"></p>
+    <div class="btn-row">
+      <button class="btn primary" type="submit" id="report-send"><span data-i18n="report.send">Send</span></button>
+      <button class="btn ghost" type="button" id="report-close"><span data-i18n="cancel">Cancel</span></button>
+      <button class="btn ghost small report-file" type="button" id="diag-go"><span data-i18n="report.file">Save as a file instead</span></button>
+    </div>
+  </form>
+</div>
 <div class="sheet-wrap pdlg-wrap hidden" id="share-dlg">
   <form class="card pdlg share-dlg" id="share-form" role="dialog" aria-modal="true" autocomplete="off">
     <h3 id="share-title"></h3>

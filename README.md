@@ -116,8 +116,9 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
   graphics cards, USB devices of lighting makers) and says for each which way it is lit: by haku control itself,
   through OpenRGB (with *Add* when OpenRGB found it but it is not added yet), OpenRGB still to set up, PawnIO
   missing for the memory, or no lighting known. Nothing is written to any device to find this out.
-- **Diagnostics** (*Settings → Files*) list the PC's hardware (board, BIOS, memory sticks, graphics cards and their
-  maker, SMBus controller, USB devices of RGB makers, what OpenRGB sees): send it to ask for support of a device.
+- **Report a problem** (*Settings → Files*) sends what you write to the developer, with the diagnostics: the PC's
+  hardware (board, BIOS, memory sticks, graphics cards and their maker, SMBus controller, USB devices of RGB makers,
+  what OpenRGB sees), so it also serves to ask for support of a device.
 
 - **Nanoleaf:** *Devices → Sign-ins and pairing → Connect Nanoleaf*, then hold the controller's power button for
   5–7 s. Every controller becomes its own device (own map, colours and switch); *Add a controller* on the Nanoleaf
@@ -271,8 +272,11 @@ purposes:
   publishing one send a random id made on first use (so each counts once per install; nothing about you or your PC)
   and, when publishing, the preset's look and the author name you typed. The site keeps hashes of these ids and IPs only.
 - **Phone control:** off by default; when on, it serves the settings page on your local network only.
-- **Diagnostics:** *Save* under *Settings → Files* writes a text file to your Downloads folder (log, settings without
-  keys or passwords, devices, network adapters). It is not sent anywhere; you decide whether to share it.
+- **Report a problem:** only when you press *Send*: what you wrote, how to reach you if you filled it in, the app's
+  version, a random id made on first use (to count reports per install) and, unless you untick it, the diagnostics
+  (log, settings without keys, tokens or passwords, devices, network adapters). It goes over HTTPS to hakune.blog and
+  is read by the developer only. *Save as a file instead* writes the same diagnostics to your Downloads folder and
+  sends nothing.
 
 ## License
 

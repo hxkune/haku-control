@@ -72,10 +72,17 @@ static std::string field(const std::string &js, const char *key) {
             if (js[p] == '\\' && p + 1 < js.size()) {
                 char c = js[++p];
                 if (c == 'n') out += '\n';
+                else if (c == 'r') out += '\r';
                 else if (c == 't') out += '\t';
                 else if (c == 'u' && p + 4 < js.size()) {
-                    wchar_t w[2] = { (wchar_t)strtol(js.substr(p + 1, 4).c_str(), NULL, 16), 0 };
-                    out += narrow(w); p += 4;
+                    wchar_t w[3] = { (wchar_t)strtol(js.substr(p + 1, 4).c_str(), NULL, 16), 0, 0 };
+                    p += 4;
+                    // a character beyond the BMP (an emoji) comes as two: 😀
+                    if (w[0] >= 0xD800 && w[0] <= 0xDBFF && p + 6 < js.size() && js[p + 1] == '\\' && js[p + 2] == 'u') {
+                        wchar_t lo = (wchar_t)strtol(js.substr(p + 3, 4).c_str(), NULL, 16);
+                        if (lo >= 0xDC00 && lo <= 0xDFFF) { w[1] = lo; p += 6; }
+                    }
+                    out += narrow(w);
                 } else out += c;
             } else out += js[p];
         }
@@ -159,6 +166,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "backup_load") { backup_load(wnd); post_state(); }
     else if (cmd == "pro_key") { pro_set_key(field(js, "key").c_str()); post_status(); }
     else if (cmd == "diag") { diag_save(); post_status(); }
+    else if (cmd == "report") { diag_report(field(js, "text").c_str(), field(js, "contact").c_str(), field(js, "install").c_str(), field(js, "attach") != "0"); post_status(); }
     else if (cmd == "update_install") { update_install(); post_status(); }
     else if (cmd == "govee_login") {   // PC window only, like aidot_login
         std::string key = field(js, "key");

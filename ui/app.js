@@ -3028,12 +3028,49 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#wn').
 $('#wn-open').addEventListener('click', () => whatsNew(true));
 
 // diagnostics: one text file in Downloads (log, settings, devices, network), without keys or passwords
+// ---- reporting a problem: a window where the person says what happened; it goes to the developer with the
+// diagnostics (diag.c, the site's report API). Saving the diagnostics as a file stays as the way without sending.
+const REPORT = { open: false, sent: false };
 function updateDiag() {
-  const D = S.diag || {};
+  const D = S.diag || {}, R = D.report || {};
   $('#diag-go').disabled = !!D.busy;
-  $('#diag-note').textContent = D.busy ? t('diag.busy') : D.ok === 1 ? t('diag.done', D.file) : D.ok === 0 ? t('diag.fail') : t('diag.note');
+  $('#diag-note').textContent = D.busy ? t('diag.busy') : D.ok === 1 ? t('diag.done', D.file) : D.ok === 0 ? t('diag.fail') : t('report.note');
+  if (!REPORT.open) return;
+  const busy = !!R.busy;
+  if (R.ok === 1 && REPORT.waiting) { REPORT.waiting = false; REPORT.sent = true; $('#report-text').value = ''; }
+  if (R.ok === 0 && REPORT.waiting) REPORT.waiting = false;
+  $('#report-send').disabled = busy || REPORT.sent;
+  $('#report-text').disabled = $('#report-contact').disabled = $('#report-attach').disabled = busy || REPORT.sent;
+  $('#report-close span').textContent = t(REPORT.sent ? 'close' : 'cancel');
+  const msg = $('#report-msg');
+  msg.classList.toggle('bad', R.ok === 0 && !busy);
+  msg.textContent = busy ? t('report.sending') : REPORT.sent ? t('report.sent', R.id || '') : R.ok === 0 && REPORT.tried
+    ? t({ busy: 'report.err.busy', offline: 'report.err.offline', invalid: 'report.err.invalid' }[R.err] || 'report.err') : REPORT.short ? t('report.short') : '';
 }
-$('#diag-go').addEventListener('click', () => { S.diag = { busy: 1 }; updateDiag(); send({ cmd: 'diag' }); });
+function reportDialog() {
+  REPORT.open = true; REPORT.sent = REPORT.tried = REPORT.short = REPORT.waiting = false;
+  $('#report-text').placeholder = t('report.ph');
+  $('#report-contact').placeholder = t('report.contact.ph');
+  $('#report-dlg').classList.remove('hidden');
+  updateDiag();
+  setTimeout(() => $('#report-text').focus(), 30);
+}
+const closeReport = () => { REPORT.open = false; $('#report-dlg').classList.add('hidden'); };
+$('#report-open').addEventListener('click', reportDialog);
+$('#report-close').addEventListener('click', closeReport);
+$('#report-dlg').addEventListener('pointerdown', e => { if (e.target.id === 'report-dlg') closeReport(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && REPORT.open) closeReport(); });
+$('#report-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const text = $('#report-text').value.trim();
+  REPORT.short = text.length < 10;
+  if (REPORT.short) { updateDiag(); $('#report-text').focus(); return; }
+  REPORT.tried = REPORT.waiting = true;
+  S.diag = Object.assign({}, S.diag, { report: { busy: 1, ok: -1 } });
+  send({ cmd: 'report', text, contact: $('#report-contact').value.trim(), install: commInstall(), attach: $('#report-attach').checked ? '1' : '0' });
+  updateDiag();
+});
+$('#diag-go').addEventListener('click', () => { S.diag = Object.assign({}, S.diag, { busy: 1 }); updateDiag(); send({ cmd: 'diag' }); });
 
 // ------------------------------------------------------------------ mood: describe it, a local model picks the colours
 const MOOD = { base: 0, pending: false, err: '', applied: false, text: '' };

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Diagnostics: one text file with what is needed to look into a problem on someone else's PC, saved to Downloads
-// and shown in Explorer, ready to send. It holds the version and Windows build, the live status (devices, what is
+// and shown in Explorer, ready to send. Or sent at once with a bug report (diag_report): what the person wrote,
+// how to reach them if they want, and the same report with shorter logs, to the site's report API
+// (https://hakune.blog/api/report.php, [report] api= for tests). It holds the version and Windows build, the live status (devices, what is
 // online), the settings, the network adapters, the firewall rule and the end of the log (this run and the one
 // before). Nothing secret goes in: settings values named like keys / tokens / secrets / passwords / PINs are
 // replaced, the phone PIN is cut from the status, and the key files (aidot.json, tuya.json, govee.json,
@@ -20,6 +22,9 @@ static volatile LONG busy;
 static SRWLOCK lk = SRWLOCK_INIT;
 static char last_file[MAX_PATH * 3];   // UTF-8 name of the last report, for the page
 static int  last_ok = -1;
+static volatile LONG rbusy;              // a bug report being sent
+static int  r_ok = -1;                   // its result: 1 sent (r_id), 0 not (r_err)
+static char r_id[24], r_err[16];
 
 typedef struct { char *p; int n, cap; } buf_t;
 
@@ -142,12 +147,9 @@ static int elevated(void) {
     return e.TokenIsElevated != 0;
 }
 
-static unsigned __stdcall run(void *arg) {
-    (void)arg;
-    buf_t b = { malloc(4 * 1024 * 1024), 0, 4 * 1024 * 1024 };
-    int ok = 0;
-    wchar_t path[MAX_PATH] = L"";
-    if (!b.p) goto done;
+// the report; compact: shorter logs (sent with a bug report rather than saved)
+static void build(buf_t *b_, int compact) {
+    buf_t b = *b_;
     SYSTEMTIME t; GetLocalTime(&t);
     char win[64]; windows_version(win, sizeof(win));
     put(&b, "haku control diagnostics\r\n");
@@ -187,9 +189,20 @@ static unsigned __stdcall run(void *arg) {
         add_command(&b, cl);
     }
     section(&b, "log (this run)");
-    { wchar_t p[MAX_PATH]; app_data_path(L"haku-control.log", p); add_tail(&b, p, 1500 * 1024); }
+    { wchar_t p[MAX_PATH]; app_data_path(L"haku-control.log", p); add_tail(&b, p, compact ? 300 * 1024 : 1500 * 1024); }
     section(&b, "log (the run before)");
-    { wchar_t p[MAX_PATH]; app_data_path(L"haku-control.prev.log", p); add_tail(&b, p, 500 * 1024); }
+    { wchar_t p[MAX_PATH]; app_data_path(L"haku-control.prev.log", p); add_tail(&b, p, compact ? 100 * 1024 : 500 * 1024); }
+    *b_ = b;
+}
+
+static unsigned __stdcall run(void *arg) {
+    (void)arg;
+    buf_t b = { malloc(4 * 1024 * 1024), 0, 4 * 1024 * 1024 };
+    int ok = 0;
+    wchar_t path[MAX_PATH] = L"";
+    SYSTEMTIME t; GetLocalTime(&t);
+    if (!b.p) goto done;
+    build(&b, 0);
 
     // Downloads (or the data folder when there is none)
     PWSTR dl = NULL;
@@ -226,10 +239,61 @@ void diag_save(void) {
     if (h) CloseHandle(h); else InterlockedExchange(&busy, 0);
 }
 
-// {"busy":0,"ok":1,"file":"haku-diagnostics-20260930-1412.txt"}; ok -1 before the first report
+// {"busy":0,"ok":1,"file":"haku-diagnostics-20260930-1412.txt","report":{"busy":0,"ok":1,"id":"3fa2c9d01e","err":""}};
+// ok -1 before the first one
 int diag_json(char *out, int cap) {
     AcquireSRWLockShared(&lk);
-    int n = snprintf(out, cap, "{\"busy\":%d,\"ok\":%d,\"file\":\"%s\"}", (int)busy, last_ok, last_file);
+    int n = snprintf(out, cap, "{\"busy\":%d,\"ok\":%d,\"file\":\"%s\",\"report\":{\"busy\":%d,\"ok\":%d,\"id\":\"%s\",\"err\":\"%s\"}}",
+                     (int)busy, last_ok, last_file, (int)rbusy, r_ok, r_id, r_err);
     ReleaseSRWLockShared(&lk);
     return n;
+}
+
+// ---- bug report: sent to the site, which keeps it for the developer (and mails them the text, when set up there)
+typedef struct { char *text, *contact; char install[40]; int attach; } report_t;
+
+static unsigned __stdcall report_run(void *arg) {
+    report_t *r = arg;
+    buf_t b = { NULL, 0, 0 };
+    if (r->attach) { b.cap = 2 * 1024 * 1024; b.p = malloc(b.cap); if (b.p) { b.p[0] = 0; build(&b, 1); } }
+    int dl = b.p ? b.n : 0, cap = 3 * dl + 4 * (int)strlen(r->text) + 4 * (int)strlen(r->contact) + 1024;
+    char *body = malloc(cap), resp[1024] = "", id[24] = "", err[16] = "";
+    int ok = 0, code = 0;
+    if (body) {
+        static const char *const L[] = { "en", "ru", "fr" };
+        int n = snprintf(body, cap, "{\"action\":\"report\",\"install\":\"%s\",\"version\":\"%s\",\"lang\":\"%s\",\"pro\":%d,\"text\":\"",
+                         r->install, HAKU_VER_STR, L[app_lang()], pro_active() ? 1 : 0);
+        n += json_escape_to(body + n, cap - n, r->text);
+        n += snprintf(body + n, cap - n, "\",\"contact\":\"");
+        n += json_escape_to(body + n, cap - n, r->contact);
+        n += snprintf(body + n, cap - n, "\",\"diag\":\"");
+        if (b.p) n += json_escape_to(body + n, cap - n, b.p);
+        snprintf(body + n, cap - n, "\"}");
+        code = web_post(cfg_get("report", "api", "https://hakune.blog/api/report.php"), "text/plain", body, resp, sizeof(resp));
+        // {"ok":true,"id":"3fa2c9d01e"} or {"error":"busy"}
+        ok = code == 200 && !strstr(resp, "\"error\"") && json_get_str(resp, "id", id, sizeof(id)) && id[0];
+        if (!ok && !json_get_str(resp, "error", err, sizeof(err))) snprintf(err, sizeof(err), code ? "http" : "offline");
+    } else snprintf(err, sizeof(err), "memory");
+    logf_("bug report: %s (%d, diagnostics %d KB)", ok ? id : err, code, dl / 1024);
+    AcquireSRWLockExclusive(&lk);
+    r_ok = ok; strcpy_s(r_id, sizeof(r_id), ok ? id : ""); strcpy_s(r_err, sizeof(r_err), ok ? "" : err);
+    ReleaseSRWLockExclusive(&lk);
+    free(body); free(b.p); free(r->text); free(r->contact); free(r);
+    InterlockedExchange(&rbusy, 0);
+    ui_refresh();
+    return 0;
+}
+
+void diag_report(const char *text, const char *contact, const char *install, int attach) {
+    if (InterlockedCompareExchange(&rbusy, 1, 0)) return;
+    report_t *r = calloc(1, sizeof(report_t));
+    if (!r || !(r->text = _strdup(text ? text : "")) || !(r->contact = _strdup(contact ? contact : ""))) {
+        if (r) { free(r->text); free(r); }
+        InterlockedExchange(&rbusy, 0); return;
+    }
+    snprintf(r->install, sizeof(r->install), "%s", install ? install : "");
+    r->attach = attach;
+    AcquireSRWLockExclusive(&lk); r_ok = -1; r_id[0] = r_err[0] = 0; ReleaseSRWLockExclusive(&lk);
+    HANDLE h = (HANDLE)_beginthreadex(NULL, 0, report_run, r, 0, NULL);
+    if (h) CloseHandle(h); else { free(r->text); free(r->contact); free(r); InterlockedExchange(&rbusy, 0); }
 }
