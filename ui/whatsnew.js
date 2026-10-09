@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.2',
+    en: ['Report a problem, right from the app: Settings → Report a problem. Say what happened, and it goes straight to the developer with the diagnostics (no keys, tokens or passwords). You can leave a way to reach you, and the diagnostics can still be saved as a file instead.'],
+    ru: ['Сообщить о проблеме прямо из приложения: Настройки → «Сообщить о проблеме». Опишите, что случилось, и описание сразу уйдёт разработчику вместе с диагностикой (без ключей, токенов и паролей). Можно оставить контакт для ответа, а диагностику по-прежнему можно сохранить файлом.'],
+    fr: ['Signalez un problème depuis l\'app : Réglages → Signaler un problème. Dites ce qui s\'est passé, et c\'est envoyé directement au développeur avec le diagnostic (sans clés, jetons ni mots de passe). Vous pouvez laisser un moyen de vous joindre, et le diagnostic peut toujours être enregistré en fichier.'] },
   { v: '0.4.1',
     en: ['Devices through OpenRGB that have no Direct mode (some ASRock graphics cards, for one) no longer just flash: haku lights them in their Static mode, a little slower, or with one colour, and leaves alone the ones it cannot light. The device\'s line says which.',
       'Each OpenRGB device has an Updates setting: if its lights still blink instead of moving smoothly, choose fewer updates per second.'],
