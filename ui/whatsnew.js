@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.5',
+    en: ['A new hidden theme: a night sky under the window, with twinkling and shooting stars. Those who have its code know what to type next to the theme switch.'],
+    ru: ['Новая скрытая тема: ночное небо за окном, с мерцающими и падающими звёздами. У кого есть её код, тот знает, что вписать рядом с переключателем темы.'],
+    fr: ['Un nouveau thème caché : un ciel de nuit sous la fenêtre, avec des étoiles qui scintillent et des étoiles filantes. Ceux qui ont son code savent quoi taper à côté du choix du thème.'] },
   { v: '0.4.4',
     en: ['Fans and strips on a motherboard\'s ARGB connectors (through OpenRGB) can now light up: the device\'s card has LEDs on each connector. OpenRGB starts these connectors at 0 LEDs, so enter how many are plugged into each; haku sets them again every time.'],
     ru: ['Вентиляторы и ленты в ARGB-разъёмах материнской платы (через OpenRGB) теперь можно зажечь: в карточке устройства появилось «Светодиодов на разъёме». OpenRGB начинает такие разъёмы с 0 светодиодов — укажите, сколько подключено к каждому, и haku будет выставлять это при каждом запуске.'],
