@@ -70,6 +70,14 @@
 /* kyōka suigetsu (hidden, opened with its code): Bleach. Black and white like a shihakushō, violet spiritual
    pressure, a white blade's sheen on the buttons, Mincho headings, the Hōgyoku glowing in the corner and hell
    butterflies now and then; the rest is at the end of this file */
+/* akapzz: a night sky, black and white with a little blue (the stars are drawn in #sky, app.js) */
+:root[data-theme="akapzz"] {
+  --bg: #04060b; --panel: #0a0d14; --panel2: #10141d; --menu: #0c1018; --glass: 9, 12, 19; --scrim: 2, 3, 7;
+  --ink: 220, 230, 255; --strong: #e9effa; --on-strong: #05070c; --on-strong-dim: #6a7690; --sel: #ffffff;
+  --line: rgba(190, 210, 255, .09); --line2: rgba(190, 210, 255, .18); --line3: rgba(190, 210, 255, .4);
+  --text: #eef2fa; --muted: #8f9ab0; --faint: #4d576c;
+  --chrome: linear-gradient(115deg, #ffffff 0%, #cfdaf0 40%, #8ea2c8 55%, #edf2ff 70%, #ffffff 100%);
+}
 :root[data-theme="kyoka"] {
   --bg: #060509; --panel: #0e0c13; --panel2: #15121c; --menu: #110f17; --glass: 14, 12, 19; --scrim: 3, 2, 6;
   --ink: 214, 196, 255; --strong: #b48cff; --on-strong: #0a0710; --on-strong-dim: #57458a; --sel: #d9c8ff;
@@ -1138,6 +1146,27 @@ body.calm .vchat { animation: vchat-calm 7s steps(1) forwards; }
 :root[data-theme="verity"] body.calm .watermark, :root[data-theme="verity"] body.calm .watermark::after { animation: none; }
 
 /* ---- kyōka suigetsu */
+.sky { display: none; position: absolute; inset: 0; width: 100%; height: 100%; }
+:root[data-theme="akapzz"] .sky { display: block; }
+:root[data-theme="akapzz"] .ambient i { opacity: .22; filter: grayscale(.85) brightness(.8); }
+:root[data-theme="akapzz"] body {
+  background: radial-gradient(1100px circle at 85% 115%, rgba(120, 145, 210, .1), transparent 60%),
+              radial-gradient(800px circle at 5% -15%, rgba(255, 255, 255, .035), transparent 60%), var(--bg);
+}
+:root[data-theme="akapzz"] .card { background-color: rgba(var(--glass), .8); }
+:root[data-theme="akapzz"] .fx.on { box-shadow: 0 0 0 1px rgba(200, 215, 255, .3), 0 0 26px -8px rgba(170, 195, 255, .5); }
+:root[data-theme="akapzz"] h3::before { color: #cfdcff; text-shadow: 0 0 6px rgba(190, 210, 255, .8); }
+:root[data-theme="akapzz"] #theme button[data-v="akapzz"]:not(.on) { color: #cfdcff; }
+/* the galaxy that opens it */
+.akz-ov { position: fixed; inset: 0; z-index: 9999; background: #04060b; pointer-events: none; transition: background-color .9s ease; }
+.akz-ov canvas { width: 100%; height: 100%; display: block; }
+.akz-ov.reveal { background: transparent; }
+.akz-name { position: absolute; left: 0; right: 0; bottom: 14vh; text-align: center; color: #eef2fa; opacity: 0;
+  animation: akz-name 3.8s ease forwards; }
+.akz-name b { display: block; font: 300 clamp(30px, 6vw, 64px) var(--display); letter-spacing: .5em; margin-right: -.5em;
+  text-shadow: 0 0 22px rgba(190, 210, 255, .55); }
+.akz-name small { font-size: 12px; letter-spacing: .3em; color: #9fb0d4; }
+@keyframes akz-name { 0% { opacity: 0; transform: translateY(8px); } 22%, 60% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-6px); } }
 :root[data-theme="kyoka"] body {
   background: radial-gradient(900px circle at 92% 108%, rgba(140, 90, 255, .16), transparent 62%),
               radial-gradient(700px circle at 0% -10%, rgba(255, 255, 255, .04), transparent 60%), var(--bg);

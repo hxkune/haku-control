@@ -121,7 +121,7 @@ function groupNew() {
 // Hidden themes are opened with a code typed next to the switch ([general] unlocked = their names); the codes
 // are kept as hashes so the source does not give them away.
 const THEMES = ['dark', 'grey', 'light'];
-const CODES = { '9kr8dk': 'verity', '1se99dm': 'bubblegum', '4eco40': 'kyoka' };
+const CODES = { '9kr8dk': 'verity', '1se99dm': 'bubblegum', '4eco40': 'kyoka', '1v4fx1y': 'akapzz' };
 const THEME = { ink: '255, 255, 255', hi: '#d8d8d8', mid: '#8a8a8a', lo: '#4e4e4e', tip: '#121212' };
 const inkA = a => `rgba(${THEME.ink}, ${a})`;
 const unlocked = () => cv('general', 'unlocked', '').split(',').filter(v => Object.values(CODES).includes(v));
@@ -140,6 +140,7 @@ function applyTheme() {
   Object.assign(THEME, { ink: g('--ink'), hi: g('--text'), mid: g('--muted'), lo: g('--faint'), tip: g('--menu') });
   $$('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === th));
   if (th === 'kyoka' && !kyTimer) kyTimer = setTimeout(kyWrite, 0); else if (th !== 'kyoka') { clearTimeout(kyTimer); kyTimer = 0; }
+  setTimeout(skyRun);   // (declared further down)
 }
 
 // verity (the hidden smiley theme) says something in game-chat style now and then: first a hello, later every few
@@ -243,6 +244,136 @@ setInterval(() => {
 // kyōka suigetsu (the hidden Bleach theme): entering its code, the spiritual pressure rises, a blade cuts across the
 // window, the window cracks like a mirror and the illusion breaks into shards that fall away, showing the theme.
 // Afterwards hell butterflies cross the window now and then. Without animations the theme just comes on.
+// ---- akapzz (hidden theme): a night sky behind the window, black and white with a little blue. Stars twinkle each
+// at its own pace, a faint Milky Way runs across, and now and then a shooting star falls. Its code opens it with a
+// galaxy: a spiral of stars turns out of the dark, then rushes past and becomes the sky. Without animations the
+// sky stands still.
+const SKY = { on: false, raf: 0, stars: [], meteors: [], next: 0, last: 0, w: 0, h: 0, band: null };
+function skyBuild() {
+  const cvs = $('#sky'), d = devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  cvs.width = W * d; cvs.height = H * d; SKY.w = W; SKY.h = H;
+  const n = Math.min(700, Math.max(160, Math.round(W * H / 2500))), rnd = Math.random;
+  SKY.stars = [...Array(n)].map(() => {
+    const big = rnd() < .06;
+    return { x: rnd() * W, y: rnd() * H, r: big ? 1.1 + rnd() * .9 : .4 + rnd() * .8, b: .45 + rnd() * .55,
+      sp: .4 + rnd() * 2.2, ph: rnd() * 6.283, blue: rnd() < .45 ? .55 + rnd() * .45 : 0, big };
+  });
+  // the Milky Way: a soft diagonal band of light and dust, drawn once
+  const band = document.createElement('canvas'); band.width = cvs.width; band.height = cvs.height;
+  const g = band.getContext('2d'); g.scale(d, d);
+  g.save(); g.translate(W / 2, H / 2); g.rotate(-.42);
+  const L = Math.hypot(W, H), grad = g.createLinearGradient(0, -H * .22, 0, H * .22);
+  grad.addColorStop(0, 'rgba(160,180,230,0)'); grad.addColorStop(.5, 'rgba(170,190,240,.055)'); grad.addColorStop(1, 'rgba(160,180,230,0)');
+  g.fillStyle = grad; g.fillRect(-L / 2, -H * .22, L, H * .44);
+  for (let i = 0; i < n * 3; i++) {   // dust: tiny dim stars thick in the middle of the band
+    const x = (rnd() - .5) * L, y = (rnd() + rnd() + rnd() - 1.5) * H * .12;
+    g.fillStyle = `rgba(${200 + rnd() * 55 | 0},${210 + rnd() * 45 | 0},255,${.08 + rnd() * .22})`;
+    g.fillRect(x, y, .8, .8);
+  }
+  g.restore();
+  SKY.band = band;
+}
+function skyFrame(now) {
+  SKY.raf = 0;
+  if (!SKY.on) return;
+  const cvs = $('#sky'), c = cvs.getContext('2d'), d = devicePixelRatio || 1, still = stillMotion();
+  if (cvs.width !== Math.round(innerWidth * d) || cvs.height !== Math.round(innerHeight * d)) skyBuild();
+  if (!still && now - SKY.last < 33) { SKY.raf = requestAnimationFrame(skyFrame); return; }   // ~30 frames a second
+  const dt = Math.min(.1, (now - (SKY.last || now)) / 1000); SKY.last = now;
+  const t = now / 1000;
+  c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, SKY.w, SKY.h);
+  c.drawImage(SKY.band, 0, 0, SKY.w, SKY.h);
+  for (const s of SKY.stars) {
+    const tw = still ? .8 : .55 + .45 * Math.sin(t * s.sp + s.ph) * Math.sin(t * s.sp * .37 + s.ph * 2), a = s.b * tw;
+    const col = s.blue ? `rgba(${200 - s.blue * 40 | 0},${215 - s.blue * 20 | 0},255,${a})` : `rgba(255,255,255,${a})`;
+    c.fillStyle = col; c.beginPath(); c.arc(s.x, s.y, s.r, 0, 6.283); c.fill();
+    if (s.big && a > .45) {   // the brightest ones get a little cross of light
+      c.strokeStyle = s.blue ? `rgba(190,210,255,${(a - .45) * .9})` : `rgba(255,255,255,${(a - .45) * .9})`; c.lineWidth = .6;
+      const k = s.r * 5 * a; c.beginPath(); c.moveTo(s.x - k, s.y); c.lineTo(s.x + k, s.y); c.moveTo(s.x, s.y - k); c.lineTo(s.x, s.y + k); c.stroke();
+    }
+  }
+  if (!still) {
+    // shooting stars: one every few seconds, from the upper part of the sky, falling down and to one side
+    if (!SKY.next) SKY.next = t + 2 + Math.random() * 4;
+    if (t > SKY.next) {
+      const left = Math.random() < .5, ang = (left ? 2.4 : .7) + (Math.random() - .5) * .35;
+      SKY.meteors.push({ x: SKY.w * (left ? .35 + Math.random() * .6 : Math.random() * .65), y: SKY.h * Math.random() * .35,
+        vx: Math.cos(ang), vy: Math.sin(ang), v: 520 + Math.random() * 420, len: 110 + Math.random() * 130, life: 0, max: .7 + Math.random() * .6 });
+      SKY.next = t + 3 + Math.random() * 9;
+    }
+    SKY.meteors = SKY.meteors.filter(m => (m.life += dt) < m.max);
+    for (const m of SKY.meteors) {
+      m.x += m.vx * m.v * dt; m.y += m.vy * m.v * dt;
+      const f = Math.sin(Math.PI * m.life / m.max), tx = m.x - m.vx * m.len, ty = m.y - m.vy * m.len;
+      const gr = c.createLinearGradient(m.x, m.y, tx, ty);
+      gr.addColorStop(0, `rgba(255,255,255,${.95 * f})`); gr.addColorStop(.15, `rgba(205,220,255,${.55 * f})`); gr.addColorStop(1, 'rgba(160,190,255,0)');
+      c.strokeStyle = gr; c.lineWidth = 1.6; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(m.x, m.y); c.lineTo(tx, ty); c.stroke();
+      c.fillStyle = `rgba(255,255,255,${f})`; c.beginPath(); c.arc(m.x, m.y, 1.4, 0, 6.283); c.fill();
+    }
+    SKY.raf = requestAnimationFrame(skyFrame);
+  }
+}
+// on with the theme, off otherwise; paused while the window is hidden
+function skyRun() {
+  SKY.on = document.documentElement.dataset.theme === 'akapzz' && !document.hidden;
+  if (SKY.on && !SKY.raf) { if (!SKY.stars.length) skyBuild(); SKY.last = 0; SKY.raf = requestAnimationFrame(skyFrame); }
+  if (!SKY.on && SKY.raf) { cancelAnimationFrame(SKY.raf); SKY.raf = 0; }
+}
+document.addEventListener('visibilitychange', skyRun);
+addEventListener('resize', () => { if (SKY.on) { skyBuild(); if (!SKY.raf) SKY.raf = requestAnimationFrame(skyFrame); } });
+new MutationObserver(skyRun).observe(document.body, { attributes: true, attributeFilter: ['class'] });   // calm on / off
+
+// the code: a galaxy turns out of the dark, its arms of stars winding round a bright core, then it rushes past
+// (the theme comes on behind it) and leaves the sky
+let akapzzBusy = false;
+function akapzzArrives() {
+  if (akapzzBusy) return;
+  if (stillMotion()) { setTheme('akapzz'); return; }
+  akapzzBusy = true;
+  const ov = document.createElement('div'); ov.className = 'akz-ov';
+  ov.innerHTML = '<canvas></canvas><div class="akz-name"><b>akapzz</b><small>✦ under the same stars</small></div>';
+  document.body.appendChild(ov);
+  const cvs = ov.querySelector('canvas'), d = devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  cvs.width = W * d; cvs.height = H * d;
+  const c = cvs.getContext('2d'), rnd = Math.random, R = Math.min(W, H) * .42, ARMS = 3;
+  // the galaxy: stars along logarithmic spiral arms, scattered more the further out, a dense core
+  const P = [...Array(2600)].map((_, i) => {
+    const core = i < 520, arm = i % ARMS, u = core ? Math.pow(rnd(), 2) * .18 : .08 + Math.pow(rnd(), .8) * .92;
+    const ang = arm / ARMS * 6.283 + u * 4.2 + (rnd() - .5) * (core ? 6.283 : .55 + u * .5);
+    return { u, ang, z: (rnd() - .5) * .06, r: core ? .5 + rnd() * 1.1 : .3 + rnd() * .9, blue: rnd() < .5, b: .4 + rnd() * .6 };
+  });
+  const T0 = performance.now(), DUR = 3800;
+  let themed = false;
+  const frame = now => {
+    const t = (now - T0) / DUR;
+    if (t >= 1) { ov.remove(); akapzzBusy = false; return; }
+    if (t > .62 && !themed) { themed = true; setTheme('akapzz'); ov.classList.add('reveal'); }
+    const ease = x => 1 - Math.pow(1 - x, 3);
+    // grows out of a point (0 -> .45), turns, then rushes towards you (.62 -> 1)
+    const grow = ease(Math.min(1, t / .45)), rush = t > .62 ? Math.pow((t - .62) / .38, 2) : 0;
+    const scale = R * (.15 + .85 * grow) * (1 + rush * 5), spin = t * 2.6, tilt = .58 - rush * .3;
+    const fade = t > .62 ? 1 - (t - .62) / .38 : Math.min(1, t / .12);
+    c.setTransform(d, 0, 0, d, 0, 0);
+    c.fillStyle = `rgba(4,6,11,${t > .62 ? .35 : .55})`; c.fillRect(0, 0, W, H);   // trails while it turns
+    const cx = W / 2, cy = H / 2;
+    const glow = c.createRadialGradient(cx, cy, 0, cx, cy, scale * .35);
+    glow.addColorStop(0, `rgba(235,242,255,${.5 * fade})`); glow.addColorStop(.4, `rgba(150,175,235,${.16 * fade})`); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = glow; c.beginPath(); c.arc(cx, cy, scale * .35, 0, 6.283); c.fill();
+    for (const p of P) {
+      const a = p.ang + spin * (1.4 - p.u * .9);   // the inside turns faster, as in a real galaxy
+      const x = cx + Math.cos(a) * p.u * scale, y = cy + (Math.sin(a) * p.u + p.z) * scale * tilt;
+      if (x < -20 || y < -20 || x > W + 20 || y > H + 20) continue;
+      const al = p.b * fade * (p.u < .2 ? 1 : .85);
+      c.fillStyle = p.blue ? `rgba(185,205,255,${al})` : `rgba(255,255,255,${al})`;
+      const r = p.r * (1 + rush * 2.5);
+      c.fillRect(x - r / 2, y - r / 2, r, r);
+    }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
 let kyokaBusy = false;
 function kyokaArrives() {
   if (kyokaBusy) return;
@@ -2849,6 +2980,7 @@ $('#code').addEventListener('submit', e => {
   inp.value = ''; inp.classList.add('ok'); inp.blur();
   if (th === 'verity') { verityArrives(); return; }
   if (th === 'kyoka') { kyokaArrives(); return; }
+  if (th === 'akapzz') { akapzzArrives(); return; }
   setTheme(th);
   if (!document.body.classList.contains('calm')) burst($('#code'), ['✨', '💖', '⭐', '💜', '🌈', '💫']);
 });
