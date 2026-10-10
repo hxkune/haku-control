@@ -56,7 +56,7 @@ const STATE = {
       { id: 5, kind: 'goveecloud', title: 'Govee (cloud)', name: 'AI Sync Box 2', host: 'AA:BB:CC:DD:EE:FF:00:01', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 0, type: 'tv', info: 'Govee H6604 · cloud · screen sync' },
       { id: 6, kind: 'openrgb', title: 'OpenRGB', name: 'ASUS TUF RTX 4070', host: '127.0.0.1', sub: 2, leds: 8, per_led: 1, online: 1, enabled: 1, type: 'gpu', info: 'OpenRGB · ASUS TUF RTX 4070 · graphics card' },
       { id: 7, kind: 'openrgb', title: 'OpenRGB', name: 'Vengeance RGB', host: '127.0.0.1', sub: 3, leds: 10, per_led: 1, online: 1, enabled: 1, type: 'ram', info: 'OpenRGB · Corsair Vengeance RGB Pro · memory' },
-      { id: 8, kind: 'openrgb', title: 'OpenRGB', name: 'B550-F', host: '127.0.0.1', sub: 4, leds: 12, per_led: 1, online: 1, enabled: 1, type: 'board', info: 'OpenRGB · ASUS ROG STRIX B550-F GAMING · motherboard' },
+      { id: 8, kind: 'openrgb', title: 'OpenRGB', name: 'B550-F', host: '127.0.0.1', sub: 4, leds: 12, per_led: 1, online: 1, enabled: 1, type: 'board', info: 'OpenRGB · ASUS ROG STRIX B550-F GAMING · motherboard', zones: 'Addressable 1:24:0:1024|Addressable 2:0:0:1024' },
       { id: 9, kind: 'openrgb', title: 'OpenRGB', name: 'Front fans', host: '127.0.0.1', sub: 1, leds: 16, per_led: 1, online: 1, enabled: 1, type: 'fan', info: 'OpenRGB · Fan hub · cooler' },
       { id: 10, kind: 'openrgb', title: 'OpenRGB', name: 'Mouse', host: '127.0.0.1', sub: 5, leds: 3, per_led: 1, online: 1, enabled: 1, type: 'mouse', info: 'OpenRGB · Mouse · mouse' },
       { id: 11, kind: 'elgato', title: 'Elgato', name: 'Key Light Air', host: '192.168.1.80', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'keylight', info: 'Elgato Key Light Air · fw 1.0.3' },

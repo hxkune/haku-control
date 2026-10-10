@@ -159,6 +159,7 @@ static void load_config(void) {
         d->enabled = cfg_geti(sec, "enabled", 1);
         d->own = cfg_geti(sec, "own", 0);
         d->cfg_rate = (float)cfg_geti(sec, "rate", 0);
+        strcpy_s(d->zones, sizeof(d->zones), cfg_get(sec, "zones", ""));
         strcpy_s(d->key, sizeof(d->key), cfg_get(sec, "key", ""));
     }
     // keep connections of devices whose address (and key) did not change
@@ -166,7 +167,7 @@ static void load_config(void) {
         for (int k = 0; k < ndevs; k++) {
             ext_dev *o = &devs[k];
             if (o->id == nd[i].id && o->drv == nd[i].drv && !strcmp(o->host, nd[i].host) && o->sub == nd[i].sub && o->cfg_leds == nd[i].cfg_leds &&
-                !strcmp(o->key, nd[i].key)) {
+                !strcmp(o->key, nd[i].key) && !strcmp(o->zones, nd[i].zones)) {
                 ext_dev keep = *o;
                 keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own; keep.cfg_rate = nd[i].cfg_rate;
                 strcpy_s(keep.name, sizeof(keep.name), nd[i].name);
@@ -478,12 +479,14 @@ int ext_json(char *out, int cap) {
     AcquireSRWLockShared(&lk);
     for (int k = 0; k < nslots && n < cap - 600; k++) {
         slot_t *s = &slots[k];
-        char nm[140], inf[200], host[140];
+        char nm[140], inf[200], host[140], zs[300], sec[16];
         json_escape_to(nm, sizeof(nm), s->name); json_escape_to(inf, sizeof(inf), s->info); json_escape_to(host, sizeof(host), s->host);
+        snprintf(sec, sizeof(sec), "dev.%d", s->id);
+        json_escape_to(zs, sizeof(zs), cfg_get(sec, "zones_found", ""));   // resizable zones (OpenRGB), "name:count:min:max|..."
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"own\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, s->own, s->type, inf, pro_kind(s->kind));
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"own\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\"}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, s->own, s->type, inf, pro_kind(s->kind), zs);
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {

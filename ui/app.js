@@ -2494,9 +2494,12 @@ let devSig = '';
 const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).title;
 // the PC's own devices (not the lights on the network): they can be given back to their own lighting
 const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech'].includes(d.kind);
+// the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max}]
+const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max] = z.split(':'); return { name, count: +count, min: +min, max: +max }; });
 function devStatus(d) {
   if (!d.enabled) return t('dev.off');
   if (d.own) return t('own.status');
+  if (!d.online && devZones(d).length && devZones(d).every(z => !z.count)) return t('zones.need');
   if (d.pro && proLocked()) return t('dev.pro');
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
@@ -2520,7 +2523,7 @@ function buildDevices() {
       <div class="zone" data-zone="zone.dev${d.id}"></div>
       <div class="opts">
         <label class="num"><span>${t('strip.name')}</span><input type="text" class="dev-name" maxlength="40" spellcheck="false" value="${esc(cv(sec, 'name', d.name))}"></label>
-        ${d.per_led ? `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>
+        ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
         ${d.kind === 'goveecloud' ? `<label class="num"><span>${t('gc.mode')}</span><select class="select dev-mode">${['auto', 'sync', 'colour'].map(v =>
           `<option value="${v}"${cv(sec, 'mode', 'auto') === v ? ' selected' : ''}>${t('gc.' + v)}</option>`).join('')}</select></label>
@@ -2539,6 +2542,9 @@ function buildDevices() {
           <p class="hint">${t('dv.lights.note')}</p>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>`}` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
+        ${devZones(d).length ? `<div class="field dev-zones"><div class="lbl"><span>${t('zones.title')}</span></div>
+          ${devZones(d).map(z => `<label class="num"><span>${esc(z.name)}</span><input type="number" class="dev-zone" data-zone="${esc(z.name)}" min="${z.min}" max="${Math.min(z.max, 512)}" value="${z.count}"></label>`).join('')}
+          <p class="hint">${t('zones.note')}</p></div>` : ''}
         ${d.kind === 'openrgb' ? `<label class="num"><span>${t('dev.rate')}</span><select class="select dev-rate">${[0, 30, 10, 5, 2].map(v =>
           `<option value="${v}"${+cv(sec, 'rate', 0) === v ? ' selected' : ''}>${v ? t('dev.rate.n', v) : t('dev.rate.auto')}</option>`).join('')}</select></label>
           <p class="hint">${t('dev.rate.note')}</p>` : ''}
@@ -2559,6 +2565,15 @@ function buildDevices() {
     el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
     el.querySelector('.dev-rate')?.addEventListener('change', e => setCfg(sec, 'rate', e.target.value));
+    // LEDs on each connector: all of them saved together ([dev.N] zones), the device reconnects with them
+    el.querySelectorAll('.dev-zone').forEach(inp => inp.addEventListener('change', () => {
+      const v = [...el.querySelectorAll('.dev-zone')].map(x => {
+        const n = Math.max(+x.min, Math.min(+x.max, Math.round(+x.value) || 0)); x.value = n;
+        return `${x.dataset.zone}=${n}`;
+      }).join('|');
+      if (+cv(sec, 'leds', 0)) setCfg(sec, 'leds', 0);   // the connectors decide its LED count now, not a cap set earlier
+      setCfg(sec, 'zones', v);
+    }));
     el.querySelector('.dev-fx')?.addEventListener('change', e => setCfg(sec, 'frame_fx', e.target.value));
     el.querySelector('.dev-screen')?.addEventListener('change', e => {
       setCfg(sec, 'screen', e.target.value);
@@ -3227,7 +3242,7 @@ function applyStatus(m) {
   const effectChanged = m.effect !== S.effect;
   Object.assign(S, m);
   S.ext = S.ext || { devs: [], found: [], kinds: [], scanning: 0 };
-  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type]));
+  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type, d.zones]));
   if (!dragging) { setRange($('#bright'), S.brightness); $('#bright-val').textContent = S.brightness + '%'; }
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();

@@ -17,6 +17,7 @@ enum {
     PKT_REQUEST_CONTROLLER_DATA  = 1,
     PKT_SET_CLIENT_NAME          = 50,
     PKT_DEVICE_LIST_UPDATED      = 100,
+    PKT_RESIZEZONE               = 1000,
     PKT_UPDATELEDS               = 1050,
     PKT_SETCUSTOMMODE            = 1100,
     PKT_UPDATEMODE               = 1101,
@@ -70,9 +71,11 @@ static void rdstr(rd_t *r, char *out, int cap) {
 // md / mraw: every mode (its name, colour mode, minimum colours and description), to choose the one haku lights it in
 enum { COLORS_NONE, COLORS_PER_LED, COLORS_MODE_SPECIFIC, COLORS_RANDOM };   // a mode's colour mode (OpenRGB's MODE_COLORS_*)
 typedef struct { char name[32]; int cm, cmin, off, len; } mode_t_;
+// zn: the zones (a motherboard's ARGB headers can be resized: leds min < max, and OpenRGB starts them at 0)
+typedef struct { char name[32]; int min, max, count; } zone_t_;
 typedef struct {
-    int type, nleds, ncolors, active, mode_len, nmodes, mraw_len; char name[64], vendor_desc[64], mode_name[32];
-    unsigned colors[EXT_MAX_LEDS]; unsigned char mode[512]; mode_t_ md[64]; unsigned char mraw[8192];
+    int type, nleds, ncolors, active, mode_len, nmodes, mraw_len, nzones; char name[64], vendor_desc[64], mode_name[32];
+    unsigned colors[EXT_MAX_LEDS]; unsigned char mode[512]; mode_t_ md[64]; unsigned char mraw[8192]; zone_t_ zn[16];
 } ctrl_t;
 
 static int parse_ctrl(const unsigned char *buf, int len, ctrl_t *c) {
@@ -112,8 +115,11 @@ static int parse_ctrl(const unsigned char *buf, int len, ctrl_t *c) {
     }
     unsigned nzones = rd16(&r);
     for (unsigned z = 0; z < nzones && !r.bad; z++) {
-        rdstr(&r, NULL, 0);
-        rdskip(&r, 4 * 4);             // type, leds min, leds max, leds count
+        char zn[32];
+        rdstr(&r, zn, sizeof(zn));
+        rd32(&r);                      // type
+        int lmin = (int)rd32(&r), lmax = (int)rd32(&r), lc = (int)rd32(&r);
+        if (c->nzones < 16) { zone_t_ *x = &c->zn[c->nzones++]; strcpy_s(x->name, sizeof(x->name), zn); x->min = lmin; x->max = lmax; x->count = lc; }
         unsigned ml = rd16(&r);
         rdskip(&r, ml);                // matrix map (height, width, cells)
     }
@@ -123,7 +129,10 @@ static int parse_ctrl(const unsigned char *buf, int len, ctrl_t *c) {
     c->nleds = (int)nl;
     c->ncolors = 0;
     for (unsigned i = 0; i < ncol && !r.bad; i++) { unsigned v = rd32(&r); if (i < EXT_MAX_LEDS) c->colors[c->ncolors++] = v; }
-    return !r.bad && nl > 0;
+    // no LEDs yet is fine when a zone can be given some (an ARGB header at 0): the window offers to set them
+    int resizable = 0;
+    for (int z = 0; z < c->nzones; z++) if (c->zn[z].min < c->zn[z].max) resizable = 1;
+    return !r.bad && (nl > 0 || resizable);
 }
 
 static const char *type_name(int t) {
@@ -199,6 +208,34 @@ static int pick_mode(const ctrl_t *c, orgb_t *o, float *rate, const char **how) 
     return DRIVE_NONE;
 }
 
+// The resizable zones (ARGB headers): the sizes chosen in the window ([dev.N] zones "name=count|...") given to
+// OpenRGB (it starts them at 0 and keeps a size only until it restarts, so this is done at every connect), and the
+// zones as they are written to [dev.N] zones_found "name:count:min:max|..." for the window. 1: a size was changed.
+static int apply_zones(SOCKET s, unsigned idx, const char *sec, const ctrl_t *c) {
+    const char *want = cfg_get(sec, "zones", "");
+    char found[256] = ""; int n = 0, changed = 0;
+    for (int z = 0; z < c->nzones; z++) {
+        const zone_t_ *x = &c->zn[z];
+        if (x->min >= x->max) continue;
+        int size = x->count;
+        char key[40]; snprintf(key, sizeof(key), "%s=", x->name);
+        for (const char *p = want; (p = strstr(p, key)) != NULL; p += strlen(key))
+            if (p == want || p[-1] == '|') { size = atoi(p + strlen(key)); break; }
+        if (size < x->min) size = x->min;
+        if (size > x->max) size = x->max;
+        if (size > EXT_MAX_LEDS) size = EXT_MAX_LEDS;
+        if (size != x->count) {
+            unsigned char b[8]; int zi = z;
+            memcpy(b, &zi, 4); memcpy(b + 4, &size, 4);
+            if (send_pkt(s, idx, PKT_RESIZEZONE, b, 8)) changed = 1;
+        }
+        n += snprintf(found + n, sizeof(found) - n, "%s%s:%d:%d:%d", n ? "|" : "", x->name, size, x->min, x->max);
+        if (n >= (int)sizeof(found)) break;
+    }
+    if (strcmp(cfg_get(sec, "zones_found", ""), found)) { cfg_set(sec, "zones_found", found); cfg_save_if_dirty(); }
+    return changed;
+}
+
 // a mode as it is described (index, then the description), made the active one
 static int send_mode(ext_dev *d, int idx, const unsigned char *desc, int len) {
     unsigned char buf[8 + 1024];
@@ -229,6 +266,12 @@ static int orgb_open(ext_dev *d) {
     }
     if (idx < 0) { free(c); closesocket(s); return 0; }
     if (!want[0]) { cfg_set(sec, "match", c->name); cfg_save_if_dirty(); }
+    // ARGB headers sized as chosen in the window; then read again, with their LEDs
+    if (apply_zones(s, (unsigned)idx, sec, c)) { Sleep(150); if (!read_ctrl(s, (unsigned)idx, c)) { free(c); closesocket(s); return 0; } }
+    if (c->nleds < 1) {   // only zones still at 0 LEDs: nothing to light until the window gives them some
+        snprintf(d->info, sizeof(d->info), "OpenRGB · %s · set the LEDs on its connectors", c->name);
+        free(c); closesocket(s); return 0;
+    }
     d->nleds = c->nleds > EXT_MAX_LEDS ? EXT_MAX_LEDS : c->nleds;
     snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s", c->name, type_name(c->type));
     orgb_t *o = calloc(1, sizeof(orgb_t));
@@ -239,7 +282,11 @@ static int orgb_open(ext_dev *d) {
     o->how = pick_mode(c, o, &rate, &how);
     d->rate = rate;
     snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s · %s", c->name, type_name(c->type), how);
-    if (o->how != DRIVE_DIRECT) logf_("dev.%d (openrgb): '%s' has no Direct mode: %s (%d modes)", d->id, c->name, how, c->nmodes);
+    if (o->how != DRIVE_DIRECT) {   // which modes it has, as names and colour modes, so a report shows why
+        char ml[400]; int k = 0;
+        for (int m = 0; m < c->nmodes && k < (int)sizeof(ml) - 40; m++) k += snprintf(ml + k, sizeof(ml) - k, "%s%s/%d", m ? ", " : "", c->md[m].name, c->md[m].cm);
+        logf_("dev.%d (openrgb): '%s' has no Direct mode: %s (modes: %s)", d->id, c->name, how, ml);
+    }
     free(c);
     d->priv = o; d->sock = s;
     if (o->how == DRIVE_DIRECT) send_pkt(s, o->idx, PKT_SETCUSTOMMODE, NULL, 0);   // Direct / Custom
