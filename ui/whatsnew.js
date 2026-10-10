@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.4',
+    en: ['Fans and strips on a motherboard\'s ARGB connectors (through OpenRGB) can now light up: the device\'s card has LEDs on each connector. OpenRGB starts these connectors at 0 LEDs, so enter how many are plugged into each; haku sets them again every time.'],
+    ru: ['Вентиляторы и ленты в ARGB-разъёмах материнской платы (через OpenRGB) теперь можно зажечь: в карточке устройства появилось «Светодиодов на разъёме». OpenRGB начинает такие разъёмы с 0 светодиодов — укажите, сколько подключено к каждому, и haku будет выставлять это при каждом запуске.'],
+    fr: ['Les ventilateurs et rubans branchés sur les connecteurs ARGB de la carte mère (via OpenRGB) peuvent maintenant s\'allumer : la fiche de l\'appareil a LED sur chaque connecteur. OpenRGB démarre ces connecteurs à 0 LED, indiquez donc combien sont branchées sur chacun ; haku les règle à nouveau à chaque fois.'] },
   { v: '0.4.3',
     en: ['A new effect, Colour wave: bands of your colours sweep across the whole room, every device taking the wave as it passes, like SignalRGB\'s Color Wave. Choose the direction (left, right, up, down, from or to the middle) and how long the wave is.'],
     ru: ['Новый эффект «Цветная волна»: полосы ваших цветов идут волной через всю комнату, каждое устройство подхватывает её по очереди, как Color Wave в SignalRGB. Можно выбрать направление (влево, вправо, вверх, вниз, от центра или к центру) и длину волны.'],
