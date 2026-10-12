@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.6',
+    en: ['The window now opens with the haku logo coming together out of light, in the colours of your current effect, then flying into its place. It plays the first time the window opens after haku starts; a click or a key skips it, and it stays off with animations turned off.'],
+    ru: ['Теперь окно открывается заставкой: логотип haku собирается из света в цветах текущего эффекта и улетает на своё место. Она играет при первом открытии окна после запуска haku; клик или любая клавиша её пропускают, а с выключенными анимациями её нет.'],
+    fr: ['La fenêtre s\'ouvre maintenant sur le logo haku qui se forme dans la lumière, aux couleurs de l\'effet en cours, puis s\'envole à sa place. Il se joue à la première ouverture de la fenêtre après le démarrage de haku ; un clic ou une touche le passe, et il ne se joue pas si les animations sont coupées.'] },
   { v: '0.4.5',
     en: ['A new hidden theme: a night sky under the window, with twinkling and shooting stars. Those who have its code know what to type next to the theme switch.'],
     ru: ['Новая скрытая тема: ночное небо за окном, с мерцающими и падающими звёздами. У кого есть её код, тот знает, что вписать рядом с переключателем темы.'],
