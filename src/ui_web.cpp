@@ -250,7 +250,10 @@ static void create_webview(void) {
                         }).Get(), &tok);
 
                     fit();
-                    web->Navigate(L"https://haku-control.ui/index.html");
+                    // the first window after haku starts plays the logo intro (ui/intro.js), the next ones open straight
+                    static bool intro_played;
+                    web->Navigate(intro_played ? L"https://haku-control.ui/index.html" : L"https://haku-control.ui/index.html#intro");
+                    intro_played = true;
                     return S_OK;
                 }).Get());
         }).Get());

@@ -1167,6 +1167,21 @@ body.calm .vchat { animation: vchat-calm 7s steps(1) forwards; }
   text-shadow: 0 0 22px rgba(190, 210, 255, .55); }
 .akz-name small { font-size: 12px; letter-spacing: .3em; color: #9fb0d4; }
 @keyframes akz-name { 0% { opacity: 0; transform: translateY(8px); } 22%, 60% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-6px); } }
+/* the intro (intro.js): the window stays dark until it plays, then the page comes in under the logo flying into
+   the sidebar (its own logo is hidden until then) */
+.intro-ov { display: none; position: fixed; inset: 0; z-index: 10000; cursor: pointer; }
+html.intro .intro-ov { display: block; background: #050506; }
+.intro-ov.run { display: block; background: none; }
+.intro-ov .bg { position: absolute; inset: 0; background: radial-gradient(circle at 50% 48%, #0d0d10 0%, #060607 55%, #020203 100%); }
+.intro-ov canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+body:has(> .intro-ov.run) .brand .logo { visibility: hidden; }
+html.intro main > header, html.intro main > .tab, html.intro .side nav, html.intro .side-foot, html.intro .brand .word { opacity: 0; }
+html.intro main > header, html.intro main > .tab { transform: translateY(16px); }
+html.intro .side nav, html.intro .side-foot { transform: translateX(-14px); }
+html.intro-out main > header, html.intro-out main > .tab { transition: opacity .5s ease .1s, transform .8s cubic-bezier(.2, .8, .2, 1) .1s; }
+html.intro-out .side nav { transition: opacity .5s ease .2s, transform .7s cubic-bezier(.2, .8, .2, 1) .2s; }
+html.intro-out .side-foot { transition: opacity .5s ease .3s, transform .7s cubic-bezier(.2, .8, .2, 1) .3s; }
+html.intro-out .brand .word { transition: opacity .5s ease .62s; }
 :root[data-theme="kyoka"] body {
   background: radial-gradient(900px circle at 92% 108%, rgba(140, 90, 255, .16), transparent 62%),
               radial-gradient(700px circle at 0% -10%, rgba(255, 255, 255, .04), transparent 60%), var(--bg);

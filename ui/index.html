@@ -11,8 +11,15 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-256.png">
 <link rel="stylesheet" href="style.css">
+<script>/* the first window after haku starts plays the intro (intro.js); until then it stays dark. If the intro
+  never gets going, the page shows anyway */
+  if (/^#intro/.test(location.hash)) {
+    document.documentElement.classList.add('intro');
+    setTimeout(function () { var o = document.getElementById('intro'); if (o && !o.classList.contains('run')) document.documentElement.classList.remove('intro'); }, 3000);
+  }</script>
 </head>
 <body>
+<div class="intro-ov" id="intro"></div>
 <div class="ambient" id="ambient"><i class="p0"><b></b></i><i class="p1"><b></b></i><i class="p2"><b></b></i><i class="p3"><b></b></i><div class="ky-script" aria-hidden="true"></div><canvas class="sky" id="sky" aria-hidden="true"></canvas></div>
 <div class="watermark"></div>
 
@@ -715,5 +722,6 @@
 <script src="whatsnew.js"></script>
 <script src="qr.js"></script>
 <script src="app.js"></script>
+<script src="intro.js"></script>
 </body>
 </html>
