@@ -274,8 +274,8 @@ int cfg_json(char *out, int cap) {
         char *k = trim(s);
         n = json_put_str(out, cap, n, k);
         out[n++] = ':';
-        // pairing secrets ([dev.N] key=) stay in the file
-        n = json_put_str(out, cap, n, !_stricmp(k, "key") && trim(eq + 1)[0] ? "(set)" : trim(eq + 1));
+        // secrets ([dev.N] / [pro] key=, [mqtt] password=) stay in the file: the page (and a paired phone) sees only that one is set
+        n = json_put_str(out, cap, n, (!_stricmp(k, "key") || !_stricmp(k, "password")) && trim(eq + 1)[0] ? "(set)" : trim(eq + 1));
     }
     ReleaseSRWLockShared(&lock);
     if (open) out[n++] = '}';

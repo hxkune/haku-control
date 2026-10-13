@@ -3099,7 +3099,10 @@ function updateHa() {
   const on = $('#ha-on'); on.checked = cv('mqtt', 'on', '0') === '1'; on.disabled = locked;
   [['#ha-host', 'host'], ['#ha-port', 'port'], ['#ha-user', 'user'], ['#ha-pass', 'password']].forEach(([id, k]) => {
     const el = $(id); el.disabled = locked;
-    if (document.activeElement !== el) el.value = cv('mqtt', k, '');
+    const v = cv('mqtt', k, '');
+    // a saved password never reaches the page, only "(set)": the field stays empty with dots as a hint
+    if (k === 'password') el.placeholder = v === '(set)' ? '••••••••' : '';
+    if (document.activeElement !== el) el.value = k === 'password' && v === '(set)' ? '' : v;
   });
   const st = $('#ha-state');
   st.textContent = locked ? t('ha.pro') : !on.checked ? '' : M.state === 'connected' ? t('ha.connected', M.topic) :
