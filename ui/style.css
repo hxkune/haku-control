@@ -654,7 +654,6 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .wz-row b { display: block; font-weight: 600; font-size: 13.5px; }
 .wz-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .wz-row small:empty { display: none; }
-.wz-row .state { color: var(--muted); font-size: 12px; white-space: nowrap; display: flex; align-items: center; gap: 7px; }
 .wz-found { margin-top: 6px; max-height: 170px; overflow: auto; }
 .wiz .note { color: var(--faint); font-size: 12px; margin-top: 14px; line-height: 1.5; }
 .wz-foot { display: flex; align-items: center; gap: 10px; margin-top: 26px; }

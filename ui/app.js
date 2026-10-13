@@ -2919,23 +2919,17 @@ function wizard(show) {
   if (show) { wzShown = true; wzGo(0); }
 }
 function wzGo(n) {
-  wzStep = Math.max(0, Math.min(3, n));
+  wzStep = Math.max(0, Math.min(2, n));
   $$('.wz-step').forEach(s => s.classList.toggle('on', +s.dataset.step === wzStep));
   $$('#wz-dots i').forEach((d, i) => d.classList.toggle('on', i <= wzStep));
   $('#wz-back').classList.toggle('hidden', wzStep === 0);
-  $('#wz-next span').textContent = t(wzStep === 3 ? 'wz.finish' : 'wz.next');
-  if (wzStep === 2 && !S.ext.found.length && !S.ext.scanning) { S.ext.scanning = 1; send({ cmd: 'scan' }); }
+  $('#wz-next span').textContent = t(wzStep === 2 ? 'wz.finish' : 'wz.next');
+  if (wzStep === 1 && !S.ext.found.length && !S.ext.scanning) { S.ext.scanning = 1; send({ cmd: 'scan' }); }
   updateWizard();
 }
 function updateWizard() {
   if ($('#wizard').classList.contains('hidden')) return;
   $$('#wz-lang button').forEach(b => b.classList.toggle('on', b.dataset.v === LANG));
-  const row = (name, ok, detail, note) => `<div class="wz-row"><div><b>${name}</b><small>${note || ''}</small></div>
-      <span class="state"><span class="dot ${ok ? 'on' : 'off'}"></span>${detail}</span></div>`;
-  $('#wz-pc').innerHTML =
-    row(t('wz.board'), S.msi, S.msi ? t('wz.found') : t('wz.notfound'), S.msi ? '' : t('wz.nomsi')) +
-    row(t('wz.mem'), S.sticks, S.sticks ? t('wz.sticks', S.sticks) : t('wz.notfound'), S.sticks || S.pawnio ? '' : t('wz.pawnio')) +
-    row(t('wz.gpu'), S.gpu_temp != null, S.gpu_temp != null ? S.gpu_temp + ' °C' : t('wz.notfound'));
   const nL = nanoCtls();
   $('#wz-nano').textContent = nL.length ? t('wz.nano.on', nL.map(c => c.name || c.ip).join(', ')) : S.nano.pair ? '' : t('wz.nano.off');
   const E = S.ext;
@@ -2957,7 +2951,7 @@ function updateWizard() {
 }
 $('#wz-back').addEventListener('click', () => wzGo(wzStep - 1));
 $('#wz-next').addEventListener('click', () => {
-  if (wzStep < 3) return wzGo(wzStep + 1);
+  if (wzStep < 2) return wzGo(wzStep + 1);
   setCfg('general', 'welcome', 0);
   wizard(false);
 });
