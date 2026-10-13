@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.8',
+    en: ['Phone control and Home Assistant are safer: every command is now checked by haku itself, and a phone can no longer change which programs haku starts (OpenRGB, Ollama) or the phone and Home Assistant settings.',
+         'Saved passwords are no longer shown, in the window or on a paired phone: the Home Assistant password field stays empty with dots when one is saved, and typing a new one replaces it.',
+         'The first-start wizard is shorter: the "Inside your PC" step is gone, the Devices tab already shows what haku finds.'],
+    ru: ['Управление с телефона и Home Assistant стали безопаснее: каждую команду теперь проверяет сам haku, и телефон больше не может менять, какие программы запускает haku (OpenRGB, Ollama), а также настройки телефона и Home Assistant.',
+         'Сохранённые пароли больше не показываются ни в окне, ни на подключённом телефоне: поле пароля Home Assistant остаётся пустым с точками, если пароль сохранён, а новый пароль просто вписывается поверх.',
+         'Мастер первого запуска стал короче: шага «Внутри ПК» больше нет, всё найденное и так видно на вкладке «Устройства».'],
+    fr: ['Le contrôle depuis le téléphone et Home Assistant sont plus sûrs : chaque commande est maintenant vérifiée par haku lui-même, et un téléphone ne peut plus changer les programmes que haku lance (OpenRGB, Ollama) ni les réglages du téléphone et de Home Assistant.',
+         'Les mots de passe enregistrés ne sont plus affichés, ni dans la fenêtre ni sur un téléphone associé : le champ du mot de passe Home Assistant reste vide avec des points quand il y en a un, et en taper un nouveau le remplace.',
+         'L\'assistant du premier démarrage est plus court : l\'étape « Dans votre PC » a disparu, l\'onglet Appareils montre déjà ce que haku trouve.'] },
   { v: '0.4.7',
     en: ['A new opening for the window: a spark lights up in the dark, opens into a star, and the star draws the haku logo\'s orbit as the letters fly in.'],
     ru: ['Новая заставка окна: в темноте вспыхивает искра, раскрывается в звезду, и звезда прочерчивает орбиту логотипа haku, пока к ней слетаются буквы.'],
