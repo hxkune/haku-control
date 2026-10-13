@@ -321,8 +321,8 @@ static int install(int quiet, int quiet_autostart) {
         STARTUPINFOW si = { sizeof(si) }; PROCESS_INFORMATION pi;
         if (CreateProcessW(exe, NULL, NULL, NULL, FALSE, 0, NULL, dest, &si, &pi)) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
     }
-    if (quiet) return 0;   // an update the app started itself: no window popping up in the middle of whatever is on
-    // installed or updated by hand: its window opens (with what is new), as when it is opened from the Start menu
+    // its window opens (with what is new), as when it is opened from the Start menu; after an update the app
+    // started itself too, so it is plain that the new version is there
     if (webview2_installed()) {
         HWND h = NULL;
         for (int t = 0; t < 100 && !(h = FindWindowW(L"haku-control", L"haku-control")); t++) Sleep(100);
@@ -333,6 +333,7 @@ static int install(int quiet, int quiet_autostart) {
             return 0;
         }
     }
+    if (quiet) return 0;   // no "done" message after an update the app started itself
     info(update ? TR(L"haku control is updated", L"haku control обновлён") : TR(L"haku control is installed", L"haku control установлен"),
          webview2_installed()
              ? TR(L"It is running in the notification area (tray). Click its icon to open the window; it is also in the Start menu.",

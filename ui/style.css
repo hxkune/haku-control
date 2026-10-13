@@ -1173,6 +1173,10 @@ html.intro .intro-ov { display: block; background: #050506; }
 .intro-ov.run { display: block; background: none; }
 .intro-ov .bg { position: absolute; inset: 0; background: radial-gradient(circle at 50% 48%, #0d0d10 0%, #060607 55%, #020203 100%); }
 .intro-ov canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* grey: graphite; light: paper, the film's light turned to ink (inverted, hues kept) */
+.intro-ov[data-th="grey"] .bg { background: radial-gradient(circle at 50% 48%, #303137 0%, #212226 55%, #141417 100%); }
+.intro-ov[data-th="light"] .bg { background: #efefed; }
+.intro-ov[data-th="light"] canvas { filter: invert(1) hue-rotate(180deg); }
 body:has(> .intro-ov.run) .brand .logo { visibility: hidden; }
 /* the page coming in, one thing after another: the menu from the left, button by button, then the bottom of the
    sidebar; the title, then the tab's blocks rising, the effect tiles last; the word under the logo once it lands */

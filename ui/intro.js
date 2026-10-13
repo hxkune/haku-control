@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 'use strict';
-// The haku intro: plays when the window opens for the first time after haku starts (the core opens the page as
+// The haku intro: plays every time the window opens (the core opens the page as
 // index.html#intro). A spark flickers on in the dark, light is drawn in to it and it opens into a four-pointed
 // star, which pops. Ribbons of light in the colours of the current effect whirl out of it and wind down into the
 // orbit, and the star breaks away, swings round and draws the orbit behind it as it turns in its own plane. The
@@ -10,6 +10,9 @@
 // glitch; the star lands on the orbit's thin end, the logo flashes, a ring runs out along the orbit, sparks fly; a
 // light sweeps across it, then it flies into its place in the sidebar while the window comes in. A click or a key
 // skips it; without animations (Settings) it does not play.
+// Each base theme has its own: dark is light in the dark; grey is the same on graphite, its glow softer and the sweep
+// two hard glints; light is ink on paper (the film is still drawn as light, and the page inverts the canvas with the
+// hues kept, style.css). The hidden themes get the dark one.
 // The whole film is a function of time: index.html?mock#intro@1.2 stands still at 1.2 s, to look at a frame.
 (() => {
   const root = document.documentElement;
@@ -81,8 +84,17 @@
   const onOrbit = (th, k = 1) => mv(E, k * Math.cos(th), k * Math.sin(th));
   const css = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`, mix = (c, d, f) => c.map((v, i) => Math.round(v + (d[i] - v) * f));
   const WHITE = [255, 255, 255];
-  // the ghosts' two colours, pink and cyan: together they make white again
-  const CH = [[255, 60, 150], [0, 195, 255]];
+  // the ghosts' two colours: the two of the effect's furthest apart (cyan and pink by default); a one-colour
+  // effect gets it and a paler it
+  let CH;
+  function ghostCols(p) {
+    let best = [p[0], mix(p[0], WHITE, .6)], far = 120 * 120;
+    for (const a of p) for (const b of p) {
+      const d = a.reduce((s, v, i) => s + (v - b[i]) ** 2, 0);
+      if (d > far) { far = d; best = [a, b]; }
+    }
+    return best;
+  }
 
   // ---- the colours: the current effect's, made bright (dark ones left out)
   let PAL;
@@ -216,9 +228,11 @@
     return { a: hash(400 + i) * 6.283, r0: 650 + 500 * hash(500 + i), ta, ts: ta - .2 - .08 * hash(600 + i), c: hash(700 + i) < .35 ? -1 : i % 3, w: 3.5 + 4 * hash(800 + i) };
   });
 
-  let whole, wholeCh, glowW, glowM, glowT, scratch;
+  let whole, wholeCh, glowW, glowM, glowT, scratch, TH = 'dark', GLOW = 1;
   function build() {
-    size(); K = L * D; PAL = colours();
+    size(); K = L * D; PAL = colours(); CH = ghostCols(PAL);
+    TH = ['grey', 'light'].includes(root.dataset.theme) ? root.dataset.theme : 'dark'; GLOW = { dark: 1, grey: .6, light: .45 }[TH];
+    ov.dataset.th = TH;
     const d = /\sd="([^"]+)"/.exec(SVG)[1], sub = d.match(/M[^M]+/g);
     const path = (...i) => new Path2D(i.map(j => sub[j]).join(''));
     const poly = list => { const q = new Path2D(); for (const a of list) { q.moveTo(a[0], a[1]); for (let i = 2; i < a.length; i += 2) q.lineTo(a[i], a[i + 1]); q.closePath(); } return q; };
@@ -389,7 +403,7 @@
     CAM = camera(t);
     const h = t - HIT;
     // a little of the colour lights the dark behind, more on the landing
-    const energy = .35 * clamp(t / .4) * (h < 0 ? 1 : .4) + (h > 0 ? .9 * Math.exp(-h / .25) : 0);
+    const energy = GLOW * GLOW * .35 * clamp(t / .4) * (h < 0 ? 1 : .4) + (h > 0 ? .9 * Math.exp(-h / .25) : 0);
     const cx = W * D / 2, cy = H * D / 2, R0 = Math.max(W, H) * D * .7, gb = ctx.createRadialGradient(cx, cy, 0, cx, cy, R0);
     gb.addColorStop(0, css(PAL[0], .16 * energy)); gb.addColorStop(.5, css(PAL[1], .05 * energy)); gb.addColorStop(1, css(PAL[1], 0));
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.fillStyle = gb; ctx.fillRect(0, 0, cvs.width, cvs.height);
@@ -422,13 +436,13 @@
       star(sp[0], sp[1], R * .32, a, WHITE, -t * 7 + .4, .07);
     }
     if (joined > 0) {
-      // the logo, its pink and cyan still a little apart, and glowing
+      // the logo, white, its two ghost colours still a little apart at its edges, and glowing
       const sp = (2.4 * Math.exp(-h * 5) + .5) / (L * CAMS), b = joined * (.9 + .1 * Math.exp(-h * 4));
-      put(whole, tr(-sp, 0), b, wholeCh[0]); put(whole, tr(sp, 0), b, wholeCh[1]);
+      put(whole, I, b); put(whole, tr(-sp, 0), b, wholeCh[0]); put(whole, tr(sp, 0), b, wholeCh[1]);
     }
     if (h > 0) {
-      put(glowW, I, .8 * Math.exp(-h / .22) + .26 + .05 * Math.sin(t * 5));
-      put(glowT, I, .9 * Math.exp(-h / .1) + .16);
+      put(glowW, I, GLOW * (.8 * Math.exp(-h / .22) + .26 + .05 * Math.sin(t * 5)));
+      put(glowT, I, GLOW * (.9 * Math.exp(-h / .1) + .16));
       // the ring running out along the orbit
       ctx.setTransform(...CAM);
       for (const [d, k, col] of [[0, .55, PAL[0]], [.05, .32, WHITE]]) {
@@ -465,18 +479,21 @@
       star(s.x, s.y, s.R * (.4 + .6 * Math.min(1, q / .15)), a, s.c < 0 ? WHITE : PAL[s.c % PAL.length], q * 1.6);
     }
   }
-  // a band of light crossing the logo: the logo brightens under it and blooms at its edges
+  // a band of light crossing the logo: the logo brightens under it and blooms at its edges (on grey: two hard
+  // glints, the second fainter, a little behind)
   function sweep(t) {
     const q = (t - SWEEP) / .65;
     if (q <= 0 || q >= 1) return;
-    const g = scratch.getContext('2d'), w = scratch.width, hh = scratch.height, x = -w * .25 + q * w * 1.5, band = w * .1;
-    g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, w, hh); g.drawImage(glowM.c, 0, 0);
-    g.globalCompositeOperation = 'source-in';
-    const gr = g.createLinearGradient(x - band, -band * .4, x + band, band * .4);
-    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.5, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = gr; g.fillRect(0, 0, w, hh);
-    const a = Math.sin(Math.PI * q);
-    put(glowM, I, a, scratch); put(glowM, I, .7 * a, scratch);
+    const grey = TH === 'grey', g = scratch.getContext('2d'), w = scratch.width, hh = scratch.height, band = w * (grey ? .045 : .1);
+    for (const off of grey ? [0, -.09] : [0]) {
+      const x = -w * .25 + (q + off) * w * 1.5, a = Math.sin(Math.PI * q) * (grey ? off ? .75 : 1.5 : 1);
+      g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, w, hh); g.drawImage(glowM.c, 0, 0);
+      g.globalCompositeOperation = 'source-in';
+      const gr = g.createLinearGradient(x - band, -band * .4, x + band, band * .4);
+      gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.5, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, hh);
+      put(glowM, I, a, scratch); put(glowM, I, .7 * a, scratch);
+    }
   }
 
   // ---- off: the logo flies into the sidebar's (same shape and size, its colour), the window comes in under it;
@@ -490,7 +507,9 @@
       if (r && r.width > 20 && r.right > 0 && r.bottom > 0 && r.left < W && r.top < H) {
         to = { cx: (r.left + r.width / 2) * D, cy: (r.top + r.height / 2) * D, s: r.width * D / 1540 };
         const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(getComputedStyle(el).backgroundColor);
-        toImg = tint(whole.c, m ? [+m[1], +m[2], +m[3]] : WHITE);
+        const c = m ? [+m[1], +m[2], +m[3]] : WHITE;
+        // shortcut: on light the canvas is inverted, so it lands as the inverse; exact for grey logos, a coloured one comes out a little off in hue
+        toImg = tint(whole.c, TH === 'light' ? c.map(v => 255 - v) : c);
       }
       root.classList.add('intro-out'); root.classList.remove('intro');
     }
