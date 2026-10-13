@@ -1006,9 +1006,10 @@ void app_open(const char *what) {
     else if (!strcmp(what, "pro")) pro_buy();
 }
 
-void app_remote_cmd(const char *json) {
-    DWORD_PTR r;
+int app_remote_cmd(const char *json) {
+    DWORD_PTR r = 0;
     SendMessageTimeoutW(hwnd, WM_REMOTE_CMD, 0, (LPARAM)json, SMTO_BLOCK, 3000, &r);
+    return (int)r;
 }
 
 void app_save_soon(void) { SetTimer(hwnd, SAVE_TIMER, 500, NULL); }
@@ -1171,8 +1172,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         return 0;
     case WM_REMOTE_CMD:
-        ui_dispatch((const char *)lp);
-        return 0;
+        return ui_dispatch((const char *)lp);
     case WM_PRO:   // haku Pro came or went: the Wi-Fi lights are let go of / taken again, phone control follows
         pro_off = !wp;
         logf_("pro: %s", wp ? "on" : "off (Wi-Fi lights let go of)");

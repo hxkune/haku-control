@@ -310,11 +310,35 @@ static void bring_to_front(void) {
     SetForegroundWindow(wnd);
 }
 
-// Commands from a phone (remote.c, marshalled to this thread): same handling as the page's, then the open
-// window (if any) is brought up to date.
-extern "C" void ui_dispatch(const char *json) {
+// Commands from a phone (remote.c) or Home Assistant (mqtt.c), marshalled to this thread: same handling as the
+// page's, then the open window (if any) is brought up to date. Checked here, with on_message's own reader, so a
+// body that reads one way to the sender's parser and another way here cannot slip past.
+static bool remote_allowed(const std::string &js) {
+    static const char *const ok[] = { "effect", "brightness", "set", "toggle", "power", "pair", "scan", "dev_add", "dev_remove", "mood", "preset",
+                                      "preset_save", "preset_delete", "orgb_check", "hw_scan", "profile", "profile_save", "profile_delete", "pc_own",
+#ifdef HAKU_DEV   // test builds (loopback only by default): the rest can be driven from a browser for tests
+                                      "aidot_login", "tuya_login", "govee_login", "diag", "update_check", "update_install", "ai_setup", "ai_on_demand",
+                                      "orgb_setup", "orgb_auto", "pro_key", "backup_save", "backup_load", "report",
+#endif
+    };
+    std::string cmd = field(js, "cmd");
+    bool found = false;
+    for (const char *c : ok) if (cmd == c) found = true;
+    if (!found) return false;
+    if (cmd != "set") return true;
+    // settings that start programs or hold this PC's own access stay with the PC window
+    std::string s = field(js, "s"), k = field(js, "k");
+    // plain names only: a space, "=" or "]" would write a different ini line than the one checked
+    for (char c : s + k) if (!isalnum((unsigned char)c) && c != '.' && c != '_' && c != '-') return false;
+    return !s.empty() && !k.empty() && _stricmp(s.c_str(), "remote") && _stricmp(s.c_str(), "mqtt") &&
+           !(!_stricmp(s.c_str(), "openrgb") && !_stricmp(k.c_str(), "path")) && !(!_stricmp(s.c_str(), "mood") && !_stricmp(k.c_str(), "ollama_path"));
+}
+
+extern "C" int ui_dispatch(const char *json) {
+    if (!remote_allowed(json)) { logf_("remote: command refused"); return 0; }
     on_message(json);
     post_state();
+    return 1;
 }
 
 extern "C" void ui_open(HINSTANCE inst) {

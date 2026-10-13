@@ -132,6 +132,10 @@ static int dirty;
 
 // Changes the value in memory only; cfg_save_if_dirty() writes the file.
 void cfg_set(const char *section, const char *key, const char *value) {
+    // one line per key: a line break in a value (a name typed on a phone) would add lines of its own to the file
+    char clean[LINE_LEN]; strncpy_s(clean, LINE_LEN, value, _TRUNCATE);
+    for (char *p = clean; *p; p++) if ((unsigned char)*p < 0x20) *p = ' ';
+    value = clean;
     AcquireSRWLockExclusive(&lock);
     int end;
     int i = find(section, key, NULL, &end);

@@ -154,8 +154,8 @@ void remote_stop(void);
 void remote_forget(void);         // drop all paired devices
 void remote_new_pin(void);
 int  remote_json(char *out, int cap);
-void app_remote_cmd(const char *json);   // runs a window command on the UI thread (main.c)
-void ui_dispatch(const char *json);      // ui_web.cpp: the window's command handler
+int app_remote_cmd(const char *json);    // runs a window command on the UI thread (main.c); 0: refused
+int ui_dispatch(const char *json);       // ui_web.cpp: the window's command handler; 0: not allowed from outside
 
 // ---- update.c (a newer GitHub release installed by itself, checked every 6 hours)
 void update_start(void);
