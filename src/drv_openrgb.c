@@ -427,7 +427,9 @@ static unsigned __stdcall check_fn(void *p) {
     memcpy(chk, tmp, sizeof(orgb_ctl) * chk_n);
     ReleaseSRWLockExclusive(&chk_lk);
     logf_("openrgb: %s", n >= 0 ? "SDK server answers" : chk_state == 3 ? "installed, no SDK server" : "not on this PC");
+#ifndef HAKU_DEV   // the test build only looks: added, the PC's own lights would be fought over with the real app
     if (n > 0) orgbapp_add_new(tmp, n);
+#endif
     InterlockedExchange(&chk_busy, 0);
     ui_refresh();
     return 0;

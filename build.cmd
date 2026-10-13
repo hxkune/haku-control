@@ -11,8 +11,9 @@ if /i "%~1"=="dev" set "OUT=bin-dev" & set "OBJ=obj-dev" & set "DEFS=/DHAKU_DEV"
 rem release builds from CI know their GitHub repo ("owner/name") and check it for new versions
 if defined HAKU_REPO if not defined DEFS set "DEFS=/DHAKU_REPO=\"%HAKU_REPO%\""
 if defined VCINSTALLDIR goto have_vs
-set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-if exist "%VSWHERE%" for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+rem on PATH: a quoted path with "(x86)" breaks for /f, and vcvars64.bat of VS 2019 calls vswhere.exe by name
+set "PATH=%PATH%;%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"
+for /f "delims=" %%i in ('vswhere.exe -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul') do set "VSDIR=%%i"
 rem fallback: standard install folders (vswhere does not list every Build Tools install)
 if not defined VSDIR for %%y in (2022 2019) do for %%e in (BuildTools Community Professional Enterprise) do (
   if not defined VSDIR if exist "%ProgramFiles%\Microsoft Visual Studio\%%y\%%e\VC\Auxiliary\Build\vcvars64.bat" set "VSDIR=%ProgramFiles%\Microsoft Visual Studio\%%y\%%e"
