@@ -541,12 +541,13 @@
   }
 
   // ---- running it
-  let SVG = null, ready = false, started = false, done = false, raf = 0, T0 = 0;
+  let SVG = null, ready = false, started = false, done = false, raf = 0, last = 0, T = 0;
   function frame(now) {
     if (done) return;
     if (cvs.width !== Math.round(innerWidth * (devicePixelRatio || 1)) || cvs.height !== Math.round(innerHeight * (devicePixelRatio || 1))) size();
-    if (!T0) T0 = now;
-    const t = FREEZE ? +FREEZE : (now - T0) / 1000;
+    // a frame that came late (the window still settling as it opens) holds the film rather than skipping it on
+    T += Math.min(now - (last || now), 34) / 1000; last = now;
+    const t = FREEZE ? +FREEZE : T;
     try { render(t); } catch (e) { console.error(e); finish(); return; }
     if (!done) raf = requestAnimationFrame(frame);
   }
@@ -569,7 +570,13 @@
   function go() {
     if (started || done || !SVG || !ready) return;
     if (stillMotion()) { finish(); return; }
-    try { build(); } catch (e) { console.error(e); finish(); return; }
+    try {
+      build();
+      // the first draw of each layer is slow (the browser readies it then): drawn once through the film while the
+      // window is still dark, so the film itself does not stall in its first frames
+      for (let t = 0; t < PRE + OUT; t += .15) render(t);
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cvs.width, cvs.height);
+    } catch (e) { console.error(e); finish(); return; }
     started = true;
     ov.classList.add('run');
     ov.addEventListener('pointerdown', skip); addEventListener('keydown', skip, true);
