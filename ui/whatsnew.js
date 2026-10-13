@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.7',
+    en: ['A new opening for the window: a spark lights up in the dark, opens into a star, and the star draws the haku logo\'s orbit as the letters fly in.'],
+    ru: ['Новая заставка окна: в темноте вспыхивает искра, раскрывается в звезду, и звезда прочерчивает орбиту логотипа haku, пока к ней слетаются буквы.'],
+    fr: ['Une nouvelle ouverture de la fenêtre : une étincelle s\'allume dans le noir, s\'ouvre en étoile, et l\'étoile trace l\'orbite du logo haku pendant que les lettres arrivent.'] },
   { v: '0.4.6',
     en: ['The window now opens with the haku logo coming together out of light, in the colours of your current effect, then flying into its place. It plays the first time the window opens after haku starts; a click or a key skips it, and it stays off with animations turned off.'],
     ru: ['Теперь окно открывается заставкой: логотип haku собирается из света в цветах текущего эффекта и улетает на своё место. Она играет при первом открытии окна после запуска haku; клик или любая клавиша её пропускают, а с выключенными анимациями её нет.'],
