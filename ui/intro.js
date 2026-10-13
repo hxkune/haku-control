@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 'use strict';
 // The haku intro: plays when the window opens for the first time after haku starts (the core opens the page as
-// index.html#intro). The wordmark (haku.svg) is cut into its pieces: the letters h, a, k, u, the orbit and the
-// three arcs inside it. Ribbons of light in the colours of the current effect whirl in out of the dark and wind
-// down into the orbit, which unrolls as it turns in its own plane; the arcs come round the same way and the letters
-// fly in along curves, each on a spring. Everything that moves is drawn with motion blur (sub-frames over the
-// shutter) and its red and cyan apart along the motion. The letters land with a short glitch, the logo flashes, a
-// ring runs out along the orbit, sparks fly; a light sweeps across it, then it flies into its place in the sidebar
-// while the window comes in. A click or a key skips it; without animations (Settings) it does not play.
+// index.html#intro). A spark flickers on in the dark, light is drawn in to it and it opens into a four-pointed
+// star, which pops. Ribbons of light in the colours of the current effect whirl out of it and wind down into the
+// orbit, and the star breaks away, swings round and draws the orbit behind it as it turns in its own plane. The
+// wordmark (haku.svg) is cut into its pieces: the letters h, a, k, u and the two arcs inside the orbit; the arcs come
+// round the orbit's plane, the letters fly in along curves, each on a spring, with motion blur (sub-frames over the
+// shutter), their pink and cyan apart along the motion and ghosts of where they just were. They land with a short
+// glitch; the star lands on the orbit's thin end, the logo flashes, a ring runs out along the orbit, sparks fly; a
+// light sweeps across it, then it flies into its place in the sidebar while the window comes in. A click or a key
+// skips it; without animations (Settings) it does not play.
 // The whole film is a function of time: index.html?mock#intro@1.2 stands still at 1.2 s, to look at a frame.
 (() => {
   const root = document.documentElement;
@@ -25,25 +27,34 @@
   // its stroke runs (in the ellipse's own angles) from where it leaves the h, down, round and up into its thin end
   const TH0 = 4.12, TH1 = -1.75;
   // a, u and the upper right arc are outlines of their own (the path's 1 + 5, 3 and 2); the rest is one outline,
-  // cut here into the h (with its long stroke), the k (with its spike over the orbit) and the two arcs that grow
-  // out of the orbit. What is left of it is the orbit. Where two cross, the crossing stays with the orbit.
+  // cut here into the h (with its long stroke), the k (with its spike over the orbit and its tail under it) and the
+  // arc that grows out of the orbit on the left. What is left of it is the orbit.
   const CUT = {
     h: [[200, 10, 262, 10, 352, 180, 352, 320, 430, 300, 600, 300, 700, 420, 745, 485, 826, 684, 842, 706, 830, 716, 560, 640,
       440, 600, 405, 727, 357, 728, 282, 522, 212, 480, 200, 300], [360, 752, 402, 752, 404, 798, 370, 800], [385, 872, 430, 868, 430, 960, 385, 960]],
     k: [[700, 320, 860, 260, 975, 262, 1050, 190, 1095, 186, 1150, 200, 1135, 230, 1100, 300, 920, 390, 1000, 500, 1100, 605,
-      1060, 640, 1010, 640, 860, 470, 858, 705, 800, 705, 720, 480, 700, 330], [1092, 150, 1172, 68, 1182, 72, 1160, 145]],
+      1060, 640, 1010, 640, 860, 470, 858, 705, 800, 705, 720, 480, 700, 330], [1092, 150, 1172, 68, 1182, 72, 1160, 145],
+      [1100, 693, 1143, 647, 1187, 628, 1362, 538, 1385, 545, 1300, 645, 1200, 705, 1090, 705]],
     swl: [[240, 528, 205, 545, 170, 590, 145, 650, 147, 700, 170, 740, 230, 772, 300, 778, 365, 775, 372, 752, 420, 755, 530, 748,
       530, 712, 405, 722, 357, 728, 282, 522]],
-    swb: [[1100, 693, 1143, 647, 1187, 628, 1362, 538, 1385, 545, 1300, 645, 1200, 705, 1090, 705]],
   };
-  const CUTS = ['h', 'k', 'swl', 'swb'];
+  const CUTS = ['h', 'k', 'swl'];
+  // where the orbit crosses a letter the crossing stays with the orbit, but the letter has it too, so it comes whole
+  // (and nothing changes once all is in place): the h's foot tapering into the orbit and its tail through the arc
+  // and the orbit, the k's arm and its tail through the orbit
+  const MORE = {
+    h: [[212, 480, 282, 522, 240, 521, 205, 548, 150, 606, 185, 540, 205, 500],
+      [360, 722, 401, 720, 401, 800, 413, 868, 421, 945, 409, 945, 397, 868, 379, 800, 366, 752]],
+    k: [[1050, 192, 1090, 150, 1160, 145, 1148, 200], [1028, 642, 1092, 602, 1192, 624, 1143, 650, 1098, 694, 1062, 676]],
+  };
 
-  // ---- timing (s)
-  const HIT = .97, SWEEP = 1.35, OUT = 2.3, FLY = .72, SHUT = .016, SPLIT = .01;
+  // ---- timing (s): PRE is the star's own entrance; the rest counts from its pop
+  const PRE = .46, HIT = .97, SWEEP = 1.35, OUT = 2.3, FLY = .72, SHUT = .016, SPLIT = .011;
 
   // ---- maths
   const clamp = x => x < 0 ? 0 : x > 1 ? 1 : x, smooth = x => (x = clamp(x), x * x * (3 - 2 * x));
   const outCubic = x => 1 - Math.pow(1 - clamp(x), 3);
+  const outBack = x => (x = clamp(x), 1 + 2.4 * Math.pow(x - 1, 3) + 1.4 * Math.pow(x - 1, 2));
   const hash = n => { n = Math.sin(n * 127.1 + 311.7) * 43758.5453; return n - Math.floor(n); };
   // a spring let go at 1 (moving towards 0 at speed v), made to come to rest exactly at `end`
   function spring(t, w, z, end, v = 0) {
@@ -70,6 +81,8 @@
   const onOrbit = (th, k = 1) => mv(E, k * Math.cos(th), k * Math.sin(th));
   const css = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`, mix = (c, d, f) => c.map((v, i) => Math.round(v + (d[i] - v) * f));
   const WHITE = [255, 255, 255];
+  // the ghosts' two colours, pink and cyan: together they make white again
+  const CH = [[255, 60, 150], [0, 195, 255]];
 
   // ---- the colours: the current effect's, made bright (dark ones left out)
   let PAL;
@@ -96,7 +109,7 @@
     L = Math.min(W * .5, H * .6 * 1540 / 903, 780) / 1540;
   }
 
-  // ---- sprites: a piece drawn once at the logo's size, with a red and a cyan copy (together they make white again)
+  // ---- sprites: a piece drawn once at the logo's size, with a pink and a cyan copy
   let K;   // device px per logo unit when the sprites were drawn
   function layer(box, pad, draw) {
     const x = box[0] - pad, y = box[1] - pad, w = box[2] - box[0] + 2 * pad, h = box[3] - box[1] + 2 * pad;
@@ -109,7 +122,6 @@
     const g = o.getContext('2d'); g.drawImage(c, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = css(col); g.fillRect(0, 0, o.width, o.height);
     return o;
   }
-  const RED = [255, 36, 72], CYAN = [0, 219, 183];
   function glowOf(s, blur, col) {   // blur in css px
     const g = layer([s.x, s.y, s.x + s.w, s.y + s.h], blur * 3 / L, c => { c.filter = `blur(${blur * D}px)`; c.drawImage(s.c, s.x, s.y, s.w, s.h); });
     if (col) g.c = tint(g.c, col);
@@ -120,16 +132,14 @@
   // letters: from `off` (logo units, from where it ends) along a curve bent towards `ctl`, turned by `rot` and
   // sized `sc` at the start; arcs: turned `orb` round the orbit's plane and a bit wider
   const P = [
-    { id: 'ring', box: [48, 137, 1552, 871], t0: .15 },
+    { id: 'ring', box: [48, 137, 1552, 871], t0: .2 },
     { id: 'swr', box: [1206, 212, 1401, 389], orb: 2.6, t0: .5 },
     { id: 'swl', box: [169, 522, 506, 752], orb: 2.2, t0: .54 },
-    { id: 'swb', box: [1109, 542, 1364, 688], orb: 1.9, t0: .58 },
-    { id: 'h', box: [230, 32, 835, 928], piv: [330, 470], off: [-250, -1150], ctl: [-800, -350], rot: -.6, sc: 1.5, t0: .2 },
-    { id: 'k', box: [731, 82, 1169, 681], piv: [940, 380], off: [1350, -650], ctl: [350, -950], rot: .55, sc: 1.35, t0: .3 },
+    { id: 'h', box: [140, 32, 845, 945], piv: [330, 470], off: [-250, -1150], ctl: [-800, -350], rot: -.6, sc: 1.5, t0: .2 },
+    { id: 'k', box: [731, 82, 1364, 688], piv: [1000, 400], off: [1350, -650], ctl: [350, -950], rot: .55, sc: 1.35, t0: .3 },
     { id: 'a', box: [333, 120, 808, 683], piv: [570, 400], off: [-350, 1150], ctl: [-1050, 350], rot: -1.1, sc: .55, t0: .38 },
     { id: 'u', box: [958, 279, 1330, 555], piv: [1145, 420], off: [550, 1050], ctl: [1200, 450], rot: .8, sc: .6, flip: 1, t0: .46 },
   ];
-  const ringHead = t => TH0 - (TH0 - TH1) * outCubic((t - .15) / .8);
   for (const p of P) {
     if (p.piv) p.at = t => {
       // the path's spring overshoots only a little (the letters sit close together), the turn and size wobble more
@@ -141,12 +151,16 @@
       return chain(tr(p.piv[0] + ox, p.piv[1] + oy), rot(p.rot * q), scl(s * sx, s), tr(-p.piv[0], -p.piv[1]));
     };
     else if (p.orb) p.at = t => { const r = spring(t - p.t0, 10, .7, .45, 4); return inPlane(p.orb * r, 1 + .3 * r); };
-    else p.at = t => { const r = spring(t - .15, 7, .8, .9, 7); return inPlane(2.6 * r, 1 + .25 * r); };
+    else p.at = t => { const r = spring(t - .2, 7, .8, .85, 7); return inPlane(2.6 * r, 1 + .25 * r); };
     // the moment a letter first reaches its place (it glitches there)
     if (p.piv) for (let s = 0; s < .6; s += .002) if (spring(s, 13, .72, .58, 6) <= .01) { p.land = p.t0 + s; break; }
     const [x0, y0, x1, y1] = p.box;
     p.probe = [[x0, y0], [x1, y0], [x0, y1], [x1, y1], [(x0 + x1) / 2, (y0 + y1) / 2]];
   }
+  // the orbit's stroke being drawn, its head, and the star: from the middle it breaks away to that head
+  const ringHead = t => TH0 - (TH0 - TH1) * outCubic((t - .2) / .75);
+  const headAt = t => mv(P[0].at(Math.min(t, .95)), ...onOrbit(ringHead(Math.min(t, .95))));
+  const starAt = t => { const e = smooth((t - .07) / .13), h = headAt(t); return [OC[0] + (h[0] - OC[0]) * e, OC[1] + (h[1] - OC[1]) * e]; };
 
   // ---- the ribbons of light: rings seen almost face on, born small in the middle, thrown wide, then drawn in,
   // tilting into the orbit's plane
@@ -178,7 +192,7 @@
           life: .3 + .4 * hash(i * 13 + j * 3), c: r.c < 0 ? WHITE : PAL[r.c % PAL.length], w: 2 + 2 * u });
       }
     });
-    for (let j = 0; j < 70; j++) {
+    for (let j = 0; j < 80; j++) {
       const th = TH1 + (TH0 - TH1) * hash(500 + j), k = 1 + (hash(600 + j) - .5) * .12, p = onOrbit(th, k);
       const n = mv(E, Math.cos(th) * 1.3, Math.sin(th) * 1.3), dx = n[0] - p[0], dy = n[1] - p[1], l = Math.hypot(dx, dy) || 1;
       const sp = 450 + 1200 * hash(700 + j) * hash(800 + j);
@@ -186,9 +200,8 @@
         c: hash(1100 + j) < .4 ? WHITE : PAL[j % PAL.length], w: 2.2 + 2 * hash(1200 + j) });
     }
   }
-  // the four-pointed stars: where the orbit's stroke ends, on the tips when the logo lands, then a few twinkling
+  // the four-pointed stars: on the tips when the logo lands, then a few twinkling
   const STARS = [
-    { x: 640, y: 283, t0: .92, d: .5, R: 70, c: 0 },
     { x: 1172, y: 72, t0: HIT + .02, d: .55, R: 90, c: 1 },
     { x: 236, y: 34, t0: HIT + .07, d: .5, R: 64, c: 2 },
     { x: 418, y: 926, t0: HIT + .1, d: .45, R: 56, c: 0 },
@@ -197,28 +210,33 @@
     { x: 140, y: 600, t0: 1.62, d: .9, R: 30, c: -1 },
     { x: 990, y: 905, t0: 1.9, d: .8, R: 28, c: -1 },
   ];
+  // the star's entrance: light drawn in to it from all round
+  const PULL = [...Array(46)].map((_, i) => {
+    const ta = .16 + .24 * Math.pow(hash(300 + i), .7);
+    return { a: hash(400 + i) * 6.283, r0: 650 + 500 * hash(500 + i), ta, ts: ta - .2 - .08 * hash(600 + i), c: hash(700 + i) < .35 ? -1 : i % 3, w: 3.5 + 4 * hash(800 + i) };
+  });
 
-  let whole, wholeR, wholeC, glowW, glowM, glowT, scratch;
+  let whole, wholeCh, glowW, glowM, glowT, scratch;
   function build() {
     size(); K = L * D; PAL = colours();
     const d = /\sd="([^"]+)"/.exec(SVG)[1], sub = d.match(/M[^M]+/g);
     const path = (...i) => new Path2D(i.map(j => sub[j]).join(''));
     const poly = list => { const q = new Path2D(); for (const a of list) { q.moveTo(a[0], a[1]); for (let i = 2; i < a.length; i += 2) q.lineTo(a[i], a[i + 1]); q.closePath(); } return q; };
     const rest = path(0, 4, 6), own = { a: path(1, 5), u: path(3), swr: path(2) };
-    P.forEach((p, i) => {
+    for (const p of P) {
       p.s = layer(p.box, 3, g => {
         if (own[p.id]) { g.fill(own[p.id], 'evenodd'); return; }
         const n = CUTS.indexOf(p.id);
-        if (n >= 0) { g.save(); g.clip(poly(CUT[p.id])); }
+        if (n >= 0) { g.save(); g.clip(poly(CUT[p.id].concat(MORE[p.id] || []))); }
         g.fill(rest, 'evenodd');
         if (n >= 0) g.restore();
         g.globalCompositeOperation = 'destination-out';
         for (const id of n >= 0 ? CUTS.slice(0, n) : CUTS) g.fill(poly(CUT[id]));
       });
-      p.r = tint(p.s.c, RED); p.cy = tint(p.s.c, CYAN); p.tn = tint(p.s.c, PAL[i % PAL.length]);
-    });
+      p.ch = CH.map(c => tint(p.s.c, c));
+    }
     whole = layer(VB, 3, g => g.fill(new Path2D(d), 'evenodd'));
-    wholeR = tint(whole.c, RED); wholeC = tint(whole.c, CYAN);
+    wholeCh = CH.map(c => tint(whole.c, c));
     glowW = glowOf(whole, 16, mix(PAL[0], WHITE, .25)); glowM = glowOf(whole, 8); glowT = glowOf(whole, 3.5);
     scratch = document.createElement('canvas'); scratch.width = glowM.c.width; scratch.height = glowM.c.height;
     sparks();
@@ -232,8 +250,9 @@
     ctx.globalAlpha = Math.min(1, a); ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
     ctx.drawImage(img, s.x, s.y, s.w, s.h);
   }
-  // a piece over the shutter: as many sub-frames as it moves (a few px apart), red a little behind and cyan a
-  // little ahead in time, so its colours part along the motion and come together when it stops
+  // a piece over the shutter: as many sub-frames as it moves (a few px apart), pink a little behind and cyan a
+  // little ahead in time (never more than a few px apart), so its colours part along the motion and come together
+  // when it stops; a fast one also leaves ghosts
   function moving(p, t, a, clip) {
     const A = mul(CAM, p.at(t)), B = mul(CAM, p.at(t - SHUT));
     let dist = 0;
@@ -244,27 +263,29 @@
       put(p.s, M, al, img);
       if (clip) ctx.restore();
     };
-    // the channels part by their own motion over SPLIT, but never more than a few px
-    const f = Math.min(1, 6 * D / Math.max(1e-6, dist * SPLIT / SHUT));
+    const f = Math.min(1, 7 * D / Math.max(1e-6, dist * SPLIT / SHUT));
     for (let i = 0; i < n; i++) {
       const ts = n > 1 ? t + SHUT * (.5 - i / (n - 1)) : t, M = p.at(ts);
       if (dist < .4 * D) one(p.s.c, M, ts, a / n);
-      else { one(p.r, lerpM(M, p.at(ts - SPLIT), f), ts, a / n); one(p.cy, lerpM(M, p.at(ts + SPLIT), f), ts, a / n); }
+      else for (let c = 0; c < 2; c++) one(p.ch[c], lerpM(M, p.at(ts + (c - .5) * SPLIT), f), ts, a / n);
     }
-    // a fast one leaves a smear of its colour behind it
-    if (!clip && dist > 12 * D) {
-      const k = Math.min(1, (dist / D - 12) / 40), m = Math.max(4, Math.min(24, Math.ceil(dist * 4.4 / (5 * D))));
-      for (let j = 1; j <= m; j++) put(p.s, p.at(t - SHUT / 2 - j * .07 / m), a * k * 1.2 / m * (1 - j / (m + 1)), p.tn);
+    if (!clip && dist > 8 * D) ghosts(p.s, p.ch, p.at, t, a * Math.min(1, (dist / D - 8) / 30));
+  }
+  // the ghosts: echoes of where it just was, each one further back and its pink and cyan further apart
+  function ghosts(s, ch, at, t, a, step = .026, n = 3) {
+    for (let j = n; j >= 1; j--) {
+      const tb = t - j * step, al = a * .3 * Math.pow(1 - (j - 1) / n, 1.2);
+      for (let c = 0; c < 2; c++) put(s, at(tb + (c - .5) * .012 * (j + 1)), al, ch[c]);
     }
   }
-  // the landing glitch: a few frames in the piece's colour, cut in strips that jump sideways
+  // the landing glitch: torn into strips, its pink and cyan jumping apart in each
   function glitch(p, t, a) {
-    const f = Math.floor(t * 60), M = p.at(t), s = p.s, n = 5, m = mul(CAM, M);
-    put(s, M, a * .45);
-    ctx.globalAlpha = a; ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    const f = Math.floor(t * 60), s = p.s, n = 6, m = mul(CAM, p.at(t));
+    ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]); ctx.globalAlpha = a;
     for (let j = 0; j < n; j++) {
-      const dx = (hash(f * 7 + j) - .5) * (hash(f * 3 + j * 5) > .45 ? 46 : 8);
-      ctx.drawImage(f % 2 ? p.r : p.tn, 0, j * s.c.height / n, s.c.width, s.c.height / n, s.x + dx, s.y + j * s.h / n, s.w, s.h / n);
+      const big = hash(f * 3 + j * 5) > .45, dx = (hash(f * 7 + j) - .5) * (big ? 50 : 10), sp = (big ? 26 : 9) * (hash(f * 11 + j) + .4);
+      for (let c = 0; c < 2; c++)
+        ctx.drawImage(p.ch[c], 0, j * s.c.height / n, s.c.width, s.c.height / n, s.x + dx + (c - .5) * 2 * sp, s.y + j * s.h / n, s.w, s.h / n);
     }
   }
   function sector(a0, a1) {   // a wedge from the orbit's centre between two of its angles
@@ -273,16 +294,16 @@
     for (let i = 0; i <= n; i++) { const o = onOrbit(a0 + (a1 - a0) * i / n, 1.75); q.lineTo(o[0], o[1]); }
     q.closePath(); return q;
   }
-  // a stroke of light along pt(angle), its bright head at `th` and its tail behind it, thin and fading
+  // a stroke of light along pt(x), its bright head at `th` and its tail at th + len, thin and fading
   function streak(pt, th, len, w, col, a) {
     if (a <= .01) return;
     ctx.lineCap = 'round';
-    const n = 30; let prev = pt(th + len);
+    const n = 34; let prev = pt(th + len);
     for (let i = 1; i <= n; i++) {
       const s = i / n, q = pt(th + len * (1 - s)), lw = w * (.12 + .88 * Math.pow(s, 1.5));
       ctx.beginPath(); ctx.moveTo(prev[0], prev[1]); ctx.lineTo(q[0], q[1]);
-      ctx.globalAlpha = a * s * s * .26; ctx.strokeStyle = css(col); ctx.lineWidth = lw * 4.5; ctx.stroke();
-      ctx.globalAlpha = a * s * s; ctx.strokeStyle = css(mix(col, WHITE, Math.pow(s, 3) * .75)); ctx.lineWidth = lw; ctx.stroke();
+      ctx.globalAlpha = a * s * s * .28; ctx.strokeStyle = css(col); ctx.lineWidth = lw * 4.5; ctx.stroke();
+      ctx.globalAlpha = a * s * s; ctx.strokeStyle = css(mix(col, WHITE, Math.pow(s, 3) * .7)); ctx.lineWidth = lw; ctx.stroke();
       prev = q;
     }
   }
@@ -315,6 +336,55 @@
   function render(t) {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cvs.width, cvs.height);
     ctx.globalCompositeOperation = 'lighter';
+    film(t - PRE);
+    if (!done) entrance(t);
+  }
+  // the star's entrance, before everything: a spark flickers on in the dark, light is drawn in to it from all
+  // round, then its rays shoot out (the upright one first) as it snaps round into place, and it pops
+  function entrance(t) {
+    if (t > PRE + .5) return;
+    ctx.setTransform(...CAM); ctx.lineCap = 'round';
+    const [x, y] = OC;
+    for (const s of PULL) {
+      const u = (t - s.ts) / (s.ta - s.ts);
+      if (u <= 0 || u >= 1) continue;
+      const e = Math.pow(u, 2.2), r = s.r0 * (1 - e), len = 30 + 260 * e, ca = Math.cos(s.a), sa = Math.sin(s.a), c = s.c < 0 ? WHITE : PAL[s.c];
+      const g = ctx.createLinearGradient(x + ca * r, y + sa * r, x + ca * (r + len), y + sa * (r + len));
+      g.addColorStop(0, css(mix(c, WHITE, .5), Math.min(1, .3 + u * 1.6))); g.addColorStop(.4, css(c, .5 * Math.min(1, u * 2))); g.addColorStop(1, css(c, 0));
+      ctx.globalAlpha = 1; ctx.strokeStyle = g; ctx.lineWidth = s.w;
+      ctx.beginPath(); ctx.moveTo(x + ca * r, y + sa * r); ctx.lineTo(x + ca * (r + len), y + sa * (r + len)); ctx.stroke();
+    }
+    // the core: a flickering spark, then a glow that swells as the light comes in, and a flat flare across it
+    const charge = smooth((t - .1) / .3), flick = t < .13 ? [1, 0, .9, .15, 1, .4, 1][Math.floor(t / .019)] ?? 1 : 1;
+    if (t < PRE) {
+      const R = 26 + 120 * charge, g = ctx.createRadialGradient(x, y, 0, x, y, R);
+      g.addColorStop(0, css(WHITE, .9 * flick)); g.addColorStop(.25, css(mix(PAL[0], WHITE, .5), .45 * flick)); g.addColorStop(1, css(PAL[0], 0));
+      ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R, 0, 6.283); ctx.fill();
+      const fl = 40 + 700 * charge, gf = ctx.createLinearGradient(x - fl, y, x + fl, y);
+      gf.addColorStop(0, css(PAL[0], 0)); gf.addColorStop(.5, css(mix(PAL[0], WHITE, .6), .8 * flick)); gf.addColorStop(1, css(PAL[0], 0));
+      ctx.strokeStyle = gf; ctx.lineWidth = 3 + 3 * charge; ctx.beginPath(); ctx.moveTo(x - fl, y); ctx.lineTo(x + fl, y); ctx.stroke();
+    }
+    // the rays: upright first, then across, overshooting; the star turns from a quarter round into place
+    const qv = (t - .3) / .1, qh = (t - .34) / .1;
+    if (qv > 0 && t < PRE) {
+      const sy = outBack(qv), sx = qh > 0 ? outBack(qh) : .04, turn = -.785 * spring(t - .3, 16, .45, PRE - .3 + .001);
+      ctx.save(); ctx.translate(x, y); ctx.scale(Math.max(.04, sx), Math.max(.04, sy));
+      star(0, 0, 300, 1, mix(PAL[0], WHITE, .35), turn, .03);
+      ctx.restore();
+      star(x, y, 96 * Math.min(sx, sy), 1, WHITE, .4 - turn, .07);
+    }
+    // the pop: a flash and a ring going out
+    const k = (t - PRE + .02) / .45;
+    if (k > 0 && k < 1) {
+      ctx.globalAlpha = .9 * Math.pow(1 - k, 2); ctx.strokeStyle = css(mix(PAL[0], WHITE, .5)); ctx.lineWidth = 10 * (1 - k);
+      ctx.beginPath(); ctx.arc(x, y, 60 + 520 * outCubic(k), 0, 6.283); ctx.stroke();
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 420);
+      g.addColorStop(0, css(WHITE, .5 * Math.pow(1 - k, 3))); g.addColorStop(1, css(PAL[0], 0));
+      ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 420, 0, 6.283); ctx.fill();
+    }
+  }
+  // the film from the star's pop on (t can be below 0: nothing has started yet, the camera waits)
+  function film(t) {
     if (t >= OUT) { leave(t); return; }
     CAM = camera(t);
     const h = t - HIT;
@@ -322,17 +392,11 @@
     const energy = .35 * clamp(t / .4) * (h < 0 ? 1 : .4) + (h > 0 ? .9 * Math.exp(-h / .25) : 0);
     const cx = W * D / 2, cy = H * D / 2, R0 = Math.max(W, H) * D * .7, gb = ctx.createRadialGradient(cx, cy, 0, cx, cy, R0);
     gb.addColorStop(0, css(PAL[0], .16 * energy)); gb.addColorStop(.5, css(PAL[1], .05 * energy)); gb.addColorStop(1, css(PAL[1], 0));
-    ctx.globalAlpha = 1; ctx.fillStyle = gb; ctx.fillRect(0, 0, cvs.width, cvs.height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.fillStyle = gb; ctx.fillRect(0, 0, cvs.width, cvs.height);
     ctx.setTransform(...CAM);
     for (const r of RIB) {
       const R = ribbon(r, t);
       if (R) streak(R.pt, R.th, r.len, 12 * (.6 + .4 * R.k), r.c < 0 ? WHITE : PAL[r.c % PAL.length], R.a);
-    }
-    // it starts from a point of light in the middle that the ribbons spin out of
-    if (t < .42) {
-      const q = t / .42, b = Math.sin(Math.PI * Math.pow(q, .6));
-      star(OC[0], OC[1], 40 + 340 * outCubic(q), b * .8, mix(PAL[0], WHITE, .4), t * 4, .025);
-      star(OC[0], OC[1], 14 + 70 * outCubic(q), b, WHITE, -t * 6 + .4, .06);
     }
     sparkle(t, 0, HIT);
     // the pieces, until they give way to the whole logo (no seams where they were cut)
@@ -344,19 +408,23 @@
       else if (p.land && t > p.land - .01 && t < p.land + .07) glitch(p, t, a);
       else moving(p, t, a);
     }
-    // the orbit's stroke: a bright head where it is being drawn, a trail of light behind it
-    const hd = ringHead(t), ha = clamp((t - .17) / .1) * (1 - smooth((t - .93) / .1));
-    if (ha > 0) {
-      const M = P[0].at(t);
-      ctx.setTransform(...CAM);
-      streak(th => mv(M, ...onOrbit(th)), hd, 1.1, 11, mix(PAL[0], WHITE, .3), ha);
-      const o = mv(M, ...onOrbit(hd));
-      star(o[0], o[1], 46, ha, PAL[0], t * 9);
+    // the star: it breaks away from the middle, swings out round the logo drawing the orbit behind it, and lands
+    // on the orbit's thin end (that landing is the hit)
+    ctx.setTransform(...CAM);
+    const ha = clamp((t - .2) / .06) * (1 - smooth((t - .95) / .06));
+    if (ha > 0) { const M = P[0].at(t); streak(th => mv(M, ...onOrbit(th)), ringHead(t), 1.1, 11, mix(PAL[0], WHITE, .3), ha); }
+    if (t >= 0 && t < 1.3) {
+      const sp = starAt(t), land = t - .95;
+      if (t > .09 && t < .28) streak(starAt, t, -.06, 16, mix(PAL[0], WHITE, .4), smooth((t - .09) / .04) * (1 - smooth((t - .2) / .06)));
+      const R = t < .1 ? 300 : land < 0 ? 300 - 215 * outCubic((t - .1) / .1) : 85 * (1 + 1.2 * outCubic(land / .08)) * (1 - smooth(land / .3));
+      const a = land < 0 ? 1 : 1 - smooth((land - .1) / .2);
+      star(sp[0], sp[1], R, a, mix(PAL[0], WHITE, .35), t * 5, land < 0 ? .03 + .03 * smooth((t - .1) / .14) : .06);
+      star(sp[0], sp[1], R * .32, a, WHITE, -t * 7 + .4, .07);
     }
     if (joined > 0) {
-      // the logo, its red and cyan still a little apart, and glowing
-      const sp = (2.6 * Math.exp(-h * 5) + .6) / (L * CAMS), b = joined * (.9 + .1 * Math.exp(-h * 4));
-      put(whole, tr(-sp, 0), b, wholeR); put(whole, tr(sp, 0), b, wholeC);
+      // the logo, its pink and cyan still a little apart, and glowing
+      const sp = (2.4 * Math.exp(-h * 5) + .5) / (L * CAMS), b = joined * (.9 + .1 * Math.exp(-h * 4));
+      put(whole, tr(-sp, 0), b, wholeCh[0]); put(whole, tr(sp, 0), b, wholeCh[1]);
     }
     if (h > 0) {
       put(glowW, I, .8 * Math.exp(-h / .22) + .26 + .05 * Math.sin(t * 5));
@@ -364,10 +432,10 @@
       // the ring running out along the orbit
       ctx.setTransform(...CAM);
       for (const [d, k, col] of [[0, .55, PAL[0]], [.05, .32, WHITE]]) {
-        const q = (h - d) / .55;
+        const q = (h - d) / .6;
         if (q <= 0 || q >= 1) continue;
         const kk = 1 + k * outCubic(q);
-        ctx.globalAlpha = .8 * (1 - q) * (1 - q); ctx.strokeStyle = css(col); ctx.lineWidth = 14 * Math.pow(1 - q, 1.5);
+        ctx.globalAlpha = .85 * (1 - q) * (1 - q); ctx.strokeStyle = css(col); ctx.lineWidth = 13 * Math.pow(1 - q, 1.5);
         ctx.beginPath();
         for (let i = 0; i <= 96; i++) { const o = onOrbit(i / 96 * 6.2832, kk); i ? ctx.lineTo(o[0], o[1]) : ctx.moveTo(o[0], o[1]); }
         ctx.stroke();
@@ -384,7 +452,7 @@
       const tau = t - s.t0;
       if (tau <= 0 || tau >= s.life) continue;
       const e = (1 - Math.exp(-3 * tau)) / 3, v = Math.exp(-3 * tau), x = s.x + s.vx * e, y = s.y + s.vy * e;
-      ctx.globalAlpha = Math.pow(1 - tau / s.life, 1.5); ctx.strokeStyle = css(mix(s.c, WHITE, .35)); ctx.lineWidth = s.w;
+      ctx.globalAlpha = Math.pow(1 - tau / s.life, 1.5); ctx.strokeStyle = css(mix(s.c, WHITE, .3)); ctx.lineWidth = s.w;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - s.vx * v * .045, y - s.vy * v * .045); ctx.stroke();
     }
   }
@@ -440,14 +508,16 @@
     let dist = 0;
     for (const [px, py] of probe) { const u = mv(A, px, py), v = mv(B, px, py); dist = Math.max(dist, Math.hypot(u[0] - v[0], u[1] - v[1])); }
     const n = Math.max(1, Math.min(24, Math.ceil(dist / (2.2 * D))));
-    const cf = to ? smooth((x - .3) / .6) : 0, fade = to ? 1 : 1 - smooth(x / .8);
-    const f = Math.min(1, 6 * D / Math.max(1e-6, dist * SPLIT / SHUT));
+    // white while it flies, its own colour as it lands; pink and cyan apart and ghosts while it is fast
+    const cf = to ? smooth((x - .3) / .6) : 0, fade = to ? 1 : 1 - smooth(x / .8), wa = fade * (1 - cf);
+    const f = Math.min(1, 7 * D / Math.max(1e-6, dist * SPLIT / SHUT));
     for (let i = 0; i < n; i++) {
       const xs = n > 1 ? x + SHUT / FLY * (.5 - i / (n - 1)) : x, M = at(xs);
-      if (dist < .4 * D) put(whole, M, fade * (1 - cf) / n);
-      else { put(whole, lerpM(M, at(xs - SPLIT / FLY), f), fade * (1 - cf) / n, wholeR); put(whole, lerpM(M, at(xs + SPLIT / FLY), f), fade * (1 - cf) / n, wholeC); }
+      if (dist < .4 * D) put(whole, M, wa / n);
+      else for (let c = 0; c < 2; c++) put(whole, lerpM(M, at(xs + (c - .5) * SPLIT / FLY), f), wa / n, wholeCh[c]);
       if (cf > 0) put(whole, M, cf / n, toImg);
     }
+    if (dist > 8 * D) ghosts(whole, wholeCh, s => at(s / FLY), x * FLY, wa * Math.min(1, (dist / D - 8) / 30) * .8, .022, 4);
     put(glowW, A, .3 * (1 - smooth(x / .45)) * fade);
   }
 
@@ -475,7 +545,7 @@
     if (started) root.classList.add('intro-out');
     root.classList.remove('intro');
     ov.remove();
-    setTimeout(() => root.classList.remove('intro-out'), 1000);   // after the page's own coming in
+    setTimeout(() => root.classList.remove('intro-out'), 1800);   // after the page's own coming in (style.css)
   }
   function go() {
     if (started || done || !SVG || !ready) return;
