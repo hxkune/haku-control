@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.9',
+    en: ['The opening of the window now matches your theme: light in the dark on the dark theme, a softer glow on graphite with two quick glints on the grey one, and ink on paper on the light one.',
+         'It plays every time the window opens, from the tray too, and it no longer stutters in its first moment.',
+         'After an update, haku opens its window by itself, so you see right away that the new version is there.'],
+    ru: ['Заставка окна теперь своя для каждой темы: свет в темноте в тёмной, мягкое свечение на графите с двумя быстрыми бликами в серой и чернила на бумаге в светлой.',
+         'Она играет при каждом открытии окна, из трея тоже, и больше не подтормаживает в самом начале.',
+         'После обновления haku сам открывает окно, так что сразу видно, что новая версия на месте.'],
+    fr: ['L\'ouverture de la fenêtre suit maintenant votre thème : de la lumière dans le noir avec le thème sombre, une lueur plus douce sur du graphite avec deux reflets rapides avec le gris, et de l\'encre sur du papier avec le clair.',
+         'Elle se joue à chaque ouverture de la fenêtre, depuis la zone de notification aussi, et ne saccade plus au tout début.',
+         'Après une mise à jour, haku ouvre sa fenêtre tout seul : on voit tout de suite que la nouvelle version est là.'] },
   { v: '0.4.8',
     en: ['Phone control and Home Assistant are safer: every command is now checked by haku itself, and a phone can no longer change which programs haku starts (OpenRGB, Ollama) or the phone and Home Assistant settings.',
          'Saved passwords are no longer shown, in the window or on a paired phone: the Home Assistant password field stays empty with dots when one is saved, and typing a new one replaces it.',
