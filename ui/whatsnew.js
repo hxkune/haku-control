@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.10',
+    en: ['Memory sticks that went dark while another program (such as OpenRGB loading a profile) took them over are lit again by haku within two seconds, even with a still colour.', 'When the developer fixes a problem you reported with "Report a problem", haku tells you so in its window.'],
+    ru: ['Планки памяти, которые гасли, когда их перехватывала другая программа (например, OpenRGB с профилем при запуске), haku снова зажигает за пару секунд, даже со статичным цветом.', 'Когда разработчик исправляет проблему, о которой вы сообщили через «Сообщить о проблеме», haku говорит вам об этом в своём окне.'],
+    fr: ['Les barrettes de mémoire qui s\'éteignaient quand un autre programme (comme OpenRGB chargeant un profil) les reprenait sont rallumées par haku en deux secondes, même avec une couleur fixe.', 'Quand le développeur corrige un problème que vous avez signalé avec « Signaler un problème », haku vous le dit dans sa fenêtre.'] },
   { v: '0.4.9',
     en: ['The opening of the window now matches your theme: light in the dark on the dark theme, a softer glow on graphite with two quick glints on the grey one, and ink on paper on the light one.',
          'It plays every time the window opens, from the tray too, and it no longer stutters in its first moment.',

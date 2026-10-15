@@ -17,6 +17,7 @@ static HANDLE bus, mtx;
 static int  addr[MAX_STICKS], nleds[MAX_STICKS], nsticks;
 static int  direct[MAX_STICKS];
 static BYTE last[MAX_STICKS][8 * 3];
+static DWORD sent_at[MAX_STICKS];
 
 enum { SMB_WRITE = 0, SMB_READ = 1, SZ_BYTE = 1, SZ_BYTE_DATA = 2, SZ_WORD_DATA = 3, SZ_BLOCK_DATA = 5 };
 
@@ -101,8 +102,9 @@ int ene_count(void) { return nsticks; }
 static BYTE to8(float v) { return (BYTE)(clampf(v, 0, 1) * 255.0f + 0.5f); }
 
 // Sends the whole stick in one SMBus block write (the controller auto-increments the
-// register pointer, verified by read-back), and nothing at all if the colours are unchanged.
-// Returns 1 if written.
+// register pointer, verified by read-back), and nothing if the colours are unchanged - except every 2 s,
+// when direct mode and the colours are written again: another program on the bus (OpenRGB loading a profile)
+// may have taken a stick over, and a static colour would otherwise never put it back. Returns 1 if written.
 int ene_send(int k, const rgbf *c, int n) {
     if (k >= nsticks) return 0;
     int a = addr[k];
@@ -111,9 +113,10 @@ int ene_send(int k, const rgbf *c, int n) {
     for (int i = 0; i < n; i++) {           // ENE order R,B,G
         d[1 + i * 3] = to8(c[i].r); d[2 + i * 3] = to8(c[i].b); d[3 + i * 3] = to8(c[i].g);
     }
-    if (direct[k] && memcmp(last[k], d + 1, n * 3) == 0) return 0;
+    int again = GetTickCount() - sent_at[k] >= 2000;
+    if (direct[k] && !again && memcmp(last[k], d + 1, n * 3) == 0) return 0;
     WaitForSingleObject(mtx, INFINITE);
-    if (!direct[k]) { reg_write(a, 0x8020, 1); reg_write(a, 0x80A0, 1); direct[k] = 1; }
+    if (!direct[k] || again) { reg_write(a, 0x8020, 1); reg_write(a, 0x80A0, 1); direct[k] = 1; sent_at[k] = GetTickCount(); }
     set_reg(a, 0x8100);
     xfer(a, SMB_WRITE, 0x03, SZ_BLOCK_DATA, d);
     ReleaseMutex(mtx);

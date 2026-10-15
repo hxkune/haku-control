@@ -3182,6 +3182,19 @@ $('#wn-ok').addEventListener('click', whatsNewClose);
 $('#wn').addEventListener('pointerdown', e => { if (e.target.id === 'wn') whatsNewClose(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#wn').classList.contains('hidden')) whatsNewClose(); });
 $('#wn-open').addEventListener('click', () => whatsNew(true));
+// ---- a report this PC sent, marked as done on the site (diag.c, diag_fixed_check): shown once, then not asked about
+function fixedCheck() {
+  const F = (S.diag || {}).fixed || {};
+  if (!F.id || document.documentElement.classList.contains('remote') || !$('#fixed').classList.contains('hidden')) return;
+  $('#fixed-text').textContent = F.text || '';
+  $('#fixed').dataset.id = F.id;
+  $('#fixed').classList.remove('hidden');
+}
+$('#fixed-ok').addEventListener('click', () => {
+  $('#fixed').classList.add('hidden');
+  send({ cmd: 'report_seen', id: $('#fixed').dataset.id });
+  S.diag = Object.assign({}, S.diag, { fixed: {} });
+});
 
 // diagnostics: one text file in Downloads (log, settings, devices, network), without keys or passwords
 // ---- reporting a problem: a window where the person says what happened; it goes to the developer with the
@@ -3376,7 +3389,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup();
+  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup(); fixedCheck();
   if (nanoLayoutChanged) drawAll();
 }
 

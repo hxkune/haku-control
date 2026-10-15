@@ -166,6 +166,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "backup_load") { backup_load(wnd); post_state(); }
     else if (cmd == "pro_key") { pro_set_key(field(js, "key").c_str()); post_status(); }
     else if (cmd == "diag") { diag_save(); post_status(); }
+    else if (cmd == "report_seen") diag_fixed_seen(field(js, "id").c_str());
     else if (cmd == "report") { diag_report(field(js, "text").c_str(), field(js, "contact").c_str(), field(js, "install").c_str(), field(js, "attach") != "0"); post_status(); }
     else if (cmd == "update_install") { update_install(); post_status(); }
     else if (cmd == "govee_login") {   // PC window only, like aidot_login

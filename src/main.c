@@ -1190,7 +1190,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         update_tip();
         return 0;
     case WM_TRAY:
-        if (LOWORD(lp) == WM_LBUTTONUP) ui_open(app_inst);
+        if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == NIN_BALLOONUSERCLICK) ui_open(app_inst);   // a notice clicked too
         else if (LOWORD(lp) == WM_RBUTTONUP) show_menu();
         return 0;
     case WM_COMMAND: {

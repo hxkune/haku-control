@@ -25,6 +25,7 @@ static int  last_ok = -1;
 static volatile LONG rbusy;              // a bug report being sent
 static int  r_ok = -1;                   // its result: 1 sent (r_id), 0 not (r_err)
 static char r_id[24], r_err[16];
+static char f_id[24], f_text[600];         // a report of this PC the developer marked as done, not shown yet
 
 typedef struct { char *p; int n, cap; } buf_t;
 
@@ -296,4 +297,34 @@ void diag_report(const char *text, const char *contact, const char *install, int
     AcquireSRWLockExclusive(&lk); r_ok = -1; r_id[0] = r_err[0] = 0; ReleaseSRWLockExclusive(&lk);
     HANDLE h = (HANDLE)_beginthreadex(NULL, 0, report_run, r, 0, NULL);
     if (h) CloseHandle(h); else { free(r->text); free(r->contact); free(r); InterlockedExchange(&rbusy, 0); }
+}
+
+// ---- a report marked as done on the site: asked with the update check (update.c), shown once in the window and
+// from the tray. The site answers for this installation's reports only, the oldest done one not in [report] seen.
+void diag_fixed_check(void) {
+    const char *install = cfg_get("community", "install", "");
+    if (strlen(install) != 32) return;   // never sent a report (the window makes the ID on the first one)
+    char body[1024], resp[1024], id[24] = "", text[600] = "";
+    snprintf(body, sizeof(body), "{\"action\":\"fixed\",\"install\":\"%s\",\"seen\":\"%.900s\"}", install, cfg_get("report", "seen", ""));
+    if (web_post(cfg_get("report", "api", "https://hakune.blog/api/report.php"), "text/plain", body, resp, sizeof(resp)) != 200 ||
+        !json_get_str(resp, "id", id, sizeof(id)) || strlen(id) != 10 || !strcmp(id, f_id)) return;
+    json_get_str(resp, "text", text, sizeof(text));
+    AcquireSRWLockExclusive(&lk); strcpy_s(f_id, sizeof(f_id), id); strcpy_s(f_text, sizeof(f_text), text); ReleaseSRWLockExclusive(&lk);
+    logf_("bug report %s: marked as fixed", id);
+    app_notify(L"haku control", TR(L"The problem you reported is fixed. Open haku to see it.", L"Проблема из вашего отчёта исправлена. Откройте haku, чтобы посмотреть.",
+                                   L"Le problème que vous avez signalé est corrigé. Ouvrez haku pour le voir."));
+    ui_refresh();
+}
+
+// the window showed it: not asked about again
+void diag_fixed_seen(const char *id) {
+    AcquireSRWLockExclusive(&lk);
+    int match = id && *id && !strcmp(id, f_id);
+    if (match) f_id[0] = f_text[0] = 0;
+    ReleaseSRWLockExclusive(&lk);
+    if (!match) return;
+    char seen[1024]; const char *old = cfg_get("report", "seen", "");
+    // the newest ids are kept when the list grows long (the site only ever answers with one of them)
+    snprintf(seen, sizeof(seen), "%s%s%s", strlen(old) > 880 ? old + strlen(old) - 880 : old, *old ? "," : "", id);
+    cfg_set("report", "seen", seen);
 }

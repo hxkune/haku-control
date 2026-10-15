@@ -316,7 +316,7 @@ static unsigned __stdcall run(void *arg) {
         if (r == WAIT_TIMEOUT) policy_check();   // a minute after start, then with every check
         // "Check now" pressed again and again asks GitHub at most once a minute (its API allows 60 an hour)
         static DWORD last; DWORD now = GetTickCount();
-        if (r == WAIT_TIMEOUT || !last || now - last > 60 * 1000) { last = now; check(); }
+        if (r == WAIT_TIMEOUT || !last || now - last > 60 * 1000) { last = now; check(); diag_fixed_check(); }
         else { wait = 60 * 1000 - (now - last); continue; }
         wait = auto_install() ? 10 * 60 * 1000 : 6 * 3600 * 1000;
     }

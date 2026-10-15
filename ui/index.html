@@ -619,6 +619,16 @@
   </form>
 </div>
 <!-- a group of devices in the preview: its name, who is in it and one look for all of them -->
+<!-- a report this PC sent, marked as done by the developer: shown once -->
+<div class="sheet-wrap pdlg-wrap hidden" id="fixed">
+  <div class="card pdlg wn" role="dialog" aria-modal="true">
+    <div class="pdlg-head"><h3 data-i18n="fixed.title">Your report is fixed</h3></div>
+    <p data-i18n="fixed.body">Thank you for reporting it. The developer has fixed the problem you sent:</p>
+    <blockquote class="fixed-text" id="fixed-text"></blockquote>
+    <p class="hint" data-i18n="fixed.hint">The fix comes with the latest version of haku, which installs itself.</p>
+    <div class="btn-row"><button class="btn primary" type="button" id="fixed-ok"><span data-i18n="wn.ok">Got it</span></button></div>
+  </div>
+</div>
 <!-- what is new: once after an update, and from Settings -->
 <div class="sheet-wrap pdlg-wrap hidden" id="wn">
   <div class="card pdlg wn" role="dialog" aria-modal="true">

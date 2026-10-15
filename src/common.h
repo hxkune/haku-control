@@ -243,6 +243,8 @@ int   app_status_json(char *out, int cap);   // devices only (polled)
 void  update_install(void);                 // download, check and run the latest release's installer (update.c)
 void  diag_save(void);                      // diagnostics report to Downloads, in the background (diag.c)
 void  diag_report(const char *text, const char *contact, const char *install, int attach);   // a bug report sent to the developer
+void  diag_fixed_check(void);            // one of this PC's reports marked as done on the site? (update thread)
+void  diag_fixed_seen(const char *id);   // the window showed it
 int   diag_json(char *out, int cap);
 void  orgb_check_start(void);          // looks for OpenRGB on this PC (drv_openrgb.c), the page is told
 int   orgb_json(char *out, int cap);
