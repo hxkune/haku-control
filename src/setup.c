@@ -122,6 +122,29 @@ static int extract(const wchar_t *to, DWORD *total) {
     return 1;
 }
 
+// ---------------------------------------------------------------- PawnIO
+// The driver memory (SMBus) lighting goes through. Its official signed setup travels in this exe ("PAWNIO") and is
+// run silently when PawnIO is missing, so the memory lights up at once. 1: PawnIO is there.
+static int pawnio_there(void) {
+    wchar_t p[MAX_PATH]; ExpandEnvironmentStringsW(L"%ProgramFiles%\\PawnIO\\PawnIOLib.dll", p, MAX_PATH);
+    return exists(p);
+}
+
+static int pawnio_install(void) {
+    if (pawnio_there()) return 1;
+    HRSRC r = FindResourceW(NULL, L"PAWNIO", MAKEINTRESOURCEW(10) /* RT_RCDATA */);
+    if (!r) return 0;
+    wchar_t f[MAX_PATH]; GetTempPathW(MAX_PATH, f); wcscat_s(f, MAX_PATH, L"PawnIO_setup.exe");
+    HANDLE h = CreateFileW(f, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    DWORD size = SizeofResource(NULL, r), w = 0;
+    BOOL ok = WriteFile(h, LockResource(LoadResource(NULL, r)), size, &w, NULL) && w == size;
+    CloseHandle(h);
+    if (ok) run_wait(f, L"-install -silent", 120000);
+    DeleteFileW(f);
+    return pawnio_there();
+}
+
 // ---------------------------------------------------------------- migration from the old "rgbfx" build
 static void migrate(void) {
     wchar_t old[MAX_PATH], oldData[MAX_PATH], a[MAX_PATH], b[MAX_PATH];
@@ -274,10 +297,9 @@ static int install(int quiet, int quiet_autostart) {
     int update = exists(exe);
     BOOL autostart = quiet ? quiet_autostart : TRUE;
     wchar_t footer[512] = L"";
-    wchar_t pawn[MAX_PATH]; ExpandEnvironmentStringsW(L"%ProgramFiles%\\PawnIO\\PawnIOLib.dll", pawn, MAX_PATH);
-    if (!exists(pawn))
-        wcscpy_s(footer, 512, TR(L"Memory (RAM) lighting needs <a href=\"https://pawnio.eu\">PawnIO</a>. Everything else works without it.",
-                                 L"Для подсветки памяти нужен <a href=\"https://pawnio.eu\">PawnIO</a>. Всё остальное работает без него."));
+    if (!pawnio_there())
+        wcscpy_s(footer, 512, TR(L"Also installs <a href=\"https://pawnio.eu\">PawnIO</a>, the free driver memory (RAM) lighting needs.",
+                                 L"Также установится <a href=\"https://pawnio.eu\">PawnIO</a> — бесплатный драйвер, нужный для подсветки памяти."));
     if (!quiet && !ask(update ? TR(L"Update haku control", L"Обновить haku control") : TR(L"Install haku control", L"Установить haku control"),
              TR(L"One lighting scene for your PC and your room.\n\nInstalls to Program Files and starts at sign-in with administrator rights "
                 L"(needed for the motherboard and memory lighting). Your settings stay in %APPDATA%\\haku-control.",
@@ -305,6 +327,9 @@ static int install(int quiet, int quiet_autostart) {
     GetModuleFileNameW(NULL, self, MAX_PATH);
     swprintf(copy, MAX_PATH, L"%s\\haku-control-setup.exe", dest);
     if (_wcsicmp(self, copy)) CopyFileW(self, copy, FALSE);
+    // before the app starts, so it finds the memory; not on an update the app started itself, which shows no
+    // footer saying so (a driver is not put in unasked: there the PC page offers it)
+    if (!quiet) pawnio_install();
     int task = register_task(autostart);
     make_shortcut();
     firewall_rule(1);

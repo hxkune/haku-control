@@ -2816,6 +2816,7 @@ function hwRoute(it) {
     return mine.every(c => (orgbDev(c) || {}).own) ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.orgb') };
   }
   if (bridge && S.ext.found.some(f => f.kind === bridge[0])) return { cls: 'warn', text: t('hw.bridge.add', bridge[1]), act: 'scan' };
+  if (it.cat === 'ram' && S.pawnio === 2) return { cls: 'warn', text: t('hw.pawnio.busy') };   // being installed
   if (it.cat === 'ram' && !S.pawnio) return { cls: 'warn', text: t('hw.pawnio'), act: 'pawnio' };
   if (it.cat === 'gpu' && /^(nvidia|amd|intel)$/i.test(it.maker || '')) return { cls: 'off', text: t('hw.none') };   // reference cards
   if (O.state === 4) return { cls: 'warn', text: t('hw.orgb.need'), act: 'setup' };
@@ -2831,7 +2832,7 @@ function updateHw() {
   $('#hw-scan').disabled = !!H.busy;
   const html = items.map((it, i) => {
     const r = routes[i];
-    const btn = r.act === 'add' ? t('dev.add') : r.act === 'setup' ? t('orgb.setup') : r.act === 'pawnio' ? 'pawnio.eu' : r.act === 'scan' ? t('hw.find') : r.act === 'check' ? t('orgb.check') : '';
+    const btn = r.act === 'add' ? t('dev.add') : r.act === 'setup' ? t('orgb.setup') : r.act === 'pawnio' ? t('hw.pawnio.install') : r.act === 'scan' ? t('hw.find') : r.act === 'check' ? t('orgb.check') : '';
     return `<div class="found-row"><span class="kind">${t('hw.cat.' + it.cat)}</span>
       <div class="what"><b>${esc([it.maker, it.name].filter(Boolean).join(' · ') || it.id)}</b><small><span class="dot ${r.cls}"></span> ${esc(r.text)}${it.id ? ' · ' + esc(it.id) : ''}</small></div>
       ${btn ? `<button class="btn small${r.act === 'add' || r.act === 'setup' ? '' : ' ghost'}" data-hw="${i}">${esc(btn)}</button>` : ''}</div>`;
@@ -2844,7 +2845,7 @@ function updateHw() {
     if (r.act === 'add') { b.disabled = true; r.ctls.forEach(orgbAdd); }
     else if (r.act === 'setup') { $('#orgb-setup').click(); $('#orgb-guide').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     else if (r.act === 'check') $('#orgb-check').click();
-    else if (r.act === 'pawnio') send({ cmd: 'open', what: 'pawnio' });
+    else if (r.act === 'pawnio') { b.disabled = true; send({ cmd: 'open', what: 'pawnio' }); }
     else if (r.act === 'scan') { send({ cmd: 'scan' }); showTab('devices'); }
   }));
 }

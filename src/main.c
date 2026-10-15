@@ -3,7 +3,7 @@
 // (Nanoleaf, AiDot), all in one scene.
 // One render thread computes frames; a second thread feeds the (slower) SMBus RAM sticks.
 // Unchanged frames are not sent, and the loop slows down to 5 Hz while nothing changes.
-#include "common.h"
+#include "devices.h"   // common.h, and https_download / sha256_hex
 #include <shellapi.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -878,11 +878,48 @@ static int pawnio_installed(void) {
     return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES;
 }
 
+// PawnIO installed from the PC page (haku's setup does it too): its official setup from its GitHub release, checked
+// against the SHA-256 below, run silently; then the memory is looked for again. Failing that, its site opens.
+#define PAWNIO_URL  L"https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe"
+#define PAWNIO_SIZE 3410960LL
+#define PAWNIO_SHA  "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032"
+static volatile LONG pawnio_busy;
+
+static unsigned __stdcall pawnio_run(void *arg) {
+    (void)arg;
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    wchar_t f[MAX_PATH]; GetTempPathW(MAX_PATH, f); wcscat_s(f, MAX_PATH, L"PawnIO_setup.exe");
+    char hex[65] = ""; DWORD code = 1;
+    if (https_download(PAWNIO_URL, f, PAWNIO_SIZE, NULL) && sha256_hex(f, hex) && !strcmp(hex, PAWNIO_SHA)) {
+        SHELLEXECUTEINFOW si = { sizeof(si) };   // "runas": no prompt when this app is elevated, as it usually is
+        si.fMask = SEE_MASK_NOCLOSEPROCESS; si.lpVerb = L"runas"; si.lpFile = f; si.lpParameters = L"-install -silent"; si.nShow = SW_HIDE;
+        if (ShellExecuteExW(&si) && si.hProcess) {
+            WaitForSingleObject(si.hProcess, 120000); GetExitCodeProcess(si.hProcess, &code); CloseHandle(si.hProcess);
+        }
+    } else logf_("pawnio: the download failed or is not PawnIO 2.2.0's setup (sha256 %s)", hex);
+    DeleteFileW(f);
+    int ok = pawnio_installed();
+    logf_("pawnio: %s (setup ended with %lu)", ok ? "installed" : "not installed", code);
+    if (ok) InterlockedExchange(&need_reinit, 1);   // the memory is looked for again
+    else ShellExecuteW(NULL, L"open", L"https://pawnio.eu", NULL, NULL, SW_SHOWNORMAL);
+    InterlockedExchange(&pawnio_busy, 0);
+    ui_refresh();
+    CoUninitialize();
+    return 0;
+}
+
+static void pawnio_setup(void) {
+    if (pawnio_installed() || InterlockedCompareExchange(&pawnio_busy, 1, 0)) return;
+    HANDLE h = (HANDLE)_beginthreadex(NULL, 0, pawnio_run, NULL, 0, NULL);
+    if (h) CloseHandle(h); else InterlockedExchange(&pawnio_busy, 0);
+    ui_refresh();
+}
+
 static int status_body(char *out, int cap) {
     char gt[16] = "null";
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
     int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"bulbs\":[",
-                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_installed(), msi_own, ram_own, app_pc_own_now());
+                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, app_pc_own_now());
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
@@ -1002,7 +1039,7 @@ void app_open(const char *what) {
     else if (!strcmp(what, "folder")) ShellExecuteW(NULL, L"open", data_dir, NULL, NULL, SW_SHOWNORMAL);
     else if (!strcmp(what, "release")) update_open_page();
     else if (!strcmp(what, "openrgb")) ShellExecuteW(NULL, L"open", L"https://openrgb.org", NULL, NULL, SW_SHOWNORMAL);
-    else if (!strcmp(what, "pawnio")) ShellExecuteW(NULL, L"open", L"https://pawnio.eu", NULL, NULL, SW_SHOWNORMAL);
+    else if (!strcmp(what, "pawnio")) pawnio_setup();
     else if (!strcmp(what, "pro")) pro_buy();
 }
 

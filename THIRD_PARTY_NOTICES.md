@@ -8,7 +8,11 @@
 **PawnIO SMBus module** (`third_party/pawnio/SmbusPIIX4.bin`): from
 [namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) release 0.2.11, unmodified.
 GNU LGPL 2.1, see `third_party/pawnio/COPYING`. The source code is available from that repository.
-The PawnIO driver itself is not bundled; it is installed separately from https://pawnio.eu.
+**PawnIO setup** (`third_party/pawnio/PawnIO_setup.exe`, carried inside `haku-control-setup.exe`): the official
+signed setup of the PawnIO driver, [namazso/PawnIO.Setup](https://github.com/namazso/PawnIO.Setup) release 2.2.0,
+unmodified (SHA-256 `1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032`). haku's setup runs it
+silently when PawnIO is missing (the PC page can install it too, from that same release). PawnIO is licensed under
+the GNU GPL 2.0; its source code is at [namazso/PawnIO](https://github.com/namazso/PawnIO). See https://pawnio.eu.
 
 ## Effects
 

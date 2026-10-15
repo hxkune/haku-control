@@ -1,9 +1,11 @@
-// haku-control-setup.exe: icon, version info and the packed program (obj\payload.bin from scripts\pack.ps1).
+// haku-control-setup.exe: icon, version info, the packed program (obj\payload.bin from scripts\pack.ps1) and
+// PawnIO's official setup (installed with haku when missing, see src\setup.c).
 #include <windows.h>
 #include "version.h"
 
 1 ICON "app.ico"
 PAYLOAD RCDATA "..\\obj\\payload.bin"
+PAWNIO RCDATA "..\\third_party\\pawnio\\PawnIO_setup.exe"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION HAKU_VER_NUM

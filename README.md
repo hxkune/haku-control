@@ -84,7 +84,7 @@ given back, the OpenRGB that haku started is closed too. The lights on the netwo
 ## Install
 
 Requirements: Windows 10/11 x64, [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
-(built into Windows 11), and [PawnIO](https://pawnio.eu) for memory lighting.
+(built into Windows 11), and [PawnIO](https://pawnio.eu) for memory lighting (the setup installs it when it is missing).
 
 1. Download `haku-control-setup.exe` from the [latest release](https://github.com/hxkune/haku-control/releases/latest) and run it. Windows asks for administrator rights:
    the app talks to the motherboard and memory, so it starts at sign-in through an elevated task.
@@ -216,7 +216,7 @@ res/        icons and version info
 art/        logo sources and the icon generator
 scripts/    install / uninstall / stop, AiDot key setup
 tools/sim/  simulated LAN lights for testing
-third_party WebView2 SDK loader, PawnIO SMBus module
+third_party WebView2 SDK loader, PawnIO SMBus module and setup
 ```
 
 ## Roadmap
