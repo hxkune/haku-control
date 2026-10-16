@@ -45,7 +45,8 @@
       const o = JSON.parse(s);
       if (o.cmd === 'hello' || o.cmd === 'get') { loadState().catch(() => { }); return; }
       if (LOCAL_ONLY.includes(o.cmd)) return;
-      api('/api/cmd', s).then(() => { if (REFRESH.includes(o.cmd)) return loadState(); }).catch(() => { });
+      api('/api/cmd', s).then(() => { if (REFRESH.includes(o.cmd)) return loadState(); })
+        .catch(e => { if (e.message === 'pair') return; failed(e.message === '400'); loadState().catch(() => { }); });   // the reload puts the page back to what the PC really has
     },
     addEventListener(type, f) { if (type === 'message') listeners.push(f); },
   };
@@ -61,6 +62,19 @@
     }
     banner.textContent = window.t ? t('remote.offline') : 'PC not reachable';
     banner.classList.toggle('hidden', !off);
+  }
+
+  // ---- a command that didn't go through
+  let toast, toastT;
+  function failed(refused) {
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.className = 'remote-offline remote-toast hidden'; toast.setAttribute('role', 'alert');
+      document.body.appendChild(toast);
+    }
+    toast.textContent = window.t ? t(refused ? 'remote.refused' : 'remote.failed') : 'Not applied';
+    toast.classList.remove('hidden');
+    clearTimeout(toastT); toastT = setTimeout(() => toast.classList.add('hidden'), 3500);
   }
 
   // ---- pairing

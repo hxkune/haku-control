@@ -898,7 +898,8 @@ function renderZone(el) {
     <div class="field">
       <div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
       <input type="range" class="range zb" min="1" max="100" value="${br}">
-    </div>`;
+    </div>
+    <p class="note">${t('zone.bright.note')}</p>`;
   const body = el.querySelector('.zbody');
   el.querySelector('.zfx').addEventListener('change', e => { setCfg(section, 'effect', e.target.value); renderZone(el); renderOwnList(); });
   if ((own || S.effect) === 'screen' && mode === 'effect') {
@@ -939,7 +940,7 @@ function renderWhiteZone(el, section, caps) {
       <input type="range" class="range kelvin" min="${caps.kmin}" max="${caps.kmax}" step="100" value="${k}"></div>
     <div class="field"><div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
       <input type="range" class="range zb" min="3" max="100" value="${Math.max(3, br)}"></div>
-    <p class="note">${t('zone.white')}</p>`;
+    <p class="note">${t('zone.white')} ${t('zone.bright.note')}</p>`;
   const r = el.querySelector('.kelvin'), zb = el.querySelector('.zb'); fill(r); fill(zb);
   r.addEventListener('input', () => { r.parentElement.querySelector('b').textContent = r.value + ' K'; setCfgSoon(section, 'kelvin', r.value); });
   zb.addEventListener('input', () => { zb.parentElement.querySelector('b').textContent = zb.value + '%'; setCfgSoon(section, 'brightness', zb.value); });
@@ -1625,6 +1626,7 @@ function animate(now) {
   const PR = presets();
   for (const b of $$('.fx')) {
     const cvs = b.querySelector('canvas'); if (!cvs) continue;
+    const r = cvs.getBoundingClientRect(); if (r.bottom <= 0 || r.top >= innerHeight) continue;   // only the cards on screen (hidden ones measure 0)
     const C = b.dataset.comm ? COMM.items.find(x => x.id === b.dataset.comm) : null;
     const P = C ? { effect: C.effect, palette: (C.palette || []).join(', '), speed: C.speed } : b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null, id = P ? P.effect : b.dataset.id;
     if (!id) continue;
