@@ -1057,7 +1057,7 @@ const PROF = { edit: 0, sure: false };
 const profSec = id => 'profile.' + id;
 function profiles() {
   return Object.keys(S.cfg).map(k => /^profile\.(\d+)$/.exec(k)).filter(m => m && S.cfg[m[0]].name)
-    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '', apps: S.cfg[m[0]].apps || '', pin: S.cfg[m[0]].pin === '1' })).sort((a, b) => a.id - b.id);
+    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '', apps: S.cfg[m[0]].apps || '', pin: S.cfg[m[0]].pin === '1', at: S.cfg[m[0]].at || '' })).sort((a, b) => a.id - b.id);
 }
 const profCur = () => profiles().find(p => p.id === +cv('general', 'profile', 0)) || null;
 const PENCIL = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>';
@@ -1070,6 +1070,7 @@ function renderProfiles() {
     <div class="prof-edit" data-id="${p.id}">
       <input type="text" class="prof-name" maxlength="40" spellcheck="false" value="${esc(p.name)}">
       <div class="hk"><span>${t('prof.hotkey')}</span><button class="kbd" type="button"></button></div>
+      <div class="hk"><span>${t('prof.at')}</span><input type="time" class="prof-at" value="${esc(p.at)}"></div>
       <label class="check prof-pin"><input type="checkbox" ${p.pin ? 'checked' : ''}><span></span><em>${t('prof.pin')}</em></label>
       <div class="prof-apps-l"><span>${t('prof.apps')}</span><div class="prof-apps">${profApps(p.apps).map(a => `<button class="app-chip" type="button" data-app="${esc(a)}" title="${t('prof.apps.del')}">${esc(a.replace(/\.exe$/i, ''))}<i>×</i></button>`).join('')}<button class="btn small prof-app-add" type="button"><span>+ ${t('prof.apps.add')}</span></button></div></div>
       <small class="hint">${t('prof.apps.note')}</small>
@@ -1080,7 +1081,7 @@ function renderProfiles() {
       </div>
     </div>` : `
     <div class="prof-row${cur && cur.id === p.id ? ' on' : ''}" data-id="${p.id}">
-      <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.apps ? `<em class="prof-auto" title="${esc(p.apps)}">${t('prof.auto')}</em>` : ''}${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
+      <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.apps ? `<em class="prof-auto" title="${esc(p.apps)}">${t('prof.auto')}</em>` : ''}${p.at ? `<em class="prof-auto">${esc(p.at)}</em>` : ''}${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
       <button class="prof-ren" type="button" title="${t('prof.rename')}">${PENCIL}</button>
     </div>`).join('') || `<p class="hint">${t('prof.empty')}</p>`;
   $('#prof-quick').innerHTML = P.filter(p => p.pin).map(p => `<button class="prof-q${cur && cur.id === p.id ? ' on' : ''}" type="button" data-id="${p.id}" aria-pressed="${cur && cur.id === p.id}">${esc(p.name)}</button>`).join('');   // the pinned ones, one click away
@@ -1122,8 +1123,10 @@ $('#prof-list').addEventListener('click', e => {
   }
 });
 $('#prof-list').addEventListener('change', e => {
+  const id = +(e.target.closest('[data-id]') || {}).dataset?.id;
+  if (e.target.matches('.prof-at')) { profRenameDone(); setCfg(profSec(id), 'at', /^\d\d:\d\d$/.test(e.target.value) ? e.target.value : ''); renderProfiles(); return; }   // (empty: no time)
   if (!e.target.closest('.prof-pin')) return;
-  profRenameDone(); setCfg(profSec(+e.target.closest('[data-id]').dataset.id), 'pin', e.target.checked ? '1' : ''); renderProfiles();
+  profRenameDone(); setCfg(profSec(id), 'pin', e.target.checked ? '1' : ''); renderProfiles();
 });
 function profGo(id) { if (id !== +cv('general', 'profile', 0)) { setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } }
 $('#prof-quick').addEventListener('click', e => { const b = e.target.closest('.prof-q'); if (b) { profMenu(false); profGo(+b.dataset.id); } });

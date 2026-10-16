@@ -39,7 +39,7 @@
 #define WM_TIMED_OFF (WM_APP + 6)   // the "off in N minutes" timer ran out
 static int sleeping, pro_off;   // the Wi-Fi lights are let go of: PC asleep / no Pro (main thread)
 #define SAVE_TIMER   1
-#define AUTO_TIMER   2   // profiles switched by the programs running (every 3 s)
+#define AUTO_TIMER   2   // profiles switched by the programs running and by the clock (every 3 s)
 enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN, HK_PROFILE_NEXT, HK_PROFILE = 100 /* + profile number */ };
 
 static const char default_ini[] =
@@ -826,6 +826,24 @@ void app_profile_apply(int id) {
     if (auto_on) { auto_skip = auto_on; auto_on = 0; }
     profile_apply(id);
 }
+// ---- profiles by the clock: [profile.N] at = HH:MM, every day. At that minute it comes on as if chosen by hand.
+// (a minute the PC slept through or the app wasn't running is skipped, not caught up)
+static void sched_tick(void) {
+    static int last = -1;
+    SYSTEMTIME t; GetLocalTime(&t);
+    int now = t.wHour * 60 + t.wMinute, was = last;
+    if (now == last) return;
+    last = now;
+    if (was < 0) return;   // the minute the app starts in doesn't count: it would undo the profile it starts with
+    for (int id = 1; id <= PROFILE_MAX; id++) {
+        char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
+        int h, m;
+        if (profile_exists(id) && sscanf(cfg_get(sec, "at", ""), "%d:%d", &h, &m) == 2 && h * 60 + m == now) {
+            if (cfg_geti("general", "profile", 0) != id) { logf_("profile %d: its time, %02d:%02d", id, h, m); app_profile_apply(id); }
+            return;
+        }
+    }
+}
 // a profile's programs changed: one already running switches to its profile now, even after a choice by hand
 void app_auto_recheck(void) {
     if (auto_on && auto_on != cfg_geti("general", "profile", 0)) auto_on = 0;
@@ -1301,7 +1319,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER:
         if (wp == SAVE_TIMER) { KillTimer(h, SAVE_TIMER); cfg_save_if_dirty(); }
-        if (wp == AUTO_TIMER) auto_tick();
+        if (wp == AUTO_TIMER) { auto_tick(); sched_tick(); }
         return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: swap the tray icon
