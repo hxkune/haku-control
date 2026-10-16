@@ -279,9 +279,9 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .btn.primary:disabled { opacity: .4; }
 .btn.ghost { background-color: transparent; border-color: var(--line2); }
 .btn.ghost:hover { border-color: var(--line3); }
-.btn.danger { background-color: transparent; border-color: var(--line2); color: var(--muted); }
+.btn.danger { background-color: transparent; border-color: #ff5c6c66; color: #ff5c6c; }
 #quit { margin-top: 18px; }
-.btn.danger:hover { color: var(--strong); border-color: var(--strong); }
+.btn.danger:hover { color: #ff8a95; border-color: #ff5c6c; }
 .btn.small { padding: 6px 13px; font-size: 12px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .card-head .hw-btns { margin-top: 0; justify-content: flex-end; flex-shrink: 0; }
@@ -586,7 +586,7 @@ nav button { --cut: 9px; --lc: transparent; }
 nav button:hover { --lc: var(--line); }
 .btn { --cut: 8px; }
 .btn.ghost:hover { --lc: var(--line3); }
-.btn.danger:hover { --lc: var(--strong); }
+.btn.danger { --lc: #ff5c6c66; } .btn.danger:hover { --lc: #ff5c6c; }
 .power { --cut: 9px; }
 .power:hover { --lc: var(--line3); }
 .kbd:hover { --lc: var(--line3); }
@@ -656,7 +656,7 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .dev-card .dev-info { color: var(--muted); font-size: 12px; margin-top: 3px; word-break: break-word; }
 .dev-card canvas.live { margin-bottom: 14px; }
 .dev-card .opts { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
-.dev-card .btn.danger.confirm { color: var(--strong); --lc: var(--strong); }
+.dev-card .btn.danger.confirm { color: #ff5c6c; --lc: #ff5c6c; }
 @media (max-width: 760px) { .manual-row { grid-template-columns: 1fr 1fr; } .found-row { grid-template-columns: 1fr auto; } .found-row .kind { display: none; } }
 
 /* ---------------- first-start wizard */
