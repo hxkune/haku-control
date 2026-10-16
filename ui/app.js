@@ -2344,12 +2344,15 @@ function heroPowerButton(c, h) {
   h.pw = { x, y, r, on: p.on };
   const hot = HERO.hoverPw === h.key, show = hot ? 1 : HERO.hover === h.key ? .85 : p.on ? .28 : .7;
   c.save(); c.globalAlpha = show;
-  c.beginPath(); c.arc(x, y, r, 0, 7);
+  // a diamond badge with the faceted power glyph, like the menu icons
+  const R = r * 1.2, q = r * 0.5;
+  c.beginPath(); c.moveTo(x, y - R); c.lineTo(x + R, y); c.lineTo(x, y + R); c.lineTo(x - R, y); c.closePath();
   c.fillStyle = hot ? 'rgba(255,255,255,.14)' : 'rgba(10,10,10,.75)'; c.fill();
   c.strokeStyle = p.on ? 'rgba(255,255,255,.45)' : 'rgba(255,255,255,.18)'; c.lineWidth = d; c.stroke();
-  c.strokeStyle = p.on ? '#e8e8e8' : '#6a6a6a'; c.lineWidth = 1.4 * d; c.lineCap = 'round';
-  c.beginPath(); c.arc(x, y, r * 0.48, -Math.PI / 2 + 0.75, -Math.PI / 2 - 0.75 + 2 * Math.PI); c.stroke();
-  c.beginPath(); c.moveTo(x, y - r * 0.62); c.lineTo(x, y - r * 0.08); c.stroke();
+  c.strokeStyle = p.on ? '#e8e8e8' : '#6a6a6a'; c.lineWidth = 1.4 * d; c.lineCap = 'square'; c.lineJoin = 'miter';
+  c.beginPath(); c.moveTo(x - q * .55, y - q * .75); c.lineTo(x - q, y - q * .1); c.lineTo(x - q * .55, y + q * .7);
+  c.lineTo(x + q * .55, y + q * .7); c.lineTo(x + q, y - q * .1); c.lineTo(x + q * .55, y - q * .75); c.stroke();
+  c.beginPath(); c.moveTo(x, y - q * 1.15); c.lineTo(x, y - q * .1); c.stroke();
   c.restore();
 }
 
