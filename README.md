@@ -48,6 +48,7 @@ repository and is not under the GPL; versions up to 0.3.30 had all of it here, a
 | Razer keyboards, mice, mousepads, headsets, keypads, Chroma Link | through Razer Synapse: its Chroma SDK REST API on this PC | **tested against a simulator only** |
 | SteelSeries keyboards (per key), mice, headsets, mousepads (by their number of zones) | through SteelSeries GG: its GameSense API on this PC | **tested against a simulator only** |
 | Logitech keyboards (per key), mice, headsets, speakers (one colour) | through Logitech G HUB: the LED library G HUB installs (Logitech's LED SDK), checked for Logitech's signature | **tested against a stand-in library only** |
+| TRYX PANORAMA / PANORAMA SE cooler screen (USB): its built-in themes, brightness, off with the lights | its serial protocol over the USB COM port (TRYX KANALI has to be closed); own pictures and GIFs still go through TRYX KANALI | **experimental: not tested yet** |
 
 **In the room** (haku Pro)
 

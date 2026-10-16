@@ -2902,7 +2902,10 @@ function typeOptions(cur, guess, only) {
 let devSig = '';
 const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).title;
 // the PC's own devices (not the lights on the network): they can be given back to their own lighting
-const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech'].includes(d.kind);
+// TRYX PANORAMA's built-in themes, in the order the cooler numbers them (drv_tryx.c); 0: as TRYX KANALI left it
+const TRYX_THEMES = ['', 'Cooling delivery', 'Migration', 'Quantum time capsule', 'Exo-Ecologies', 'Racing', 'Shuttle', 'Gift of TRYX',
+  'Sweet Cool Acrylic', 'Catch Me If You Can', 'The Battle of Ice and Fire', 'Oasis', 'Cyber Bunker', 'Edge Of Dream', 'Thermal Energy Prohibited'];
+const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx'].includes(d.kind);
 // the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max}]
 const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max] = z.split(':'); return { name, count: +count, min: +min, max: +max }; });
 function devStatus(d) {
@@ -2963,6 +2966,10 @@ function buildDevices() {
             `<option value="${v}"${cv(sec, 'lights', 'both') === v ? ' selected' : ''}>${t('dv.l.' + v)}</option>`).join('')}</select></label>
           <p class="hint">${t('dv.lights.note')}</p>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>`}` : ''}
+        ${d.kind === 'tryx' ? `<label class="num"><span>${t('tx.theme')}</span><select class="select dev-theme">${TRYX_THEMES.map((n, v) =>
+            `<option value="${v}"${+cv(sec, 'theme', 0) === v ? ' selected' : ''}>${v ? v + '. ' + n : t('tx.keep')}</option>`).join('')}</select></label>
+          <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('tx.follow')}</em></label>
+          <p class="hint">${t('tx.note')}</p>` : ''}
         <details class="trouble dev-adv"${DEV_ADV.has(d.id) ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
         ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
@@ -3009,6 +3016,7 @@ function buildDevices() {
       setCfg(sec, 'zones', v);
     }));
     el.querySelector('.dev-fx')?.addEventListener('change', e => setCfg(sec, 'frame_fx', e.target.value));
+    el.querySelector('.dev-theme')?.addEventListener('change', e => setCfg(sec, 'theme', e.target.value));
     el.querySelector('.dev-screen')?.addEventListener('change', e => {
       setCfg(sec, 'screen', e.target.value);
       el.querySelector('.dev-dial-box').classList.toggle('hidden', e.target.value !== 'dial');

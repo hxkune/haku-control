@@ -11,7 +11,7 @@ static const ext_driver *drivers[] = {
 #ifdef HAKU_PRO   // the lights on the network (pro\)
     &drv_wled, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz, &drv_tuya, &drv_goveecloud, &drv_elgato, &drv_divoom,
 #endif
-    &drv_openrgb, &drv_nlusb, &drv_wooting, &drv_razer, &drv_steelseries, &drv_logitech };
+    &drv_openrgb, &drv_nlusb, &drv_wooting, &drv_razer, &drv_steelseries, &drv_logitech, &drv_tryx };
 #define NDRV (int)(sizeof(drivers) / sizeof(drivers[0]))
 
 const ext_driver *ext_driver_by_kind(const char *kind) {
@@ -41,7 +41,7 @@ static volatile LONG scanning;
 
 // The kinds that run without Pro: the PC's own hardware, USB devices and the makers' apps on this PC
 int pro_kind(const char *kind) {
-    static const char *const FREE[] = { "openrgb", "wooting", "nlusb", "razer", "steelseries", "logitech" };
+    static const char *const FREE[] = { "openrgb", "wooting", "nlusb", "razer", "steelseries", "logitech", "tryx" };
     for (int i = 0; i < (int)(sizeof(FREE) / sizeof(FREE[0])); i++) if (!_stricmp(kind, FREE[i])) return 0;
     return 1;
 }
@@ -66,7 +66,7 @@ static void device_type(const ext_dev *d, char *out, int cap) {
         { "h605b", "tv" }, { "h605c", "tv" }, { "h6603", "tv" }, { "h6604", "tv" }, { "h6168", "tv" },
         { "hexa", "panels" }, { "glide", "panels" }, { "h6061", "panels" }, { "h6065", "panels" }, { "h6066", "panels" }, { "h6067", "panels" }, { "h6069", "panels" },
         { "table lamp", "lamp" }, { "h6022", "lamp" }, { "h6020", "lamp" },
-        { "times gate", "gate" }, { "times frame", "frame" }, { "timesframe", "frame" }, { "divoom", "gate" }, { "light strip", "strip" }, { "key light", "keylight" }, { "ring light", "keylight" }, { "elgato", "keylight" },
+        { "tryx", "fan" }, { "times gate", "gate" }, { "times frame", "frame" }, { "timesframe", "frame" }, { "divoom", "gate" }, { "light strip", "strip" }, { "key light", "keylight" }, { "ring light", "keylight" }, { "elgato", "keylight" },
         // PC hardware through OpenRGB ("OpenRGB · <name> · <type>")
         { "· graphics card", "gpu" }, { "· memory", "ram" }, { "· motherboard", "board" }, { "· cooler", "fan" },
         { "· keyboard", "keyboard" }, { "· keypad", "keyboard" }, { "· mouse", "mouse" },
