@@ -1680,7 +1680,7 @@ function ramStick(c, x, y, w, h, cols) {
   const d = devicePixelRatio;
   c.fillStyle = BODY; c.fillRect(x, y, w, h);
   c.strokeStyle = EDGE; c.lineWidth = d; c.strokeRect(x + d / 2, y + d / 2, w - d, h - d);
-  lightBar(c, x + w * 0.03, y + h * 0.1, w * 0.94, h * 0.2, cols, false);
+  lightBar(c, x, y, w, h * 0.24, cols, false);   // the light runs the whole top edge
   const py = y + h * 0.8, notch = x + w * 0.56;   // the key notch sits off centre
   c.strokeStyle = 'rgba(255,255,255,.16)'; c.lineWidth = Math.max(1, w / 140);
   for (let i = 0, m = Math.round(w / (4 * d)); i < m; i++) {
@@ -1692,7 +1692,7 @@ function ramStick(c, x, y, w, h, cols) {
 
 function drawRam(c, X, Y, W, H) {
   const d = devicePixelRatio, m = Math.min(4, Math.max(1, S.sticks || 2));
-  const sw = Math.min(W * 0.9, 300 * d), sh = Math.min(sw * 0.24, H * 0.9 / (m * 1.35));
+  const sw = Math.min(W * 0.9, 300 * d, H * 0.9 / (m * 1.35 * 0.24)), sh = sw * 0.24;   // the same stick as a single one, just smaller when stacked
   const gap = sh * 0.35, x = X + (W - sw) / 2, y0 = Y + (H - (sh * m + gap * (m - 1))) / 2;
   for (let s = 0; s < m; s++) ramStick(c, x, y0 + s * (sh + gap), sw, sh, [...Array(8)].map((_, i) => (F.ram[s] || [])[i] || OFF));
 }
