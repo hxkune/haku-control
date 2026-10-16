@@ -983,6 +983,10 @@ body.calm nav button { transition: none; }
 .prof-btn.none b { color: var(--muted); font-weight: 400; }
 .prof-btn .chev { width: 14px; height: 14px; color: var(--muted); transition: transform .2s; }
 .prof-btn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.prof-quick { display: flex; gap: 6px; margin-left: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.prof-q { flex: none; height: 38px; padding: 0 14px; border: 1px solid var(--line2); background: var(--panel); color: var(--muted); white-space: nowrap; transition: border-color .2s, color .2s; }
+.prof-q:hover { border-color: var(--line3); color: var(--text); }
+.prof-q.on { border-color: var(--line3); color: var(--strong); font-weight: 600; box-shadow: inset 0 -2px 0 var(--strong); }
 .prof-menu {
   position: absolute; top: 44px; left: 0; width: 320px; max-width: calc(100vw - 32px); padding: 8px;
   display: flex; flex-direction: column; gap: 4px; background: var(--menu); border: 1px solid var(--line2);

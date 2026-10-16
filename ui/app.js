@@ -1051,7 +1051,7 @@ const PROF = { edit: 0, sure: false };
 const profSec = id => 'profile.' + id;
 function profiles() {
   return Object.keys(S.cfg).map(k => /^profile\.(\d+)$/.exec(k)).filter(m => m && S.cfg[m[0]].name)
-    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '', apps: S.cfg[m[0]].apps || '' })).sort((a, b) => a.id - b.id);
+    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '', apps: S.cfg[m[0]].apps || '', pin: S.cfg[m[0]].pin === '1' })).sort((a, b) => a.id - b.id);
 }
 const profCur = () => profiles().find(p => p.id === +cv('general', 'profile', 0)) || null;
 const PENCIL = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>';
@@ -1064,6 +1064,7 @@ function renderProfiles() {
     <div class="prof-edit" data-id="${p.id}">
       <input type="text" class="prof-name" maxlength="40" spellcheck="false" value="${esc(p.name)}">
       <div class="hk"><span>${t('prof.hotkey')}</span><button class="kbd" type="button"></button></div>
+      <label class="check prof-pin"><input type="checkbox" ${p.pin ? 'checked' : ''}><span></span><em>${t('prof.pin')}</em></label>
       <div class="prof-apps-l"><span>${t('prof.apps')}</span><div class="prof-apps">${profApps(p.apps).map(a => `<button class="app-chip" type="button" data-app="${esc(a)}" title="${t('prof.apps.del')}">${esc(a.replace(/\.exe$/i, ''))}<i>×</i></button>`).join('')}<button class="btn small prof-app-add" type="button"><span>+ ${t('prof.apps.add')}</span></button></div></div>
       <small class="hint">${t('prof.apps.note')}</small>
       <div class="btns">
@@ -1076,6 +1077,7 @@ function renderProfiles() {
       <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.apps ? `<em class="prof-auto" title="${esc(p.apps)}">${t('prof.auto')}</em>` : ''}${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
       <button class="prof-ren" type="button" title="${t('prof.rename')}">${PENCIL}</button>
     </div>`).join('') || `<p class="hint">${t('prof.empty')}</p>`;
+  $('#prof-quick').innerHTML = P.filter(p => p.pin).map(p => `<button class="prof-q${cur && cur.id === p.id ? ' on' : ''}" type="button" data-id="${p.id}" aria-pressed="${cur && cur.id === p.id}">${esc(p.name)}</button>`).join('');   // the pinned ones, one click away
   const ed = $('#prof-list .prof-edit');
   if (ed) hotkeyButton($('.kbd', ed), profSec(PROF.edit), 'hotkey');
   const full = P.length >= PROFILE_MAX;
@@ -1103,7 +1105,7 @@ $('#prof-list').addEventListener('click', e => {
   const row = e.target.closest('[data-id]'); if (!row) return;
   const id = +row.dataset.id;
   if (e.target.closest('.prof-ren')) { profRenameDone(); PROF.edit = id; PROF.sure = false; renderProfiles(); const i = $('#prof-list .prof-name'); i.focus(); i.select(); return; }
-  if (e.target.closest('.prof-item')) { profMenu(false); if (id !== +cv('general', 'profile', 0)) { setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } return; }
+  if (e.target.closest('.prof-item')) { profMenu(false); profGo(id); return; }
   if (e.target.closest('.prof-app-add')) { profRenameDone(); send({ cmd: 'profile_app', id: String(id) }); return; }
   const chip = e.target.closest('.app-chip');
   if (chip) { setCfg(profSec(id), 'apps', profApps(cv(profSec(id), 'apps', '')).filter(a => a !== chip.dataset.app).join(', ')); renderProfiles(); return; }
@@ -1113,6 +1115,12 @@ $('#prof-list').addEventListener('click', e => {
     send({ cmd: 'profile_delete', id: String(id) }); PROF.edit = 0; PROF.sure = false;
   }
 });
+$('#prof-list').addEventListener('change', e => {
+  if (!e.target.closest('.prof-pin')) return;
+  profRenameDone(); setCfg(profSec(+e.target.closest('[data-id]').dataset.id), 'pin', e.target.checked ? '1' : ''); renderProfiles();
+});
+function profGo(id) { if (id !== +cv('general', 'profile', 0)) { setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } }
+$('#prof-quick').addEventListener('click', e => { const b = e.target.closest('.prof-q'); if (b) { profMenu(false); profGo(+b.dataset.id); } });
 $('#prof-list').addEventListener('keydown', e => {
   if (!e.target.matches('.prof-name')) return;
   if (e.key === 'Enter') { e.preventDefault(); profRenameDone(); PROF.edit = 0; renderProfiles(); }
