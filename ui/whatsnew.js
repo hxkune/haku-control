@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.15',
+    en: ['New device pictures on the Effects tab: memory sticks lie down with their light inside, a full keyboard, a gaming mouse with its RGB strips, a key light on a pole, Times Gate as a bar of five screens and Times Frame glowing on the wall.'],
+    ru: ['Новые картинки устройств на вкладке «Эффекты»: плашки памяти лежат, свет у них внутри, полная клавиатура, игровая мышь со своими RGB-полосками, лампа для стрима на стойке, Times Gate в виде пяти экранов и Times Frame, светящаяся на стене.'],
+    fr: ['Nouvelles images des appareils dans l’onglet Effets : les barrettes de mémoire sont couchées avec leur lumière à l’intérieur, un clavier complet, une souris gaming avec ses bandes RGB, une lampe de stream sur pied, Times Gate en barre de cinq écrans et Times Frame qui brille au mur.'] },
   { v: '0.4.14',
     en: ['A calmer look: effect cards glow softly from their bottom edge, markers are small diamonds, and the menu, power and timer icons are drawn with straight lines.', 'The devices on the Effects tab have new pictures: flat and sharp, with a real bulb, a mouse, a framed fan and a clean glow on the light bars.', 'Delete, Cancel, Forget and Remove buttons are red, and buttons fill from the left when you point at them.'],
     ru: ['Спокойнее на вид: карточки эффектов мягко светятся от нижнего края, метки стали маленькими ромбами, а иконки меню, питания и таймера нарисованы прямыми линиями.', 'У устройств на вкладке «Эффекты» новые картинки: плоские и чёткие, с настоящей лампочкой, мышью, вентилятором в рамке и чистым свечением световых полос.', 'Кнопки «Удалить», «Отмена», «Забыть» и «Убрать» красные, а кнопки заполняются слева при наведении.'],
