@@ -154,6 +154,8 @@ static volatile LONG off_at;              // GetTickCount() when the lights go o
 static volatile LONG ident_zone = -1, ident_at;   // that zone blinks white for a few seconds
 #define OFF_FADE_MS  60000
 #define IDENT_MS     3000
+static volatile LONG xfade_req;          // a profile switch: the next frames blend over from the last one
+#define XFADE_MS     800
 static HINSTANCE app_inst;
 static sensors_t last_sensors = { NAN, NAN, NAN, NAN, NAN };
 float app_gpu_temp(void) { return last_sensors.gpu_temp; }   // NAN when unknown (the Times Frame's screen)
@@ -382,6 +384,10 @@ static unsigned __stdcall render_thread(void *p) {
         sensors_t sn; sensors_poll(&sn, effects_need_gpu_temp() || cur_effect == effect_index("temperature"), effects_need_audio() || cur_effect == effect_index("audio"));
         last_sensors = sn;
         static scene_t sc;
+        static rgbf xf_from[MAX_LEDS]; static led_t xf_led[MAX_LEDS]; static int xf_n; static DWORD xf_at;
+        if (InterlockedExchange(&xfade_req, 0)) {   // the frame just sent (the old profile) is where the blend starts
+            xf_n = sc.count; memcpy(xf_from, out, xf_n * sizeof(rgbf)); memcpy(xf_led, sc.leds, xf_n * sizeof(led_t)); xf_at = GetTickCount() | 1;
+        }
         EnterCriticalSection(&cs);
         sc.count = scene.count; memcpy(sc.leds, scene.leds, scene.count * sizeof(led_t));
         int fx = cur_effect; float br = brightness;
@@ -401,8 +407,11 @@ static unsigned __stdcall render_thread(void *p) {
         rgbf gpu[40] = { 0 }, board = { 0, 0, 0 }, ram[2][8] = { 0 }, bulb[8] = { 0 }; int rn[2] = { 0, 0 }, gn = 0, bn = 0;
         static rgbf nano[NANO_MAX][NANO_MAX_PANELS]; int nn[NANO_MAX] = { 0 };
         static rgbf ext[EXT_SLOTS][512]; int en[EXT_SLOTS] = { 0 };
+        float xk = xf_at ? max(0, (int)(tk - xf_at)) / (float)XFADE_MS : 1;
+        if (xk >= 1) xf_at = 0; else xk = xk * xk * (3 - 2 * xk);
         for (int i = 0; i < sc.count; i++) {
             rgbf c = scalec(out[i], br);
+            if (xk < 1 && i < xf_n && xf_led[i].dev == sc.leds[i].dev && xf_led[i].index == sc.leds[i].index) c = mixc(xf_from[i], c, xk);   // (an LED new to this profile just starts)
             if (sc.leds[i].zone == iz) c.r = c.g = c.b = iblink ? 1.0f : 0.0f;
             out[i] = c;   // kept for the preview (before the white-bulb conversion below)
             const led_t *l = &sc.leds[i];
@@ -500,7 +509,7 @@ static unsigned __stdcall render_thread(void *p) {
         }
 
         // adaptive pacing: full fps while animating, 5 Hz while the picture is static
-        idle_frames = changed ? 0 : idle_frames + 1;
+        idle_frames = changed || xf_at ? 0 : idle_frames + 1;   // (a profile blend runs at full fps)
         LONGLONG ms = idle_frames > 10 ? 200 : 1000 / fps;
         LARGE_INTEGER due; due.QuadPart = -ms * 10000;
         SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE);
@@ -743,6 +752,7 @@ static int profile_load(int id) {
 
 static void profile_apply(int id) {
     if (!profile_exists(id)) return;
+    InterlockedExchange(&xfade_req, 1);   // before the new setup reaches the render thread, so it blends from the old one
     int cur = cfg_geti("general", "profile", 0);
     if (cur != id && profile_exists(cur)) profile_capture(cur);   // the one in use keeps what was changed in it
     if (!profile_load(id)) return;
