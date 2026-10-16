@@ -52,6 +52,9 @@
     <button class="power" id="power">
       <svg viewBox="0 0 24 24"><path d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
       <span>Lights off</span></button>
+    <label class="off-timer" id="off-timer" data-i18n-title="timer.title">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg><b id="off-left"></b>
+      <select id="off-sel"></select></label>
   </div>
 </aside>
 <button class="side-toggle" id="side-toggle" data-i18n-title="side.hide">
@@ -65,7 +68,7 @@
       <h1 id="title">Effects</h1>
       <p class="sub" id="subtitle"></p>
     </div>
-    <div class="chips" id="chips"></div>
+    <div class="chips" id="chips"></div><div class="chip-pop hidden" id="chip-pop"></div>
   </header>
 
   <!-- ============ EFFECTS ============ -->
@@ -91,6 +94,7 @@
       <div class="hero-menu hidden" id="hero-menu"></div>
       <div class="arrange-bar hidden" id="arrange-bar"><span data-i18n="hero.arrange.hint"></span><button class="btn small primary" id="arrange-done"><span data-i18n="group.done">Done</span></button></div>
     </div>
+    <button class="hero-more hidden" id="hero-more"><span></span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
     <div class="card mood" id="mood">
       <form class="mood-row" id="mood-form" autocomplete="off">
         <span class="mood-ic">✦</span>
@@ -663,6 +667,8 @@
   <div class="card sheet" role="dialog" aria-modal="true">
     <div class="sheet-head" id="sheet-head">
       <span class="sheet-grip"></span>
+      <select class="select small hidden" id="sheet-group" data-i18n-title="group.pick"></select>
+      <button class="btn small ghost hidden" id="sheet-ident" data-i18n-title="dev.identify.title"><span data-i18n="dev.identify">Blink</span></button>
       <button class="btn small ghost" id="sheet-page"><span data-i18n="sheet.page">Open page</span></button>
       <button class="sheet-x" id="sheet-x" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>

@@ -36,6 +36,7 @@
 #define WM_REMOTE_CMD (WM_APP + 3)
 #define WM_BLOCKED   (WM_APP + 4)
 #define WM_PRO       (WM_APP + 5)   // haku Pro came or went
+#define WM_TIMED_OFF (WM_APP + 6)   // the "off in N minutes" timer ran out
 static int sleeping, pro_off;   // the Wi-Fi lights are let go of: PC asleep / no Pro (main thread)
 #define SAVE_TIMER   1
 #define AUTO_TIMER   2   // profiles switched by the programs running (every 3 s)
@@ -148,6 +149,11 @@ static int      have_msi, have_ene, fps = 30;
 // the board's / memory's lighting given back to their own programs ([devices] msi_own / ene_own): their own effect
 // again (the one they keep), nothing sent to them, their makers' apps can change it
 static volatile LONG msi_own, ram_own, need_own;
+// "off in N minutes" and "which one is it": both only shade what the render thread sends, nothing is saved
+static volatile LONG off_at;              // GetTickCount() when the lights go off (0: no timer); the last minute fades
+static volatile LONG ident_zone = -1, ident_at;   // that zone blinks white for a few seconds
+#define OFF_FADE_MS  60000
+#define IDENT_MS     3000
 static HINSTANCE app_inst;
 static sensors_t last_sensors = { NAN, NAN, NAN, NAN, NAN };
 float app_gpu_temp(void) { return last_sensors.gpu_temp; }   // NAN when unknown (the Times Frame's screen)
@@ -379,6 +385,13 @@ static unsigned __stdcall render_thread(void *p) {
         EnterCriticalSection(&cs);
         sc.count = scene.count; memcpy(sc.leds, scene.leds, scene.count * sizeof(led_t));
         int fx = cur_effect; float br = brightness;
+        DWORD tk = GetTickCount();
+        if (off_at) {
+            int left = (int)((DWORD)off_at - tk);
+            if (left <= 0) { br = 0; PostMessageW(hwnd, WM_TIMED_OFF, 0, 0); }   // held dark until the main thread switches off
+            else if (left < OFF_FADE_MS) br *= left / (float)OFF_FADE_MS;
+        }
+        int iz = tk - (DWORD)ident_at < IDENT_MS ? ident_zone : -1, iblink = (tk - (DWORD)ident_at) / 250 % 2 == 0;
         effects_render(fx, &sc, &sn, dt, out);
         int bulb_k[8] = { 0 };
         for (int i = 0; i < sc.count; i++)
@@ -390,6 +403,7 @@ static unsigned __stdcall render_thread(void *p) {
         static rgbf ext[EXT_SLOTS][512]; int en[EXT_SLOTS] = { 0 };
         for (int i = 0; i < sc.count; i++) {
             rgbf c = scalec(out[i], br);
+            if (sc.leds[i].zone == iz) c.r = c.g = c.b = iblink ? 1.0f : 0.0f;
             out[i] = c;   // kept for the preview (before the white-bulb conversion below)
             const led_t *l = &sc.leds[i];
             switch (l->dev) {
@@ -982,8 +996,9 @@ static void pawnio_setup(void) {
 static int status_body(char *out, int cap) {
     char gt[16] = "null";
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"bulbs\":[",
-                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, app_pc_own_now());
+    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"off_in\":%d,\"bulbs\":[",
+                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, app_pc_own_now(),
+                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0);
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
@@ -1094,6 +1109,19 @@ float app_brightness_now(void) { return brightness; }
 void app_power(void) {
     int off = effect_index("off");
     set_effect(cur_effect == off ? prev_effect : off);
+}
+
+void app_timed_off(int minutes) {
+    off_at = minutes > 0 ? (LONG)((GetTickCount() + minutes * 60000u) | 1) : 0;
+    logf_("off timer: %d min", minutes);
+}
+
+void app_identify(const char *zone) {
+    char z[64];
+    for (int k = 0; k < MAX_ZONES; k++) {
+        zone_section(k, z, sizeof(z));
+        if (!_stricmp(z, zone)) { ident_at = (LONG)GetTickCount(); ident_zone = k; return; }
+    }
 }
 
 void app_open(const char *what) {
@@ -1276,6 +1304,12 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_REMOTE_CMD:
         return ui_dispatch((const char *)lp);
+    case WM_TIMED_OFF:
+        if (!off_at) return 0;
+        off_at = 0;
+        if (cur_effect != effect_index("off")) app_power();
+        ui_refresh();
+        return 0;
     case WM_PRO:   // haku Pro came or went: the Wi-Fi lights are let go of / taken again, phone control follows
         pro_off = !wp;
         logf_("pro: %s", wp ? "on" : "off (Wi-Fi lights let go of)");

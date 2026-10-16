@@ -276,6 +276,8 @@ float app_brightness_now(void);       // 0..1
 int   app_frame_json(char *out, int cap);    // live LED colours
 void  app_set(const char *section, const char *key, const char *value);
 void  app_power(void);                       // off <-> previous effect
+void  app_timed_off(int minutes);            // everything off in N minutes, the last one fading out (0: no timer)
+void  app_identify(const char *zone);        // "zone.dev3" etc. blinks white for a few seconds
 float app_gpu_temp(void);                    // the last GPU temperature read, NAN when unknown
 void  app_open(const char *what);            // "log", "ini", "folder"
 void  app_quit(void);

@@ -2085,12 +2085,18 @@ function heroLayout(W) {
     } else spread(b.inRows, w - GP * 2, 0, (m, mx, mw, mri) => tiles.push({ it: m.it, x: bx + GP + mx, y: by + GH + mri * (RH + G), w: mw, h: RH, group: n }));
   });
   y = P + rowH.reduce((a, h) => a + h, 0) + G * Math.max(0, rows.length - 1) + P;
-  return { tiles, frames, height: rows.length ? y : (phone ? 150 : 180) };
+  return { tiles, frames, height: rows.length ? y : (phone ? 150 : 180), first: rows.length ? P + rowH[0] + G : 0, rows: rows.length };
 }
 function heroHeight() {
   const el = $('#tab-effects .hero'), bar = $('#arrange-bar');
   bar.classList.toggle('hidden', !HERO.arrange);
-  const h = Math.round(heroLayout($('#hero').clientWidth || el.clientWidth).height + (HERO.arrange ? bar.offsetHeight + 12 : 0));
+  const L = heroLayout($('#hero').clientWidth || el.clientWidth), more = $('#hero-more');
+  // compact: only the first row, unless asked for all of it (or being arranged)
+  const cut = L.rows > 1 && !HERO.arrange && cv('ui', 'hero_full', '0') !== '1';
+  more.classList.toggle('hidden', L.rows < 2 || !!HERO.arrange);
+  const ml = t(cut ? 'hero.expand' : 'hero.collapse');
+  if (more.dataset.v !== ml) { more.dataset.v = ml; more.querySelector('span').textContent = ml; more.classList.toggle('open', !cut); }
+  const h = Math.round((cut ? L.first : L.height) + (HERO.arrange ? bar.offsetHeight + 12 : 0));
   if (+el.dataset.h !== h) { el.dataset.h = h; el.style.height = h + 'px'; }
 }
 // a tile's outline: faceted like the cards (top-left and bottom-right corners cut)
@@ -2235,9 +2241,8 @@ function heroDrop(d) {
   else if (to.swap) heroMove(d.src.key, to.tile.key);
   else if (to.tile) {
     const n = groupNew(); if (!n) return;
-    groupRemove(z);
-    setMembers(n, [to.tile.zone, z]);
-    groupDialog(n, true);   // a name for it
+    groupDialog(n, true);   // a name for it; opened first, so Cancel knows the groups they came from
+    groupAdd(n, to.tile.zone); groupAdd(n, z); gdlgDevs();
   }
 }
 $('#hero').addEventListener('pointerdown', e => {
@@ -2354,7 +2359,8 @@ function openSheet(h, cx, cy) {
     el.before(ph); body.appendChild(el);
     SHEET.moved.push([el, ph]);
   }
-  SHEET.kind = h.k; SHEET.page = page;
+  SHEET.kind = h.k; SHEET.page = page; SHEET.zone = h.zone || '';
+  sheetGroup();
   const wrap = $('#sheet'), sh = wrap.querySelector('.sheet');
   sh.style.removeProperty('--dx'); sh.style.removeProperty('--dy');
   sh.classList.toggle('wide', h.k === 'nano' && nanoOn());
@@ -2371,6 +2377,22 @@ function closeSheet() {
   $('#sheet').classList.add('hidden');
   requestAnimationFrame(sizeCanvases);
 }
+// which group the device is in, picked from a list (dragging onto a group needs a mouse)
+function sheetGroup() {
+  const sel = $('#sheet-group'), z = SHEET.zone, o = z && groupOf(z);
+  sel.classList.toggle('hidden', !z);
+  $('#sheet-ident').classList.toggle('hidden', !z || SHEET.kind === 'ext');   // a LAN device's card has its own
+  if (!z) return;
+  sel.innerHTML = `<option value="0">${t('group.none')}</option>` + groups().map(g => `<option value="${g.n}"${o && o.n === g.n ? ' selected' : ''}>${esc(groupTitle(g))}</option>`).join('') +
+    (groups().length < GROUP_MAX ? `<option value="new">+ ${t('group.add')}</option>` : '');
+}
+$('#sheet-group').addEventListener('change', e => {
+  const z = SHEET.zone, v = e.target.value;
+  if (v === 'new') { const n = groupNew(); closeSheet(); if (n) { groupDialog(n, true); groupAdd(n, z); gdlgDevs(); drawHero(); } return; }
+  if (+v) groupAdd(+v, z); else groupRemove(z);
+  drawHero(); renderZones();
+});
+$('#sheet-ident').addEventListener('click', () => send({ cmd: 'identify', zone: SHEET.zone }));
 $('#sheet-x').addEventListener('click', closeSheet);
 $('#sheet').addEventListener('pointerdown', e => { if (e.target.id === 'sheet') closeSheet(); });
 $('#sheet-page').addEventListener('click', () => { const p = SHEET.page; closeSheet(); showTab(p); });
@@ -2422,13 +2444,14 @@ function buildHeroMenu() {
 
 // ---- group window: name, which devices are in it (a device is in one group at most) and one look for all of them
 // (the zone editor on [group.N]: every change goes to the members, see groupSpread). Changes apply at once;
-// Cancel puts the name and the devices back (a new group goes away).
+// Cancel (also Esc or a click beside the window) puts everything back: name, devices and their look (a new group goes away).
 const GDLG = { n: 0, isNew: false, before: null };
 function groupDialog(n, isNew) {
   const sec = groupSec(n), g = groups().find(x => x.n === n);
   GDLG.n = n; GDLG.isNew = !!isNew;
   GDLG.before = { name: cv(sec, 'name', ''), members: g ? g.members.slice() : [], homes: {} };
   heroItems(true).forEach(it => { const o = groupOf(it.zone); if (o) GDLG.before.homes[it.zone] = o.n; });
+  GDLG.before.look = [sec, ...heroItems(true).map(it => it.zone)].flatMap(z => GROUP_KEYS.map(k => [z, k, cv(z, k, '')]));
   $('#gdlg-title').textContent = t(isNew ? 'group.new' : 'group.edit');
   $('#gdlg-name').value = cv(sec, 'name', '');
   $('#gdlg-name').placeholder = t('group.n', n);
@@ -2457,9 +2480,11 @@ $('#gdlg-cancel').addEventListener('click', () => {
   const B = GDLG.before, sec = groupSec(GDLG.n);
   if (cv(sec, 'name', '') !== B.name) setCfg(sec, 'name', B.name);
   if (GDLG.isNew) setMembers(GDLG.n, []);
-  else {   // the devices back where they were
+  {   // the devices back where they were
     heroItems(true).forEach(it => { const home = B.homes[it.zone], now = groupOf(it.zone); if ((now ? now.n : 0) !== (home || 0)) { if (home) groupAdd(home, it.zone); else groupRemove(it.zone); } });
   }
+  // the look as it was, written key by key without spreading through the group again
+  B.look.forEach(([z, k, v]) => { if (cv(z, k, '') !== v) { (S.cfg[z] = S.cfg[z] || {})[k] = v; send({ cmd: 'set', s: z, k, v }); } });
   closeGroupDialog();
 });
 $('#gdlg-del').addEventListener('click', () => {
@@ -2468,12 +2493,13 @@ $('#gdlg-del').addEventListener('click', () => {
   setMembers(GDLG.n, []); setCfg(groupSec(GDLG.n), 'name', '');
   closeGroupDialog();
 });
-$('#gdlg').addEventListener('pointerdown', e => { if (e.target.id === 'gdlg') closeGroupDialog(); });
+$('#gdlg').addEventListener('pointerdown', e => { if (e.target.id === 'gdlg') $('#gdlg-cancel').click(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#gdlg').classList.contains('hidden') && pk.classList.contains('hidden')) $('#gdlg-cancel').click(); });
 // arranging the preview: drag a device onto another to swap their places (Done or Esc ends it)
 function heroArrange(on) { HERO.arrange = on; HERO.hover = HERO.hoverPw = ''; drawHero(); }
 $('#arrange-done').addEventListener('click', () => heroArrange(false));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && HERO.arrange) heroArrange(false); });
+$('#hero-more').addEventListener('click', () => { setCfg('ui', 'hero_full', cv('ui', 'hero_full', '0') === '1' ? '0' : '1'); drawHero(); });
 $('#hero-edit').addEventListener('click', e => {
   e.stopPropagation();
   const m = $('#hero-menu');
@@ -2697,6 +2723,7 @@ function devStatus(d) {
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
 }
+const DEV_ADV = new Set();   // devices whose "Advanced" part is open (kept when the cards are built again)
 function buildDevices() {
   if (SHEET.kind === 'ext') closeSheet();
   buildBrandTabs();
@@ -2720,8 +2747,6 @@ function buildDevices() {
       <div class="zone" data-zone="zone.dev${d.id}"></div>
       <div class="opts">
         <label class="num"><span>${t('strip.name')}</span><input type="text" class="dev-name" maxlength="40" spellcheck="false" value="${esc(cv(sec, 'name', d.name))}"></label>
-        ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
-        <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
         ${d.kind === 'goveecloud' ? `<label class="num"><span>${t('gc.mode')}</span><select class="select dev-mode">${['auto', 'sync', 'colour'].map(v =>
           `<option value="${v}"${cv(sec, 'mode', 'auto') === v ? ' selected' : ''}>${t('gc.' + v)}</option>`).join('')}</select></label>
           <p class="hint dev-mode-note">${t(gcSync(d, sec) ? 'gc.note.sync' : 'gc.note.colour')}</p>` : ''}
@@ -2738,6 +2763,9 @@ function buildDevices() {
             `<option value="${v}"${cv(sec, 'lights', 'both') === v ? ' selected' : ''}>${t('dv.l.' + v)}</option>`).join('')}</select></label>
           <p class="hint">${t('dv.lights.note')}</p>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>`}` : ''}
+        <details class="trouble dev-adv"${DEV_ADV.has(d.id) ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
+        ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
+        <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
         ${devZones(d).length ? `<div class="field dev-zones"><div class="lbl"><span>${t('zones.title')}</span></div>
           ${devZones(d).map(z => `<label class="num"><span>${esc(z.name)}</span><input type="number" class="dev-zone" data-zone="${esc(z.name)}" min="${z.min}" max="${Math.min(z.max, 512)}" value="${z.count}"></label>`).join('')}
@@ -2747,11 +2775,15 @@ function buildDevices() {
           <p class="hint">${t('dev.rate.note')}</p>` : ''}
         ${!pcDev(d) ? '' : `<label class="check"><input type="checkbox" class="dev-own" ${d.own ? 'checked' : ''}><span></span><em>${t('own')}</em></label>
           <p class="hint">${t('own.note.dev')}</p>`}
-        <button class="btn danger small dev-del">${t('dev.remove')}</button>
+        </div></details>
+        <div class="btn-row"><button class="btn small dev-ident" title="${esc(t('dev.identify.title'))}"><span>${t('dev.identify')}</span></button>
+        <button class="btn danger small dev-del">${t('dev.remove')}</button></div>
       </div>`;
     ($(`[data-brand-grid="${(brandOf(d.kind) || [])[0]}"]`) || grid).appendChild(el);
     renderZone(el.querySelector('.zone'));
     el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
+    el.querySelector('.dev-adv').addEventListener('toggle', e => { e.target.open ? DEV_ADV.add(d.id) : DEV_ADV.delete(d.id); });
+    el.querySelector('.dev-ident').addEventListener('click', () => send({ cmd: 'identify', zone: 'zone.dev' + d.id }));
     el.querySelector('.dev-own')?.addEventListener('change', e => { d.own = e.target.checked ? 1 : 0; setCfg(sec, 'own', d.own); updateDevices(); drawHero(); });
     el.querySelector('.dev-name').addEventListener('change', e => {
       const v = e.target.value.replace(/[;#\[\]=]/g, '').trim(); if (!v) return;
@@ -3411,22 +3443,36 @@ $$('#lang button').forEach(b => b.addEventListener('click', () => {
 }));
 
 // ------------------------------------------------------------------ status chips
-function chip(dot, text) { return `<span class="chip"><span class="dot ${dot}"></span>${text}</span>`; }
+$('#chips').addEventListener('click', e => {
+  const c = e.target.closest('.chip.has-off'), pop = $('#chip-pop');
+  if (!c || !pop.classList.contains('hidden') && pop.dataset.for === c.dataset.off) { pop.classList.add('hidden'); return; }
+  pop.dataset.for = c.dataset.off;
+  pop.innerHTML = `<div class="lbl"><span>${t('chip.offlist')}</span></div>` + c.dataset.off.split('\n').map(n => `<div class="off-row"><span class="dot off"></span>${esc(n)}</div>`).join('');
+  const r = c.getBoundingClientRect();
+  pop.style.top = r.bottom + 6 + 'px'; pop.style.right = Math.max(8, innerWidth - r.right) + 'px';
+  pop.classList.remove('hidden');
+});
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#chip-pop, #chips')) $('#chip-pop').classList.add('hidden'); });
+function chip(dot, text, off) { return `<span class="chip${off && off.length ? ' has-off' : ''}"${off && off.length ? ` data-off="${esc(off.join('\n'))}"` : ''}><span class="dot ${dot}"></span>${text}</span>`; }
+// a group of devices: its count while all answer, "N offline" (click: which ones) when some don't
+function chipSet(label, list, name) {
+  const off = list.filter(x => !x.online).map(name), k = off.length;
+  return chip(!k ? 'on' : k < list.length ? 'warn' : 'off', `${label} <b>${k ? t('chip.off', k) : list.length}</b>`, off);
+}
 function updateChips() {
   const h = [];
   if (S.msi) h.push(chip(S.msi_own ? 'off' : 'on', `${t('chip.board')} <b>MSI</b>`));
   if (S.sticks) h.push(chip(S.ram_own ? 'off' : 'on', `${t('chip.mem')} <b>${S.sticks} ${t('chip.pcs')}</b>`));
   if (S.gpu_temp != null) h.push(chip('on', `GPU <b>${S.gpu_temp}°</b>`));
-  const nL = nanoCtls();
-  if (nL.length) { const on = nL.filter(c => c.online).length; h.push(chip(on === nL.length ? 'on' : on ? 'warn' : 'off', nL.length > 1 ? `Nanoleaf <b>${on}/${nL.length}</b>` : `<b>Nanoleaf</b>`)); }
-  if (S.bulbs.length) { const on = S.bulbs.filter(b => b.online).length; h.push(chip(on === S.bulbs.length ? 'on' : on ? 'warn' : 'off', `${t('chip.lamps')} <b>${on}/${S.bulbs.length}</b>`)); }
-  const ed = S.ext.devs.filter(d => d.enabled);
-  if (ed.length) { const on = ed.filter(d => d.online).length; h.push(chip(on === ed.length ? 'on' : on ? 'warn' : 'off', `${t('chip.devs')} <b>${on}/${ed.length}</b>`)); }
-  // the full row only above the effects; elsewhere one chip sums it up, the row is its tooltip
+  const nL = nanoCtls(), ed = S.ext.devs.filter(d => d.enabled);
+  if (nL.length) h.push(chipSet('Nanoleaf', nL, nanoName));
+  if (S.bulbs.length) h.push(chipSet(t('chip.lamps'), S.bulbs, b => b.name));
+  if (ed.length) h.push(chipSet(t('chip.devs'), ed, d => d.name));
+  // the full row only above the effects; elsewhere one chip sums it up
   if (tab !== 'effects' && h.length > 1) {
-    const n = h.filter(x => x.includes('dot on')).length, all = n === h.length;
+    const off = [...nL, ...S.bulbs, ...ed].filter(x => !x.online).map(x => x.name || 'Nanoleaf');
     const tip = h.map(x => x.replace(/<[^>]+>/g, '')).join('\n');
-    $('#chips').innerHTML = chip(all ? 'on' : n ? 'warn' : 'off', `${t('chip.ok')} <b>${n}/${h.length}</b>`).replace('class="chip"', `class="chip" title="${esc(tip)}"`);
+    $('#chips').innerHTML = chip(off.length ? 'warn' : 'on', `${t('chip.ok')} <b>${off.length ? t('chip.off', off.length) : t('chip.allok')}</b>`, off).replace('class="chip', `title="${esc(tip)}" class="chip`);
   } else $('#chips').innerHTML = h.join('');
   $('#ram-status').textContent = !S.sticks ? t('ram.none') : S.ram_own ? t('own.status') : t('ram.status', S.sticks);
   $$('[data-own]').forEach(el => { if (el !== document.activeElement) el.checked = !!S[el.dataset.own === 'msi_own' ? 'msi_own' : 'ram_own']; });
@@ -3463,7 +3509,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbCountChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup(); fixedCheck();
+  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup(); fixedCheck();
   if (nanoLayoutChanged) drawAll();
 }
 
@@ -3490,6 +3536,16 @@ if (wv) wv.addEventListener('message', e => {
 
 $('#bright').addEventListener('input', e => { $('#bright-val').textContent = e.target.value + '%'; send({ cmd: 'brightness', v: +e.target.value }); });
 $('#power').addEventListener('click', () => send({ cmd: 'power' }));
+// off in N minutes (the core keeps the time; the last minute fades out)
+function updateOffTimer() {
+  const s = S.off_in || 0, sel = $('#off-sel');
+  $('#off-timer').classList.toggle('on', s > 0);
+  $('#off-left').textContent = s ? t('timer.left', Math.ceil(s / 60)) : '';
+  const want = (s ? `<option value="" selected>${t('timer.left', Math.ceil(s / 60))}</option><option value="0">${t('timer.cancel')}</option>` : `<option value="" selected>${t('timer.title')}</option>`) +
+    [15, 30, 60, 120].map(m => `<option value="${m}">${t('timer.in', m)}</option>`).join('');
+  if (sel.dataset.v !== want) { sel.dataset.v = want; sel.innerHTML = want; }
+}
+$('#off-sel').addEventListener('change', e => { const v = e.target.value; if (v !== '') send({ cmd: 'timed_off', min: v }); e.target.value = ''; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !pk.classList.contains('hidden')) closePicker(); });
 
 // ------------------------------------------------------------------ collapsible sidebar (the triangle tab)

@@ -172,6 +172,8 @@ static void on_message(const std::string &js) {
     else if (cmd == "set") app_set(field(js, "s").c_str(), field(js, "k").c_str(), field(js, "v").c_str());
     else if (cmd == "toggle") { app_toggle_device(field(js, "k").c_str()); post_status(); }
     else if (cmd == "power") { app_power(); post_status(); }
+    else if (cmd == "timed_off") { app_timed_off(atoi(field(js, "min").c_str())); post_status(); }
+    else if (cmd == "identify") app_identify(field(js, "zone").c_str());
     else if (cmd == "pair") { std::string ip = field(js, "ip"); nano_pair_start_ip(ip.c_str()); post_status(); }
     else if (cmd == "preset") { app_preset_apply(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "preset_save") {
@@ -380,7 +382,7 @@ static void bring_to_front(void) {
 // page's, then the open window (if any) is brought up to date. Checked here, with on_message's own reader, so a
 // body that reads one way to the sender's parser and another way here cannot slip past.
 static bool remote_allowed(const std::string &js) {
-    static const char *const ok[] = { "effect", "brightness", "set", "toggle", "power", "pair", "scan", "dev_add", "dev_remove", "mood", "preset",
+    static const char *const ok[] = { "effect", "brightness", "set", "toggle", "power", "timed_off", "identify", "pair", "scan", "dev_add", "dev_remove", "mood", "preset",
                                       "preset_save", "preset_delete", "orgb_check", "hw_scan", "profile", "profile_save", "profile_delete", "pc_own",
 #ifdef HAKU_DEV   // test builds (loopback only by default): the rest can be driven from a browser for tests
                                       "aidot_login", "tuya_login", "govee_login", "diag", "update_check", "update_install", "ai_setup", "ai_on_demand",
