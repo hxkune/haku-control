@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.13',
+    en: ['The buttons of the preset and group windows line up: Delete and Share are the same size as the others and sit on the same line.'],
+    ru: ['Кнопки в окнах пресета и группы стоят ровно: «Удалить» и «Поделиться» того же размера, что и остальные, и на одной линии с ними.'],
+    fr: ['Les boutons des fenêtres de préréglage et de groupe sont alignés : Supprimer et Partager ont la même taille que les autres, sur la même ligne.'] },
   { v: '0.4.12',
     en: ['A sleep timer: the clock next to the power button turns the lights off in 15, 30, 60 or 120 minutes, fading them out over the last minute.', 'Not sure which light is which? "Blink" flashes it white for a few seconds, from its window or its card.', 'The window of a device has a group picker, so you can put it in a group with a tap instead of dragging it.', 'The status at the top says what is wrong ("1 offline") and a click on it shows which devices do not answer.', 'The preview on the Effects tab shows one row and opens fully with "Show all"; a device card keeps its technical settings under "Advanced".', 'Cancelling the group window now puts everything back as it was, the look of the lights included.'],
     ru: ['Таймер сна: часы рядом с кнопкой питания выключат свет через 15, 30, 60 или 120 минут, плавно погасив его за последнюю минуту.', 'Не помните, какое устройство где? Кнопка «Мигнуть» на пару секунд мигает им белым — в его окне или на карточке.', 'В окне устройства есть выбор группы: добавить его в группу можно нажатием, без перетаскивания.', 'Статус вверху говорит, что не так («нет связи: 1»), а клик по нему показывает, какие устройства не отвечают.', 'Превью на вкладке «Эффекты» показывает один ряд и раскрывается кнопкой «Показать все»; технические настройки в карточке устройства убраны в «Дополнительно».', 'Отмена в окне группы теперь возвращает всё как было, включая вид подсветки.'],
