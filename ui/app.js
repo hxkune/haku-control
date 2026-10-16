@@ -1657,20 +1657,22 @@ function avgColor(list) {
   return css(scale(s, 1 / on.length));
 }
 
-// A vertical diffuser bar: colours blend like a real light bar.
+const EDGE = 'rgba(255,255,255,.13)', BODY = '#161616', DEEP = '#0d0d0d';
+// A diffuser bar: the colours blend like a real light bar, a hot core down its middle.
 function lightBar(c, x, y, w, h, cols, vertical) {
   const g = vertical ? c.createLinearGradient(0, y + h, 0, y) : c.createLinearGradient(x, 0, x + w, 0);
   const n = cols.length;
   cols.forEach((col, i) => g.addColorStop(n > 1 ? i / (n - 1) : 0, col || OFF));
   const glow = avgColor(cols);
   c.save();
-  if (glow) { c.shadowColor = glow; c.shadowBlur = 26 * devicePixelRatio; }
-  rr(c, x, y, w, h, 1.5 * devicePixelRatio);
-  c.fillStyle = g; c.fill();
+  if (glow) { c.shadowColor = glow; c.shadowBlur = 22 * devicePixelRatio; }
+  c.fillStyle = g; c.fillRect(x, y, w, h);
   c.restore();
-  const sh = vertical ? c.createLinearGradient(x, 0, x + w, 0) : c.createLinearGradient(0, y, 0, y + h);
-  sh.addColorStop(0, 'rgba(255,255,255,.22)'); sh.addColorStop(.45, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.18)');
-  rr(c, x, y, w, h, 1.5 * devicePixelRatio); c.fillStyle = sh; c.fill();
+  if (glow) {   // a hot white core down the middle, like a lit diffuser
+    const s = vertical ? c.createLinearGradient(x, 0, x + w, 0) : c.createLinearGradient(0, y, 0, y + h);
+    s.addColorStop(0, 'rgba(255,255,255,0)'); s.addColorStop(.5, 'rgba(255,255,255,.38)'); s.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = s; c.fillRect(x, y, w, h);
+  }
 }
 
 function drawRam(c, X, Y, W, H) {
@@ -1678,10 +1680,8 @@ function drawRam(c, X, Y, W, H) {
   const x0 = X + (W - (sw * 2 + gap)) / 2, y0 = Y + (H - sh) / 2;
   for (let s = 0; s < 2; s++) {
     const x = x0 + s * (sw + gap);
-    const body = c.createLinearGradient(x, 0, x + sw, 0);
-    body.addColorStop(0, '#141414'); body.addColorStop(.5, '#222'); body.addColorStop(1, '#121212');
-    rr(c, x, y0, sw, sh, 1.5 * d); c.fillStyle = body; c.fill();
-    c.strokeStyle = 'rgba(255,255,255,.06)'; c.lineWidth = d; c.stroke();
+    c.fillStyle = BODY; c.fillRect(x, y0, sw, sh);
+    c.strokeStyle = EDGE; c.lineWidth = d; c.strokeRect(x + d / 2, y0 + d / 2, sw - d, sh - d);
     const cols = [...Array(8)].map((_, i) => F.ram[s][i] || OFF);
     lightBar(c, x + sw * 0.26, y0 + sh * 0.05, sw * 0.48, sh * 0.9, cols, true);
   }
@@ -1697,11 +1697,11 @@ function drawGpu(c, X, Y, W, H) {
   const inner = c.createLinearGradient(0, y, 0, y + bh);
   inner.addColorStop(0, glow ? glow.replace('rgb', 'rgba').replace(')', ',.55)') : 'rgba(40,40,40,.5)');
   inner.addColorStop(1, 'rgba(14,14,14,.95)');
-  rr(c, x, y, bw, bh, 2 * d); c.fillStyle = '#0e0e0e'; c.fill();
-  rr(c, x, y, bw, bh, 2 * d); c.fillStyle = inner; c.fill();
-  c.strokeStyle = 'rgba(255,255,255,.10)'; c.lineWidth = d; c.stroke();
+  c.fillStyle = DEEP; c.fillRect(x, y, bw, bh);
+  c.fillStyle = inner; c.fillRect(x, y, bw, bh);
+  c.strokeStyle = EDGE; c.lineWidth = d; c.strokeRect(x + d / 2, y + d / 2, bw - d, bh - d);
   // fins / channels
-  c.save(); rr(c, x, y, bw, bh, 2 * d); c.clip();
+  c.save(); c.beginPath(); c.rect(x, y, bw, bh); c.clip();
   c.strokeStyle = 'rgba(255,255,255,.035)'; c.lineWidth = 2 * d;
   for (let i = 1; i < 18; i++) { const fx = x + bw * i / 18; c.beginPath(); c.moveTo(fx, y + bh * 0.28); c.lineTo(fx, y + bh * 0.86); c.stroke(); }
   c.restore();
@@ -1711,7 +1711,8 @@ function drawGpu(c, X, Y, W, H) {
     const bx = x + bw - 10 * d, by = y + bh + 16 * d;
     c.save();
     if (lit(F.board)) { c.shadowColor = F.board; c.shadowBlur = 14 * d; }
-    c.fillStyle = F.board || OFF; c.fillRect(bx - 3.5 * d, by - 3.5 * d, 7 * d, 7 * d); c.restore();
+    c.beginPath(); c.moveTo(bx, by - 4.5 * d); c.lineTo(bx + 4.5 * d, by); c.lineTo(bx, by + 4.5 * d); c.lineTo(bx - 4.5 * d, by); c.closePath();
+    c.fillStyle = F.board || OFF; c.fill(); c.restore();
     c.fillStyle = THEME.lo; c.font = `${9.5 * d}px ${WIDE}`; c.textAlign = 'right';
     c.fillText(t('board'), bx - 10 * d, by + 4 * d);
   }
@@ -1823,144 +1824,132 @@ const bulbType = i => { const v = cv('zone.light' + (i + 1), 'type', 'bulb'); re
 function drawFixture(c, X, Y, W, H, type, cols, on) {
   const dp = devicePixelRatio, n = cols.length, cx = X + W / 2, cy = Y + H / 2;
   const col = i => (on && cols[i]) || OFF, glow = on ? avgColor(cols) : null;
-  const metal = (x, y, w, h) => { rr(c, x, y, w, h, 1.5 * dp); c.fillStyle = '#1c1c1c'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.07)'; c.lineWidth = dp; c.stroke(); };
-  const orb = (x, y, r, k) => {
-    const g = c.createRadialGradient(x, y - r * 0.1, 0, x, y, r * 1.7), on1 = on && lit(k);
-    if (on1) { g.addColorStop(0, '#fff'); g.addColorStop(0.28, k); g.addColorStop(1, 'rgba(0,0,0,0)'); }
-    else { g.addColorStop(0, '#262626'); g.addColorStop(0.5, '#161616'); g.addColorStop(1, 'rgba(0,0,0,0)'); }
-    c.beginPath(); c.arc(x, y, r * 1.7, 0, 7); c.fillStyle = g; c.fill();
-  };
+  const all = () => n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)];
   const seg = (a, b) => { const s = cols.slice(a, b).map((k, i) => col(a + i)); return s.length ? s : [col(0)]; };
-  if (type === 'strip') {
-    const bw = Math.min(W * 0.92, 560 * dp), bh = Math.min(H * 0.34, 14 * dp);
-    lightBar(c, cx - bw / 2, cy - bh / 2, bw, bh, n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], false);
-  } else if (type === 'bulb') {
-    const m = Math.max(1, n), r = Math.min(H * 0.28, W / (m * 3.2), 24 * dp);
-    for (let i = 0; i < m; i++) orb(cx + (i - (m - 1) / 2) * r * 3.2, cy, r, col(i));
-  } else if (type === 'floor') {   // floor lamp: a tall glowing tube on a thin stand
-    const h = H * 0.9, tw = Math.max(3 * dp, Math.min(h * 0.07, 9 * dp)), top = cy - h / 2;
-    metal(cx - tw * 1.6, top + h - 3 * dp, tw * 3.2, 3 * dp);
-    metal(cx - dp, top + h * 0.72, 2 * dp, h * 0.28);
-    lightBar(c, cx - tw / 2, top, tw, h * 0.72, n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], true);
-  } else if (type === 'bars') {   // two light bars side by side, the LEDs split between them
-    const h = H * 0.8, bw = Math.max(3 * dp, Math.min(h * 0.08, 8 * dp)), gap = Math.min(W * 0.28, h * 0.45), half = Math.ceil(n / 2);
-    [seg(0, half), seg(half, n)].forEach((s, j) => {
-      const x = cx + (j ? gap / 2 : -gap / 2) - bw / 2;
-      lightBar(c, x, cy - h / 2, bw, h * 0.9, s.length > 1 ? s : [s[0], s[0]], true);
-      metal(x - bw * 0.6, cy + h / 2 - 2 * dp, bw * 2.2, 2.5 * dp);
-    });
-  } else if (type === 'tv') {   // a screen with the light around it (left edge up, top, right edge down, bottom)
-    const sw = Math.min(W * 0.72, H * 0.8 * 16 / 9), sh = sw * 9 / 16, x = cx - sw / 2, y = cy - sh / 2, t = Math.max(2 * dp, sh * 0.05);
-    const q = Math.max(1, Math.floor(n / 4)), edges = n >= 4 ? [seg(0, q), seg(q, 2 * q), seg(2 * q, 3 * q), seg(3 * q, n)] : [[col(0)], [col(0)], [col(0)], [col(0)]];
-    const two = s => s.length > 1 ? s : [s[0], s[0]];
-    lightBar(c, x - t * 1.6, y, t, sh, two(edges[0]), true);
-    lightBar(c, x, y - t * 1.6, sw, t, two(edges[1]), false);
-    lightBar(c, x + sw + t * 0.6, y, t, sh, two([...edges[2]].reverse()), true);
-    lightBar(c, x, y + sh + t * 0.6, sw, t, two([...edges[3]].reverse()), false);
-    rr(c, x, y, sw, sh, 2 * dp); c.fillStyle = '#0c0c0c'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.1)'; c.lineWidth = dp; c.stroke();
-  } else if (type === 'lamp') {   // table lamp: the shade glows
-    const h = Math.min(H * 0.85, W * 0.9), top = cy - h / 2, sw = h * 0.62, g = glow || 'rgb(40,40,40)';
-    metal(cx - h * 0.2, top + h - 3 * dp, h * 0.4, 3 * dp);
-    metal(cx - dp, top + h * 0.5, 2 * dp, h * 0.5);
-    c.save();
-    if (glow) { c.shadowColor = glow; c.shadowBlur = 30 * dp; }
-    c.beginPath(); c.moveTo(cx - sw * 0.32, top); c.lineTo(cx + sw * 0.32, top); c.lineTo(cx + sw / 2, top + h * 0.5); c.lineTo(cx - sw / 2, top + h * 0.5); c.closePath();
-    const lg = c.createLinearGradient(0, top, 0, top + h * 0.5);
-    lg.addColorStop(0, glow ? g : '#1a1a1a'); lg.addColorStop(1, glow ? '#fff' : '#222');
-    c.fillStyle = lg; c.fill(); c.restore();
-  } else if (type === 'gpu') {   // a graphics card: shroud with fans, the light along its top edge
-    const w = Math.min(W * 0.92, H * 2.6), h = w * 0.36, x = cx - w / 2, y = cy - h / 2 + h * 0.08;
-    rr(c, x, y, w, h, 4 * dp); c.fillStyle = '#161616'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.09)'; c.lineWidth = dp; c.stroke();
-    const fr = h * 0.36;
-    for (let i = 0; i < 3; i++) {
-      const fx = x + w * (0.2 + i * 0.3), fy = y + h * 0.56;
-      c.beginPath(); c.arc(fx, fy, fr, 0, 7); c.fillStyle = '#0d0d0d'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.08)'; c.stroke();
-      c.beginPath(); c.arc(fx, fy, fr * 0.28, 0, 7); c.fillStyle = '#1e1e1e'; c.fill();
-    }
-    lightBar(c, x + w * 0.05, y - Math.max(2 * dp, h * 0.07) - dp, w * 0.9, Math.max(2 * dp, h * 0.07), n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], false);
-  } else if (type === 'ram') {   // a memory stick standing up, lit along its top
-    const h = H * 0.9, w = Math.max(6 * dp, Math.min(h * 0.16, W * 0.3)), x = cx - w / 2, y = cy - h / 2;
-    metal(x, y + h * 0.3, w, h * 0.7);
-    lightBar(c, x + w * 0.12, y, w * 0.76, h * 0.34, n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], true);
-  } else if (type === 'board') {   // a motherboard: the board, a socket, slots, and its light down one edge
-    const s = Math.min(W * 0.8, H * 0.9), x = cx - s / 2, y = cy - s / 2;
-    rr(c, x, y, s, s, 3 * dp); c.fillStyle = '#131313'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; c.stroke();
-    metal(x + s * 0.3, y + s * 0.14, s * 0.3, s * 0.3);
-    for (let i = 0; i < 2; i++) metal(x + s * 0.12, y + s * (0.62 + i * 0.14), s * 0.62, s * 0.05);
-    lightBar(c, x + s * 0.86, y + s * 0.1, Math.max(2 * dp, s * 0.04), s * 0.8, n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)], true);
-  } else if (type === 'fan') {   // a fan: its ring lit around, the LEDs going round
-    const r = Math.min(W, H) * 0.4, m = Math.max(n, 8);
-    c.save();
-    if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; }
-    c.lineWidth = Math.max(3 * dp, r * 0.16);
+  const box = (x, y, w, h, fill = BODY) => { c.fillStyle = fill; c.fillRect(x, y, w, h); c.strokeStyle = EDGE; c.lineWidth = dp; c.strokeRect(x + dp / 2, y + dp / 2, w - dp, h - dp); };
+  const line = (pts, a = .13, w = 1) => { c.beginPath(); pts.forEach(([x, y], i) => c[i ? 'lineTo' : 'moveTo'](x, y)); c.strokeStyle = `rgba(255,255,255,${a})`; c.lineWidth = w * dp; c.stroke(); };
+  const lit1 = k => on && lit(k);
+  const glowFill = (k, path, blur = 24) => { c.save(); if (lit1(k)) { c.shadowColor = k; c.shadowBlur = blur * dp; } path(); c.fillStyle = lit1(k) ? k : BODY; c.fill(); c.restore(); };
+  const diamond = (x, y, r, k) => glowFill(k, () => { c.beginPath(); c.moveTo(x, y - r); c.lineTo(x + r, y); c.lineTo(x, y + r); c.lineTo(x - r, y); c.closePath(); }, 12);
+  c.lineJoin = 'miter';
+  if (type === 'strip') {   // the strip in its channel
+    const bw = Math.min(W * 0.92, 560 * dp), bh = Math.min(H * 0.3, 10 * dp);
+    box(cx - bw / 2 - 3 * dp, cy - bh / 2 - 3 * dp, bw + 6 * dp, bh + 6 * dp, DEEP);
+    lightBar(c, cx - bw / 2, cy - bh / 2, bw, bh, all(), false);
+  } else if (type === 'bulb') {   // a bulb: glass, neck and base
+    const m = Math.max(1, n), r = Math.min(H * 0.24, W / (m * 3.4), 20 * dp);
     for (let i = 0; i < m; i++) {
-      c.beginPath(); c.arc(cx, cy, r, -Math.PI / 2 + i / m * Math.PI * 2, -Math.PI / 2 + (i + 1.05) / m * Math.PI * 2);
-      c.strokeStyle = col(Math.floor(i * Math.max(n, 1) / m)); c.stroke();
+      const x = cx + (i - (m - 1) / 2) * r * 3.4, y = cy - r * 0.35, k = col(i);
+      glowFill(k, () => { c.beginPath(); c.arc(x, y, r, Math.PI * 0.8, Math.PI * 2.2); c.lineTo(x + r * 0.42, y + r * 1.35); c.lineTo(x - r * 0.42, y + r * 1.35); c.closePath(); }, 30);
+      if (lit1(k)) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, 'rgba(255,255,255,.7)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
+      else { c.beginPath(); c.arc(x, y, r, Math.PI * 0.8, Math.PI * 2.2); c.lineTo(x + r * 0.42, y + r * 1.35); c.lineTo(x - r * 0.42, y + r * 1.35); c.closePath(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke(); }
+      box(x - r * 0.42, y + r * 1.45, r * 0.84, r * 0.22); box(x - r * 0.42, y + r * 1.75, r * 0.84, r * 0.22);
     }
-    c.restore();
-    c.beginPath(); c.arc(cx, cy, r * 0.8, 0, 7); c.fillStyle = '#0e0e0e'; c.fill();
-    c.strokeStyle = 'rgba(255,255,255,.06)'; c.lineWidth = dp;
-    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; c.beginPath(); c.moveTo(cx + Math.cos(a) * r * 0.22, cy + Math.sin(a) * r * 0.22); c.quadraticCurveTo(cx + Math.cos(a + .5) * r * 0.6, cy + Math.sin(a + .5) * r * 0.6, cx + Math.cos(a + .9) * r * 0.76, cy + Math.sin(a + .9) * r * 0.76); c.stroke(); }
-    c.beginPath(); c.arc(cx, cy, r * 0.22, 0, 7); c.fillStyle = '#1c1c1c'; c.fill();
-  } else if (type === 'keyboard') {   // a keyboard: rows of keys, the LEDs spread over the columns
-    const w = Math.min(W * 0.95, H * 3.2), h = w * 0.33, x = cx - w / 2, y = cy - h / 2, cols_ = 15, rows = 5;
-    rr(c, x, y, w, h, 4 * dp); c.fillStyle = '#121212'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; c.stroke();
-    const kw = (w - 6 * dp) / cols_, kh = (h - 6 * dp) / rows;
-    for (let r = 0; r < rows; r++) for (let k = 0; k < cols_; k++) {
-      // per-key LEDs go row by row; a few (a keyboard driven by columns, e.g. a Wooting) spread across
-      const i = n <= 24 ? Math.floor(k * Math.max(n, 1) / cols_) : Math.floor((r * cols_ + k) * Math.max(n, 1) / (rows * cols_)), kc = col(i);
-      rr(c, x + 3 * dp + k * kw + kw * 0.1, y + 3 * dp + r * kh + kh * 0.12, kw * 0.8, kh * 0.76, 1.5 * dp);
-      c.fillStyle = on && lit(kc) ? kc : '#1d1d1d'; c.fill();
-    }
-  } else if (type === 'gate') {   // Divoom Times Gate: five screens in a cross, its light glowing behind them
-    const u = Math.min(W / 3.6, H / 3.6), k = col(0), on1 = on && lit(k);
-    if (on1) { const g = c.createRadialGradient(cx, cy, 0, cx, cy, u * 2.6); g.addColorStop(0, k); g.addColorStop(1, 'rgba(0,0,0,0)'); c.globalAlpha = .55; c.fillStyle = g; c.fillRect(cx - u * 2.6, cy - u * 2.6, u * 5.2, u * 5.2); c.globalAlpha = 1; }
-    [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]].forEach(([dx, dy]) => {
-      const x = cx + dx * u * 1.08 - u / 2, y = cy + dy * u * 1.08 - u / 2;
-      rr(c, x, y, u, u, 2 * dp); c.fillStyle = '#101010'; c.fill();
-      c.strokeStyle = on1 ? k : 'rgba(255,255,255,.1)'; c.lineWidth = dp; c.stroke();
+  } else if (type === 'floor') {   // floor lamp: a tall tube on a thin stand
+    const h = H * 0.9, tw = Math.max(3 * dp, Math.min(h * 0.06, 8 * dp)), top = cy - h / 2;
+    line([[cx, top + h * 0.74], [cx, top + h]], .2, 1.5);
+    line([[cx - tw * 2, top + h - dp], [cx + tw * 2, top + h - dp]], .25, 2);
+    lightBar(c, cx - tw / 2, top, tw, h * 0.72, all(), true);
+  } else if (type === 'bars') {   // two light bars on feet
+    const h = H * 0.8, bw = Math.max(3 * dp, Math.min(h * 0.07, 7 * dp)), gap = Math.min(W * 0.28, h * 0.45), half = Math.ceil(n / 2);
+    [seg(0, half), seg(half, n)].forEach((s, j) => {
+      const x = cx + (j ? gap / 2 : -gap / 2);
+      lightBar(c, x - bw / 2, cy - h / 2, bw, h * 0.86, s.length > 1 ? s : [s[0], s[0]], true);
+      line([[x - bw * 1.4, cy + h / 2 - dp], [x + bw * 1.4, cy + h / 2 - dp]], .25, 2);
     });
-  } else if (type === 'frame') {   // Divoom Times Frame: a clear 10" screen on a foot, its light along the edges
-    const w = Math.min(W * 0.8, H * 1.35), h = w * 0.62, x = cx - w / 2, y = cy - h / 2 - H * 0.04, k = col(0), on1 = on && lit(k);
-    metal(cx - w * 0.2, y + h + 2 * dp, w * 0.4, 4 * dp);
-    c.save();
-    if (on1) { c.shadowColor = k; c.shadowBlur = 18 * dp; }
-    rr(c, x, y, w, h, 3 * dp); c.strokeStyle = on1 ? k : 'rgba(255,255,255,.12)'; c.lineWidth = 2.5 * dp; c.stroke();
+  } else if (type === 'tv') {   // a screen, the light around it
+    const sw = Math.min(W * 0.72, H * 0.8 * 16 / 9), sh = sw * 9 / 16, x = cx - sw / 2, y = cy - sh / 2, t = Math.max(2 * dp, sh * 0.04);
+    const q = Math.max(1, Math.floor(n / 4)), edges = n >= 4 ? [seg(0, q), seg(q, 2 * q), seg(2 * q, 3 * q), seg(3 * q, n)] : [[col(0)], [col(0)], [col(0)], [col(0)]];
+    const two = s => s.length > 1 ? s : [s[0], s[0]], o = t * 2.2;
+    lightBar(c, x - o, y, t, sh, two(edges[0]), true);
+    lightBar(c, x, y - o, sw, t, two(edges[1]), false);
+    lightBar(c, x + sw + o - t, y, t, sh, two([...edges[2]].reverse()), true);
+    lightBar(c, x, y + sh + o - t, sw, t, two([...edges[3]].reverse()), false);
+    box(x, y, sw, sh, DEEP);
+  } else if (type === 'lamp') {   // table lamp: the shade lit from its open bottom edge
+    const h = Math.min(H * 0.85, W * 0.9), top = cy - h / 2, sw = h * 0.62, k = glow;
+    line([[cx, top + h * 0.5], [cx, top + h]], .2, 1.5);
+    line([[cx - h * 0.18, top + h - dp], [cx + h * 0.18, top + h - dp]], .25, 2);
+    c.save(); if (k) { c.shadowColor = k; c.shadowBlur = 28 * dp; }
+    c.beginPath(); c.moveTo(cx - sw * 0.32, top); c.lineTo(cx + sw * 0.32, top); c.lineTo(cx + sw / 2, top + h * 0.5); c.lineTo(cx - sw / 2, top + h * 0.5); c.closePath();
+    const lg = c.createLinearGradient(0, top, 0, top + h * 0.5); lg.addColorStop(0, k ? k : BODY); lg.addColorStop(1, k ? '#fff' : '#202020');
+    c.fillStyle = k ? lg : BODY; c.fill(); c.restore(); if (!k) { c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke(); }
+  } else if (type === 'gpu') {   // a graphics card: shroud, fans, the light along the top
+    const w = Math.min(W * 0.9, H * 2.6), h = w * 0.34, x = cx - w / 2, y = cy - h / 2 + h * 0.1;
+    box(x, y, w, h);
+    const fr = h * 0.34;
+    for (let i = 0; i < 3; i++) {
+      const fx = x + w * (0.2 + i * 0.3), fy = y + h * 0.55;
+      c.beginPath(); c.arc(fx, fy, fr, 0, 7); c.fillStyle = DEEP; c.fill(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
+      c.beginPath(); c.arc(fx, fy, fr * 0.26, 0, 7); c.strokeStyle = 'rgba(255,255,255,.1)'; c.stroke();
+    }
+    lightBar(c, x + w * 0.04, y - Math.max(2 * dp, h * 0.06) - 3 * dp, w * 0.92, Math.max(2 * dp, h * 0.06), all(), false);
+  } else if (type === 'ram') {   // a memory stick: the board with its pins, the light along its top
+    const h = H * 0.9, w = Math.max(6 * dp, Math.min(h * 0.17, W * 0.3)), x = cx - w / 2, y = cy - h / 2;
+    box(x, y + h * 0.32, w, h * 0.68);
+    for (let i = 1; i < 5; i++) line([[x + w * i / 5, y + h - h * 0.06], [x + w * i / 5, y + h - 2 * dp]], .18);
+    lightBar(c, x + w * 0.18, y, w * 0.64, h * 0.3, all(), true);
+  } else if (type === 'board') {   // a motherboard: socket, slots, the light down one edge
+    const s = Math.min(W * 0.8, H * 0.9), x = cx - s / 2, y = cy - s / 2;
+    box(x, y, s, s, DEEP);
+    box(x + s * 0.3, y + s * 0.14, s * 0.3, s * 0.3);
+    for (let i = 0; i < 2; i++) box(x + s * 0.12, y + s * (0.62 + i * 0.14), s * 0.62, s * 0.05);
+    lightBar(c, x + s * 0.85, y + s * 0.1, Math.max(2 * dp, s * 0.035), s * 0.8, all(), true);
+  } else if (type === 'fan') {   // a fan: square frame, the ring lit around
+    const r = Math.min(W, H) * 0.36, m = Math.max(n, 8), f = r * 1.28;
+    box(cx - f, cy - f, f * 2, f * 2, DEEP);
+    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; }
+    c.lineWidth = Math.max(2.5 * dp, r * 0.11);
+    for (let i = 0; i < m; i++) { c.beginPath(); c.arc(cx, cy, r, -Math.PI / 2 + i / m * Math.PI * 2, -Math.PI / 2 + (i + 1.04) / m * Math.PI * 2); c.strokeStyle = col(Math.floor(i * Math.max(n, 1) / m)); c.stroke(); }
     c.restore();
-    rr(c, x + 5 * dp, y + 5 * dp, w - 10 * dp, h - 10 * dp, 2 * dp); c.fillStyle = 'rgba(20,24,28,.85)'; c.fill();
-    c.strokeStyle = 'rgba(255,255,255,.05)'; c.lineWidth = dp;
-    for (let i = 1; i < 4; i++) { c.beginPath(); c.moveTo(x + w * i / 4 - 8 * dp, y + 8 * dp); c.lineTo(x + w * i / 4 - 20 * dp, y + h - 8 * dp); c.stroke(); }
-  } else if (type === 'keylight') {   // a key light: a flat glowing panel on a pole, tilted a little towards you
-    const h = H * 0.86, pw = Math.min(W * 0.62, h * 0.9), ph = pw * 0.62, top = cy - h / 2;
-    metal(cx - dp, top + ph * 0.8, 2 * dp, h - ph * 0.8 - 3 * dp);
-    metal(cx - pw * 0.28, top + h - 3 * dp, pw * 0.56, 3 * dp);
-    c.save();
-    if (glow) { c.shadowColor = glow; c.shadowBlur = 26 * dp; }
-    rr(c, cx - pw / 2, top, pw, ph, 3 * dp); c.fillStyle = '#141414'; c.fill();
+    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; line([[cx + Math.cos(a) * r * 0.26, cy + Math.sin(a) * r * 0.26], [cx + Math.cos(a + .55) * r * 0.78, cy + Math.sin(a + .55) * r * 0.78]], .1); }
+    c.beginPath(); c.arc(cx, cy, r * 0.24, 0, 7); c.fillStyle = BODY; c.fill(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
+  } else if (type === 'keyboard') {   // a keyboard: square keys lit by their LEDs
+    const w = Math.min(W * 0.95, H * 3.2), h = w * 0.33, x = cx - w / 2, y = cy - h / 2, cols_ = 15, rows = 5;
+    box(x, y, w, h, DEEP);
+    const kw = (w - 6 * dp) / cols_, kh = (h - 6 * dp) / rows;
+    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 16 * dp; }
+    for (let r = 0; r < rows; r++) for (let k = 0; k < cols_; k++) {
+      const i = n <= 24 ? Math.floor(k * Math.max(n, 1) / cols_) : Math.floor((r * cols_ + k) * Math.max(n, 1) / (rows * cols_)), kc = col(i);
+      c.fillStyle = lit1(kc) ? kc : '#1d1d1d'; c.fillRect(x + 3 * dp + k * kw + kw * 0.12, y + 3 * dp + r * kh + kh * 0.14, kw * 0.76, kh * 0.72);
+    }
     c.restore();
-    const g = c.createLinearGradient(0, top, 0, top + ph), k = col(0), on1 = on && lit(k);
-    g.addColorStop(0, on1 ? '#fff' : '#202020'); g.addColorStop(1, on1 ? k : '#171717');
-    rr(c, cx - pw / 2 + 3 * dp, top + 3 * dp, pw - 6 * dp, ph - 6 * dp, 2 * dp); c.fillStyle = g; c.globalAlpha = on1 ? .92 : 1; c.fill(); c.globalAlpha = 1;
-    c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; rr(c, cx - pw / 2, top, pw, ph, 3 * dp); c.stroke();
-  } else if (type === 'mouse') {   // a mouse from above, its logo and side light
-    const h = Math.min(H * 0.85, W * 1.2), w = h * 0.58, x = cx - w / 2, y = cy - h / 2;
-    c.save();
-    if (glow) { c.shadowColor = glow; c.shadowBlur = 20 * dp; }
-    rr(c, x, y, w, h, w * 0.5); c.fillStyle = '#151515'; c.fill();
-    c.restore();
-    c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; rr(c, x, y, w, h, w * 0.5); c.stroke();
-    c.beginPath(); c.moveTo(cx, y); c.lineTo(cx, y + h * 0.36); c.stroke();
-    orb(cx, y + h * 0.68, w * 0.12, col(Math.floor(n / 2)));
-  } else if (type === 'panels') {   // a honeycomb of hexagons, the LEDs spread over them
+  } else if (type === 'gate') {   // Divoom Times Gate: five screens in a cross
+    const u = Math.min(W / 3.6, H / 3.6), k = col(0), on1 = lit1(k);
+    [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]].forEach(([dx, dy]) => {
+      const x = cx + dx * u * 1.1 - u / 2, y = cy + dy * u * 1.1 - u / 2;
+      c.save(); if (on1) { c.shadowColor = k; c.shadowBlur = 16 * dp; }
+      c.fillStyle = DEEP; c.fillRect(x, y, u, u); c.strokeStyle = on1 ? k : EDGE; c.lineWidth = 1.5 * dp; c.strokeRect(x, y, u, u); c.restore();
+    });
+  } else if (type === 'frame') {   // Divoom Times Frame: a clear screen on a foot, lit around the edge
+    const w = Math.min(W * 0.8, H * 1.35), h = w * 0.62, x = cx - w / 2, y = cy - h / 2 - H * 0.04, k = col(0), on1 = lit1(k);
+    line([[cx - w * 0.2, y + h + 4 * dp], [cx + w * 0.2, y + h + 4 * dp]], .25, 2);
+    c.save(); if (on1) { c.shadowColor = k; c.shadowBlur = 18 * dp; }
+    c.strokeStyle = on1 ? k : EDGE; c.lineWidth = 2.5 * dp; c.strokeRect(x, y, w, h); c.restore();
+    c.fillStyle = 'rgba(20,24,28,.85)'; c.fillRect(x + 5 * dp, y + 5 * dp, w - 10 * dp, h - 10 * dp);
+  } else if (type === 'keylight') {   // a key light: a flat panel on a pole
+    const h = H * 0.86, pw = Math.min(W * 0.6, h * 0.9), ph = pw * 0.6, top = cy - h / 2, k = col(0), on1 = lit1(k);
+    line([[cx, top + ph], [cx, top + h]], .2, 1.5);
+    line([[cx - pw * 0.25, top + h - dp], [cx + pw * 0.25, top + h - dp]], .25, 2);
+    c.save(); if (on1) { c.shadowColor = k; c.shadowBlur = 26 * dp; }
+    c.fillStyle = BODY; c.fillRect(cx - pw / 2, top, pw, ph); c.restore();
+    const g = c.createLinearGradient(0, top, 0, top + ph); g.addColorStop(0, on1 ? k : '#1d1d1d'); g.addColorStop(1, on1 ? '#fff' : '#1d1d1d');
+    c.fillStyle = g; c.fillRect(cx - pw / 2 + 3 * dp, top + 3 * dp, pw - 6 * dp, ph - 6 * dp);
+    c.strokeStyle = EDGE; c.lineWidth = dp; c.strokeRect(cx - pw / 2, top, pw, ph);
+  } else if (type === 'mouse') {   // a mouse from above: its shape, the button split, a lit logo
+    const h = Math.min(H * 0.85, W * 1.2), w = h * 0.6, x = cx - w / 2, y = cy - h / 2;
+    const shape = () => { c.beginPath(); c.moveTo(cx, y); c.bezierCurveTo(x + w * 1.02, y, x + w, y + h * 0.42, x + w * 0.98, y + h * 0.62); c.bezierCurveTo(x + w * 0.96, y + h * 0.9, x + w * 0.72, y + h, cx, y + h); c.bezierCurveTo(x + w * 0.28, y + h, x + w * 0.04, y + h * 0.9, x + w * 0.02, y + h * 0.62); c.bezierCurveTo(x, y + h * 0.42, x - w * 0.02, y, cx, y); c.closePath(); };
+    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 22 * dp; } shape(); c.fillStyle = BODY; c.fill(); c.restore();
+    shape(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
+    line([[cx, y], [cx, y + h * 0.38]]); line([[x + w * 0.03, y + h * 0.38], [x + w * 0.97, y + h * 0.38]], .08);
+    c.fillStyle = lit1(col(0)) ? col(0) : '#262626'; c.fillRect(cx - 1.5 * dp, y + h * 0.12, 3 * dp, h * 0.12);
+    diamond(cx, y + h * 0.68, w * 0.1, col(Math.floor(n / 2)));
+  } else if (type === 'panels') {   // a honeycomb of hexagons
     const m = Math.min(Math.max(n, 3), 7), R = Math.min(W / (m * 1.9 + 1), H * 0.3);
     for (let i = 0; i < m; i++) {
       const x = cx + (i - (m - 1) / 2) * R * 1.75, y = cy + (i % 2 ? R * 0.5 : -R * 0.5), k = col(Math.floor(i * Math.max(n, 1) / m));
-      c.save();
-      if (on && lit(k)) { c.shadowColor = k; c.shadowBlur = 22 * dp; }
-      c.beginPath();
-      for (let v = 0; v < 6; v++) { const a = Math.PI / 6 + v * Math.PI / 3; c[v ? 'lineTo' : 'moveTo'](x + Math.cos(a) * R * 0.92, y + Math.sin(a) * R * 0.92); }
-      c.closePath(); c.fillStyle = k; c.fill(); c.restore();
-      c.strokeStyle = 'rgba(255,255,255,.08)'; c.lineWidth = dp; c.stroke();
+      glowFill(k, () => { c.beginPath(); for (let v = 0; v < 6; v++) { const a = Math.PI / 6 + v * Math.PI / 3; c[v ? 'lineTo' : 'moveTo'](x + Math.cos(a) * R * 0.9, y + Math.sin(a) * R * 0.9); } c.closePath(); }, 22);
+      c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
     }
   }
 }
