@@ -279,7 +279,8 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .btn.primary:disabled { opacity: .4; }
 .btn.ghost { background-color: transparent; border-color: var(--line2); }
 .btn.ghost:hover { border-color: var(--line3); }
-.btn.danger { background-color: transparent; border-color: var(--line2); color: var(--muted); margin-top: 18px; }
+.btn.danger { background-color: transparent; border-color: var(--line2); color: var(--muted); }
+#quit { margin-top: 18px; }
 .btn.danger:hover { color: var(--strong); border-color: var(--strong); }
 .btn.small { padding: 6px 13px; font-size: 12px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
@@ -1384,7 +1385,6 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .09s linear infinite; 
 /* a LAN device's technical settings, folded away under "Advanced" */
 .dev-adv .adv-body { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 .dev-card .btn-row { margin-top: 6px; align-items: center; }
-.dev-card .btn-row .btn.danger { margin-top: 0; }
 .chip.has-off { cursor: pointer; }
 .chip.has-off:hover { border-color: var(--line3); }
 .chip-pop {
