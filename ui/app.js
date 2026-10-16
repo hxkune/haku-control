@@ -1675,16 +1675,26 @@ function lightBar(c, x, y, w, h, cols, vertical) {
   }
 }
 
-function drawRam(c, X, Y, W, H) {
-  const d = devicePixelRatio, sw = Math.min(W / 4.2, 46 * d), sh = Math.min(H * 0.86, 150 * d), gap = sw * 0.55;
-  const x0 = X + (W - (sw * 2 + gap)) / 2, y0 = Y + (H - sh) / 2;
-  for (let s = 0; s < 2; s++) {
-    const x = x0 + s * (sw + gap);
-    c.fillStyle = BODY; c.fillRect(x, y0, sw, sh);
-    c.strokeStyle = EDGE; c.lineWidth = d; c.strokeRect(x + d / 2, y0 + d / 2, sw - d, sh - d);
-    const cols = [...Array(8)].map((_, i) => F.ram[s][i] || OFF);
-    lightBar(c, x + sw * 0.26, y0 + sh * 0.05, sw * 0.48, sh * 0.9, cols, true);
+// A memory stick seen from the front, lying down: the board, its light along the top, the pins along the bottom.
+function ramStick(c, x, y, w, h, cols) {
+  const d = devicePixelRatio;
+  c.fillStyle = BODY; c.fillRect(x, y, w, h);
+  c.strokeStyle = EDGE; c.lineWidth = d; c.strokeRect(x + d / 2, y + d / 2, w - d, h - d);
+  lightBar(c, x + w * 0.03, y + h * 0.1, w * 0.94, h * 0.2, cols, false);
+  const py = y + h * 0.8, notch = x + w * 0.56;   // the key notch sits off centre
+  c.strokeStyle = 'rgba(255,255,255,.16)'; c.lineWidth = Math.max(1, w / 140);
+  for (let i = 0, m = Math.round(w / (4 * d)); i < m; i++) {
+    const px = x + w * 0.05 + (w * 0.9) * i / (m - 1);
+    if (Math.abs(px - notch) < w * 0.018) continue;
+    c.beginPath(); c.moveTo(px, py); c.lineTo(px, y + h - 2 * d); c.stroke();
   }
+}
+
+function drawRam(c, X, Y, W, H) {
+  const d = devicePixelRatio, m = Math.min(4, Math.max(1, S.sticks || 2));
+  const sw = Math.min(W * 0.9, 300 * d), sh = Math.min(sw * 0.24, H * 0.9 / (m * 1.35));
+  const gap = sh * 0.35, x = X + (W - sw) / 2, y0 = Y + (H - (sh * m + gap * (m - 1))) / 2;
+  for (let s = 0; s < m; s++) ramStick(c, x, y0 + s * (sh + gap), sw, sh, [...Array(8)].map((_, i) => (F.ram[s] || [])[i] || OFF));
 }
 
 function drawGpu(c, X, Y, W, H) {
@@ -1820,6 +1830,63 @@ function drawNano(c, X, Y, W, H, N) {
 const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse', 'keylight', 'gate', 'frame'];
 const bulbType = i => { const v = cv('zone.light' + (i + 1), 'type', 'bulb'); return FIXTURES.includes(v) ? v : 'bulb'; };
 
+// the mouse traced off the reference picture, in its own 360 px space
+function mouseShell(c) {   // the whole silhouette: the curled left button, the wheel notch, the right button, the back
+  c.beginPath(); c.moveTo(120, 107); c.lineTo(188, 28);
+  c.quadraticCurveTo(195, 18, 210, 19);
+  c.bezierCurveTo(230, 21, 250, 34, 276, 40);   // the left button's wavy front edge
+  c.lineTo(262, 57); c.lineTo(281, 63); c.lineTo(287, 71); c.lineTo(296, 61);   // down into the wheel notch and up onto the right button
+  c.bezierCurveTo(315, 88, 334, 120, 322, 144);   // round the right button's front corner
+  c.bezierCurveTo(300, 175, 262, 215, 240, 243);
+  c.bezierCurveTo(232, 268, 215, 302, 178, 323);
+  c.bezierCurveTo(150, 337, 95, 336, 70, 318);
+  c.bezierCurveTo(45, 300, 35, 265, 37, 230);
+  c.bezierCurveTo(39, 190, 70, 140, 120, 107); c.closePath();
+}
+function drawMouse(c, cols, glow, px) {   // px: one device pixel in this space
+  const OFFS = '#2a2a2a', blur = devicePixelRatio;
+  mouseShell(c); c.fillStyle = '#1b1b1b'; c.fill();
+  c.save(); mouseShell(c); c.clip();
+  const shade = (f, x0, y0, x1, y1) => {   // the grey shading where the shell turns away: left of the thumb strip, and down the right flank
+    const s = c.createLinearGradient(x0, y0, x1, y1);
+    s.addColorStop(0, 'rgba(255,255,255,.2)'); s.addColorStop(1, 'rgba(255,255,255,.08)');
+    c.beginPath(); f(); c.fillStyle = s; c.fill();
+  };
+  shade(() => { c.moveTo(120, 107); c.bezierCurveTo(70, 140, 39, 190, 37, 230); c.lineTo(33, 226);
+    c.bezierCurveTo(52, 290, 80, 175, 122, 108); }, 40, 230, 110, 120);
+  shade(() => { c.moveTo(242, 240); c.bezierCurveTo(232, 268, 215, 302, 178, 323); c.lineTo(174, 320);
+    c.bezierCurveTo(200, 292, 218, 262, 242, 240); }, 230, 260, 180, 320);
+  c.restore();
+  mouseShell(c); c.strokeStyle = EDGE; c.lineWidth = px; c.stroke();
+  const strip = (P, w0, w1, cs) => {   // thick at one end, thin at the other, so it reads as wrapping round the shell
+    const at = t => { const u = 1 - t; return [0, 1].map(k => u * u * u * P[k] + 3 * u * u * t * P[2 + k] + 3 * u * t * t * P[4 + k] + t * t * t * P[6 + k]); };
+    const a = [], b = [];
+    for (let i = 0; i <= 40; i++) {
+      const t = i / 40, p = at(t), q = at(Math.min(1, t + 0.01)), o = at(Math.max(0, t - 0.01));
+      const dx = q[0] - o[0], dy = q[1] - o[1], r = (w0 + (w1 - w0) * Math.sin(t * Math.PI / 2)) / 2 / Math.hypot(dx, dy);
+      a.push([p[0] - dy * r, p[1] + dx * r]); b.unshift([p[0] + dy * r, p[1] - dx * r]);
+    }
+    const s = c.createLinearGradient(P[0], P[1], P[6], P[7]);
+    cs.forEach((k, i) => s.addColorStop(cs.length > 1 ? i / (cs.length - 1) : 0, glow ? k : OFFS));
+    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 8 * blur; }
+    c.beginPath(); a.concat(b).forEach(([x, y], i) => c[i ? 'lineTo' : 'moveTo'](x, y)); c.closePath();
+    c.fillStyle = s; c.fill(); c.restore();
+  };
+  c.save(); mouseShell(c); c.clip();   // its hooked end runs off the side of the shell
+  strip([122, 108, 80, 175, 52, 290, 33, 226], 3, 8, cols);   // round the thumb, its fat end hooking back up
+  c.restore();
+  strip([296, 61, 318, 90, 336, 125, 322, 144], 7, 1.5, cols.slice().reverse());   // round the right button's front corner
+  c.save(); c.translate(229, 122); c.rotate(-0.886);   // the wheel: a ridged roller with a smooth tapered end, lying in the notch
+  const w = c.createLinearGradient(0, -12, 0, 12);
+  w.addColorStop(0, '#000'); w.addColorStop(0.25, '#4a4a4a'); w.addColorStop(0.75, '#4a4a4a'); w.addColorStop(1, '#000');   // flat, lighter than the shell, darkening to its sides
+  c.fillStyle = w; c.strokeStyle = '#000'; c.lineWidth = 1.4;
+  c.beginPath(); c.moveTo(-77, -3); c.lineTo(-17, -11); c.lineTo(-17, 11); c.lineTo(-77, 3); c.closePath(); c.fill(); c.stroke();
+  c.beginPath(); c.moveTo(-10, -12); c.lineTo(70, -12); c.quadraticCurveTo(80, 0, 70, 12); c.lineTo(-10, 12); c.closePath(); c.fill(); c.stroke();
+  c.lineWidth = 1.6;
+  for (let x = -2; x < 68; x += 7) { c.beginPath(); c.moveTo(x, -12); c.lineTo(x + 3, -3); c.stroke(); }
+  c.restore();
+}
+
 // One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
 function drawFixture(c, X, Y, W, H, type, cols, on) {
   const dp = devicePixelRatio, n = cols.length, cx = X + W / 2, cy = Y + H / 2;
@@ -1884,11 +1951,9 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
       c.beginPath(); c.arc(fx, fy, fr * 0.26, 0, 7); c.strokeStyle = 'rgba(255,255,255,.1)'; c.stroke();
     }
     lightBar(c, x + w * 0.04, y - Math.max(2 * dp, h * 0.06) - 3 * dp, w * 0.92, Math.max(2 * dp, h * 0.06), all(), false);
-  } else if (type === 'ram') {   // a memory stick: the board with its pins, the light along its top
-    const h = H * 0.9, w = Math.max(6 * dp, Math.min(h * 0.17, W * 0.3)), x = cx - w / 2, y = cy - h / 2;
-    box(x, y + h * 0.32, w, h * 0.68);
-    for (let i = 1; i < 5; i++) line([[x + w * i / 5, y + h - h * 0.06], [x + w * i / 5, y + h - 2 * dp]], .18);
-    lightBar(c, x + w * 0.18, y, w * 0.64, h * 0.3, all(), true);
+  } else if (type === 'ram') {   // a memory stick lying down, seen from the front
+    const w = Math.min(W * 0.9, H * 3.2), h = w * 0.24;
+    ramStick(c, cx - w / 2, cy - h / 2, w, h, all());
   } else if (type === 'board') {   // a motherboard: socket, slots, the light down one edge
     const s = Math.min(W * 0.8, H * 0.9), x = cx - s / 2, y = cy - s / 2;
     box(x, y, s, s, DEEP);
@@ -1904,46 +1969,67 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
     c.restore();
     for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; line([[cx + Math.cos(a) * r * 0.26, cy + Math.sin(a) * r * 0.26], [cx + Math.cos(a + .55) * r * 0.78, cy + Math.sin(a + .55) * r * 0.78]], .1); }
     c.beginPath(); c.arc(cx, cy, r * 0.24, 0, 7); c.fillStyle = BODY; c.fill(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
-  } else if (type === 'keyboard') {   // a keyboard: square keys lit by their LEDs
-    const w = Math.min(W * 0.95, H * 3.2), h = w * 0.33, x = cx - w / 2, y = cy - h / 2, cols_ = 15, rows = 5;
+  } else if (type === 'keyboard') {   // a keyboard: rows of keys at their real widths, lit by their LEDs
+    const w = Math.min(W * 0.95, H * 2.9), h = w * 0.36, x = cx - w / 2, y = cy - h / 2, p = w * 0.025;
+    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; } box(x, y, w, h, DEEP); c.restore();
     box(x, y, w, h, DEEP);
-    const kw = (w - 6 * dp) / cols_, kh = (h - 6 * dp) / rows;
-    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 16 * dp; }
-    for (let r = 0; r < rows; r++) for (let k = 0; k < cols_; k++) {
-      const i = n <= 24 ? Math.floor(k * Math.max(n, 1) / cols_) : Math.floor((r * cols_ + k) * Math.max(n, 1) / (rows * cols_)), kc = col(i);
-      c.fillStyle = lit1(kc) ? kc : '#1d1d1d'; c.fillRect(x + 3 * dp + k * kw + kw * 0.12, y + 3 * dp + r * kh + kh * 0.14, kw * 0.76, kh * 0.72);
-    }
-    c.restore();
-  } else if (type === 'gate') {   // Divoom Times Gate: five screens in a cross
-    const u = Math.min(W / 3.6, H / 3.6), k = col(0), on1 = lit1(k);
-    [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]].forEach(([dx, dy]) => {
-      const x = cx + dx * u * 1.1 - u / 2, y = cy + dy * u * 1.1 - u / 2;
-      c.save(); if (on1) { c.shadowColor = k; c.shadowBlur = 16 * dp; }
-      c.fillStyle = DEEP; c.fillRect(x, y, u, u); c.strokeStyle = on1 ? k : EDGE; c.lineWidth = 1.5 * dp; c.strokeRect(x, y, u, u); c.restore();
+    // widths in key units, 15 to a row; the top row is the function row with its gaps
+    const ROWS = [[1, .5, 1, 1, 1, 1, .5, 1, 1, 1, 1, .5, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], [1.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.5],
+      [1.75, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.25], [2.25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.75], [1.25, 1.25, 1.25, 6.25, 1.25, 1.25, 1.25, 1.25]];
+    const u = (w - p * 2) / 15, rh = (h - p * 2) / ROWS.length;
+    ROWS.forEach((row, r) => {
+      let kx = x + p;
+      const ky = y + p + r * rh + (r ? rh * 0.1 : 0), kh = rh * (r ? 0.8 : 0.66);
+      row.forEach(ku => {
+        if (!(r === 0 && ku === .5)) {
+          const f = (kx + ku * u / 2 - x - p) / (w - p * 2);   // where this key sits across the board
+          const i = n <= 24 ? Math.floor(f * Math.max(n, 1)) : Math.floor(((r + f) / ROWS.length) * n), kc = col(Math.min(i, n - 1));
+          c.fillStyle = lit1(kc) ? kc : '#1d1d1d'; c.fillRect(kx + u * 0.08, ky, ku * u - u * 0.16, kh);
+          if (lit1(kc)) { c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(kx + u * 0.2, ky + kh * 0.14, ku * u - u * 0.4, kh * 0.6); }   // the keycap top over the glow
+        }
+        kx += ku * u;
+      });
     });
-  } else if (type === 'frame') {   // Divoom Times Frame: a clear screen on a foot, lit around the edge
-    const w = Math.min(W * 0.8, H * 1.35), h = w * 0.62, x = cx - w / 2, y = cy - h / 2 - H * 0.04, k = col(0), on1 = lit1(k);
-    line([[cx - w * 0.2, y + h + 4 * dp], [cx + w * 0.2, y + h + 4 * dp]], .25, 2);
-    c.save(); if (on1) { c.shadowColor = k; c.shadowBlur = 18 * dp; }
-    c.strokeStyle = on1 ? k : EDGE; c.lineWidth = 2.5 * dp; c.strokeRect(x, y, w, h); c.restore();
-    c.fillStyle = 'rgba(20,24,28,.85)'; c.fillRect(x + 5 * dp, y + 5 * dp, w - 10 * dp, h - 10 * dp);
-  } else if (type === 'keylight') {   // a key light: a flat panel on a pole
-    const h = H * 0.86, pw = Math.min(W * 0.6, h * 0.9), ph = pw * 0.6, top = cy - h / 2, k = col(0), on1 = lit1(k);
-    line([[cx, top + ph], [cx, top + h]], .2, 1.5);
-    line([[cx - pw * 0.25, top + h - dp], [cx + pw * 0.25, top + h - dp]], .25, 2);
-    c.save(); if (on1) { c.shadowColor = k; c.shadowBlur = 26 * dp; }
-    c.fillStyle = BODY; c.fillRect(cx - pw / 2, top, pw, ph); c.restore();
-    const g = c.createLinearGradient(0, top, 0, top + ph); g.addColorStop(0, on1 ? k : '#1d1d1d'); g.addColorStop(1, on1 ? '#fff' : '#1d1d1d');
-    c.fillStyle = g; c.fillRect(cx - pw / 2 + 3 * dp, top + 3 * dp, pw - 6 * dp, ph - 6 * dp);
-    c.strokeStyle = EDGE; c.lineWidth = dp; c.strokeRect(cx - pw / 2, top, pw, ph);
-  } else if (type === 'mouse') {   // a mouse from above: its shape, the button split, a lit logo
-    const h = Math.min(H * 0.85, W * 1.2), w = h * 0.6, x = cx - w / 2, y = cy - h / 2;
-    const shape = () => { c.beginPath(); c.moveTo(cx, y); c.bezierCurveTo(x + w * 1.02, y, x + w, y + h * 0.42, x + w * 0.98, y + h * 0.62); c.bezierCurveTo(x + w * 0.96, y + h * 0.9, x + w * 0.72, y + h, cx, y + h); c.bezierCurveTo(x + w * 0.28, y + h, x + w * 0.04, y + h * 0.9, x + w * 0.02, y + h * 0.62); c.bezierCurveTo(x, y + h * 0.42, x - w * 0.02, y, cx, y); c.closePath(); };
-    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 22 * dp; } shape(); c.fillStyle = BODY; c.fill(); c.restore();
-    shape(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
-    line([[cx, y], [cx, y + h * 0.38]]); line([[x + w * 0.03, y + h * 0.38], [x + w * 0.97, y + h * 0.38]], .08);
-    c.fillStyle = lit1(col(0)) ? col(0) : '#262626'; c.fillRect(cx - 1.5 * dp, y + h * 0.12, 3 * dp, h * 0.12);
-    diamond(cx, y + h * 0.68, w * 0.1, col(Math.floor(n / 2)));
+  } else if (type === 'gate') {   // Divoom Times Gate: five square screens in a row on one bar, on two feet
+    const k = col(0), on1 = lit1(k), w = Math.min(W * 0.94, H * 3.6), u = (w - 14 * dp) / 5.4, bh = u + 10 * dp;
+    const x = cx - w / 2, y = cy - bh / 2 - 4 * dp;
+    c.save(); if (on1) { c.shadowColor = k; c.shadowBlur = 20 * dp; } c.fillStyle = BODY; c.fillRect(x, y, w, bh); c.restore();
+    c.strokeStyle = EDGE; c.lineWidth = dp; c.strokeRect(x + dp / 2, y + dp / 2, w - dp, bh - dp);
+    const gp = (w - 10 * dp - u * 5) / 4;
+    for (let i = 0; i < 5; i++) {
+      const sx = x + 5 * dp + i * (u + gp), sy = y + 5 * dp;
+      c.fillStyle = DEEP; c.fillRect(sx, sy, u, u);
+      if (on1) {
+        const g = c.createLinearGradient(0, sy, 0, sy + u); g.addColorStop(0, k); g.addColorStop(1, 'rgba(0,0,0,0)');
+        c.globalAlpha = 0.55; c.fillStyle = g; c.fillRect(sx, sy, u, u); c.globalAlpha = 1;
+      }
+    }
+    box(x + w * 0.12, y + bh, w * 0.1, 5 * dp, '#1a1a1a'); box(x + w * 0.78, y + bh, w * 0.1, 5 * dp, '#1a1a1a');
+  } else if (type === 'frame') {   // Divoom Times Frame: a screen on a foot, its light glowing on the wall behind it
+    const k = col(0), on1 = lit1(k), w = Math.min(W * 0.66, H * 1.15), h = w * 0.62, x = cx - w / 2, y = cy - h / 2 - H * 0.05;
+    if (on1) { c.save(); c.shadowColor = k; c.shadowBlur = 48 * dp; c.fillStyle = k; for (let i = 0; i < 2; i++) c.fillRect(x + w * 0.05, y + h * 0.08, w * 0.9, h * 0.84); c.restore(); }
+    box(cx - 2 * dp, y + h, 4 * dp, H * 0.08, '#1f1f1f');
+    box(cx - w * 0.18, y + h + H * 0.08, w * 0.36, 4 * dp, '#1a1a1a');
+    box(x, y, w, h, BODY);
+    c.fillStyle = DEEP; c.fillRect(x + 4 * dp, y + 4 * dp, w - 8 * dp, h - 8 * dp);
+  } else if (type === 'keylight') {   // Elgato Key Light: an LED panel up on a tall pole and clamp, white only
+    const k = col(0), on1 = lit1(k), h = H * 0.94, top = cy - h / 2;
+    const pw = Math.min(W * 0.56, h * 0.75), ph = pw * 0.7, px = cx - pw / 2;
+    box(cx - 1.5 * dp, top + ph, 3 * dp, h - ph - 6 * dp, '#1f1f1f');
+    box(cx - pw * 0.16, top + h - 6 * dp, pw * 0.32, 6 * dp, '#1a1a1a');
+    c.save(); if (on1) { c.shadowColor = k; c.shadowBlur = 34 * dp; } c.fillStyle = on1 ? k : '#1b1b1b'; c.fillRect(px, top, pw, ph); c.restore();
+    // the LEDs behind the diffuser: a grid of soft dots, white hot in the middle
+    const cxs = 9, rws = 6, sx = pw / cxs, sy = ph / rws;
+    for (let r = 0; r < rws; r++) for (let q = 0; q < cxs; q++) {
+      const ex = px + sx * (q + 0.5), ey = top + sy * (r + 0.5);
+      c.fillStyle = on1 ? 'rgba(255,255,255,.7)' : 'rgba(255,255,255,.06)';
+      c.fillRect(ex - dp, ey - dp, 2 * dp, 2 * dp);
+    }
+    if (on1) { const g = c.createRadialGradient(cx, top + ph / 2, 0, cx, top + ph / 2, pw * 0.55); g.addColorStop(0, 'rgba(255,255,255,.75)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(px, top, pw, ph); }
+    c.strokeStyle = on1 ? 'rgba(0,0,0,.35)' : EDGE; c.lineWidth = 2 * dp; c.strokeRect(px + dp, top + dp, pw - 2 * dp, ph - 2 * dp);
+  } else if (type === 'mouse') {   // a gaming mouse from above, nose up-right, its RGB strips round the thumb and down the right button
+    const s = Math.min(W / 290, H / 318) * 0.95;
+    c.save(); c.translate(cx, cy); c.scale(s, s); c.translate(-181, -176); drawMouse(c, all(), glow, dp / s); c.restore();
   } else if (type === 'panels') {   // a honeycomb of hexagons
     const m = Math.min(Math.max(n, 3), 7), R = Math.min(W / (m * 1.9 + 1), H * 0.3);
     for (let i = 0; i < m; i++) {
