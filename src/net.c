@@ -7,6 +7,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
+#include <icmpapi.h>
 #include <process.h>
 #include <stdlib.h>
 
@@ -142,4 +143,58 @@ void hotspot_watch_stop(void) {
     WaitForSingleObject(hs_thread, 35000);
     CloseHandle(hs_thread); CloseHandle(hs_stop);
     hs_thread = hs_stop = NULL;
+}
+
+// ---------------------------------------------------------------- "Check connection" (a device's card)
+// Why a device doesn't answer, as far as the network can tell: "answers" (it answers a ping: the device itself
+// turns haku away), "silent" (no answer on this PC's network), "subnet" (no network of this PC holds its address),
+// "name" (not an IP address: USB, a cloud account). The window adds whether it came back meanwhile.
+static volatile LONG chk_busy;
+static int chk_id;
+static char chk_res[12];
+static unsigned chk_ms;
+
+static int same_net(ULONG a, int prefix, void *p) {
+    ULONG ip = *(ULONG *)p;
+    return prefix > 0 && prefix <= 32 && ((a ^ ip) >> (32 - prefix)) == 0;
+}
+
+static unsigned __stdcall chk_fn(void *p) {
+    char *host = p, *colon = strchr(host, ':');
+    if (colon) *colon = 0;
+    DWORD t0 = GetTickCount();
+    const char *res = "name"; unsigned ms = 0;
+    struct in_addr a;
+    if (inet_pton(AF_INET, host, &a) == 1) {
+        int pinged = 0;
+        HANDLE h = IcmpCreateFile();
+        if (h != INVALID_HANDLE_VALUE) {
+            char reply[sizeof(ICMP_ECHO_REPLY) + 32];
+            for (int i = 0; i < 3 && !pinged; i++)
+                if (IcmpSendEcho(h, a.s_addr, "haku", 4, NULL, reply, sizeof(reply), 1000) &&
+                    ((ICMP_ECHO_REPLY *)reply)->Status == IP_SUCCESS) { pinged = 1; ms = ((ICMP_ECHO_REPLY *)reply)->RoundTripTime; }
+            IcmpCloseHandle(h);
+        }
+        ULONG ip = ntohl(a.s_addr);
+        res = pinged ? "answers" : for_each_ipv4(same_net, &ip) ? "silent" : "subnet";
+    }
+    while (GetTickCount() - t0 < 5000) Sleep(200);   // the reconnect started with it has had its chance
+    logf_("dev.%d check (%s): %s", chk_id, host, res);
+    strcpy_s(chk_res, sizeof(chk_res), res); chk_ms = ms;
+    free(host);
+    InterlockedExchange(&chk_busy, 0);
+    ui_refresh();
+    return 0;
+}
+
+void net_check_start(int id, const char *host) {
+    if (InterlockedCompareExchange(&chk_busy, 1, 0) != 0) return;
+    char *h = _strdup(host);
+    chk_id = id; chk_res[0] = 0;
+    HANDLE t = h ? (HANDLE)_beginthreadex(NULL, 0, chk_fn, h, 0, NULL) : NULL;
+    if (t) CloseHandle(t); else { free(h); InterlockedExchange(&chk_busy, 0); }
+}
+
+int net_check_json(char *out, int cap) {
+    return snprintf(out, cap, "{\"id\":%d,\"busy\":%d,\"res\":\"%s\",\"ms\":%u}", chk_id, (int)chk_busy, chk_res, chk_ms);
 }

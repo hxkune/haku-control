@@ -1051,6 +1051,8 @@ static int status_body(char *out, int cap) {
     n += mood_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"ollama\":");
     n += ollama_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"netchk\":");
+    n += net_check_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"diag\":");
     n += diag_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",");

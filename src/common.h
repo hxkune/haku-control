@@ -134,6 +134,7 @@ int  nano_json(char *out, int cap);
 void ext_start(void);
 void ext_stop(void);
 void ext_reload(void);                    // [dev.*] settings changed
+void ext_retry(void);                     // the offline devices try to connect now, not after their wait
 void ext_suspend(int sleeping);
 int  ext_count(void);                     // configured devices ("slots")
 int  ext_slot_leds(int k);                // LEDs of slot k in the scene (0: disabled / not known yet)
@@ -194,6 +195,8 @@ int  net_phone_addresses(unsigned long *out, int max);   // the ones a phone can
 void hotspot_watch_start(void);
 void hotspot_watch_stop(void);
 int  hotspot_active(void);
+void net_check_start(int id, const char *host);   // "Check connection" on dev.<id>: ping, same network?
+int  net_check_json(char *out, int cap);
 
 // ---- sensors.c
 void sensors_init(void);

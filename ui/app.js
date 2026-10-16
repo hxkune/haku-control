@@ -2865,6 +2865,16 @@ function devStatus(d) {
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
 }
+// "Check connection": what the core found (S.netchk: ping / same network) and whether the device came back meanwhile
+let CHK_ID = 0;
+function chkText(d) {
+  const C = S.netchk || {}, ip = d.host.split(':')[0];
+  if (C.busy) return t('chk.busy');
+  if (!d.enabled || d.own) return devStatus(d);
+  if (d.online) return t('chk.ok');
+  return C.res === 'answers' ? t('chk.answers', ip) + (d.info ? ' (' + d.info + ')' : '') : C.res === 'silent' ? t('chk.silent', ip) :
+    C.res === 'subnet' ? t('chk.subnet', ip) : t('chk.name');
+}
 const DEV_ADV = new Set();   // devices whose "Advanced" part is open (kept when the cards are built again)
 function buildDevices() {
   if (SHEET.kind === 'ext') closeSheet();
@@ -2919,13 +2929,16 @@ function buildDevices() {
           <p class="hint">${t('own.note.dev')}</p>`}
         </div></details>
         <div class="btn-row"><button class="btn small dev-ident" title="${esc(t('dev.identify.title'))}"><span>${t('dev.identify')}</span></button>
+        ${pcDev(d) ? '' : `<button class="btn small dev-check">${t('dev.check')}</button>`}
         <button class="btn danger small dev-del">${t('dev.remove')}</button></div>
+        <p class="hint dev-chk" id="dev-chk-${d.id}" aria-live="polite"></p>
       </div>`;
     ($(`[data-brand-grid="${(brandOf(d.kind) || [])[0]}"]`) || grid).appendChild(el);
     renderZone(el.querySelector('.zone'));
     el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
     el.querySelector('.dev-adv').addEventListener('toggle', e => { e.target.open ? DEV_ADV.add(d.id) : DEV_ADV.delete(d.id); });
     el.querySelector('.dev-ident').addEventListener('click', () => send({ cmd: 'identify', zone: 'zone.dev' + d.id }));
+    el.querySelector('.dev-check')?.addEventListener('click', () => { CHK_ID = d.id; S.netchk = { id: d.id, busy: 1 }; updateDevices(); send({ cmd: 'dev_check', id: String(d.id) }); });
     el.querySelector('.dev-own')?.addEventListener('change', e => { d.own = e.target.checked ? 1 : 0; setCfg(sec, 'own', d.own); updateDevices(); drawHero(); });
     el.querySelector('.dev-name').addEventListener('change', e => {
       const v = e.target.value.replace(/[;#\[\]=]/g, '').trim(); if (!v) return;
@@ -3111,6 +3124,8 @@ function updateDevices() {
     const el = $('#dev-st-' + d.id); if (!el) return;
     el.innerHTML = `<span class="dot ${d.enabled && d.online ? 'on' : 'off'}" style="display:inline-block;margin-right:6px"></span>${esc(devStatus(d))}`;
     const own = el.closest('.card')?.querySelector('.dev-own'); if (own && own !== document.activeElement) own.checked = !!d.own;
+    const ck = $('#dev-chk-' + d.id), mine = CHK_ID === d.id && (S.netchk || {}).id === d.id;
+    if (ck) { ck.textContent = mine ? chkText(d) : ''; ck.previousElementSibling.querySelector('.dev-check')?.toggleAttribute('disabled', mine && !!S.netchk.busy); }
   });
   const btn = $('#scan-btn');
   btn.disabled = !!E.scanning;

@@ -174,6 +174,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "power") { app_power(); post_status(); }
     else if (cmd == "timed_off") { app_timed_off(atoi(field(js, "min").c_str())); post_status(); }
     else if (cmd == "identify") app_identify(field(js, "zone").c_str());
+    else if (cmd == "dev_check") { std::string id = field(js, "id"); ext_retry(); net_check_start(atoi(id.c_str()), cfg_get(("dev." + id).c_str(), "host", "")); post_status(); }
     else if (cmd == "pair") { std::string ip = field(js, "ip"); nano_pair_start_ip(ip.c_str()); post_status(); }
     else if (cmd == "preset") { app_preset_apply(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "preset_save") {

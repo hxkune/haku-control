@@ -31,7 +31,7 @@ static int     nslots;
 static rgbf    frame[EXT_MAX][EXT_MAX_LEDS];
 static int     frame_n[EXT_MAX];
 static LONG    frame_seq[EXT_MAX];
-static volatile LONG layout_new, reload_req, run, suspend_req;
+static volatile LONG layout_new, reload_req, retry_req, run, suspend_req;
 static HANDLE  th, wake, suspend_done;
 
 // discovery
@@ -199,6 +199,7 @@ static unsigned __stdcall worker(void *p) {
     while (run) {
         WaitForSingleObject(wake, 20);
         if (!run) break;
+        if (InterlockedExchange(&retry_req, 0)) for (int k = 0; k < ndevs; k++) { devs[k].next_try = GetTickCount(); devs[k].fails = 0; }
         if (InterlockedExchange(&reload_req, 0)) { load_config(); memset(seen, 0, sizeof(seen)); memset(last8, 0, sizeof(last8)); orgb_look = 1; }
         if (suspend_req) {
             int how = leave_mode();
@@ -319,6 +320,7 @@ void ext_stop(void) {
 }
 
 void ext_reload(void) { InterlockedExchange(&reload_req, 1); if (wake) SetEvent(wake); }
+void ext_retry(void) { InterlockedExchange(&retry_req, 1); if (wake) SetEvent(wake); }
 
 void ext_suspend(int sleeping) {
     if (!th) return;
