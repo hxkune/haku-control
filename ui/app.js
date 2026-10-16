@@ -1659,7 +1659,7 @@ function avgColor(list) {
 
 const EDGE = 'rgba(255,255,255,.13)', BODY = '#161616', DEEP = '#0d0d0d';
 // A diffuser bar: the colours blend like a real light bar, a hot core down its middle.
-function lightBar(c, x, y, w, h, cols, vertical) {
+function lightBar(c, x, y, w, h, cols, vertical, flat) {
   const g = vertical ? c.createLinearGradient(0, y + h, 0, y) : c.createLinearGradient(x, 0, x + w, 0);
   const n = cols.length;
   cols.forEach((col, i) => g.addColorStop(n > 1 ? i / (n - 1) : 0, col || OFF));
@@ -1668,7 +1668,7 @@ function lightBar(c, x, y, w, h, cols, vertical) {
   if (glow) { c.shadowColor = glow; c.shadowBlur = 22 * devicePixelRatio; }
   c.fillStyle = g; c.fillRect(x, y, w, h);
   c.restore();
-  if (glow) {   // a hot white core down the middle, like a lit diffuser
+  if (glow && !flat) {   // a hot white core down the middle, like a lit diffuser
     const s = vertical ? c.createLinearGradient(x, 0, x + w, 0) : c.createLinearGradient(0, y, 0, y + h);
     s.addColorStop(0, 'rgba(255,255,255,0)'); s.addColorStop(.5, 'rgba(255,255,255,.38)'); s.addColorStop(1, 'rgba(255,255,255,0)');
     c.fillStyle = s; c.fillRect(x, y, w, h);
@@ -1680,7 +1680,8 @@ function ramStick(c, x, y, w, h, cols) {
   const d = devicePixelRatio;
   c.fillStyle = BODY; c.fillRect(x, y, w, h);
   c.strokeStyle = EDGE; c.lineWidth = d; c.strokeRect(x + d / 2, y + d / 2, w - d, h - d);
-  lightBar(c, x, y, w, h * 0.24, cols, false);   // the light runs the whole top edge
+  const i = h * 0.07;   // the light sits inside the stick's outline
+  lightBar(c, x + i, y + i, w - 2 * i, h * 0.18, cols, false, true);   // the light runs the whole top edge, flat so it doesn't read as a sticker
   const py = y + h * 0.8, notch = x + w * 0.56;   // the key notch sits off centre
   c.strokeStyle = 'rgba(255,255,255,.16)'; c.lineWidth = Math.max(1, w / 140);
   for (let i = 0, m = Math.round(w / (4 * d)); i < m; i++) {
