@@ -120,12 +120,17 @@ int cfg_palette(const char *section, rgbf *out, int max) {
     return n;
 }
 
-static void save(void) {
-    FILE *f = _wfopen(path_w, L"wb");
-    if (!f) return;
+// the old file stays whole until the new one is (a full disk or a failing drive part way through); 0: not saved
+static int save(void) {
+    wchar_t tmp[MAX_PATH]; swprintf(tmp, MAX_PATH, L"%s.new", path_w);
+    FILE *f = _wfopen(tmp, L"wb");
+    if (!f) return 0;
     for (int i = 0; i < nlines; i++) fprintf(f, "%s\r\n", lines[i]);
-    fclose(f);
+    int ok = !ferror(f);
+    if (fclose(f)) ok = 0;
+    if (!ok || !MoveFileExW(tmp, path_w, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { DeleteFileW(tmp); return 0; }
     last_write = file_time();
+    return 1;
 }
 
 static int dirty;
@@ -221,10 +226,12 @@ int cfg_sections(const char *prefix, char (*out)[64], int max) {
     return n;
 }
 
-void cfg_save_if_dirty(void) {
+int cfg_save_if_dirty(void) {
     AcquireSRWLockExclusive(&lock);
-    if (dirty) { save(); dirty = 0; }
+    int ok = 1;
+    if (dirty && (ok = save())) dirty = 0;   // not saved: tried again on the next change
     ReleaseSRWLockExclusive(&lock);
+    return ok;
 }
 
 void cfg_set_and_save(const char *section, const char *key, const char *value) {

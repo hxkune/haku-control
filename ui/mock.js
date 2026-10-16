@@ -16,7 +16,7 @@ const LAYOUTS = {
   blocks: mockLayout(33, [[251, 301, 0], [251, 167, 0], [117, 100, 0], [251, 33, 0], [151, 0, 0, 34], [84, 0, 0, 34], [117, 301, 0], [151, 201, 0, 34], [84, 201, 0, 34]]
     .map(([x, y, o, sh]) => [-x, -y, o, sh])),
 };
-const emit = d => L.forEach(f => f({ data: d }));
+const emit = d => L.forEach(f => f({ data: d === STATE ? JSON.parse(JSON.stringify(d)) : d }));   // the state as a copy, as the core sends it
 window.chrome = { webview: {
   postMessage(s) {
     const o = JSON.parse(s); console.log('->', o);
@@ -30,7 +30,8 @@ window.chrome = { webview: {
     if (o.cmd === 'report') setTimeout(() => { STATE.diag = { busy: 0, ok: -1, file: '', report: { busy: 0, ok: o.text.includes('fail') ? 0 : 1, id: '3fa2c9d01e', err: o.text.includes('fail') ? 'offline' : '' } }; emit(STATE); }, 900);
     if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'dev_check') { STATE.netchk = { id: +o.id, busy: 1, res: '' }; emit(STATE); setTimeout(() => { STATE.netchk = { id: +o.id, busy: 0, res: o.id % 2 ? 'silent' : 'answers', ms: 0 }; emit(STATE); }, 1500); }
-    if (o.cmd === 'profile') { G.profile = o.id; setTimeout(() => emit(STATE), 120); }
+    if (o.cmd === 'profile') { G.profile = o.id; STATE.prof_why = 1; setTimeout(() => emit(STATE), 120); }
+    if (o.cmd === 'profile_dup') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'profile_save') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; G.profile = String(n); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'profile_delete') { delete C['profile.' + o.id]; if (G.profile === o.id) G.profile = ''; setTimeout(() => emit(STATE), 60); }
   },

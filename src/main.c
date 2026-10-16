@@ -4,6 +4,7 @@
 // One render thread computes frames; a second thread feeds the (slower) SMBus RAM sticks.
 // Unchanged frames are not sent, and the loop slows down to 5 Hz while nothing changes.
 #include "devices.h"   // common.h, and https_download / sha256_hex
+#include "xfade.h"
 #include <shellapi.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -115,6 +116,7 @@ static float    brightness = 1.0f;
 static volatile LONG cfg_gen;         // bumps on every settings change (the Nanoleaf loop is baked again)
 static int      prev_effect = 0;
 static scene_t  scene;
+static int      scene_unit[MAX_ZONES];   // with the scene: what each zone is (a LAN device's [dev.N] id), for the blend
 static int      gpu_leds = 8, gpu_rev, ram_rev, ram_swap, board_led = 1, ram_on = 1, gpu_on = 1, lights_on = 1, nano_on[NANO_MAX], light_on[8];
 // Colour correction for the PWM-driven LEDs (RAM, GPU block, board): colours are sRGB-like, the LEDs are linear,
 // so they get a gamma curve; plus a per-device white balance ([calibration] ram_warmth / gpu_warmth, -100..100).
@@ -216,6 +218,8 @@ static void build_scene(void) {
 
     static scene_t s;   // big: not on the stack
     memset(&s, 0, sizeof(s));
+    int unit[MAX_ZONES];
+    for (int z = 0; z < MAX_ZONES; z++) unit[z] = z;
     int total = sticks * 8 + glit;
     if (total == 0) total = 1;
     int k = 0;
@@ -267,6 +271,7 @@ static void build_scene(void) {
         char ty[12]; ext_slot_type(k, ty, sizeof(ty));
         float ry = rows > 1 ? 0.3f + 0.6f * row / (rows - 1) : 0.6f, rx = rows > 1 ? 0.15f + 0.7f * row / (rows - 1) : 0.5f;
         row++;
+        unit[ZONE_EXT0 + k] = ext_slot_id(k);
         for (int i = 0; i < n && s.count < MAX_LEDS - 1; i++) {
             led_t *l = &s.leds[s.count++];
             float f = n > 1 ? (float)i / (n - 1) : 0.5f;
@@ -289,7 +294,7 @@ static void build_scene(void) {
         led_t *l = &s.leds[s.count++];
         l->dev = DEV_BOARD; l->index = 0; l->zone = ZONE_GPU; l->x = 0.2f; l->y = 0.5f; l->fill = 0.5f; l->path = 0.5f; l->zpath = 0.5f;
     }
-    EnterCriticalSection(&cs); scene = s; LeaveCriticalSection(&cs);
+    EnterCriticalSection(&cs); scene = s; memcpy(scene_unit, unit, sizeof(unit)); LeaveCriticalSection(&cs);
 }
 
 static void load_config(void) {
@@ -387,13 +392,13 @@ static unsigned __stdcall render_thread(void *p) {
 
         sensors_t sn; sensors_poll(&sn, effects_need_gpu_temp() || cur_effect == effect_index("temperature"), effects_need_audio() || cur_effect == effect_index("audio"));
         last_sensors = sn;
-        static scene_t sc;
-        static rgbf xf_from[MAX_LEDS]; static led_t xf_led[MAX_LEDS]; static int xf_n; static DWORD xf_at;
+        static scene_t sc; static int sc_unit[MAX_ZONES];
+        static xfade_t xf; static DWORD xf_at;
         if (InterlockedExchange(&xfade_req, 0)) {   // the frame just sent (the old profile) is where the blend starts
-            xf_n = sc.count; memcpy(xf_from, out, xf_n * sizeof(rgbf)); memcpy(xf_led, sc.leds, xf_n * sizeof(led_t)); xf_at = GetTickCount() | 1;
+            xf_take(&xf, &sc, sc_unit, out); xf_at = GetTickCount() | 1;
         }
         EnterCriticalSection(&cs);
-        sc.count = scene.count; memcpy(sc.leds, scene.leds, scene.count * sizeof(led_t));
+        sc.count = scene.count; memcpy(sc.leds, scene.leds, scene.count * sizeof(led_t)); memcpy(sc_unit, scene_unit, sizeof(sc_unit));
         int fx = cur_effect; float br = brightness;
         DWORD tk = GetTickCount();
         if (off_at) {
@@ -417,7 +422,8 @@ static unsigned __stdcall render_thread(void *p) {
         if (xk >= 1) xf_at = 0; else xk = xk * xk * (3 - 2 * xk);
         for (int i = 0; i < sc.count; i++) {
             rgbf c = scalec(out[i], br);
-            if (xk < 1 && i < xf_n && xf_led[i].dev == sc.leds[i].dev && xf_led[i].index == sc.leds[i].index) c = mixc(xf_from[i], c, xk);   // (an LED new to this profile just starts)
+            const rgbf *was = xk < 1 ? xf_from(&xf, &sc.leds[i], sc_unit) : NULL;
+            if (was) c = mixc(*was, c, xk);   // (an LED new to this profile just starts)
             if (sc.leds[i].zone == iz) c.r = c.g = c.b = iblink ? 1.0f : 0.0f;
             if (cm == 2) c.r = c.g = c.b = 0.8f;
             else if (cm == 1 && sc.leds[i].zone == cz) {
@@ -761,12 +767,16 @@ static int profile_load(int id) {
     return 1;
 }
 
-static void profile_apply(int id) {
+// why the profile in use came on: 1 chosen by hand, 2 its time, 3 its program runs (0: not known, e.g. since the app started)
+static int prof_why;
+
+static void profile_apply(int id, int why) {
     if (!profile_exists(id)) return;
     InterlockedExchange(&xfade_req, 1);   // before the new setup reaches the render thread, so it blends from the old one
     int cur = cfg_geti("general", "profile", 0);
     if (cur != id && profile_exists(cur)) profile_capture(cur);   // the one in use keeps what was changed in it
     if (!profile_load(id)) return;
+    prof_why = why;
     char pre[16]; snprintf(pre, sizeof(pre), "%s", cfg_get("general", "preset", ""));
     int fx = effect_index(cfg_get("general", "effect", "flow"));
     set_brightness_ex(clampf(cfg_getf("general", "brightness", 100) / 100.0f, 0.05f, 1), 0);
@@ -785,7 +795,7 @@ static void profile_apply(int id) {
 // ---- profiles switched by programs: [profile.N] apps = exe names, comma-separated. While one of them runs, its
 // profile is in use (the lowest number wins); once none runs, the profile used before comes back. A profile chosen by
 // hand while that program runs is kept until the program has closed (auto_skip).
-static int auto_on, auto_prev, auto_skip;
+static int auto_on, auto_prev, auto_prev_why, auto_skip;
 
 static int auto_match(void) {
     char apps[PROFILE_MAX + 1][256]; int any = 0;
@@ -821,23 +831,29 @@ static void auto_tick(void) {
     if (!m) {
         if (auto_on && cur == auto_on && auto_prev != auto_on && profile_exists(auto_prev)) {
             logf_("auto profile: its program closed, back to %d", auto_prev);
-            profile_apply(auto_prev);
+            profile_apply(auto_prev, auto_prev_why);
         }
         auto_on = auto_skip = 0;
         return;
     }
     if (m == auto_on || m == auto_skip) return;
-    if (!auto_on) auto_prev = cur;
+    if (!auto_on) { auto_prev = cur; auto_prev_why = prof_why; }
     auto_on = m;
-    if (m != cur) { logf_("auto profile: %d, its program runs", m); profile_apply(m); }
+    if (m != cur) { logf_("auto profile: %d, its program runs", m); profile_apply(m, 3); }
 }
 
-// chosen by hand (window, tray, hotkey, phone): wins over a program's profile until that program closes
-void app_profile_apply(int id) {
+// chosen by hand (window, tray, hotkey, phone) or by the clock: wins over a program's profile until that program closes
+static void profile_pick(int id, int why) {
     if (auto_on) { auto_skip = auto_on; auto_on = 0; }
-    profile_apply(id);
+    profile_apply(id, why);
 }
-// ---- profiles by the clock: [profile.N] at = HH:MM, every day. At that minute it comes on as if chosen by hand.
+void app_profile_apply(int id) { profile_pick(id, 1); }
+
+// [general] auto_pause = 1: no profile comes on by itself (programs, clock) until it is cleared
+static int auto_paused(void) { return cfg_geti("general", "auto_pause", 0) != 0; }
+
+// ---- profiles by the clock: [profile.N] at = HH:MM, on the days in days= (1 Monday .. 7 Sunday; none: every day),
+// unless at_off = 1. At that minute it comes on as if chosen by hand; two at the same minute: the lowest number wins.
 // (a minute the PC slept through or the app wasn't running is skipped, not caught up)
 static void sched_tick(void) {
     static int last = -1;
@@ -845,12 +861,14 @@ static void sched_tick(void) {
     int now = t.wHour * 60 + t.wMinute, was = last;
     if (now == last) return;
     last = now;
-    if (was < 0) return;   // the minute the app starts in doesn't count: it would undo the profile it starts with
+    if (was < 0 || auto_paused()) return;   // the minute the app starts in doesn't count: it would undo the profile it starts with
+    char day = (char)('0' + (t.wDayOfWeek ? t.wDayOfWeek : 7));
     for (int id = 1; id <= PROFILE_MAX; id++) {
         char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
-        int h, m;
-        if (profile_exists(id) && sscanf(cfg_get(sec, "at", ""), "%d:%d", &h, &m) == 2 && h * 60 + m == now) {
-            if (cfg_geti("general", "profile", 0) != id) { logf_("profile %d: its time, %02d:%02d", id, h, m); app_profile_apply(id); }
+        int h, m; const char *days = cfg_get(sec, "days", "");
+        if (profile_exists(id) && !cfg_geti(sec, "at_off", 0) && (!*days || strchr(days, day)) &&
+            sscanf(cfg_get(sec, "at", ""), "%d:%d", &h, &m) == 2 && h * 60 + m == now) {
+            if (cfg_geti("general", "profile", 0) != id) { logf_("profile %d: its time, %02d:%02d", id, h, m); profile_pick(id, 2); }
             return;
         }
     }
@@ -865,6 +883,15 @@ void app_auto_recheck(void) {
 // id 0: a new profile with the setup as it is now, which becomes the one in use (the profile used before keeps
 // what it had when it was last left); else rewrites profile id with the setup as it is now.
 // Returns its number (0: all PROFILE_MAX are taken).
+// [profile.N] name: what was given (else the one it has, else "Profile N"), without what would break the file
+static const char *profile_name(const char *sec, int id, const char *name) {
+    char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(sec, "name", ""));
+    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
+    if (!nm[0]) snprintf(nm, sizeof(nm), "Profile %d", id);
+    cfg_set(sec, "name", nm);
+    return cfg_get(sec, "name", "");
+}
+
 int app_profile_save(int id, const char *name) {
     char sec[24];
     if (!profile_exists(id)) {
@@ -873,16 +900,38 @@ int app_profile_save(int id, const char *name) {
         if (!id) return 0;
     }
     snprintf(sec, sizeof(sec), "profile.%d", id);
-    char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(sec, "name", ""));
-    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
-    if (!nm[0]) snprintf(nm, sizeof(nm), "Profile %d", id);
-    cfg_set(sec, "name", nm);
+    const char *nm = profile_name(sec, id, name);
     profile_capture(id);
     char v[8]; snprintf(v, sizeof(v), "%d", id);
     cfg_set("general", "profile", v);
+    prof_why = 1;
     cfg_save_if_dirty();
     PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
     logf_("profile %d saved: %s", id, nm);
+    return id;
+}
+
+// a new profile with what profile src has (the one in use: as it is now), not its hotkey, programs or time.
+// Returns its number (0: src is gone, all PROFILE_MAX are taken, or its file can't be copied).
+int app_profile_dup(int src, const char *name) {
+    static cfg_item it[64];
+    int id = 0;
+    for (int i = 1; i <= PROFILE_MAX && !id; i++) if (!profile_exists(i)) id = i;
+    if (!profile_exists(src) || !id) return 0;
+    if (src == cfg_geti("general", "profile", 0)) profile_capture(src);
+    wchar_t from[MAX_PATH], to[MAX_PATH]; profile_file(src, from); profile_file(id, to);
+    if (!CopyFileW(from, to, FALSE)) { logf_("profile %d: can't copy its file", src); return 0; }
+    char ss[24], sec[24]; snprintf(ss, sizeof(ss), "profile.%d", src); snprintf(sec, sizeof(sec), "profile.%d", id);
+    static const char *own[] = { "name", "hotkey", "apps", "at", "days", "at_off", "pin" };
+    int n = cfg_items(ss, it, 64);
+    for (int i = 0; i < n; i++) {
+        int skip = 0;
+        for (int k = 0; k < (int)(sizeof(own) / sizeof(own[0])); k++) skip |= !_stricmp(it[i].key, own[k]);
+        if (!skip) cfg_set(sec, it[i].key, it[i].val);
+    }
+    profile_name(sec, id, name);
+    cfg_save_if_dirty();
+    logf_("profile %d: a copy of %d", id, src);
     return id;
 }
 
@@ -890,7 +939,7 @@ void app_profile_delete(int id) {
     char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
     cfg_remove_section(sec);
     wchar_t p[MAX_PATH]; profile_file(id, p); DeleteFileW(p);
-    if (cfg_geti("general", "profile", 0) == id) cfg_set("general", "profile", "");   // the setup stays as it is
+    if (cfg_geti("general", "profile", 0) == id) { cfg_set("general", "profile", ""); prof_why = 0; }   // the setup stays as it is
     cfg_save_if_dirty();
     PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
 }
@@ -1032,12 +1081,13 @@ static void pawnio_setup(void) {
     ui_refresh();
 }
 
+volatile LONG g_state_rev;
 static int status_body(char *out, int cap) {
     char gt[16] = "null";
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"off_in\":%d,\"bulbs\":[",
+    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"rev\":%ld,\"bulbs\":[",
                      g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, app_pc_own_now(),
-                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0);
+                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, g_state_rev);
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
@@ -1131,6 +1181,7 @@ void app_set(const char *s, const char *k, const char *v) {
     SetTimer(hwnd, SAVE_TIMER, 500, NULL);
     if (!_stricmp(s, "general") && !_stricmp(k, "fps")) { int f = atoi(v); fps = f < 5 ? 5 : f > 60 ? 60 : f; }
     if (!_stricmp(s, "hotkeys") || !_stricmp(s, "general") || !_strnicmp(s, "profile.", 8)) PostMessageW(hwnd, WM_REHOTKEY, 0, 0);   // also refreshes the tray tip (language)
+    if (!_stricmp(s, "general") && !_stricmp(k, "auto_pause") && atoi(v) == 0) app_auto_recheck();   // resumed: a running program's profile comes on now
     if (!_strnicmp(s, "nanoleaf", 8) && (!_stricmp(k, "rotate") || !_stricmp(k, "flip"))) nano_relayout();
     if (cfg_geti("general", "preset", 0) && (!_strnicmp(s, "zone.", 5) && _stricmp(k, "type") ? 1 :
         !_stricmp(s, g_effects[cur_effect].id) && (!_stricmp(k, "palette") || !_stricmp(k, "speed")))) cfg_set("general", "preset", "");
@@ -1342,7 +1393,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER:
         if (wp == SAVE_TIMER) { KillTimer(h, SAVE_TIMER); cfg_save_if_dirty(); }
-        if (wp == AUTO_TIMER) { auto_tick(); sched_tick(); }
+        if (wp == AUTO_TIMER) { if (!auto_paused()) auto_tick(); sched_tick(); }
         return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: swap the tray icon

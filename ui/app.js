@@ -42,12 +42,12 @@ let dragging = false;
 const cv = (s, k, d) => { const x = S.cfg[s]; return x && x[k] != null && x[k] !== '' ? x[k] : d; };
 function setCfg(s, k, v) {
   v = String(v);
-  if (!cfgDepth) undoPush(s, k, cv(s, k, ''));
+  undoPush(s, k, cv(s, k, ''));
+  pendingSets.delete(s + '\u0001' + k);   // a value still waiting to go would land after this one
   (S.cfg[s] = S.cfg[s] || {})[k] = v;
   send({ cmd: 'set', s, k, v });
-  cfgDepth++; groupSpread(s, k, v, setCfg); cfgDepth--;
+  groupSpread(s, k, v, setCfg);
 }
-let cfgDepth = 0;   // a group's look spread to its members is part of the one change
 const parsePal = str => (str || '').match(/#[0-9a-fA-F]{6}/g)?.map(x => x.toUpperCase()) || [];
 const palStr = a => a.join(', ');
 // the newer effects' own colours when none are set (as effects.c FX_DEFAULT); the others take the general palette
@@ -63,15 +63,16 @@ const effPal = id => { const p = parsePal(cv(id, 'palette')); if (p.length) retu
 const pendingSets = new Map();
 let flushTimer = 0;
 function setCfgSoon(s, k, v) {
-  if (!cfgDepth) undoPush(s, k, cv(s, k, ''));
+  undoPush(s, k, cv(s, k, ''));
   (S.cfg[s] = S.cfg[s] || {})[k] = String(v);
-  cfgDepth++; groupSpread(s, k, String(v), setCfgSoon); cfgDepth--;
+  groupSpread(s, k, String(v), setCfgSoon);
   pendingSets.set(s + '\u0001' + k, [s, k, String(v)]);
-  if (!flushTimer) flushTimer = setTimeout(() => {
-    flushTimer = 0;
-    for (const [s2, k2, v2] of pendingSets.values()) send({ cmd: 'set', s: s2, k: k2, v: v2 });
-    pendingSets.clear();
-  }, 40);
+  if (!flushTimer) flushTimer = setTimeout(flushSets, 40);
+}
+function flushSets() {
+  clearTimeout(flushTimer); flushTimer = 0;
+  for (const [s2, k2, v2] of pendingSets.values()) send({ cmd: 'set', s: s2, k: k2, v: v2 });
+  pendingSets.clear();
 }
 
 // ---- groups of devices (the preview on the Effects tab): [group.N] name, members = the devices' zone sections
@@ -600,6 +601,7 @@ function buildBrandTabs() {
   else updateNav();
 }
 const brandName = tb => { const b = Object.values(BRANDS).find(x => 'brand-' + x[0] === tb); return b ? b[1] : ''; };
+const devTab = t => ['devices', 'pc', 'nano', 'bulbs'].includes(t) || t.startsWith('brand-');
 const wideNav = matchMedia('(min-width: 701px)');   // the bottom bar of a narrow window has no caption to unfold with
 wideNav.addEventListener('change', () => updateNav());
 function updateNav() {
@@ -610,8 +612,15 @@ function updateNav() {
     b.classList.toggle('gone', !show);
     b.tabIndex = show ? 0 : -1;
   });
+  // a narrow window's bottom bar keeps Effects / Devices / Settings: the kinds of devices are a row at the top of Devices
+  const jump = $$('#nav button[data-tab]').filter(b => devTab(b.dataset.tab) && !b.classList.contains('gone'))
+    .sort((a, b) => (b.dataset.tab === 'devices') - (a.dataset.tab === 'devices'));
+  $('#dev-jump').innerHTML = jump.length > 1 ? jump.map(b => `<button type="button" data-tab="${b.dataset.tab}" aria-current="${b.dataset.tab === tab}">${esc($('span', b).textContent)}</button>`).join('') : '';
+  $('#dev-jump').classList.toggle('on', devTab(tab));
+  $('#nav [data-tab="devices"]').classList.toggle('sub', devTab(tab) && tab !== 'devices');
   updateAccounts();
 }
+$('#dev-jump').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { showTab(b.dataset.tab); $(`#dev-jump [data-tab="${b.dataset.tab}"]`)?.focus(); } });
 
 // ---- sign-ins and pairing (Devices tab): AiDot hands out its bulbs' local keys only to its own account
 const ACC = { shown: false, pending: false };
@@ -1009,7 +1018,7 @@ function buildEffects() {
       S.effect = P.effect; setCfgLocal('general', 'preset', String(P.id));
       if (P.palette) setCfgLocal(P.effect, 'palette', P.palette);
       if (P.speed) setCfgLocal(P.effect, 'speed', P.speed);
-      send({ cmd: 'preset', id: String(P.id) });
+      flushSets(); undoReset(); send({ cmd: 'preset', id: String(P.id) });
       renderEffectSide(); markEffect();
     });
     b.addEventListener('contextmenu', e => { e.preventDefault(); presetDialog(P.id); });
@@ -1060,31 +1069,51 @@ const PROF = { edit: 0, sure: false };
 const profSec = id => 'profile.' + id;
 function profiles() {
   return Object.keys(S.cfg).map(k => /^profile\.(\d+)$/.exec(k)).filter(m => m && S.cfg[m[0]].name)
-    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '', apps: S.cfg[m[0]].apps || '', pin: S.cfg[m[0]].pin === '1', at: S.cfg[m[0]].at || '' })).sort((a, b) => a.id - b.id);
+    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '', apps: S.cfg[m[0]].apps || '', pin: S.cfg[m[0]].pin === '1', at: S.cfg[m[0]].at || '',
+      days: S.cfg[m[0]].days || '', atOff: S.cfg[m[0]].at_off === '1' })).sort((a, b) => a.id - b.id);
 }
+// [profile.N] days: 1 Monday .. 7 Sunday, none = every day; the names in the page's language (5 Jan 2026 is a Monday)
+const dayName = d => new Intl.DateTimeFormat(LANG, { weekday: 'short' }).format(new Date(2026, 0, 4 + +d)).replace('.', '');
+const profDays = p => p.days ? p.days.split('').map(d => dayName(d).slice(0, 2)).join(' ') : '';
+const daysMeet = (a, b) => !a || !b || [...a].some(d => b.includes(d));
+// the others with a time switched on at the same minute and a day in common (the core takes the lowest number)
+const profClash = (p, P) => p.at && !p.atOff ? P.filter(q => q.id !== p.id && q.at === p.at && !q.atOff && daysMeet(p.days, q.days)) : [];
+const profAuto = P => P.some(p => p.apps || (p.at && !p.atOff));
 const profCur = () => profiles().find(p => p.id === +cv('general', 'profile', 0)) || null;
 const PENCIL = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>';
 function renderProfiles() {
   const P = profiles(), cur = profCur();
   $('#prof-cur').textContent = cur ? cur.name : t('prof.none');
   $('#prof-btn').classList.toggle('none', !cur);
+  // why the one in use came on, and the pause of the switching by programs and by the clock
+  const why = cur && S.prof_why ? t('prof.why.' + S.prof_why) : '', paused = cv('general', 'auto_pause', '') === '1', auto = profAuto(P);
+  $('#prof-btn').title = why;
+  $('#prof-paused').classList.toggle('hidden', !(paused && auto));
+  $('#prof-state').innerHTML = (why ? `<span class="prof-why">${esc(why)}</span>` : '') + (auto ? `<span class="grow"></span>${paused ? `<em class="prof-auto">${t('prof.paused.s')}</em>` : ''}
+    <button class="btn small prof-pause" type="button" aria-pressed="${paused}"><span>${t(paused ? 'prof.resume' : 'prof.pause')}</span></button>` : '');
+  $('#prof-state').classList.toggle('hidden', !why && !auto);
   if (PROF.edit && !P.some(p => p.id === PROF.edit)) PROF.edit = 0;
   $('#prof-list').innerHTML = P.map(p => p.id === PROF.edit ? `
     <div class="prof-edit" data-id="${p.id}">
       <input type="text" class="prof-name" maxlength="40" spellcheck="false" value="${esc(p.name)}">
       <div class="hk"><span>${t('prof.hotkey')}</span><button class="kbd" type="button"></button></div>
       <div class="hk"><span>${t('prof.at')}</span><input type="time" class="prof-at" value="${esc(p.at)}"></div>
+      ${p.at ? `<div class="prof-days" role="group" aria-label="${t('prof.days')}">${[1, 2, 3, 4, 5, 6, 7].map(d => `<button class="prof-day" type="button" data-d="${d}" aria-pressed="${!p.days || p.days.includes(d)}">${esc(dayName(d))}</button>`).join('')}</div>
+      <label class="check prof-at-on"><input type="checkbox" ${p.atOff ? '' : 'checked'}><span></span><em>${t('prof.at.on')}</em></label>
+      ${profClash(p, P).length ? `<small class="hint warn">${t('prof.at.clash', profClash(p, P).map(q => q.name).join(', '))}</small>` : ''}` : ''}
+      <small class="hint">${t('prof.at.note')}</small>
       <label class="check prof-pin"><input type="checkbox" ${p.pin ? 'checked' : ''}><span></span><em>${t('prof.pin')}</em></label>
       <div class="prof-apps-l"><span>${t('prof.apps')}</span><div class="prof-apps">${profApps(p.apps).map(a => `<button class="app-chip" type="button" data-app="${esc(a)}" title="${t('prof.apps.del')}">${esc(a.replace(/\.exe$/i, ''))}<i>×</i></button>`).join('')}<button class="btn small prof-app-add" type="button"><span>+ ${t('prof.apps.add')}</span></button></div></div>
       <small class="hint">${t('prof.apps.note')}</small>
       <div class="btns">
         <button class="btn danger small prof-del" type="button"><span>${t(PROF.sure ? 'prof.delete.sure' : 'prof.delete')}</span></button>
+        ${P.length < PROFILE_MAX ? `<button class="btn small prof-dup" type="button"><span>${t('prof.dup')}</span></button>` : ''}
         <span class="grow"></span>
         <button class="btn primary small prof-ok" type="button"><span>${t('prof.done')}</span></button>
       </div>
     </div>` : `
     <div class="prof-row${cur && cur.id === p.id ? ' on' : ''}" data-id="${p.id}">
-      <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.apps ? `<em class="prof-auto" title="${esc(p.apps)}">${t('prof.auto')}</em>` : ''}${p.at ? `<em class="prof-auto">${esc(p.at)}</em>` : ''}${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
+      <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.apps ? `<em class="prof-auto" title="${esc(p.apps)}">${t('prof.auto')}</em>` : ''}${p.at ? `<em class="prof-auto${p.atOff ? ' off' : ''}" title="${p.atOff ? t('prof.at.off') : ''}">${esc(p.at)}${p.days ? ' ' + esc(profDays(p)) : ''}</em>` : ''}${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
       <button class="prof-ren" type="button" title="${t('prof.rename')}">${PENCIL}</button>
     </div>`).join('') || `<p class="hint">${t('prof.empty')}</p>`;
   $('#prof-quick').innerHTML = P.filter(p => p.pin).map(p => `<button class="prof-q${cur && cur.id === p.id ? ' on' : ''}" type="button" data-id="${p.id}" aria-pressed="${cur && cur.id === p.id}">${esc(p.name)}</button>`).join('');   // the pinned ones, one click away
@@ -1120,6 +1149,13 @@ $('#prof-list').addEventListener('click', e => {
   const chip = e.target.closest('.app-chip');
   if (chip) { setCfg(profSec(id), 'apps', profApps(cv(profSec(id), 'apps', '')).filter(a => a !== chip.dataset.app).join(', ')); renderProfiles(); return; }
   if (e.target.closest('.prof-ok')) { profRenameDone(); PROF.edit = 0; renderProfiles(); return; }
+  if (e.target.closest('.prof-dup')) { profRenameDone(); send({ cmd: 'profile_dup', id: String(id), name: t('prof.copy', cv(profSec(id), 'name', '')).slice(0, 40) }); PROF.edit = 0; return; }
+  const day = e.target.closest('.prof-day');
+  if (day) {
+    const was = cv(profSec(id), 'days', '') || '1234567', on = [...'1234567'].filter(d => was.includes(d) !== (d === day.dataset.d));
+    if (!on.length) return;   // at least one day; none would mean every day
+    profRenameDone(); setCfg(profSec(id), 'days', on.length === 7 ? '' : on.join('')); renderProfiles(); $(`#prof-list .prof-day[data-d="${day.dataset.d}"]`).focus(); return;
+  }
   if (e.target.closest('.prof-del')) {
     if (!PROF.sure) { PROF.sure = true; profRenameDone(); renderProfiles(); return; }
     send({ cmd: 'profile_delete', id: String(id) }); PROF.edit = 0; PROF.sure = false;
@@ -1128,10 +1164,16 @@ $('#prof-list').addEventListener('click', e => {
 $('#prof-list').addEventListener('change', e => {
   const id = +(e.target.closest('[data-id]') || {}).dataset?.id;
   if (e.target.matches('.prof-at')) { profRenameDone(); setCfg(profSec(id), 'at', /^\d\d:\d\d$/.test(e.target.value) ? e.target.value : ''); renderProfiles(); return; }   // (empty: no time)
+  if (e.target.closest('.prof-at-on')) { profRenameDone(); setCfg(profSec(id), 'at_off', e.target.checked ? '' : '1'); renderProfiles(); return; }
   if (!e.target.closest('.prof-pin')) return;
   profRenameDone(); setCfg(profSec(id), 'pin', e.target.checked ? '1' : ''); renderProfiles();
 });
-function profGo(id) { if (id !== +cv('general', 'profile', 0)) { setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } }
+// the profile left keeps its last drag (sent before the switch); undo starts over, its changes belong to that profile
+function profGo(id) { if (id !== +cv('general', 'profile', 0)) { flushSets(); undoReset(); setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } }
+$('#prof-state').addEventListener('click', e => {
+  if (!e.target.closest('.prof-pause')) return;
+  setCfg('general', 'auto_pause', cv('general', 'auto_pause', '') === '1' ? '' : '1'); renderProfiles(); $('#prof-state .prof-pause').focus();
+});
 $('#prof-quick').addEventListener('click', e => { const b = e.target.closest('.prof-q'); if (b) { profMenu(false); profGo(+b.dataset.id); } });
 $('#prof-list').addEventListener('keydown', e => {
   if (!e.target.matches('.prof-name')) return;
@@ -2331,13 +2373,14 @@ function drawHero() {
 // the preview's devices as real buttons over the canvas, so Tab and a screen reader reach them (the mouse stays on the canvas)
 function heroKeys(hits) {
   const box = $('#hero-keys'), cvs = $('#hero'), ox = cvs.offsetLeft, oy = cvs.offsetTop, d = devicePixelRatio, id = b => b.dataset.i + (b.hasAttribute('data-pw') ? 'p' : '');
-  const sig = HERO.arrange ? '' : ox + ',' + oy + ';' + hits.map(h => [h.key, h.x, h.y, h.w, h.h, h.pw && h.pw.on].join()).join(';');
+  const vis = +$('#tab-effects .hero').dataset.h || 1e9, shown = h => oy + h.y / d < vis - 2;   // a folded preview: the rows below the fold are not there for Tab either
+  const sig = HERO.arrange ? '' : ox + ',' + oy + ',' + vis + ';' + hits.map(h => [h.key, h.x, h.y, h.w, h.h, h.pw && h.pw.on].join()).join(';');
   if (box.dataset.sig === sig) return;
   const f = box.contains(document.activeElement) ? id(document.activeElement) : null;
   const at = (x, y, w, h) => `style="left:${ox + x / d}px;top:${oy + y / d}px;width:${w / d}px;height:${h / d}px"`;
   const name = h => h.k === 'group' ? groupTitle(groups().find(g => g.n === h.g) || { n: h.g }) : h.k === 'add' ? t('hero.empty') : h.name;
   box.dataset.sig = sig;
-  box.innerHTML = HERO.arrange ? '' : hits.map((h, i) => `<button type="button" data-i="${i}" ${at(h.x, h.y, h.w, h.h)} aria-label="${esc(name(h))}"></button>` + (!h.pw ? '' :
+  box.innerHTML = HERO.arrange ? '' : hits.map((h, i) => !shown(h) ? '' : `<button type="button" data-i="${i}" ${at(h.x, h.y, h.w, h.h)} aria-label="${esc(name(h))}"></button>` + (!h.pw ? '' :
     `<button type="button" data-i="${i}" data-pw ${at(h.pw.x - h.pw.r, h.pw.y - h.pw.r, 2 * h.pw.r, 2 * h.pw.r)} aria-label="${esc(name(h))}: ${t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on'))}"></button>`)).join('');
   if (f) { const b = [...box.children].find(b => id(b) === f); if (b) b.focus(); }   // a power switch redraws the buttons: keep the one in use
 }
@@ -2593,7 +2636,7 @@ function buildHeroMenu() {
 const GDLG = { n: 0, isNew: false, before: null };
 function groupDialog(n, isNew) {
   const sec = groupSec(n), g = groups().find(x => x.n === n);
-  GDLG.n = n; GDLG.isNew = !!isNew;
+  GDLG.n = n; GDLG.isNew = !!isNew; GDLG.undoFrom = UNDO.length;   // what is changed in here is one undo step (or none: Cancel)
   GDLG.before = { name: cv(sec, 'name', ''), members: g ? g.members.slice() : [], homes: {} };
   heroItems(true).forEach(it => { const o = groupOf(it.zone); if (o) GDLG.before.homes[it.zone] = o.n; });
   GDLG.before.look = [sec, ...heroItems(true).map(it => it.zone)].flatMap(z => GROUP_KEYS.map(k => [z, k, cv(z, k, '')]));
@@ -2619,10 +2662,11 @@ $('#gdlg-devs').addEventListener('click', e => {
   gdlgDevs(); drawHero();
 });
 $('#gdlg-name').addEventListener('input', e => { setCfgSoon(groupSec(GDLG.n), 'name', e.target.value.replace(/[;#\[\]=,]/g, ' ').trim()); drawHero(); });
-function closeGroupDialog() { $('#gdlg').classList.add('hidden'); closePicker(); renderZones(); drawHero(); }
+function closeGroupDialog() { flushSets(); undoMerge(Math.min(GDLG.undoFrom, UNDO.length)); $('#gdlg').classList.add('hidden'); closePicker(); renderZones(); drawHero(); }
 $('#gdlg-form').addEventListener('submit', e => { e.preventDefault(); closeGroupDialog(); });
 $('#gdlg-cancel').addEventListener('click', () => {
   const B = GDLG.before, sec = groupSec(GDLG.n);
+  pendingSets.clear(); undoing = true;   // put back, not to be undone again
   if (cv(sec, 'name', '') !== B.name) setCfg(sec, 'name', B.name);
   if (GDLG.isNew) setMembers(GDLG.n, []);
   {   // the devices back where they were
@@ -2630,6 +2674,7 @@ $('#gdlg-cancel').addEventListener('click', () => {
   }
   // the look as it was, written key by key without spreading through the group again
   B.look.forEach(([z, k, v]) => { if (cv(z, k, '') !== v) { (S.cfg[z] = S.cfg[z] || {})[k] = v; send({ cmd: 'set', s: z, k, v }); } });
+  undoing = false; UNDO.splice(GDLG.undoFrom); if (!UNDO.length) $('#undo').classList.add('hidden');
   closeGroupDialog();
 });
 $('#gdlg-del').addEventListener('click', () => {
@@ -2994,28 +3039,70 @@ function buildDevices() {
 // ---- undo the last change (Ctrl+Z, or the button that shows for a few seconds after one): a setting, the effect or the
 // brightness. The core then sends its whole state again, so every control shows the value back.
 const UNDO = [], UNDO_SKIP = /^(general\.(seen_version|welcome|unlocked|recent)|ui\.brands_fold|community\..*)$/;
-let undoing = false, undoHide = 0;
+// One entry is one action: everything written while one event is handled (a group's look on all its devices,
+// a device moved between groups) goes back together; each change keeps the value it replaced.
+let undoing = false, undoHide = 0, undoCur = null;
 function undoPush(s, k, old) {
   if (undoing || UNDO_SKIP.test(s + '.' + k) || document.documentElement.classList.contains('remote')) return;
-  const top = UNDO[UNDO.length - 1], now = Date.now();
-  if (top && top.s === s && top.k === k && now - top.at < 1500) top.at = now;   // one drag is one change
-  else { UNDO.push({ s, k, old: String(old ?? ''), at: now }); if (UNDO.length > 30) UNDO.shift(); }
+  const now = Date.now(), key = s + '\u0001' + k;
+  if (!undoCur) {
+    const top = UNDO[UNDO.length - 1];
+    if (top && top.key === key && now - top.at < 1500) undoCur = top;   // one drag is one change
+    else { undoCur = { key, ch: [], at: now }; UNDO.push(undoCur); if (UNDO.length > 30) UNDO.shift(); }
+    queueMicrotask(() => { undoCur = null; });
+  }
+  undoCur.at = now;
+  if (!undoCur.ch.some(c => c.s === s && c.k === k)) undoCur.ch.push({ s, k, old: String(old ?? '') });
   $('#undo').classList.remove('hidden'); clearTimeout(undoHide); undoHide = setTimeout(() => $('#undo').classList.add('hidden'), 6000);
+}
+function undoReset() { UNDO.length = 0; undoCur = null; $('#undo').classList.add('hidden'); }
+// the entries from `from` on become one (a window whose changes are kept together, see groupDialog)
+function undoMerge(from) {
+  const all = UNDO.splice(from); if (!all.length) return;
+  const m = { key: '', ch: [], at: 0 };
+  all.forEach(u => u.ch.forEach(c => { if (!m.ch.some(x => x.s === c.s && x.k === c.k)) m.ch.push(c); }));
+  UNDO.push(m);
 }
 function undo() {
   const u = UNDO.pop(); if (!u) return;
   undoing = true;
-  if (u.s) setCfg(u.s, u.k, u.old);
-  else if (u.k === 'fx') { if (u.old) send({ cmd: 'effect', id: u.old }); }
-  else send({ cmd: 'brightness', v: +u.old });
+  // newest first, each key written as it was (not spread through a group again); a drag still waiting to be sent is dropped
+  u.ch.slice().reverse().forEach(({ s, k, old }) => {
+    if (s) { pendingSets.delete(s + '\u0001' + k); setCfgLocal(s, k, old); send({ cmd: 'set', s, k, v: old }); }
+    else if (k === 'fx') { if (old) send({ cmd: 'effect', id: old }); }
+    else send({ cmd: 'brightness', v: +old });
+  });
   undoing = false;
   send({ cmd: 'get' });
   if (!UNDO.length) $('#undo').classList.add('hidden');
 }
 $('#undo').addEventListener('click', undo);
+// ---- windows over the page (.sheet-wrap, the wizard): Tab goes round inside the open one, and once it closes the focus
+// is back on what opened it (when that is still there)
+const DLG_FROM = new Map();
+new MutationObserver(ms => ms.forEach(({ target: w }) => {
+  if (!w.matches('.sheet-wrap, .wizard')) return;
+  const open = !w.classList.contains('hidden');
+  if (open && !DLG_FROM.has(w)) {
+    DLG_FROM.set(w, document.activeElement);
+    requestAnimationFrame(() => { if (!w.contains(document.activeElement)) { const f = dlgFocusable(w)[0]; if (f) f.focus(); } });
+  } else if (!open && DLG_FROM.has(w)) {
+    const o = DLG_FROM.get(w); DLG_FROM.delete(w);
+    if (o && o !== document.body && o.isConnected && o.offsetParent && !w.contains(o) && (w.contains(document.activeElement) || document.activeElement === document.body)) o.focus();
+  }
+})).observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: true });
+const dlgFocusable = w => [...w.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled && x.offsetParent && x.tabIndex >= 0);
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || !pk.classList.contains('hidden')) return;
+  const w = [...$$('.sheet-wrap:not(.hidden), .wizard:not(.hidden)')].pop(); if (!w) return;
+  const f = dlgFocusable(w); if (!f.length) return;
+  const i = f.indexOf(document.activeElement);
+  if (e.shiftKey ? i <= 0 : i < 0 || i === f.length - 1) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+});
 document.addEventListener('keydown', e => {
   const typing = e.target.closest('input:not([type=range]):not([type=checkbox]), textarea, select, [contenteditable]');
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec')) { e.preventDefault(); undo(); }
+  // (the group window has its own Cancel for what was changed in it)
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec') && $('#gdlg').classList.contains('hidden')) { e.preventDefault(); undo(); }
 });
 // ---- calibration guide: red and blue on the device's two ends (its LED count, then which way effects run), then
 // everything white so its white can be matched to the other lights ([dev.N] warmth)
@@ -3030,6 +3117,9 @@ function calShow() {
   $('#cal-title').textContent = t('cal.title', cv(sec, 'name', d.name));
   $('#cal-step').textContent = t('cal.step', i + 1, steps.length);
   $('#cal-text').textContent = t('cal.' + s);
+  // what the guide leaves out for this device, and why
+  const lim = !d.per_led ? 'cal.lim.one' : devZones(d).length ? 'cal.lim.zones' : '';
+  $('#cal-lim').textContent = lim ? t(lim) : ''; $('#cal-lim').classList.toggle('hidden', !lim);
   $('#cal-back').classList.toggle('hidden', !i);
   $('#cal-next span').textContent = t(last ? 'cal.done' : 'cal.next');
   const ctl = $('#cal-ctl'), w = +cv(sec, 'warmth', 0);
@@ -3514,6 +3604,8 @@ function fixedCheck() {
   $('#fixed').dataset.id = F.id;
   $('#fixed').classList.remove('hidden');
 }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#fixed').classList.contains('hidden')) $('#fixed-ok').click(); });
+$('#fixed').addEventListener('pointerdown', e => { if (e.target.id === 'fixed') $('#fixed-ok').click(); });
 $('#fixed-ok').addEventListener('click', () => {
   $('#fixed').classList.add('hidden');
   send({ cmd: 'report_seen', id: $('#fixed').dataset.id });
@@ -3613,9 +3705,9 @@ function updateAi() {
   $('#ai-demand').checked = !!A.on_demand;
   $('#ai-demand').disabled = !A.exe;
   $('#ai-demand-note').textContent = t('ai.demand.note') + (A.ours ? ' ' + t('ai.demand.running') : '');
-  // the mood card offers the same button while the model is missing
+  // the mood card offers the same button once someone tried it without the model, and shows a download that runs
   const ms = $('#mood-setup');
-  ms.classList.toggle('hidden', !!ready || !S.ollama);
+  ms.classList.toggle('hidden', !!ready || !S.ollama || !(busy || st === 7 || MOOD.err));
   ms.disabled = busy;
   ms.classList.toggle('prog', !!busy); ms.style.setProperty('--p', (busy ? A.pct || 0 : 0) + '%');
   ms.querySelector('span').textContent = busy ? t('ai.st.' + st, A.pct || 0) : t('ai.go');
@@ -3744,7 +3836,10 @@ if (wv) wv.addEventListener('message', e => {
   else if (m.type === 'focus') document.body.classList.toggle('idle', !m.on);   // behind other windows: endless animations pause
   else if (m.type === 'status') applyStatus(m);
   else if (m.type === 'state') {
+    const prof = cv('general', 'profile', '');
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;
+    // another profile came on (by the clock, a program, the tray, a hotkey): undo and unsent drags belonged to the old one
+    if (cv('general', 'profile', '') !== prof) { pendingSets.clear(); undoReset(); }
     LANG = ['ru', 'fr'].includes(cv('general', 'lang', 'en')) ? cv('general', 'lang', 'en') : 'en';
     applyI18n();
     applyTheme(); buildEffects(); buildHotkeys(); syncToggles(); renderProfiles();

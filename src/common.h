@@ -51,7 +51,7 @@ const char *cfg_get(const char *section, const char *key, const char *def);
 float       cfg_getf(const char *section, const char *key, float def);
 int         cfg_geti(const char *section, const char *key, int def);
 void        cfg_set(const char *section, const char *key, const char *value);
-void        cfg_save_if_dirty(void);
+int         cfg_save_if_dirty(void);   // 0: the file could not be written (the old one is left as it was)
 void        cfg_set_and_save(const char *section, const char *key, const char *value);
 int         cfg_palette(const char *section, rgbf *out, int max);
 const wchar_t *cfg_path(void);
@@ -233,6 +233,7 @@ int   app_profile_save(int id, const char *name);   // id 0: new, from the setup
 void  app_profile_apply(int id);
 void  app_auto_recheck(void);
 void  app_profile_delete(int id);
+int   app_profile_dup(int src, const char *name);   // a copy of profile src; returns its number (0: none made)
 void  ui_refresh_state(void);   // the open window gets the whole state (settings included) again
 void  app_set_brightness(float b, int save_now);
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
@@ -244,6 +245,7 @@ void  orgbapp_setup(void);                         // OpenRGB's zip downloaded, 
 // settings window (ui_web.cpp) <-> core
 int   app_state_json(char *out, int cap);    // effects, config, devices
 int   app_status_json(char *out, int cap);   // devices only (polled)
+extern volatile LONG g_state_rev;           // goes up when the whole state changes ("rev" in the status: a phone reloads)
 void  update_install(void);                 // download, check and run the latest release's installer (update.c)
 void  diag_save(void);                      // diagnostics report to Downloads, in the background (diag.c)
 void  diag_report(const char *text, const char *contact, const char *install, int attach);   // a bug report sent to the developer

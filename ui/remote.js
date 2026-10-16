@@ -19,8 +19,10 @@
     return r.json();
   }
 
-  let polling = false;
-  async function loadState() { emit(await api('/api/state')); startPolling(); }
+  // rev: goes up on the PC whenever the whole state changes (profile, preset, devices); a new one, or the PC back
+  // after being away, brings the full state again so nothing on this page stays as it was
+  let polling = false, rev = null, away = false;
+  async function loadState() { const st = await api('/api/state'); rev = st.rev; emit(st); startPolling(); }
   function startPolling() {
     if (polling) return;
     polling = true;
@@ -28,7 +30,11 @@
     setInterval(async () => {
       if (document.hidden || statusBusy) return;
       statusBusy = true;
-      try { emit(await api('/api/status')); setOffline(false); } catch (e) { setOffline(e.message !== 'pair'); } finally { statusBusy = false; }
+      try {
+        const st = await api('/api/status');
+        if (away || (st.rev !== undefined && st.rev !== rev)) await loadState(); else emit(st);
+        away = false; setOffline(false);
+      } catch (e) { away = away || e.message !== 'pair'; setOffline(e.message !== 'pair'); } finally { statusBusy = false; }
     }, 1000);
     setInterval(async () => {
       if (document.hidden || frameBusy) return;

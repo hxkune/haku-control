@@ -995,6 +995,7 @@ body.calm nav button { transition: none; }
 .prof-q.on { border-color: var(--line3); color: var(--strong); font-weight: 600; box-shadow: inset 0 -2px 0 var(--strong); }
 .prof-menu {
   position: absolute; top: 44px; left: 0; width: 320px; max-width: calc(100vw - 32px); padding: 8px;
+  max-height: calc(100vh - 180px); overflow-y: auto; scrollbar-width: thin;   /* a profile's settings open in a short window */
   display: flex; flex-direction: column; gap: 4px; background: var(--menu); border: 1px solid var(--line2);
   box-shadow: 0 24px 50px -12px rgba(0, 0, 0, .8); animation: pop .14s ease;
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
@@ -1032,6 +1033,19 @@ body.calm nav button { transition: none; }
 .prof-auto { font: normal 9.5px var(--mono); letter-spacing: 1px; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line2); padding: 1px 5px; margin-left: 8px; }
 .prof-edit .btns .btn { margin: 0; }
 .prof-edit .btns .grow { flex: 1; }
+.prof-auto.off { text-decoration: line-through; opacity: .6; }
+.prof-days { display: flex; gap: 3px; }
+.prof-day { flex: 1; min-width: 0; height: 28px; padding: 0; border: 1px solid var(--line2); background: none; color: var(--faint); font-size: 11.5px; text-transform: capitalize; }
+.prof-day[aria-pressed="true"] { border-color: var(--line3); color: var(--strong); background: rgba(var(--ink), .08); }
+.prof-edit .hint.warn { color: var(--text); }
+.prof-state { display: flex; align-items: center; gap: 8px; padding: 4px 8px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line2); color: var(--muted); font-size: 12.5px; }
+.prof-state { flex-wrap: wrap; }
+.prof-why { flex-basis: 100%; color: var(--text); }
+.prof-state .grow { flex: 1; }
+.prof-state .btn { white-space: nowrap; }
+.prof-state .prof-auto { margin: 0; }
+.prof-state .btn { margin: 0; }
+#prof-btn .prof-auto { margin-left: 0; }
 .prof-new { display: flex; gap: 6px; padding: 6px 2px 2px; }
 .prof-new.hidden { display: none; }
 .prof-new .btn { margin: 0; flex: none; }
@@ -1375,6 +1389,21 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .09s linear infinite; 
   nav button.active svg { color: var(--live, var(--strong)); filter: drop-shadow(0 0 5px var(--live, transparent)); }
 }
 @media (max-width: 700px) { nav button.active svg { color: var(--live, var(--strong)); } }
+/* a phone: Effects / Devices / Settings below; PC, Nanoleaf, bulbs and the brands are a row at the top of Devices */
+.dev-jump { display: none; }
+@media (max-width: 700px) {
+  nav button:is([data-tab="pc"], [data-tab="nano"], [data-tab="bulbs"], [data-brand]) { display: none; }
+  nav button.sub { color: var(--strong); }
+  .dev-jump.on { display: flex; gap: 6px; margin: -4px 0 16px; overflow-x: auto; scrollbar-width: none; }
+  .dev-jump button { flex: none; height: 36px; padding: 0 14px; border: 1px solid var(--line2); background: var(--panel); color: var(--muted); white-space: nowrap; }
+  .dev-jump button[aria-current="true"] { border-color: var(--line3); color: var(--strong); font-weight: 600; box-shadow: inset 0 -2px 0 var(--strong); }
+}
+/* a short window with many brand tabs: the tabs scroll, brightness, power and the timer stay in view below them */
+@media (min-width: 701px) {
+  nav { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-bottom: 6px; }
+  nav > * { flex: none; }
+  .side-foot { flex: none; padding-top: 12px; }
+}
 .seg button.on { background-image: none; background-color: rgba(var(--ink), .1); color: var(--text); box-shadow: inset 0 -2px 0 var(--live, var(--strong)); }
 .fx.on { --lc: var(--live, var(--strong)); border-color: var(--live, var(--strong)); }
 .fx.on canvas { filter: drop-shadow(0 0 7px var(--live, rgba(var(--ink), .25))); }
@@ -1487,3 +1516,5 @@ svg .f { fill: currentColor; stroke: none; }
 /* undo the last change: a pill at the bottom that leaves by itself */
 .undo { position: fixed; z-index: 30; right: 20px; bottom: 20px; box-shadow: 0 6px 24px rgba(0, 0, 0, .35); animation: fade-in .2s ease; }
 @media (max-width: 700px) { .undo { bottom: 140px; } }
+/* the keyboard spot is always visible (mouse clicks do not show it) */
+:focus-visible { outline: 2px solid var(--live, var(--strong)); outline-offset: 2px; }

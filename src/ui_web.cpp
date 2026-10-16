@@ -58,7 +58,9 @@ static char *big_buf(void) {
     return b;
 }
 
-static void post_state(void) { char *b = big_buf(); app_state_json(b, 512 * 1024); post(b); }
+static void send_state(void) { char *b = big_buf(); app_state_json(b, 512 * 1024); post(b); }
+// the whole state changed (profile, preset, devices...): also tells a phone, which sees the new number in /api/status
+static void post_state(void) { InterlockedIncrement(&g_state_rev); send_state(); }
 // the window in the background: the page pauses its animations and the live view slows down (ui/app.js)
 static void post_focus(bool on) { post(on ? "{\"type\":\"focus\",\"on\":1}" : "{\"type\":\"focus\",\"on\":0}"); }
 static void post_status(void) { static char b[64 * 1024]; app_status_json(b, sizeof(b)); post(b); }
@@ -165,8 +167,8 @@ static void profile_app_pick(int id) {
 
 static void on_message(const std::string &js) {
     std::string cmd = field(js, "cmd");
-    if (cmd == "hello") { page_ready = true; post_state(); post_focus(GetForegroundWindow() == wnd); }
-    else if (cmd == "get") post_state();
+    if (cmd == "hello") { page_ready = true; send_state(); post_focus(GetForegroundWindow() == wnd); }
+    else if (cmd == "get") send_state();
     else if (cmd == "effect") { app_set_effect(effect_index(field(js, "id").c_str())); post_status(); }
     else if (cmd == "brightness") { app_set_brightness(atoi(field(js, "v").c_str()) / 100.0f, 0); app_save_soon(); }
     else if (cmd == "set") app_set(field(js, "s").c_str(), field(js, "k").c_str(), field(js, "v").c_str());
@@ -192,6 +194,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "profile_save") { app_profile_save(atoi(field(js, "id").c_str()), field(js, "name").c_str()); post_state(); }
     else if (cmd == "profile_app") { profile_app_pick(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "profile_delete") { app_profile_delete(atoi(field(js, "id").c_str())); post_state(); }
+    else if (cmd == "profile_dup") { app_profile_dup(atoi(field(js, "id").c_str()), field(js, "name").c_str()); post_state(); }
     else if (cmd == "nano_forget") { nano_forget(atoi(field(js, "slot").c_str())); post_state(); }
     else if (cmd == "scan") { ext_scan(); orgb_check_start(); post_status(); }
     else if (cmd == "orgb_check") { orgb_check_start(); post_status(); }
@@ -314,8 +317,10 @@ static void create_webview(void) {
                         }).Get(), &tok);
 
                     fit();
-                    // every time the window opens (from the tray too) it plays the logo intro (ui/intro.js)
-                    web->Navigate(L"https://haku-control.ui/index.html#intro");
+                    // the logo intro (ui/intro.js) plays the first time the window opens after haku starts, not from the tray again
+                    static bool intro_done;
+                    web->Navigate(intro_done ? L"https://haku-control.ui/index.html" : L"https://haku-control.ui/index.html#intro");
+                    intro_done = true;
                     return S_OK;
                 }).Get());
         }).Get());
@@ -350,7 +355,7 @@ static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (wp == STATUS_TIMER) post_status();
         return 0;
-    case WM_UI_REFRESH: if (wp) post_state(); else post_status(); return 0;
+    case WM_UI_REFRESH: if (wp) send_state(); else post_status(); return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: the taskbar button gets the matching mark
         if (lp && !wcscmp((const wchar_t *)lp, L"ImmersiveColorSet")) SendMessageW(h, WM_SETICON, ICON_BIG, (LPARAM)app_icon(1));
@@ -385,7 +390,7 @@ static void bring_to_front(void) {
 // body that reads one way to the sender's parser and another way here cannot slip past.
 static bool remote_allowed(const std::string &js) {
     static const char *const ok[] = { "effect", "brightness", "set", "toggle", "power", "timed_off", "identify", "pair", "scan", "dev_add", "dev_remove", "mood", "preset",
-                                      "preset_save", "preset_delete", "orgb_check", "hw_scan", "profile", "profile_save", "profile_delete", "pc_own",
+                                      "preset_save", "preset_delete", "orgb_check", "hw_scan", "profile", "profile_save", "profile_delete", "pc_own", "calib", "dev_check",
 #ifdef HAKU_DEV   // test builds (loopback only by default): the rest can be driven from a browser for tests
                                       "aidot_login", "tuya_login", "govee_login", "diag", "update_check", "update_install", "ai_setup", "ai_on_demand",
                                       "orgb_setup", "orgb_auto", "pro_key", "backup_save", "backup_load", "report",
@@ -395,6 +400,14 @@ static bool remote_allowed(const std::string &js) {
     bool found = false;
     for (const char *c : ok) if (cmd == c) found = true;
     if (!found) return false;
+    // calibration lights one known zone for a short while; the check reaches only a device already saved here
+    if (cmd == "dev_check") { std::string id = field(js, "id"); return !id.empty() && id.size() < 6 && id.find_first_not_of("0123456789") == std::string::npos; }
+    if (cmd == "calib") {
+        std::string m = field(js, "mode"), z = field(js, "zone");
+        if (m.size() != 1 || m[0] < '0' || m[0] > '2' || z.size() > 60) return false;
+        for (char c : z) if (!isalnum((unsigned char)c) && c != '.' && c != '_' && c != '-') return false;
+        return true;
+    }
     if (cmd != "set") return true;
     // settings that start programs or hold this PC's own access stay with the PC window
     std::string s = field(js, "s"), k = field(js, "k");
@@ -407,7 +420,7 @@ static bool remote_allowed(const std::string &js) {
 extern "C" int ui_dispatch(const char *json) {
     if (!remote_allowed(json)) { logf_("remote: command refused"); return 0; }
     on_message(json);
-    post_state();
+    send_state();
     return 1;
 }
 
@@ -442,6 +455,6 @@ extern "C" void ui_open(HINSTANCE inst) {
 }
 
 extern "C" void ui_refresh(void) { if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 0, 0); }
-extern "C" void ui_refresh_state(void) { if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 1, 0); }
+extern "C" void ui_refresh_state(void) { InterlockedIncrement(&g_state_rev); if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 1, 0); }
 
 extern "C" int ui_is_dialog_message(MSG *m) { (void)m; return 0; }
