@@ -10,6 +10,8 @@ extern "C" {
 #include <commdlg.h>
 #include <wrl.h>
 #include <string>
+#include <vector>
+#include <algorithm>
 #include "../third_party/webview2/WebView2.h"
 
 #pragma comment(lib, "dwmapi.lib")
@@ -57,6 +59,8 @@ static char *big_buf(void) {
 }
 
 static void post_state(void) { char *b = big_buf(); app_state_json(b, 512 * 1024); post(b); }
+// the window in the background: the page pauses its animations and the live view slows down (ui/app.js)
+static void post_focus(bool on) { post(on ? "{\"type\":\"focus\",\"on\":1}" : "{\"type\":\"focus\",\"on\":0}"); }
 static void post_status(void) { static char b[64 * 1024]; app_status_json(b, sizeof(b)); post(b); }
 
 // Value of a string (or number) field in a flat JSON object.
@@ -105,9 +109,63 @@ static void title_bar(const char *theme) {
     DwmSetWindowAttribute(wnd, 36 /* DWMWA_TEXT_COLOR */, &txt, sizeof(txt));
 }
 
+// a profile's programs: one picked from those open on screen, or any .exe through Browse; added to [profile.N] apps
+static BOOL CALLBACK app_win(HWND w, LPARAM lp) {
+    auto *names = (std::vector<std::wstring> *)lp;
+    DWORD pid = 0;
+    if (!IsWindowVisible(w) || GetWindow(w, GW_OWNER) || (GetWindowLongW(w, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) || !GetWindowTextLengthW(w)) return TRUE;
+    GetWindowThreadProcessId(w, &pid);
+    if (pid == GetCurrentProcessId()) return TRUE;
+    HANDLE p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!p) return TRUE;
+    wchar_t path[MAX_PATH]; DWORD n = MAX_PATH;
+    if (QueryFullProcessImageNameW(p, 0, path, &n)) {
+        const wchar_t *b = wcsrchr(path, L'\\'); b = b ? b + 1 : path;
+        static const wchar_t *skip[] = { L"explorer.exe", L"ApplicationFrameHost.exe", L"TextInputHost.exe", L"SystemSettings.exe", L"ShellExperienceHost.exe" };
+        bool dup = false;
+        for (auto *s : skip) dup |= !_wcsicmp(b, s);
+        for (auto &x : *names) dup |= !_wcsicmp(b, x.c_str());
+        if (!dup) names->push_back(b);
+    }
+    CloseHandle(p);
+    return TRUE;
+}
+static void profile_app_pick(int id) {
+    char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
+    if (id < 1 || id > PROFILE_MAX || !cfg_get(sec, "name", NULL)) return;
+    std::vector<std::wstring> names;
+    EnumWindows(app_win, (LPARAM)&names);
+    std::sort(names.begin(), names.end(), [](const std::wstring &a, const std::wstring &b) { return _wcsicmp(a.c_str(), b.c_str()) < 0; });
+    HMENU m = CreatePopupMenu();
+    for (size_t i = 0; i < names.size() && i < 40; i++) AppendMenuW(m, MF_STRING, i + 1, names[i].c_str());
+    if (!names.empty()) AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuW(m, MF_STRING, 1000, TR(L"Browse…", L"Обзор…", L"Parcourir…"));
+    POINT pt; GetCursorPos(&pt);
+    SetForegroundWindow(wnd);
+    int c = TrackPopupMenu(m, TPM_RETURNCMD | TPM_NONOTIFY, pt.x, pt.y, 0, wnd, NULL);
+    DestroyMenu(m);
+    std::wstring pick;
+    if (c == 1000) {
+        wchar_t file[MAX_PATH] = L"";
+        OPENFILENAMEW of = { sizeof(of) };
+        of.hwndOwner = wnd; of.lpstrFilter = L"*.exe\0*.exe\0"; of.lpstrFile = file; of.nMaxFile = MAX_PATH;
+        of.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        const wchar_t *b;
+        if (GetOpenFileNameW(&of) && (b = wcsrchr(file, L'\\'))) pick = b + 1;
+    }
+    else if (c > 0) pick = names[c - 1];
+    if (pick.empty() || wcschr(pick.c_str(), L',')) return;
+    std::string cur = cfg_get(sec, "apps", ""), add = narrow(pick.c_str()), low = "," + cur + ",", key = "," + add + ",";
+    for (auto *s : { &low, &key }) for (auto &ch : *s) ch = (char)tolower((unsigned char)ch);
+    for (size_t i; (i = low.find(", ")) != std::string::npos; ) low.erase(i + 1, 1);
+    if (low.find(key) != std::string::npos) return;
+    cfg_set_and_save(sec, "apps", (cur.empty() ? add : cur + ", " + add).c_str());
+    app_auto_recheck();
+}
+
 static void on_message(const std::string &js) {
     std::string cmd = field(js, "cmd");
-    if (cmd == "hello") { page_ready = true; post_state(); }
+    if (cmd == "hello") { page_ready = true; post_state(); post_focus(GetForegroundWindow() == wnd); }
     else if (cmd == "get") post_state();
     else if (cmd == "effect") { app_set_effect(effect_index(field(js, "id").c_str())); post_status(); }
     else if (cmd == "brightness") { app_set_brightness(atoi(field(js, "v").c_str()) / 100.0f, 0); app_save_soon(); }
@@ -128,6 +186,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "preset_delete") { app_preset_delete(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "profile") { app_profile_apply(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "profile_save") { app_profile_save(atoi(field(js, "id").c_str()), field(js, "name").c_str()); post_state(); }
+    else if (cmd == "profile_app") { profile_app_pick(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "profile_delete") { app_profile_delete(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "nano_forget") { nano_forget(atoi(field(js, "slot").c_str())); post_state(); }
     else if (cmd == "scan") { ext_scan(); orgb_check_start(); post_status(); }
@@ -265,7 +324,11 @@ static void create_webview(void) {
 
 static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-    case WM_SIZE: fit(); return 0;
+    case WM_SIZE:
+        // minimised, the page is hidden: WebView2 stops drawing and throttles its timers
+        if (ctrl) ctrl->put_IsVisible(wp != SIZE_MINIMIZED);
+        fit(); return 0;
+    case WM_ACTIVATE: post_focus(LOWORD(wp) != WA_INACTIVE); break;
     case WM_GETMINMAXINFO: {
         MINMAXINFO *mm = (MINMAXINFO *)lp;
         UINT dpi = GetDpiForWindow(h);
@@ -276,7 +339,11 @@ static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SETFOCUS: if (ctrl) ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC); return 0;
     case WM_TIMER:
         if (!page_ready) return 0;
-        if (wp == FRAME_TIMER) { static char b[64 * 1024]; app_frame_json(b, sizeof(b)); post(b); }
+        if (wp == FRAME_TIMER) {   // 20 a second in front, 5 behind other windows, none minimised
+            static unsigned n; static char b[64 * 1024];
+            if (IsIconic(h) || (GetForegroundWindow() != h && n++ % 4)) return 0;
+            app_frame_json(b, sizeof(b)); post(b);
+        }
         if (wp == STATUS_TIMER) post_status();
         return 0;
     case WM_UI_REFRESH: if (wp) post_state(); else post_status(); return 0;

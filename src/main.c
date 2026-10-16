@@ -11,6 +11,7 @@
 #include <ctype.h>
 #include <timeapi.h>
 #include <share.h>
+#include <tlhelp32.h>
 #include "../res/version.h"
 
 // visual styles for the settings window controls
@@ -37,6 +38,7 @@
 #define WM_PRO       (WM_APP + 5)   // haku Pro came or went
 static int sleeping, pro_off;   // the Wi-Fi lights are let go of: PC asleep / no Pro (main thread)
 #define SAVE_TIMER   1
+#define AUTO_TIMER   2   // profiles switched by the programs running (every 3 s)
 enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN, HK_PROFILE_NEXT, HK_PROFILE = 100 /* + profile number */ };
 
 static const char default_ini[] =
@@ -725,7 +727,7 @@ static int profile_load(int id) {
     return 1;
 }
 
-void app_profile_apply(int id) {
+static void profile_apply(int id) {
     if (!profile_exists(id)) return;
     int cur = cfg_geti("general", "profile", 0);
     if (cur != id && profile_exists(cur)) profile_capture(cur);   // the one in use keeps what was changed in it
@@ -743,6 +745,68 @@ void app_profile_apply(int id) {
     ui_refresh_state();
     char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
     logf_("profile %d: %s", id, cfg_get(sec, "name", ""));
+}
+
+// ---- profiles switched by programs: [profile.N] apps = exe names, comma-separated. While one of them runs, its
+// profile is in use (the lowest number wins); once none runs, the profile used before comes back. A profile chosen by
+// hand while that program runs is kept until the program has closed (auto_skip).
+static int auto_on, auto_prev, auto_skip;
+
+static int auto_match(void) {
+    char apps[PROFILE_MAX + 1][256]; int any = 0;
+    for (int id = 1; id <= PROFILE_MAX; id++) {
+        char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
+        snprintf(apps[id], sizeof(apps[id]), "%s", profile_exists(id) ? cfg_get(sec, "apps", "") : "");
+        any |= apps[id][0] != 0;
+    }
+    if (!any) return 0;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return 0;
+    int best = 0;
+    PROCESSENTRY32W pe = { sizeof(pe) };
+    for (BOOL ok = Process32FirstW(snap, &pe); ok; ok = Process32NextW(snap, &pe)) {
+        char exe[MAX_PATH * 3];
+        if (!WideCharToMultiByte(CP_UTF8, 0, pe.szExeFile, -1, exe, sizeof(exe), NULL, NULL)) continue;
+        for (int id = 1; id <= PROFILE_MAX && (!best || id < best); id++) {
+            for (const char *p = apps[id]; *p; ) {
+                while (*p == ',' || *p == ' ') p++;
+                const char *e = p; while (*e && *e != ',') e++;
+                const char *t = e; while (t > p && t[-1] == ' ') t--;
+                if (t > p && (size_t)(t - p) == strlen(exe) && !_strnicmp(p, exe, t - p)) { best = id; break; }
+                p = e;
+            }
+        }
+    }
+    CloseHandle(snap);
+    return best;
+}
+
+static void auto_tick(void) {
+    int m = auto_match(), cur = cfg_geti("general", "profile", 0);
+    if (!m) {
+        if (auto_on && cur == auto_on && auto_prev != auto_on && profile_exists(auto_prev)) {
+            logf_("auto profile: its program closed, back to %d", auto_prev);
+            profile_apply(auto_prev);
+        }
+        auto_on = auto_skip = 0;
+        return;
+    }
+    if (m == auto_on || m == auto_skip) return;
+    if (!auto_on) auto_prev = cur;
+    auto_on = m;
+    if (m != cur) { logf_("auto profile: %d, its program runs", m); profile_apply(m); }
+}
+
+// chosen by hand (window, tray, hotkey, phone): wins over a program's profile until that program closes
+void app_profile_apply(int id) {
+    if (auto_on) { auto_skip = auto_on; auto_on = 0; }
+    profile_apply(id);
+}
+// a profile's programs changed: one already running switches to its profile now, even after a choice by hand
+void app_auto_recheck(void) {
+    if (auto_on && auto_on != cfg_geti("general", "profile", 0)) auto_on = 0;
+    auto_skip = 0;
+    auto_tick();
 }
 
 // id 0: a new profile with the setup as it is now, which becomes the one in use (the profile used before keeps
@@ -1195,9 +1259,11 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         ChangeWindowMessageFilterEx(h, quit_msg, MSGFLT_ALLOW, NULL);
         show_msg = RegisterWindowMessageW(L"haku_control_show");   // second launch opens the settings window
         ChangeWindowMessageFilterEx(h, show_msg, MSGFLT_ALLOW, NULL);
+        SetTimer(h, AUTO_TIMER, 3000, NULL);
         return 0;
     case WM_TIMER:
         if (wp == SAVE_TIMER) { KillTimer(h, SAVE_TIMER); cfg_save_if_dirty(); }
+        if (wp == AUTO_TIMER) auto_tick();
         return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: swap the tray icon

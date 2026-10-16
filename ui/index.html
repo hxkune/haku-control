@@ -97,6 +97,7 @@
         <input type="text" id="mood-in" maxlength="300">
         <button class="btn primary small" id="mood-go" type="submit"><span data-i18n="mood.go">Pick colours</span></button>
       </form>
+      <div class="quick hidden" id="quick"></div>
       <div class="mood-out hidden" id="mood-out">
         <div class="mood-pal" id="mood-pal"></div>
         <div class="mood-info"><b id="mood-name"></b><small id="mood-fx"></small></div>
@@ -164,7 +165,7 @@
   <section class="tab" id="tab-pc">
     <div class="pc-grid">
       <!-- what lighting hardware this PC has, and which way haku lights each -->
-      <div class="card hw-card">
+      <div class="card lead hw-card">
         <div class="card-head">
           <div><h3 data-i18n="hw.title">Lighting in this PC</h3><p class="muted" id="hw-status"></p></div>
           <div class="btn-row hw-btns">
@@ -259,7 +260,7 @@
         <span class="grow"></span>
         <button class="btn small ghost" data-pair><span data-i18n="nano.add">Add a controller</span></button>
       </div>
-      <div class="card nano-wall">
+      <div class="card lead nano-wall">
         <div class="card-head">
           <div><h3 id="nano-name">Nanoleaf</h3><p class="muted" id="nano-status"></p></div>
           <label class="switch"><input type="checkbox" data-toggle="nanoleaf_enabled"><span></span></label>
@@ -296,7 +297,7 @@
 
   <!-- ============ BULBS ============ -->
   <section class="tab" id="tab-bulbs">
-    <div class="card bulbs-head">
+    <div class="card lead bulbs-head">
       <div class="card-head">
         <div><h3 data-i18n="bulbs.title">AiDot bulbs</h3><p class="muted" id="bulbs-status"></p></div>
         <label class="switch"><input type="checkbox" data-toggle="lights_enabled"><span></span></label>
@@ -321,7 +322,7 @@
 
   <!-- ============ DEVICES (LAN / bridge lights) ============ -->
   <section class="tab" id="tab-devices">
-    <div class="card">
+    <div class="card lead">
       <div class="card-head">
         <div><h3 data-i18n="dev.find">Lights on your network</h3><p class="muted" id="scan-status"></p></div>
         <button class="btn primary" id="scan-btn"><span data-i18n="dev.scan">Scan network</span></button>
@@ -409,7 +410,7 @@
   <!-- ============ SETTINGS ============ -->
   <section class="tab" id="tab-settings">
     <div class="set-grid">
-      <div class="card pro-card hidden" id="pro-card">
+      <div class="card lead pro-card hidden" id="pro-card">
         <div class="card-head"><h3>haku Pro</h3><span class="pro-badge" id="pro-badge"></span></div>
         <p class="pro-state" id="pro-state"></p>
         <p class="muted" data-i18n="pro.what"></p>

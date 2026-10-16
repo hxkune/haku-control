@@ -156,6 +156,7 @@ nav button i { margin-left: auto; font: normal 10.5px var(--mono); color: var(--
 nav button:hover { color: var(--text); border-color: var(--line); }
 nav button.active { background: var(--chrome); color: var(--on-strong); }
 nav button.active i { color: var(--on-strong-dim); }
+.nav-cap { font: 600 9.5px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--faint); padding: 12px 14px 2px; }
 .side-foot { margin-top: auto; padding: 0 4px; }
 .side-foot .range { margin: 10px 0 16px; }
 .power {
@@ -209,7 +210,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 }
 .range::-webkit-slider-runnable-track {
   height: 2px; border-radius: 2px;
-  background: linear-gradient(90deg, var(--strong) 0, var(--strong) var(--p), rgba(var(--ink), .14) var(--p));
+  background: linear-gradient(90deg, var(--live, var(--strong)) 0, var(--live, var(--strong)) var(--p), rgba(var(--ink), .14) var(--p));
 }
 .range::-webkit-slider-thumb {
   -webkit-appearance: none; width: 10px; height: 10px; margin-top: -4px;
@@ -235,8 +236,8 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
   content: ""; position: absolute; left: 3px; top: 3px; width: 14px; height: 14px; border-radius: 50%;
   background: var(--muted); transition: transform .22s cubic-bezier(.3, 1.4, .5, 1), background .2s;
 }
-.switch input:checked + span { background: var(--chrome); border-color: transparent; }
-.switch input:checked + span::after { transform: translateX(18px); background: var(--on-strong); }
+.switch input:checked + span { background: var(--live, var(--chrome)); border-color: transparent; box-shadow: 0 0 12px -2px var(--live, transparent); }
+.switch input:checked + span::after { transform: translateX(18px); background: var(--bg); }
 
 .check { display: flex; align-items: center; gap: 11px; cursor: pointer; color: var(--text); font-size: 13px; }
 .check em { font-style: normal; }
@@ -260,6 +261,9 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
   transition: background .15s, border-color .15s, transform .1s;
 }
 .btn:active { transform: scale(.98); }
+/* a plain .btn is the secondary one: a faint fill and a visible edge, never the system's grey */
+.btn:not(.primary):not(.ghost):not(.danger) { background-color: rgba(var(--ink), .07); border-color: var(--line2); color: var(--text); --lc: var(--line2); }
+.btn:not(.primary):not(.ghost):not(.danger):hover { background-color: rgba(var(--ink), .12); border-color: var(--line3); --lc: var(--line3); }
 .btn svg { width: 14px; height: 14px; }
 .btn.primary { background: var(--chrome); color: var(--on-strong); }
 .btn.primary:hover { filter: brightness(1.05); }
@@ -315,11 +319,16 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
   transition: border-color .15s, background-color .15s;
 }
 .fx:hover { border-color: var(--line2); }
+.fx-head { grid-column: 1 / -1; font: 600 9.5px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--faint); margin: 8px 0 -2px; }
+.fx-head:first-child { margin-top: 0; }
+.fx .star { font-style: normal; color: var(--faint); margin-left: auto; padding: 0 8px; opacity: 0; transition: opacity .15s, color .15s; }
+.fx:hover .star, .fx .star.on { opacity: 1; }
+.fx .star:hover, .fx .star.on { color: var(--strong); }
 .fx.on { border-color: var(--strong); background-color: #131313; }
 .fx .top { display: flex; justify-content: space-between; align-items: center; }
 .fx b { font: 600 14px var(--display); }
 .fx small { display: block; color: var(--faint); font-size: 11px; margin-top: 3px; }
-.fx canvas { width: 100%; height: 4px; display: block; border-radius: 4px; margin-top: 14px; background: #1a1a1a; }
+.fx canvas { width: 100%; height: 10px; display: block; border-radius: 5px; margin-top: 12px; background: #1a1a1a; }
 .fx.on canvas { filter: drop-shadow(0 0 6px rgba(var(--ink), .25)); }
 /* own presets: a menu dot row instead of hover-only controls; the + tile saves the current look */
 .fx .pmenu { font-style: normal; color: var(--faint); letter-spacing: 1px; padding: 0 2px 0 8px; margin-left: auto; opacity: 0; transition: opacity .15s, color .15s; }
@@ -678,7 +687,10 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
   nav button.active { background: none; color: var(--strong); }
   nav button.active svg { filter: drop-shadow(0 0 6px rgba(var(--ink), .6)); }
   nav button svg { width: 19px; height: 19px; }
-  .side-foot { margin: 0; padding: 8px 10px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+  .nav-cap { display: none; }
+  .side-foot { margin: 0; padding: 8px 10px; display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+  .side-foot .pro-chip { grid-column: 4; grid-row: 1; width: auto; max-width: 112px; margin: 0; padding: 6px 10px; font-size: 11px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .side-foot .lbl { display: contents; }
   .side-foot .lbl span { display: none; }
   .side-foot .lbl b { grid-column: 3; grid-row: 1; font-size: 12px; min-width: 36px; text-align: right; }
@@ -806,6 +818,11 @@ nav button:active, .power:active, .fx:active, .seg button:active, .kbd:active { 
 
 /* Settings -> Animations off ([general] ui_motion=0); Windows' own "animation effects" switch is not used,
    many people turn it off for speed and still want this */
+/* the window behind others: the endless animations hold still and the background light changes without fading
+   (each fade repaints the whole window for over a second) */
+body.idle .ambient i, body.idle .ambient i b, body.idle .dot.on, :root[data-theme="bubblegum"] body.idle *,
+:root[data-theme="kyoka"] body.idle * { animation-play-state: paused !important; }
+body.idle .ambient { transition: none; }
 body.calm .ambient i, body.calm .dot.on, body.calm .tab.active .card, body.calm .tab.active .fx, body.calm .tab { animation: none; }
 body.calm .fx:hover { transform: none; }
 body.calm .ambient, body.calm .card::after, body.calm .fx::after { display: none; }
@@ -983,6 +1000,13 @@ body.calm nav button { transition: none; }
 .prof-edit input:focus, .prof-new input:focus { border-color: var(--line3); }
 .prof-edit .hk { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); }
 .prof-edit .btns { display: flex; gap: 6px; }
+.prof-apps-l { display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+.prof-apps { display: flex; flex-wrap: wrap; gap: 6px; }
+.app-chip { font: 12px var(--mono); color: var(--text); background: none; border: 1px solid var(--line2); padding: 4px 8px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.app-chip i { font-style: normal; color: var(--muted); }
+.app-chip:hover { border-color: #d0605a; } .app-chip:hover i { color: #d0605a; }
+.prof-edit .hint { margin: -4px 0 0; color: var(--faint); font-size: 11px; }
+.prof-auto { font: normal 9.5px var(--mono); letter-spacing: 1px; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line2); padding: 1px 5px; margin-left: 8px; }
 .prof-edit .btns .btn { margin: 0; }
 .prof-edit .btns .grow { flex: 1; }
 .prof-new { display: flex; gap: 6px; padding: 6px 2px 2px; }
@@ -999,6 +1023,11 @@ body.calm nav button { transition: none; }
 
 /* ---- the local model for the mood: setup progress */
 .mood-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.qpal { display: flex; width: 56px; height: 16px; padding: 0; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; cursor: pointer; transition: transform .15s, border-color .15s; }
+.qpal i { flex: 1; }
+.qpal:hover { transform: translateY(-1px); border-color: var(--line3); }
+.qpal.on { border-color: var(--strong); }
 .mood-foot .mood-msg { flex: 1; min-width: 200px; }
 .mood-foot .btn { margin: 0; }
 .ai-bar { height: 4px; margin: 12px 0 4px; background: var(--line); overflow: hidden; }
@@ -1313,3 +1342,31 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .09s linear infinite; 
 
 /* the preview's menu: one line per device, scrolling when there are many */
 .hero-checks { display: flex; flex-direction: column; gap: 2px; max-height: min(46vh, 380px); overflow-y: auto; margin-right: -6px; padding-right: 6px; }
+
+/* ================= the live light as the accent =================
+   --live is the mean colour of all lights right now (set by ambient()); without it the old white stands in.
+   White chrome stays only on the primary buttons; selections get a dark fill and a coloured mark. */
+@media (min-width: 701px) {
+  nav button.active { background-image: none; background-color: rgba(var(--ink), .08); color: var(--text); box-shadow: inset 3px 0 0 var(--live, var(--strong)); }
+  nav button.active i { color: var(--muted); }
+  nav button.active svg { color: var(--live, var(--strong)); filter: drop-shadow(0 0 5px var(--live, transparent)); }
+}
+@media (max-width: 700px) { nav button.active svg { color: var(--live, var(--strong)); } }
+.seg button.on { background-image: none; background-color: rgba(var(--ink), .1); color: var(--text); box-shadow: inset 0 -2px 0 var(--live, var(--strong)); }
+.fx.on { --lc: var(--live, var(--strong)); border-color: var(--live, var(--strong)); }
+.fx.on canvas { filter: drop-shadow(0 0 7px var(--live, rgba(var(--ink), .25))); }
+/* a setup in progress is a bar filling up, not a button */
+.btn.prog, .btn.prog:disabled { opacity: 1; cursor: default; color: var(--muted); border-color: var(--line2); --lc: var(--line2);
+  background-image: var(--g1), var(--g1), linear-gradient(90deg, rgba(var(--ink), .16) var(--p, 0%), transparent var(--p, 0%));
+  background-size: var(--cut) var(--cut), var(--cut) var(--cut), 100% 100%; background-color: transparent; }
+/* the page's main card: a lit top edge and a faint wash of the light */
+.card.lead { --lc: var(--line2); box-shadow: inset 0 2px 0 var(--live, var(--line3));
+  background-image: var(--g1), var(--g1), linear-gradient(180deg, color-mix(in srgb, var(--live, transparent) 10%, transparent), transparent 160px);
+  background-size: var(--cut) var(--cut), var(--cut) var(--cut), 100% 100%; }
+/* brand page with one or two lights: the light big on the left, its settings on the right */
+@media (min-width: 900px) {
+  .bulb-grid.few { grid-template-columns: 1fr; }
+  .few .dev-card { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); column-gap: 30px; align-items: start; }
+  .few .dev-card > * { grid-column: 1; }
+  .few .dev-card > .opts { grid-column: 2; grid-row: 1 / span 4; margin-top: 0; }
+}

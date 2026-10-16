@@ -316,7 +316,7 @@ function skyFrame(now) {
 }
 // on with the theme, off otherwise; paused while the window is hidden
 function skyRun() {
-  SKY.on = document.documentElement.dataset.theme === 'akapzz' && !document.hidden;
+  SKY.on = document.documentElement.dataset.theme === 'akapzz' && !document.hidden && !document.body.classList.contains('idle');
   if (SKY.on && !SKY.raf) { if (!SKY.stars.length) skyBuild(); SKY.last = 0; SKY.raf = requestAnimationFrame(skyFrame); }
   if (!SKY.on && SKY.raf) { cancelAnimationFrame(SKY.raf); SKY.raf = 0; }
 }
@@ -574,6 +574,11 @@ function buildBrandTabs() {
   $$('#nav [data-brand], .tab[data-brand]').forEach(e => e.remove());
   let after = $('#nav [data-tab="bulbs"]');
   const host = $('#tab-devices').parentElement;
+  if (seen.size) {   // the brands' own tabs under a caption of their own, apart from haku's
+    const cap = document.createElement('div');
+    cap.className = 'nav-cap'; cap.dataset.brand = ''; cap.dataset.i18n = 'nav.lights'; cap.textContent = t('nav.lights');
+    after.after(cap); after = cap;
+  }
   for (const [key, [, name, icon]] of seen) {
     const b = document.createElement('button');
     b.dataset.tab = 'brand-' + key; b.dataset.brand = key;
@@ -710,7 +715,7 @@ function showTab(t) {
   $('main').scrollTop = 0;
   $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
-  updateNav();
+  updateNav(); updateChips();
   $('#nav button.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });   // the bottom bar of a narrow window scrolls
   const bn = brandName(t);
   $('#title').textContent = bn || window.t('nav.' + t);
@@ -827,8 +832,33 @@ function renderPalette(box, section, single, fallback) {
   }
 }
 function onPaletteChanged(section) {
-  if (section === S.effect) updateBrand();
+  if (section === S.effect) { updateBrand(); rememberPal(cv(section, 'palette')); }
 }
+// ---- quick colours: the last 8 palettes used ([general] recent, ';' between palettes), a click puts one on the effect
+let recentT = 0;
+function rememberPal(pal, now) {
+  clearTimeout(recentT);   // the picker changes it while dragging: kept once it has settled
+  recentT = setTimeout(() => {
+    pal = palStr(parsePal(pal));
+    if (!pal) return;
+    const list = [pal].concat(cv('general', 'recent', '').split(';').filter(p => p && p !== pal)).slice(0, 8);
+    setCfg('general', 'recent', list.join(';'));
+    renderQuick();
+  }, now ? 0 : 1500);
+}
+function renderQuick() {
+  const box = $('#quick'), id = S.effect, list = cv('general', 'recent', '').split(';').map(parsePal).filter(p => p.length);
+  box.classList.toggle('hidden', !list.length || id === 'off' || id === 'screen');
+  const cur = palStr(effPal(id));
+  box.innerHTML = list.map((p, i) => `<button type="button" class="qpal${palStr(p) === cur ? ' on' : ''}" data-i="${i}" title="${esc(palStr(p))}">${p.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</button>`).join('');
+}
+$('#quick').addEventListener('click', e => {
+  const b = e.target.closest('.qpal'); if (!b) return;
+  const pal = cv('general', 'recent', '').split(';').map(parsePal).filter(p => p.length)[+b.dataset.i];
+  if (!pal) return;
+  setCfg(S.effect, 'palette', palStr(pal));
+  renderEffectSide(); drawAll();
+});
 
 // ------------------------------------------------------------------ zone editor
 const MODES = ['effect', 'palette', 'static', 'white'];
@@ -928,6 +958,9 @@ function fxTab(v) {
   buildEffects();
 }
 $('#fx-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.v !== FX_TAB) fxTab(b.dataset.v); });
+const FX_GROUP = { breathe: 'calm', ocean: 'calm', aurora: 'calm', candle: 'calm', static: 'calm', caustic: 'calm', caustics: 'calm',
+  audio: 'reactive', screen: 'reactive', temperature: 'reactive', pump: 'reactive', off: 'off' };
+const favs = () => cv('general', 'fav', '').split(',').filter(Boolean);
 function buildEffects() {
   const grid = $('#fx-grid');
   grid.innerHTML = '';
@@ -937,13 +970,26 @@ function buildEffects() {
   tabs[0].querySelector('i').textContent = S.effects.length;
   tabs[1].querySelector('i').textContent = presets().length || '';
   if (FX_TAB === 'community') { buildCommunity(grid); return; }
-  if (FX_TAB === 'fx') S.effects.forEach((e, n) => {
-    const b = document.createElement('button');
-    b.className = 'fx'; b.dataset.id = e.id;
-    b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><span class="num-i">${String(n + 1).padStart(2, '0')}</span></div><small>${t('short.' + e.id)}</small><canvas></canvas>`;
-    b.addEventListener('click', () => { S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect(); });
-    grid.appendChild(b);
-  });
+  if (FX_TAB === 'fx') {
+    // in groups (the starred ones first); an effect the map does not know goes with the lively ones
+    const fav = favs(), num = new Map(S.effects.map((e, n) => [e.id, n]));
+    const groups = [['fav', S.effects.filter(e => fav.includes(e.id))]].concat(['calm', 'lively', 'reactive', 'off'].map(g =>
+      [g, S.effects.filter(e => !fav.includes(e.id) && (FX_GROUP[e.id] || 'lively') === g)]));
+    for (const [g, list] of groups) {
+      if (!list.length) continue;
+      if (g !== 'off') { const h = document.createElement('div'); h.className = 'fx-head'; h.textContent = t('fx.g.' + g); grid.appendChild(h); }
+      for (const e of list) {
+        const b = document.createElement('button'), on = fav.includes(e.id);
+        b.className = 'fx'; b.dataset.id = e.id;
+        b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><i class="star${on ? ' on' : ''}" title="${t(on ? 'fx.unfav' : 'fx.fav')}">${on ? '★' : '☆'}</i><span class="num-i">${String(num.get(e.id) + 1).padStart(2, '0')}</span></div><small>${t('short.' + e.id)}</small><canvas></canvas>`;
+        b.addEventListener('click', ev => {
+          if (ev.target.closest('.star')) { ev.stopPropagation(); setCfg('general', 'fav', (on ? fav.filter(x => x !== e.id) : fav.concat(e.id)).join(',')); buildEffects(); return; }
+          S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect();
+        });
+        grid.appendChild(b);
+      }
+    }
+  }
   // own presets, then the + tile that makes a new one
   if (FX_TAB === 'presets') presets().forEach(P => {
     const b = document.createElement('button');
@@ -1006,7 +1052,7 @@ const PROF = { edit: 0, sure: false };
 const profSec = id => 'profile.' + id;
 function profiles() {
   return Object.keys(S.cfg).map(k => /^profile\.(\d+)$/.exec(k)).filter(m => m && S.cfg[m[0]].name)
-    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '' })).sort((a, b) => a.id - b.id);
+    .map(m => ({ id: +m[1], name: S.cfg[m[0]].name, hotkey: S.cfg[m[0]].hotkey || '', apps: S.cfg[m[0]].apps || '' })).sort((a, b) => a.id - b.id);
 }
 const profCur = () => profiles().find(p => p.id === +cv('general', 'profile', 0)) || null;
 const PENCIL = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>';
@@ -1019,6 +1065,8 @@ function renderProfiles() {
     <div class="prof-edit" data-id="${p.id}">
       <input type="text" class="prof-name" maxlength="40" spellcheck="false" value="${esc(p.name)}">
       <div class="hk"><span>${t('prof.hotkey')}</span><button class="kbd" type="button"></button></div>
+      <div class="prof-apps-l"><span>${t('prof.apps')}</span><div class="prof-apps">${profApps(p.apps).map(a => `<button class="app-chip" type="button" data-app="${esc(a)}" title="${t('prof.apps.del')}">${esc(a.replace(/\.exe$/i, ''))}<i>×</i></button>`).join('')}<button class="btn small prof-app-add" type="button"><span>+ ${t('prof.apps.add')}</span></button></div></div>
+      <small class="hint">${t('prof.apps.note')}</small>
       <div class="btns">
         <button class="btn danger small prof-del" type="button"><span>${t(PROF.sure ? 'prof.delete.sure' : 'prof.delete')}</span></button>
         <span class="grow"></span>
@@ -1026,7 +1074,7 @@ function renderProfiles() {
       </div>
     </div>` : `
     <div class="prof-row${cur && cur.id === p.id ? ' on' : ''}" data-id="${p.id}">
-      <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
+      <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.apps ? `<em class="prof-auto" title="${esc(p.apps)}">${t('prof.auto')}</em>` : ''}${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
       <button class="prof-ren" type="button" title="${t('prof.rename')}">${PENCIL}</button>
     </div>`).join('') || `<p class="hint">${t('prof.empty')}</p>`;
   const ed = $('#prof-list .prof-edit');
@@ -1049,12 +1097,17 @@ function profRenameDone() {
   const id = +ed.dataset.id, v = $('.prof-name', ed).value.replace(/[;#\[\]=]/g, ' ').trim();
   if (v && v !== cv(profSec(id), 'name', '')) setCfg(profSec(id), 'name', v);
 }
+// the programs that switch to it (exe names, comma-separated): picked by the core from a menu of open ones or Browse
+const profApps = v => (v || '').split(',').map(x => x.trim()).filter(Boolean);
 $('#prof-btn').addEventListener('click', e => { e.stopPropagation(); profMenu(); });
 $('#prof-list').addEventListener('click', e => {
   const row = e.target.closest('[data-id]'); if (!row) return;
   const id = +row.dataset.id;
   if (e.target.closest('.prof-ren')) { profRenameDone(); PROF.edit = id; PROF.sure = false; renderProfiles(); const i = $('#prof-list .prof-name'); i.focus(); i.select(); return; }
   if (e.target.closest('.prof-item')) { profMenu(false); if (id !== +cv('general', 'profile', 0)) { setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } return; }
+  if (e.target.closest('.prof-app-add')) { profRenameDone(); send({ cmd: 'profile_app', id: String(id) }); return; }
+  const chip = e.target.closest('.app-chip');
+  if (chip) { setCfg(profSec(id), 'apps', profApps(cv(profSec(id), 'apps', '')).filter(a => a !== chip.dataset.app).join(', ')); renderProfiles(); return; }
   if (e.target.closest('.prof-ok')) { profRenameDone(); PROF.edit = 0; renderProfiles(); return; }
   if (e.target.closest('.prof-del')) {
     if (!PROF.sure) { PROF.sure = true; profRenameDone(); renderProfiles(); return; }
@@ -1062,7 +1115,7 @@ $('#prof-list').addEventListener('click', e => {
   }
 });
 $('#prof-list').addEventListener('keydown', e => {
-  if (!e.target.classList.contains('prof-name')) return;
+  if (!e.target.matches('.prof-name')) return;
   if (e.key === 'Enter') { e.preventDefault(); profRenameDone(); PROF.edit = 0; renderProfiles(); }
   if (e.key === 'Escape') { e.stopPropagation(); PROF.edit = 0; renderProfiles(); }
 });
@@ -1370,6 +1423,7 @@ function renderEffectSide() {
   $('#fx-desc').textContent = (P ? t('preset.based', fxName(id)) + ' ' : '') + t('desc.' + id);
   $('#fx-pal-field').classList.toggle('hidden', id === 'off' || id === 'screen');
   renderPalette($('#fx-pal'), id, false, effPal(id));
+  renderQuick();
   const hasSpeed = !['static', 'off', 'temperature'].includes(id);
   $('#fx-speed-field').classList.toggle('hidden', !hasSpeed);
   const sp = +cv(id, 'speed', cv('general', 'speed', 5));
@@ -1550,7 +1604,7 @@ function drawStrip(cv2, cols) {
 let t0 = performance.now(), lastPrev = 0;
 function animate(now) {
   requestAnimationFrame(animate);
-  if (tab !== 'effects' || now - lastPrev < 33) return;
+  if (tab !== 'effects' || now - lastPrev < 33 || document.body.classList.contains('idle')) return;
   lastPrev = now;
   const t = (now - t0) / 1000;
   const PR = presets();
@@ -2047,12 +2101,13 @@ function tilePath(c, x, y, w, h, cut) {
 }
 function tileLabel(c, text, x, y, w, bright) {
   const d = devicePixelRatio;
-  c.font = `${9 * d}px ${WIDE}`; c.letterSpacing = `${2 * d}px`; c.textAlign = 'center';
-  c.fillStyle = bright ? THEME.hi : THEME.lo;
-  let s = text.toUpperCase();
-  if (c.measureText(s).width > w) { while (s.length > 1 && c.measureText(s + '…').width > w) s = s.slice(0, -1); s += '…'; }
+  c.font = `${9 * d}px ${WIDE}`; c.letterSpacing = `${1.2 * d}px`; c.textAlign = 'center';
+  c.fillStyle = bright ? THEME.hi : THEME.mid;
+  let s = text.toUpperCase(), cut = c.measureText(s).width > w;
+  if (cut) { while (s.length > 1 && c.measureText(s + '…').width > w) s = s.slice(0, -1); s += '…'; }
   c.fillText(s, x + w / 2, y);
   c.letterSpacing = '0px';
+  return cut;   // the full name is then the tile's tooltip
 }
 
 function drawHero() {
@@ -2098,6 +2153,9 @@ function drawHero() {
     const p = glide(it.key, T);   // glides from where the tile was (a new tile fades / grows in)
     const v = heroAnim('a:' + it.key, 1);
     const x = p.x * d, y = p.y * d, w = p.w * d, h = p.h * d, hot = HERO.hover === it.key || (to && to.key === it.key);
+    // not reachable: the tile is dimmed and says so (a device switched off in haku is not offline, only dark)
+    const ext = it.k === 'ext' && S.ext.devs[it.i], off = ext ? ext.enabled && !ext.online : it.k === 'bulb' ? !(S.bulbs[it.i] || {}).online :
+      it.k === 'nano' ? !(nanoCtls().find(n => n.slot === it.slot) || {}).online : false;
     c.save();
     c.globalAlpha = drag && drag.src.key === it.key ? v * .35 : v;
     const sc = .92 + .08 * v; c.translate(x + w / 2, y + h / 2); c.scale(sc, sc);
@@ -2108,18 +2166,19 @@ function drawHero() {
     c.strokeStyle = to && to.key === it.key ? inkA(.6) : hot ? inkA(.28) : inkA(.06); c.lineWidth = d;
     c.setLineDash(to && to.key === it.key ? [5 * d, 4 * d] : []); c.stroke(); c.setLineDash([]);
     c.save(); tilePath(c, x, y, w, h, 8 * d); c.clip();   // a device never draws outside its tile
+    if (off) c.globalAlpha *= .45;
     try { it.draw(c, x + 8 * d, y + 22 * d, w - 16 * d, h - 50 * d); } catch (e) { console.warn('preview', it.key, e); }
     c.restore();
     // given back to its own lighting: what it shows is not haku's, said on the tile
-    if (it.k === 'ram' ? S.ram_own : it.k === 'gpu' ? S.msi_own : it.k === 'ext' ? (S.ext.devs[it.i] || {}).own : 0) {
-      c.font = `${8 * d}px ${WIDE}`; c.letterSpacing = `${1.5 * d}px`; c.textAlign = 'center'; c.fillStyle = THEME.mid;
-      let s = t('hero.own').toUpperCase();
+    if (off || (it.k === 'ram' ? S.ram_own : it.k === 'gpu' ? S.msi_own : ext ? ext.own : 0)) {
+      c.font = `${8 * d}px ${WIDE}`; c.letterSpacing = `${1.5 * d}px`; c.textAlign = 'center'; c.fillStyle = off ? '#d0605a' : THEME.mid;
+      let s = t(off ? 'hero.offline' : 'hero.own').toUpperCase();
       while (s.length > 1 && c.measureText(s).width > w - 16 * d) s = s.slice(0, -2) + '…';
       c.fillText(s, x + w / 2, y + h - 26 * d); c.letterSpacing = '0px';
     }
-    tileLabel(c, it.name, x + 8 * d, y + h - 12 * d, w - 16 * d, hot);
+    const cut = tileLabel(c, it.name, x + 8 * d, y + h - 12 * d, w - 16 * d, hot);
     c.restore();
-    hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, zone: it.zone, name: it.name, group: T.group || 0, x, y, w, h });
+    hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, zone: it.zone, name: it.name, cut, group: T.group || 0, x, y, w, h });
   }
   hits.push(...ghits);   // a device in a group is found before its group
   for (const k of Object.keys(HERO.pos)) if (!seen.has(k)) { delete HERO.pos[k]; delete HERO.anim['a:' + k]; }
@@ -2202,7 +2261,7 @@ $('#hero').addEventListener('pointermove', e => {
   }
   const h = heroHit(e), key = h ? h.key : '', pw = heroOnPower(h, e) ? key : '';
   $('#hero').style.cursor = h ? 'pointer' : '';
-  $('#hero').title = pw ? t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on')) : '';
+  $('#hero').title = pw ? t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on')) : h && h.cut ? h.name : '';
   if (key !== HERO.hover || pw !== HERO.hoverPw) { HERO.hover = key; HERO.hoverPw = pw; drawHero(); }
 });
 const heroDragEnd = drop => {
@@ -2477,11 +2536,14 @@ function groupColor(list) {
 }
 function ambient() {
   const now = performance.now();
-  if (now - AMB.t < 400) return;
+  if (now - AMB.t < (document.body.classList.contains('idle') ? 2000 : 400)) return;
   AMB.t = now;
   const groups = [[...F.ram[0], ...F.ram[1]], [...F.gpu, F.board], Object.values(F.nano).flat(), [...F.bulbs, ...Object.values(F.ext).flat()]];
   const all = groupColor(groups.flat());
   const el = $('#ambient');
+  // the light's own colour tints the controls that are on (toggles, slider fills)
+  const live = all ? `rgb(${all[0] | 0}, ${all[1] | 0}, ${all[2] | 0})` : '';
+  if (AMB.live !== live) { AMB.live = live; live ? document.documentElement.style.setProperty('--live', live) : document.documentElement.style.removeProperty('--live'); }
   groups.forEach((g, i) => {
     let c = groupColor(g), a = 0;
     if (c) a = .08 + .16 * c[3];
@@ -2642,15 +2704,19 @@ function buildDevices() {
   grid.innerHTML = '';
   $$('[data-brand-grid]').forEach(g => { g.innerHTML = ''; });
   $('#dev-empty').classList.toggle('hidden', S.ext.devs.length > 0);
+  // a brand page with one or two lights shows them big, the settings beside them
+  const per = {}; S.ext.devs.forEach(d => { const b = (brandOf(d.kind) || [])[0]; if (b) per[b] = (per[b] || 0) + 1; });
+  $$('[data-brand-grid]').forEach(g => g.classList.toggle('few', (per[g.dataset.brandGrid] || 0) <= 2));
   S.ext.devs.forEach(d => {
     const el = document.createElement('div');
     el.className = 'card dev-card';
+    const big = (per[(brandOf(d.kind) || [])[0]] || 9) <= 2;
     const sec = 'dev.' + d.id;
     el.innerHTML = `<div class="card-head">
         <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub : ''}</p></div>
         <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
       </div>
-      <canvas class="live" id="dev-live-${d.id}" data-h="${d.per_led ? 70 : 90}"></canvas>
+      <canvas class="live" id="dev-live-${d.id}" data-h="${big ? 220 : d.per_led ? 70 : 90}"></canvas>
       <div class="zone" data-zone="zone.dev${d.id}"></div>
       <div class="opts">
         <label class="num"><span>${t('strip.name')}</span><input type="text" class="dev-name" maxlength="40" spellcheck="false" value="${esc(cv(sec, 'name', d.name))}"></label>
@@ -3294,6 +3360,7 @@ function updateAi() {
   const ms = $('#mood-setup');
   ms.classList.toggle('hidden', !!ready || !S.ollama);
   ms.disabled = busy;
+  ms.classList.toggle('prog', !!busy); ms.style.setProperty('--p', (busy ? A.pct || 0 : 0) + '%');
   ms.querySelector('span').textContent = busy ? t('ai.st.' + st, A.pct || 0) : t('ai.go');
 }
 function aiSetup() { S.ollama = { ...(S.ollama || {}), stage: 4, pct: 0, err: '' }; updateAi(); send({ cmd: 'ai_setup' }); }
@@ -3308,6 +3375,7 @@ $('#mood-apply').addEventListener('click', () => {
   if (!(M.colors || []).length) return;
   setCfg(M.effect, 'palette', palStr(M.colors));
   setCfg(M.effect, 'speed', M.speed);
+  rememberPal(palStr(M.colors), true);
   S.effect = M.effect;
   send({ cmd: 'effect', id: M.effect });
   MOOD.applied = true;
@@ -3354,7 +3422,12 @@ function updateChips() {
   if (S.bulbs.length) { const on = S.bulbs.filter(b => b.online).length; h.push(chip(on === S.bulbs.length ? 'on' : on ? 'warn' : 'off', `${t('chip.lamps')} <b>${on}/${S.bulbs.length}</b>`)); }
   const ed = S.ext.devs.filter(d => d.enabled);
   if (ed.length) { const on = ed.filter(d => d.online).length; h.push(chip(on === ed.length ? 'on' : on ? 'warn' : 'off', `${t('chip.devs')} <b>${on}/${ed.length}</b>`)); }
-  $('#chips').innerHTML = h.join('');
+  // the full row only above the effects; elsewhere one chip sums it up, the row is its tooltip
+  if (tab !== 'effects' && h.length > 1) {
+    const n = h.filter(x => x.includes('dot on')).length, all = n === h.length;
+    const tip = h.map(x => x.replace(/<[^>]+>/g, '')).join('\n');
+    $('#chips').innerHTML = chip(all ? 'on' : n ? 'warn' : 'off', `${t('chip.ok')} <b>${n}/${h.length}</b>`).replace('class="chip"', `class="chip" title="${esc(tip)}"`);
+  } else $('#chips').innerHTML = h.join('');
   $('#ram-status').textContent = !S.sticks ? t('ram.none') : S.ram_own ? t('own.status') : t('ram.status', S.sticks);
   $$('[data-own]').forEach(el => { if (el !== document.activeElement) el.checked = !!S[el.dataset.own === 'msi_own' ? 'msi_own' : 'ram_own']; });
   // all of the PC's lighting given back / taken again: shown once there is something of the PC haku lights
@@ -3397,6 +3470,7 @@ function applyStatus(m) {
 if (wv) wv.addEventListener('message', e => {
   const m = e.data;
   if (m.type === 'frame') onFrame(m.l);
+  else if (m.type === 'focus') document.body.classList.toggle('idle', !m.on);   // behind other windows: endless animations pause
   else if (m.type === 'status') applyStatus(m);
   else if (m.type === 'state') {
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;

@@ -228,6 +228,7 @@ void  app_preset_delete(int id);
 #define PROFILE_MAX 16
 int   app_profile_save(int id, const char *name);   // id 0: new, from the setup as it is now; see main.c
 void  app_profile_apply(int id);
+void  app_auto_recheck(void);
 void  app_profile_delete(int id);
 void  ui_refresh_state(void);   // the open window gets the whole state (settings included) again
 void  app_set_brightness(float b, int save_now);
