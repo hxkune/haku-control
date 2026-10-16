@@ -2302,6 +2302,7 @@ function drawHero() {
   }
   HERO.hits = hits;   // (before the power buttons: a group's button asks its devices)
   if (!HERO.arrange) hits.forEach(h => heroPowerButton(c, h));
+  heroKeys(hits);
   if (drag && drag.px != null) {   // the device being dragged: its name under the pointer, and what dropping does
     const msg = to && to.group ? t('group.drop.in', groupTitle(groups().find(g => g.n === to.group) || { n: to.group }))
       : to && to.swap ? t('hero.drop.move') : to && to.tile ? t('group.drop.new') : drag.src.group && !HERO.arrange ? t('group.drop.out') : '';
@@ -2315,6 +2316,28 @@ function drawHero() {
   }
   if (HERO.moving && !HERO.raf) HERO.raf = requestAnimationFrame(() => { HERO.raf = 0; if (tab === 'effects') drawHero(); });
 }
+// the preview's devices as real buttons over the canvas, so Tab and a screen reader reach them (the mouse stays on the canvas)
+function heroKeys(hits) {
+  const box = $('#hero-keys'), cvs = $('#hero'), ox = cvs.offsetLeft, oy = cvs.offsetTop, d = devicePixelRatio, id = b => b.dataset.i + (b.hasAttribute('data-pw') ? 'p' : '');
+  const sig = HERO.arrange ? '' : ox + ',' + oy + ';' + hits.map(h => [h.key, h.x, h.y, h.w, h.h, h.pw && h.pw.on].join()).join(';');
+  if (box.dataset.sig === sig) return;
+  const f = box.contains(document.activeElement) ? id(document.activeElement) : null;
+  const at = (x, y, w, h) => `style="left:${ox + x / d}px;top:${oy + y / d}px;width:${w / d}px;height:${h / d}px"`;
+  const name = h => h.k === 'group' ? groupTitle(groups().find(g => g.n === h.g) || { n: h.g }) : h.k === 'add' ? t('hero.empty') : h.name;
+  box.dataset.sig = sig;
+  box.innerHTML = HERO.arrange ? '' : hits.map((h, i) => `<button type="button" data-i="${i}" ${at(h.x, h.y, h.w, h.h)} aria-label="${esc(name(h))}"></button>` + (!h.pw ? '' :
+    `<button type="button" data-i="${i}" data-pw ${at(h.pw.x - h.pw.r, h.pw.y - h.pw.r, 2 * h.pw.r, 2 * h.pw.r)} aria-label="${esc(name(h))}: ${t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on'))}"></button>`)).join('');
+  if (f) { const b = [...box.children].find(b => id(b) === f); if (b) b.focus(); }   // a power switch redraws the buttons: keep the one in use
+}
+$('#hero-keys').addEventListener('click', e => {
+  const b = e.target.closest('button'), h = b && HERO.hits[+b.dataset.i]; if (!h) return;
+  if (b.hasAttribute('data-pw')) { togglePower(h); drawHero(); return; }
+  const r = b.getBoundingClientRect();
+  if (h.k === 'group') groupDialog(h.g); else openSheet(h, r.left + r.width / 2, r.top + r.height / 2);
+  const s = $('#sheet:not(.hidden)'), x = s && s.querySelector('button, input, select'); if (x) x.focus();
+});
+$('#hero-keys').addEventListener('focusin', e => { const h = HERO.hits[+e.target.dataset.i]; if (h) { HERO.hover = h.key; drawHero(); } });
+$('#hero-keys').addEventListener('focusout', () => { HERO.hover = ''; drawHero(); });
 // the canvas follows the card while its height animates
 new ResizeObserver(() => {
   const cvs = $('#hero'), h = cvs.parentElement.clientHeight, w = cvs.clientWidth;
