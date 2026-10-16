@@ -181,7 +181,7 @@ function verityArrives() {
   const back = tab;
   if (stillMotion()) { done(); return; }
   verityBusy = true;
-  const tabs = $$('#nav button').filter(b => b.offsetParent).map(b => b.dataset.tab);
+  const tabs = $$('#nav button').filter(b => b.offsetParent && b.dataset.tab).map(b => b.dataset.tab);
   const looks = ['', 'light', 'grey', 'bubblegum', 'verity'];
   const words = ['h̷̢e̸l̵l̶o̷?', 'V E R I T Y', 'ERR 0x5M1L3', ':)', 'i̸ ̷s̵e̶e̷ ̸y̵o̶u̸', 'l̶e̸t̷ ̵m̶e̴ ̷i̵n̶', '☺☺☺☺☺☺'];
   const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -575,8 +575,10 @@ function buildBrandTabs() {
   let after = $('#nav [data-tab="bulbs"]');
   const host = $('#tab-devices').parentElement;
   if (seen.size) {   // the brands' own tabs under a caption of their own, apart from haku's
-    const cap = document.createElement('div');
-    cap.className = 'nav-cap'; cap.dataset.brand = ''; cap.dataset.i18n = 'nav.lights'; cap.textContent = t('nav.lights');
+    const cap = document.createElement('button');   // a click folds them away, all but the one open
+    cap.type = 'button'; cap.className = 'nav-cap'; cap.dataset.brand = '';
+    cap.innerHTML = `<span data-i18n="nav.lights">${t('nav.lights')}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`;
+    cap.addEventListener('click', () => { setCfg('ui', 'brands_fold', cv('ui', 'brands_fold', '') === '1' ? '' : '1'); updateNav(); });
     after.after(cap); after = cap;
   }
   for (const [key, [, name, icon]] of seen) {
@@ -595,9 +597,13 @@ function buildBrandTabs() {
   else updateNav();
 }
 const brandName = tb => { const b = Object.values(BRANDS).find(x => 'brand-' + x[0] === tb); return b ? b[1] : ''; };
+const wideNav = matchMedia('(min-width: 701px)');   // the bottom bar of a narrow window has no caption to unfold with
+wideNav.addEventListener('change', () => updateNav());
 function updateNav() {
+  const fold = cv('ui', 'brands_fold', '') === '1' && wideNav.matches, cap = $('#nav .nav-cap');
+  if (cap) cap.setAttribute('aria-expanded', !fold);
   $$('#nav button').forEach(b => {
-    const need = NAV_NEED[b.dataset.tab], show = !need || !!need() || b.dataset.tab === tab;
+    const need = NAV_NEED[b.dataset.tab], show = (!need || !!need() || b.dataset.tab === tab) && !(fold && /^brand-/.test(b.dataset.tab) && b.dataset.tab !== tab);
     b.classList.toggle('gone', !show);
     b.tabIndex = show ? 0 : -1;
   });

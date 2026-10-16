@@ -156,7 +156,10 @@ nav button i { margin-left: auto; font: normal 10.5px var(--mono); color: var(--
 nav button:hover { color: var(--text); border-color: var(--line); }
 nav button.active { background: var(--chrome); color: var(--on-strong); }
 nav button.active i { color: var(--on-strong-dim); }
-.nav-cap { font: 600 12px var(--font); color: var(--faint); padding: 14px 14px 2px; }
+nav .nav-cap { display: flex; align-items: center; gap: 6px; font: 600 12px var(--font); color: var(--faint); padding: 14px 14px 2px; border: 0; background: none; --cut: 0px; }
+nav .nav-cap:hover { color: var(--muted); }
+nav .nav-cap svg { width: 12px; height: 12px; transition: transform .2s; }
+nav .nav-cap[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .side-foot { margin-top: auto; padding: 0 4px; }
 .side-foot .range { margin: 10px 0 16px; }
 .power {
@@ -700,7 +703,7 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
   nav button.active { background: none; color: var(--strong); }
   nav button.active svg { filter: drop-shadow(0 0 6px rgba(var(--ink), .6)); }
   nav button svg { width: 19px; height: 19px; }
-  .nav-cap { display: none; }
+  nav .nav-cap { display: none; }
   .side-foot { margin: 0; padding: 8px 10px; display: grid; grid-template-columns: auto auto 1fr auto auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
   .side-foot .pro-chip { grid-column: 5; grid-row: 1; width: auto; max-width: 112px; margin: 0; padding: 6px 10px; font-size: 11px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
