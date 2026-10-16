@@ -2930,6 +2930,7 @@ function buildDevices() {
         </div></details>
         <div class="btn-row"><button class="btn small dev-ident" title="${esc(t('dev.identify.title'))}"><span>${t('dev.identify')}</span></button>
         ${pcDev(d) ? '' : `<button class="btn small dev-check">${t('dev.check')}</button>`}
+        <button class="btn small dev-cal">${t('cal.btn')}</button>
         <button class="btn danger small dev-del">${t('dev.remove')}</button></div>
         <p class="hint dev-chk" id="dev-chk-${d.id}" aria-live="polite"></p>
       </div>`;
@@ -2938,6 +2939,7 @@ function buildDevices() {
     el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
     el.querySelector('.dev-adv').addEventListener('toggle', e => { e.target.open ? DEV_ADV.add(d.id) : DEV_ADV.delete(d.id); });
     el.querySelector('.dev-ident').addEventListener('click', () => send({ cmd: 'identify', zone: 'zone.dev' + d.id }));
+    el.querySelector('.dev-cal').addEventListener('click', e => calOpen(d, e.currentTarget));
     el.querySelector('.dev-check')?.addEventListener('click', () => { CHK_ID = d.id; S.netchk = { id: d.id, busy: 1 }; updateDevices(); send({ cmd: 'dev_check', id: String(d.id) }); });
     el.querySelector('.dev-own')?.addEventListener('change', e => { d.own = e.target.checked ? 1 : 0; setCfg(sec, 'own', d.own); updateDevices(); drawHero(); });
     el.querySelector('.dev-name').addEventListener('change', e => {
@@ -2986,6 +2988,43 @@ function buildDevices() {
   updateDevices();
   requestAnimationFrame(sizeCanvases);
 }
+// ---- calibration guide: red and blue on the device's two ends (its LED count, then which way effects run), then
+// everything white so its white can be matched to the other lights ([dev.N] warmth)
+let CAL = null;
+function calOpen(d, from) {
+  CAL = { d, from, sec: 'dev.' + d.id, i: 0, steps: [...(d.per_led && !devZones(d).length ? ['ends'] : []), ...(d.per_led ? ['dir'] : []), 'white'] };
+  $('#cal').classList.remove('hidden'); calShow(); $('#cal-next').focus();
+}
+function calShow() {
+  const { d, sec, steps, i } = CAL, s = steps[i], last = i === steps.length - 1;
+  send({ cmd: 'calib', zone: 'zone.dev' + d.id, mode: s === 'white' ? 2 : 1 });
+  $('#cal-title').textContent = t('cal.title', cv(sec, 'name', d.name));
+  $('#cal-step').textContent = t('cal.step', i + 1, steps.length);
+  $('#cal-text').textContent = t('cal.' + s);
+  $('#cal-back').classList.toggle('hidden', !i);
+  $('#cal-next span').textContent = t(last ? 'cal.done' : 'cal.next');
+  const ctl = $('#cal-ctl'), w = +cv(sec, 'warmth', 0);
+  ctl.innerHTML = s === 'ends' ? `<label class="num"><span>${t('leds')}</span><input type="number" id="cal-leds" min="1" max="512" value="${+cv(sec, 'leds', 0) || d.leds}"></label>`
+    : s === 'dir' ? `<button class="btn small" type="button" id="cal-swap">${t('cal.swap')}</button>`
+    : `<div class="wb"><div class="lbl"><span>${t('wb')}</span><b id="cal-wv">${(w > 0 ? '+' : '') + w}</b></div>
+       <input type="range" class="range wbr" id="cal-w" min="-100" max="100" step="5" value="${w}" aria-label="${esc(t('wb'))}">
+       <div class="wb-ends"><span>${t('wb.cool')}</span><span>${t('wb.warm')}</span></div></div>`;
+  $('#cal-leds')?.addEventListener('input', e => { const n = Math.round(+e.target.value); if (n >= 1 && n <= 512) setCfgSoon(sec, 'leds', n); });
+  $('#cal-swap')?.addEventListener('click', () => setCfg(sec, 'reverse', cv(sec, 'reverse', '0') === '1' ? 0 : 1));
+  const r = $('#cal-w'); if (r) { fill(r); r.addEventListener('input', () => { fill(r); $('#cal-wv').textContent = (+r.value > 0 ? '+' : '') + r.value; setCfgSoon(sec, 'warmth', r.value); }); }
+}
+function calClose() {
+  if (!CAL) return;
+  send({ cmd: 'calib', mode: 0 });
+  $('#cal').classList.add('hidden');
+  const id = CAL.d.id; CAL = null;
+  buildDevices();
+  (document.querySelector(`#dev-st-${id}`)?.closest('.card')?.querySelector('.dev-cal'))?.focus();
+}
+$('#cal-next').addEventListener('click', () => { if (CAL.i === CAL.steps.length - 1) calClose(); else { CAL.i++; calShow(); } });
+$('#cal-back').addEventListener('click', () => { CAL.i--; calShow(); $('#cal-next').focus(); });
+$('#cal').addEventListener('pointerdown', e => { if (e.target.id === 'cal') calClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && CAL) calClose(); });
 // ---- other PC hardware: what OpenRGB on this PC offers (S.orgb: state 0 not looked, 1 looking, 2 answers, 3 none).
 // Hardware haku drives itself (the MSI board, ENE memory) is shown but not offered, so two programs never fight.
 const ORGB_TYPES = { 0: 'board', 1: 'ram', 2: 'gpu', 3: 'fan', 4: 'strip', 5: 'keyboard', 6: 'mouse', 18: 'keyboard' };

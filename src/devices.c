@@ -156,6 +156,7 @@ static void load_config(void) {
         d->sub = cfg_geti(sec, "sub", -1);
         d->cfg_leds = cfg_geti(sec, "leds", 0);
         d->reverse = cfg_geti(sec, "reverse", 0);
+        warmth_gain(cfg_getf(sec, "warmth", 0), d->gain);
         d->enabled = cfg_geti(sec, "enabled", 1);
         d->own = cfg_geti(sec, "own", 0);
         d->cfg_rate = (float)cfg_geti(sec, "rate", 0);
@@ -170,6 +171,7 @@ static void load_config(void) {
                 !strcmp(o->key, nd[i].key) && !strcmp(o->zones, nd[i].zones)) {
                 ext_dev keep = *o;
                 keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own; keep.cfg_rate = nd[i].cfg_rate;
+                memcpy(keep.gain, nd[i].gain, sizeof(keep.gain));
                 strcpy_s(keep.name, sizeof(keep.name), nd[i].name);
                 nd[i] = keep;
                 o->id = -1;   // taken over
@@ -272,6 +274,7 @@ static unsigned __stdcall worker(void *p) {
             int interval = (int)(1000 / fps);
             if ((int)(now - last_send[k]) < interval - interval / 4) continue;   // frames come every ~33 ms: allow jitter
             BYTE q[EXT_MAX_LEDS * 3];
+            for (int i = 0; i < n; i++) { cur[i].r *= d->gain[0]; cur[i].g *= d->gain[1]; cur[i].b *= d->gain[2]; }   // [dev.N] warmth
             for (int i = 0; i < n; i++) { q[i * 3] = to8(cur[i].r); q[i * 3 + 1] = to8(cur[i].g); q[i * 3 + 2] = to8(cur[i].b); }
             int same = seq == seen[k] || !memcmp(q, last8[k], n * 3);
             if (same && now - last_send[k] < 1000) continue;   // unchanged: keep-alive only

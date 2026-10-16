@@ -643,6 +643,16 @@
     <div class="btn-row"><button class="btn primary" type="button" id="wn-ok"><span data-i18n="wn.ok">Got it</span></button></div>
   </div>
 </div>
+<!-- the calibration guide for a LAN device: where its LEDs end, which way effects run, its white against the rest -->
+<div class="sheet-wrap pdlg-wrap hidden" id="cal">
+  <div class="card pdlg wn" role="dialog" aria-modal="true" aria-labelledby="cal-title">
+    <div class="pdlg-head"><h3 id="cal-title"></h3></div>
+    <p class="hint" id="cal-step"></p>
+    <p id="cal-text"></p>
+    <div id="cal-ctl"></div>
+    <div class="btn-row"><button class="btn" type="button" id="cal-back"><span data-i18n="cal.back">Back</span></button><button class="btn primary" type="button" id="cal-next"><span></span></button></div>
+  </div>
+</div>
 <div class="sheet-wrap pdlg-wrap hidden" id="gdlg">
   <form class="card pdlg gdlg" id="gdlg-form" role="dialog" aria-modal="true" autocomplete="off">
     <div class="pdlg-head"><h3 id="gdlg-title"></h3></div>

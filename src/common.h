@@ -281,6 +281,8 @@ void  app_set(const char *section, const char *key, const char *value);
 void  app_power(void);                       // off <-> previous effect
 void  app_timed_off(int minutes);            // everything off in N minutes, the last one fading out (0: no timer)
 void  app_identify(const char *zone);        // "zone.dev3" etc. blinks white for a few seconds
+void  app_calib(const char *zone, int mode);  // the calibration guide's pattern: 0 off, 1 the zone's ends red/blue, 2 everything white
+void  warmth_gain(float warmth, float g[3]);  // white balance -100 (cooler) .. 100 (warmer) as r/g/b gains
 float app_gpu_temp(void);                    // the last GPU temperature read, NAN when unknown
 void  app_open(const char *what);            // "log", "ini", "folder"
 void  app_quit(void);
