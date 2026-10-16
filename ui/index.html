@@ -278,7 +278,7 @@
           <button class="btn ghost" id="nano-flip">
             <svg viewBox="0 0 24 24"><path d="M12 3v18M16 7l4 5-4 5zM8 7l-4 5 4 5z"/></svg><span data-i18n="flip">Mirror</span></button>
           <span class="grow"></span>
-          <button class="btn ghost" id="nano-forget" data-i18n="nano.forget">Forget</button>
+          <button class="btn danger" id="nano-forget" data-i18n="nano.forget">Forget</button>
         </div>
         <p class="pair-msg" data-pair-msg></p>
         <p class="hint" data-i18n="nano.hint"></p>
@@ -364,7 +364,7 @@
         <p class="note" data-i18n="acc.aidot.privacy"></p>
         <div class="btn-row">
           <button class="btn primary" type="submit" id="aidot-go"><span data-i18n="acc.signin">Sign in</span></button>
-          <button class="btn ghost" type="button" id="aidot-cancel"><span data-i18n="cancel">Cancel</span></button>
+          <button class="btn danger" type="button" id="aidot-cancel"><span data-i18n="cancel">Cancel</span></button>
         </div>
       </form>
       <p class="acc-msg" id="aidot-msg"></p>
@@ -382,7 +382,7 @@
         <p class="note" data-i18n="acc.tuya.privacy"></p>
         <div class="btn-row">
           <button class="btn primary" type="submit" id="tuya-go"><span data-i18n="acc.signin">Sign in</span></button>
-          <button class="btn ghost" type="button" id="tuya-cancel"><span data-i18n="cancel">Cancel</span></button>
+          <button class="btn danger" type="button" id="tuya-cancel"><span data-i18n="cancel">Cancel</span></button>
         </div>
       </form>
       <p class="acc-msg" id="tuya-msg"></p>
@@ -398,7 +398,7 @@
         <p class="note" data-i18n="acc.govee.privacy"></p>
         <div class="btn-row">
           <button class="btn primary" type="submit" id="govee-go"><span data-i18n="acc.govee.go">Connect</span></button>
-          <button class="btn ghost" type="button" id="govee-cancel"><span data-i18n="cancel">Cancel</span></button>
+          <button class="btn danger" type="button" id="govee-cancel"><span data-i18n="cancel">Cancel</span></button>
         </div>
       </form>
       <p class="acc-msg" id="govee-msg"></p>
@@ -425,7 +425,7 @@
         <p class="pro-err hidden" id="pro-err"></p>
         <div class="btn-row">
           <button class="btn small primary" id="pro-buy"><span data-i18n="pro.buy">Get Pro</span></button>
-          <button class="btn small ghost hidden" id="pro-remove"><span data-i18n="pro.remove">Remove key</span></button>
+          <button class="btn small danger hidden" id="pro-remove"><span data-i18n="pro.remove">Remove key</span></button>
         </div>
       </div>
       <div class="card pc-only hidden" id="ha-card">
@@ -461,7 +461,7 @@
           <div class="set-row"><div><b data-i18n="phone.pin">PIN</b><p class="muted" id="remote-paired"></p></div><b class="pin" id="remote-pin"></b></div>
           <div class="btn-row">
             <button class="btn small ghost" id="remote-newpin"><span data-i18n="phone.newpin">New PIN</span></button>
-            <button class="btn small ghost" id="remote-forget"><span data-i18n="phone.forget">Forget paired phones</span></button>
+            <button class="btn small danger" id="remote-forget"><span data-i18n="phone.forget">Forget paired phones</span></button>
           </div>
           <details class="trouble">
             <summary data-i18n="phone.trouble">The page does not open on the phone?</summary>
@@ -565,7 +565,7 @@
     <p class="hint report-msg" id="report-msg" role="status"></p>
     <div class="btn-row">
       <button class="btn primary" type="submit" id="report-send"><span data-i18n="report.send">Send</span></button>
-      <button class="btn ghost" type="button" id="report-close"><span data-i18n="cancel">Cancel</span></button>
+      <button class="btn danger" type="button" id="report-close"><span data-i18n="cancel">Cancel</span></button>
       <button class="btn ghost small report-file" type="button" id="diag-go"><span data-i18n="report.file">Save as a file instead</span></button>
     </div>
   </form>
@@ -582,7 +582,7 @@
     <p class="hint" id="share-msg"></p>
     <div class="btn-row">
       <button class="btn primary" type="submit" id="share-ok"><span></span></button>
-      <button class="btn ghost" type="button" id="share-close"><span data-i18n="cancel">Cancel</span></button>
+      <button class="btn danger" type="button" id="share-close"><span data-i18n="cancel">Cancel</span></button>
     </div>
   </form>
 </div>
@@ -619,7 +619,7 @@
       <span class="grow"></span>
       <button class="btn danger hidden" type="button" id="pdlg-del"><span></span></button>
       <button class="btn ghost hidden" type="button" id="pdlg-share"><span data-i18n="preset.share">Share</span></button>
-      <button class="btn ghost" type="button" id="pdlg-cancel"><span data-i18n="cancel">Cancel</span></button>
+      <button class="btn danger" type="button" id="pdlg-cancel"><span data-i18n="cancel">Cancel</span></button>
     </div>
   </form>
 </div>
@@ -659,7 +659,7 @@
       <button class="btn primary" type="submit" id="gdlg-save"><span data-i18n="group.done">Done</span></button>
       <span class="grow"></span>
       <button class="btn danger hidden" type="button" id="gdlg-del"><span></span></button>
-      <button class="btn ghost" type="button" id="gdlg-cancel"><span data-i18n="cancel">Cancel</span></button>
+      <button class="btn danger" type="button" id="gdlg-cancel"><span data-i18n="cancel">Cancel</span></button>
     </div>
   </form>
 </div>
@@ -721,7 +721,7 @@
   </div>
   <div class="pk-presets" id="pk-presets"></div>
   <div class="pk-actions">
-    <button class="btn ghost small" id="pk-del" data-i18n="pk.del">Remove colour</button>
+    <button class="btn danger small" id="pk-del" data-i18n="pk.del">Remove colour</button>
     <span class="grow"></span>
     <button class="btn primary small" id="pk-ok" data-i18n="pk.ok">Done</button>
   </div>
