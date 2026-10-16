@@ -91,6 +91,8 @@
         <p class="hint" data-i18n="prof.note"></p>
       </div>
       <div class="prof-quick" id="prof-quick"></div>
+      <!-- a profile's settings (time, days, keys, programs...): drawn here, shown in the sheet by the pencil -->
+      <div class="hidden"><div class="card prof-panel" id="prof-panel"></div></div>
     </div>
     <div class="card hero"><canvas id="hero"></canvas><div class="hero-keys" id="hero-keys"></div>
       <button class="hero-edit" id="hero-edit" data-i18n-title="hero.edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
@@ -118,6 +120,7 @@
     <div class="fx-layout">
       <div class="fx-col">
         <div class="seg fx-tabs" id="fx-tabs"><button data-v="fx"><span data-i18n="fx.tab.fx">Effects</span><i></i></button><button data-v="presets"><span data-i18n="fx.tab.presets">My presets</span><i></i></button><button data-v="community"><span data-i18n="fx.tab.community">Community</span><i></i></button></div>
+        <button class="btn fx-tune" id="fx-tune" type="button"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span data-i18n="fx.tune">Adjust effect</span><b id="fx-tune-name"></b></button>
         <div class="fx-grid" id="fx-grid"></div>
       </div>
       <div class="card fx-side">
@@ -171,17 +174,6 @@
   <!-- ============ PC ============ -->
   <section class="tab" id="tab-pc">
     <div class="pc-grid">
-      <!-- what lighting hardware this PC has, and which way haku lights each -->
-      <div class="card lead hw-card">
-        <div class="card-head">
-          <div><h3 data-i18n="hw.title">Lighting in this PC</h3><p class="muted" id="hw-status"></p></div>
-          <div class="btn-row hw-btns">
-            <button class="btn small ghost hidden" id="pc-own"><span></span></button>
-            <button class="btn small ghost" id="hw-scan"><span data-i18n="hw.scan">Look again</span></button>
-          </div>
-        </div>
-        <div class="found hw-list" id="hw-list"></div>
-      </div>
       <div class="card" id="ram-card">
         <div class="card-head">
           <div><h3 data-i18n="pc.memory">Memory</h3><p class="muted" id="ram-status"></p></div>
@@ -224,6 +216,19 @@
           <label class="check"><input type="checkbox" data-own="msi_own"><span></span><em data-i18n="own">Its own lighting</em></label>
           <p class="hint" data-i18n="own.note.gpu"></p>
         </div>
+      </div>
+      <!-- what lighting hardware this PC has, and which way haku lights each: under the cards that set the lights -->
+      <div class="card lead hw-card">
+        <div class="card-head">
+          <div><h3 data-i18n="hw.title">Lighting in this PC</h3><p class="muted" id="hw-status"></p></div>
+          <div class="btn-row hw-btns">
+            <button class="btn small ghost hidden" id="pc-own"><span></span></button>
+            <button class="btn small ghost" id="hw-scan"><span data-i18n="hw.scan">Look again</span></button>
+          </div>
+        </div>
+        <div class="found hw-list" id="hw-list"></div>
+        <!-- once haku lights something here the rest folds away; what needs a step stays in the list above -->
+        <details class="trouble hidden" id="hw-more"><summary></summary><div class="found hw-list" id="hw-rest"></div></details>
       </div>
       <!-- graphics cards, other boards, RAM, coolers: through OpenRGB on this PC -->
       <div class="card pc-more">
@@ -332,7 +337,7 @@
     <div class="card lead">
       <div class="card-head">
         <div><h3 data-i18n="dev.find">Lights on your network</h3><p class="muted" id="scan-status"></p></div>
-        <button class="btn primary" id="scan-btn"><span data-i18n="dev.scan">Scan network</span></button>
+        <button class="btn primary" id="scan-btn"><span data-i18n="dev.scan">Find devices</span></button>
       </div>
       <div class="found" id="found-list"></div>
       <details class="manual" id="manual">
@@ -417,7 +422,8 @@
   <!-- ============ SETTINGS ============ -->
   <section class="tab" id="tab-settings">
     <div class="set-grid">
-      <!-- everyday and looks first; the phone, Pro, Home Assistant and the files after -->
+      <!-- two columns in reading order (Tab goes the same way): everyday, looks and keys on the left; connections, Pro and the files on the right -->
+      <div class="set-col">
       <div class="card">
         <h3 data-i18n="set.general">General</h3>
         <div class="set-row">
@@ -428,7 +434,8 @@
           <div><b data-i18n="theme">Theme</b></div>
           <div class="theme-ctl">
             <div class="seg" id="theme"><button data-v="dark" data-i18n="theme.dark">Dark</button><button data-v="grey" data-i18n="theme.grey">Grey</button><button data-v="light" data-i18n="theme.light">Light</button><button data-v="bubblegum" class="hidden">bubblegum ✨</button><button data-v="verity" class="hidden">verity ☺</button><button data-v="kyoka" class="hidden">鏡花水月</button><button data-v="akapzz" class="hidden">akapzz ✦</button></div>
-            <form class="code" id="code" autocomplete="off"><input type="text" id="code-in" maxlength="24" spellcheck="false"><button type="submit" aria-label="OK"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button></form>
+            <button class="code-open" type="button" id="code-open" aria-controls="code" aria-expanded="false"><span data-i18n="code.open">Code</span></button>
+            <form class="code hidden" id="code" autocomplete="off"><input type="text" id="code-in" maxlength="24" spellcheck="false"><button type="submit" aria-label="OK"><svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button></form>
           </div>
         </div>
         <div class="set-row">
@@ -468,6 +475,8 @@
           <label class="switch"><input type="checkbox" id="ai-demand"><span></span></label>
         </div>
       </div>
+      </div>
+      <div class="set-col">
       <div class="card pc-only" id="phone-card">
         <h3 data-i18n="phone">Phone</h3>
         <div class="set-row">
@@ -552,6 +561,7 @@
           <button class="btn small ghost" id="upd-now" data-i18n="upd.now">Check now</button>
         </div>
         <button class="btn danger" id="quit" data-i18n="quit">Quit haku control</button>
+      </div>
       </div>
     </div>
   </section>
@@ -651,11 +661,12 @@
 <!-- the calibration guide for a LAN device: where its LEDs end, which way effects run, its white against the rest -->
 <div class="sheet-wrap pdlg-wrap hidden" id="cal">
   <div class="card pdlg wn" role="dialog" aria-modal="true" aria-labelledby="cal-title">
-    <div class="pdlg-head"><h3 id="cal-title"></h3></div>
+    <div class="pdlg-head"><h3 id="cal-title"></h3><button class="sheet-x" type="button" id="cal-x" data-i18n-title="close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <p class="hint" id="cal-step"></p>
     <p id="cal-text"></p>
     <div id="cal-ctl"></div>
     <p class="hint hidden" id="cal-lim"></p>
+    <p class="note" data-i18n="cal.kept">Each change is saved as you make it: closing keeps it.</p>
     <div class="btn-row"><button class="btn" type="button" id="cal-back"><span data-i18n="cal.back">Back</span></button><button class="btn primary" type="button" id="cal-next"><span></span></button></div>
   </div>
 </div>
@@ -708,7 +719,7 @@
         <div class="wz-row"><div><b>Nanoleaf</b><small data-pair-msg></small><small id="wz-nano"></small></div>
           <button class="btn small" data-pair><span data-i18n="wz.pair">Pair</span></button></div>
         <div class="wz-row"><div><b data-i18n="wz.lan">WLED · OpenRGB · Govee · LIFX · Yeelight · Hue · WiZ</b><small id="wz-scan-st"></small></div>
-          <button class="btn small" id="wz-scan"><span data-i18n="dev.scan">Scan network</span></button></div>
+          <button class="btn small" id="wz-scan"><span data-i18n="dev.scan">Find devices</span></button></div>
       </div>
       <div class="found wz-found" id="wz-found"></div>
       <p class="note" data-i18n="wz.aidot"></p>

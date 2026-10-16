@@ -101,14 +101,14 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
 
 ### Room lights
 
-- **WLED, Hue, Govee, LIFX, Yeelight, WiZ, Elgato:** *Devices → Scan network*, then *Add*. Govee and Yeelight need
+- **WLED, Hue, Govee, LIFX, Yeelight, WiZ, Elgato:** *Devices → Find devices*, then *Add*. Govee and Yeelight need
   *LAN Control* switched on in their apps. Hue asks you to press the bridge's link button after adding.
 - **OpenRGB (graphics cards, other boards, RAM, coolers):** install OpenRGB, tick *Start at login*, *Start minimized*
   and *Start server* in its general settings, then *PC → Other PC hardware* lists its controllers (*Add* / *Add all*).
   Hardware haku control drives itself (the MSI board, ENE memory) is not offered there. If OpenRGB still drives
   the same MSI board or memory as haku control's own drivers, set `[devices] msi=0` / `ene=0`.
 - **Razer, SteelSeries, Logitech:** with the maker's own app running (Razer Synapse, SteelSeries GG, Logitech G
-  HUB), *Devices → Scan network* offers its devices: *Add* the ones you have. Their apps do not say which devices
+  HUB), *Devices → Find devices* offers its devices: *Add* the ones you have. Their apps do not say which devices
   are plugged in, so each kind is offered (Razer: keyboard, mouse, mousepad, headset, keypad, Chroma Link;
   SteelSeries and Logitech: the keyboard and the other devices). The maker's app keeps running and gets the lighting
   back when haku control lets go. For Logitech, G HUB's *Allow games & applications to control my lighting* has to

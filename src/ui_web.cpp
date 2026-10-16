@@ -390,7 +390,7 @@ static void bring_to_front(void) {
 // body that reads one way to the sender's parser and another way here cannot slip past.
 static bool remote_allowed(const std::string &js) {
     static const char *const ok[] = { "effect", "brightness", "set", "toggle", "power", "timed_off", "identify", "pair", "scan", "dev_add", "dev_remove", "mood", "preset",
-                                      "preset_save", "preset_delete", "orgb_check", "hw_scan", "profile", "profile_save", "profile_delete", "pc_own", "calib", "dev_check",
+                                      "preset_save", "preset_delete", "orgb_check", "hw_scan", "profile", "profile_save", "profile_delete", "profile_dup", "pc_own", "calib", "dev_check",
 #ifdef HAKU_DEV   // test builds (loopback only by default): the rest can be driven from a browser for tests
                                       "aidot_login", "tuya_login", "govee_login", "diag", "update_check", "update_install", "ai_setup", "ai_on_demand",
                                       "orgb_setup", "orgb_auto", "pro_key", "backup_save", "backup_load", "report",
@@ -402,6 +402,15 @@ static bool remote_allowed(const std::string &js) {
     if (!found) return false;
     // calibration lights one known zone for a short while; the check reaches only a device already saved here
     if (cmd == "dev_check") { std::string id = field(js, "id"); return !id.empty() && id.size() < 6 && id.find_first_not_of("0123456789") == std::string::npos; }
+    // a copy of a saved profile: a number in range and a short name of printable text (the page sends 40 letters at most)
+    if (cmd == "profile_dup") {
+        std::string id = field(js, "id"), nm = field(js, "name");
+        if (id.empty() || id.size() > 2 || id.find_first_not_of("0123456789") != std::string::npos) return false;
+        int n = atoi(id.c_str());
+        if (n < 1 || n > PROFILE_MAX || nm.empty() || nm.size() > 160) return false;
+        for (char c : nm) if ((unsigned char)c < 0x20 || c == 0x7f) return false;
+        return true;
+    }
     if (cmd == "calib") {
         std::string m = field(js, "mode"), z = field(js, "zone");
         if (m.size() != 1 || m[0] < '0' || m[0] > '2' || z.size() > 60) return false;

@@ -1092,8 +1092,9 @@ function renderProfiles() {
   $('#prof-state').innerHTML = (why ? `<span class="prof-why">${esc(why)}</span>` : '') + (auto ? `<span class="grow"></span>${paused ? `<em class="prof-auto">${t('prof.paused.s')}</em>` : ''}
     <button class="btn small prof-pause" type="button" aria-pressed="${paused}"><span>${t(paused ? 'prof.resume' : 'prof.pause')}</span></button>` : '');
   $('#prof-state').classList.toggle('hidden', !why && !auto);
-  if (PROF.edit && !P.some(p => p.id === PROF.edit)) PROF.edit = 0;
-  $('#prof-list').innerHTML = P.map(p => p.id === PROF.edit ? `
+  if (PROF.edit && !P.some(p => p.id === PROF.edit)) { PROF.edit = 0; if (SHEET.kind === 'prof') closeSheet(); }   // deleted (here or on the phone)
+  const p = P.find(q => q.id === PROF.edit);
+  $('#prof-panel').innerHTML = p ? `<h3 id="prof-panel-h">${t('prof.rename')}</h3>
     <div class="prof-edit" data-id="${p.id}">
       <input type="text" class="prof-name" maxlength="40" spellcheck="false" value="${esc(p.name)}">
       <div class="hk"><span>${t('prof.hotkey')}</span><button class="kbd" type="button"></button></div>
@@ -1111,13 +1112,14 @@ function renderProfiles() {
         <span class="grow"></span>
         <button class="btn primary small prof-ok" type="button"><span>${t('prof.done')}</span></button>
       </div>
-    </div>` : `
+    </div>` : '';
+  $('#prof-list').innerHTML = P.map(p => `
     <div class="prof-row${cur && cur.id === p.id ? ' on' : ''}" data-id="${p.id}">
       <button class="prof-item" type="button"><i></i><b>${esc(p.name)}</b>${p.apps ? `<em class="prof-auto" title="${esc(p.apps)}">${t('prof.auto')}</em>` : ''}${p.at ? `<em class="prof-auto${p.atOff ? ' off' : ''}" title="${p.atOff ? t('prof.at.off') : ''}">${esc(p.at)}${p.days ? ' ' + esc(profDays(p)) : ''}</em>` : ''}${p.hotkey ? `<small>${esc(p.hotkey.replace(/\+/g, ' + '))}</small>` : ''}</button>
-      <button class="prof-ren" type="button" title="${t('prof.rename')}">${PENCIL}</button>
+      <button class="prof-ren" type="button" title="${t('prof.rename')}" aria-label="${t('prof.rename')}: ${esc(p.name)}">${PENCIL}</button>
     </div>`).join('') || `<p class="hint">${t('prof.empty')}</p>`;
   $('#prof-quick').innerHTML = P.filter(p => p.pin).map(p => `<button class="prof-q${cur && cur.id === p.id ? ' on' : ''}" type="button" data-id="${p.id}" aria-pressed="${cur && cur.id === p.id}">${esc(p.name)}</button>`).join('');   // the pinned ones, one click away
-  const ed = $('#prof-list .prof-edit');
+  const ed = $('#prof-panel .prof-edit');
   if (ed) hotkeyButton($('.kbd', ed), profSec(PROF.edit), 'hotkey');
   const full = P.length >= PROFILE_MAX;
   $('#prof-save').classList.toggle('hidden', full || !$('#prof-new').classList.contains('hidden'));
@@ -1128,46 +1130,47 @@ function profMenu(open) {
   if (open === undefined) open = m.classList.contains('hidden');
   m.classList.toggle('hidden', !open);
   $('#prof-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (!open) { profRenameDone(); $('#prof-new').classList.add('hidden'); PROF.edit = 0; PROF.sure = false; }
+  if (!open) $('#prof-new').classList.add('hidden');
   renderProfiles();
 }
 // the name typed in the pencil's box goes in when it is left
 function profRenameDone() {
-  const ed = $('#prof-list .prof-edit'); if (!ed) return;
-  const id = +ed.dataset.id, v = $('.prof-name', ed).value.replace(/[;#\[\]=]/g, ' ').trim();
+  const ed = $('#prof-panel .prof-edit'); if (!ed) return;
+  const id = +ed.dataset.id; if (!cv(profSec(id), 'name', '')) return;   // gone meanwhile: a name would bring it back
+  const v = $('.prof-name', ed).value.replace(/[;#\[\]=]/g, ' ').trim();
   if (v && v !== cv(profSec(id), 'name', '')) setCfg(profSec(id), 'name', v);
 }
 // the programs that switch to it (exe names, comma-separated): picked by the core from a menu of open ones or Browse
 const profApps = v => (v || '').split(',').map(x => x.trim()).filter(Boolean);
 $('#prof-btn').addEventListener('click', e => { e.stopPropagation(); profMenu(); });
-$('#prof-list').addEventListener('click', e => {
+function profClick(e) {
   const row = e.target.closest('[data-id]'); if (!row) return;
   const id = +row.dataset.id;
-  if (e.target.closest('.prof-ren')) { profRenameDone(); PROF.edit = id; PROF.sure = false; renderProfiles(); const i = $('#prof-list .prof-name'); i.focus(); i.select(); return; }
+  if (e.target.closest('.prof-ren')) { profEdit(id, e.target.closest('.prof-ren')); return; }
   if (e.target.closest('.prof-item')) { profMenu(false); profGo(id); return; }
   if (e.target.closest('.prof-app-add')) { profRenameDone(); send({ cmd: 'profile_app', id: String(id) }); return; }
   const chip = e.target.closest('.app-chip');
   if (chip) { setCfg(profSec(id), 'apps', profApps(cv(profSec(id), 'apps', '')).filter(a => a !== chip.dataset.app).join(', ')); renderProfiles(); return; }
-  if (e.target.closest('.prof-ok')) { profRenameDone(); PROF.edit = 0; renderProfiles(); return; }
-  if (e.target.closest('.prof-dup')) { profRenameDone(); send({ cmd: 'profile_dup', id: String(id), name: t('prof.copy', cv(profSec(id), 'name', '')).slice(0, 40) }); PROF.edit = 0; return; }
+  if (e.target.closest('.prof-ok')) { closeSheet(); return; }
+  if (e.target.closest('.prof-dup')) { profRenameDone(); send({ cmd: 'profile_dup', id: String(id), name: t('prof.copy', cv(profSec(id), 'name', '')).slice(0, 40) }); closeSheet(); return; }
   const day = e.target.closest('.prof-day');
   if (day) {
     const was = cv(profSec(id), 'days', '') || '1234567', on = [...'1234567'].filter(d => was.includes(d) !== (d === day.dataset.d));
     if (!on.length) return;   // at least one day; none would mean every day
-    profRenameDone(); setCfg(profSec(id), 'days', on.length === 7 ? '' : on.join('')); renderProfiles(); $(`#prof-list .prof-day[data-d="${day.dataset.d}"]`).focus(); return;
+    profRenameDone(); setCfg(profSec(id), 'days', on.length === 7 ? '' : on.join('')); renderProfiles(); $(`#prof-panel .prof-day[data-d="${day.dataset.d}"]`).focus(); return;
   }
   if (e.target.closest('.prof-del')) {
     if (!PROF.sure) { PROF.sure = true; profRenameDone(); renderProfiles(); return; }
-    send({ cmd: 'profile_delete', id: String(id) }); PROF.edit = 0; PROF.sure = false;
+    send({ cmd: 'profile_delete', id: String(id) }); PROF.edit = 0; closeSheet();
   }
-});
-$('#prof-list').addEventListener('change', e => {
+}
+function profChange(e) {
   const id = +(e.target.closest('[data-id]') || {}).dataset?.id;
   if (e.target.matches('.prof-at')) { profRenameDone(); setCfg(profSec(id), 'at', /^\d\d:\d\d$/.test(e.target.value) ? e.target.value : ''); renderProfiles(); return; }   // (empty: no time)
   if (e.target.closest('.prof-at-on')) { profRenameDone(); setCfg(profSec(id), 'at_off', e.target.checked ? '' : '1'); renderProfiles(); return; }
   if (!e.target.closest('.prof-pin')) return;
   profRenameDone(); setCfg(profSec(id), 'pin', e.target.checked ? '1' : ''); renderProfiles();
-});
+}
 // the profile left keeps its last drag (sent before the switch); undo starts over, its changes belong to that profile
 function profGo(id) { if (id !== +cv('general', 'profile', 0)) { flushSets(); undoReset(); setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } }
 $('#prof-state').addEventListener('click', e => {
@@ -1175,11 +1178,21 @@ $('#prof-state').addEventListener('click', e => {
   setCfg('general', 'auto_pause', cv('general', 'auto_pause', '') === '1' ? '' : '1'); renderProfiles(); $('#prof-state .prof-pause').focus();
 });
 $('#prof-quick').addEventListener('click', e => { const b = e.target.closest('.prof-q'); if (b) { profMenu(false); profGo(+b.dataset.id); } });
-$('#prof-list').addEventListener('keydown', e => {
+for (const el of [$('#prof-list'), $('#prof-panel')]) { el.addEventListener('click', profClick); el.addEventListener('change', profChange); }
+// the name: Enter keeps it and closes, Esc puts the old one back and closes (the sheet's own Esc)
+$('#prof-panel').addEventListener('keydown', e => {
   if (!e.target.matches('.prof-name')) return;
-  if (e.key === 'Enter') { e.preventDefault(); profRenameDone(); PROF.edit = 0; renderProfiles(); }
-  if (e.key === 'Escape') { e.stopPropagation(); PROF.edit = 0; renderProfiles(); }
+  if (e.key === 'Enter') { e.preventDefault(); closeSheet(); }
+  if (e.key === 'Escape') e.target.value = cv(profSec(PROF.edit), 'name', '');
 });
+// the pencil: the menu closes and the profile's settings open in the sheet, focus back on the profile button after
+function profEdit(id, from) {
+  profMenu(false); $('#prof-btn').focus();
+  const r = from.getBoundingClientRect();
+  openSheet({ k: 'prof' }, r.left + r.width / 2, r.top);
+  PROF.edit = id; PROF.sure = false; renderProfiles();
+  queueMicrotask(() => { const i = $('#prof-panel .prof-name'); if (i) { i.focus(); i.select(); } });   // after the sheet has noted where it was opened from
+}
 $('#prof-save').addEventListener('click', () => {
   profRenameDone(); PROF.edit = 0;
   $('#prof-new').classList.remove('hidden'); $('#prof-new-name').value = '';
@@ -1480,7 +1493,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#pdlg'
 
 function renderEffectSide() {
   const id = S.effect, P = activePreset();
-  $('#fx-name').textContent = P ? P.name : fxName(id);
+  $('#fx-name').textContent = $('#fx-tune-name').textContent = P ? P.name : fxName(id);
   $('#fx-desc').textContent = (P ? t('preset.based', fxName(id)) + ' ' : '') + t('desc.' + id);
   $('#fx-pal-field').classList.toggle('hidden', id === 'off' || id === 'screen');
   renderPalette($('#fx-pal'), id, false, effPal(id));
@@ -1515,13 +1528,15 @@ function zoneName(z) {
   if (z === 'zone.gpu') return stripName();
   const nm = /^zone\.nanoleaf(\d*)$/.exec(z); if (nm) { const c = nanoCtls().find(x => x.slot === (+nm[1] || 1)); return nanoCtls().length > 1 ? nanoName(c) : 'Nanoleaf'; }
   const dm = /^zone\.dev(\d+)$/.exec(z); if (dm) { const d = S.ext.devs.find(x => x.id === +dm[1]); return d ? d.name : z; }
-  const m = /^zone\.light(\d+)$/.exec(z); return m ? t('bulb', m[1]) : z;
+  const m = /^zone\.light(\d+)$/.exec(z); return m ? bulbName(m[1] - 1) : z;
 }
+// a bulb by the name it was given in its own app; the number only when it has none
+const bulbName = i => (S.bulbs[i] && S.bulbs[i].name || '').trim() || t('bulb', i + 1);
 function renderOwnList() {
   const zones = ['zone.ram', 'zone.gpu'].concat(nanoCtls().map(c => nanoZone(c.slot)), S.bulbs.map((_, i) => 'zone.light' + (i + 1)), S.ext.devs.map(d => 'zone.dev' + d.id));
   $('#fx-own').innerHTML = zones.filter(z => cv(z, 'effect', '')).map(z => {
     const id = cv(z, 'effect');
-    return `<div class="own-item"><span>${zoneName(z)}</span><b>${id === 'off' ? t('zone.offfx') : fxName(id)}</b></div>`;
+    return `<div class="own-item"><span>${esc(zoneName(z))}</span><b>${id === 'off' ? t('zone.offfx') : fxName(id)}</b></div>`;
   }).join('');
 }
 $('#fx-sync').addEventListener('change', e => { setCfg('general', 'sync', e.target.checked ? 1 : 0); renderEffectSide(); });
@@ -2160,7 +2175,7 @@ function heroItems(all) {
     items.push({ key: 'nano' + n.slot, k: 'nano', slot: n.slot, zone: nanoZone(n.slot), w: Math.max(1.1, Math.min(3, a * 1.25)), name: nanoCtls().length > 1 ? nanoName(n) : 'Nanoleaf',
       draw: (c, x, y, w, h) => drawNano(c, x, y, w, h, n) });
   });
-  if (!hide.includes('bulbs')) S.bulbs.forEach((b, i) => hide.includes('bulb' + i) || items.push({ key: 'bulb' + i, k: 'bulb', i, zone: 'zone.light' + (i + 1), w: .85, name: t('bulb', i + 1),
+  if (!hide.includes('bulbs')) S.bulbs.forEach((b, i) => hide.includes('bulb' + i) || items.push({ key: 'bulb' + i, k: 'bulb', i, zone: 'zone.light' + (i + 1), w: .85, name: bulbName(i),
     draw: (c, x, y, w, h) => { const col = F.bulbs[i], on = lit(col) && b.online; drawFixture(c, x, y, w, h, bulbType(i), [on ? col : OFF], on); } }));
   if (!hide.includes('ext')) S.ext.devs.forEach((dv, k) => {
     if (hide.includes('dev' + dv.id)) return;
@@ -2535,6 +2550,8 @@ function sheetCards(h) {
   if (h.k === 'bulb') return [[$('#bulb-grid').children[h.i]], 'bulbs'];
   if (h.k === 'ext') { const d = S.ext.devs.find(x => x.id === h.id); return [[$(`#dev-live-${h.id}`)?.closest('.card')], d ? brandTab(d) : 'devices']; }
   if (h.k === 'add') return [[], 'devices'];
+  if (h.k === 'fx') return [[$('.fx-side')], 'effects'];
+  if (h.k === 'prof') return [[$('#prof-panel')], 'effects'];
   return [[], ''];
 }
 function openSheet(h, cx, cy) {
@@ -2550,6 +2567,8 @@ function openSheet(h, cx, cy) {
   SHEET.kind = h.k; SHEET.page = page; SHEET.zone = h.zone || '';
   sheetGroup();
   const wrap = $('#sheet'), sh = wrap.querySelector('.sheet');
+  $('#sheet-page').classList.toggle('hidden', h.k === 'fx' || h.k === 'prof');   // the effect's or profile's own settings: no page of their own
+  if (h.k === 'fx' || h.k === 'prof') sh.setAttribute('aria-labelledby', h.k === 'fx' ? 'fx-name' : 'prof-panel-h'); else sh.removeAttribute('aria-labelledby');
   sh.style.removeProperty('--dx'); sh.style.removeProperty('--dy');
   sh.classList.toggle('wide', h.k === 'nano' && nanoOn());
   wrap.classList.remove('hidden');
@@ -2560,9 +2579,12 @@ function openSheet(h, cx, cy) {
 }
 function closeSheet() {
   if (!SHEET.kind) return;
+  const prof = SHEET.kind === 'prof';
+  if (prof) { profRenameDone(); PROF.edit = 0; PROF.sure = false; }
   for (const [el, ph] of SHEET.moved) { if (ph.isConnected) ph.replaceWith(el); else el.remove(); }
   SHEET.moved = []; SHEET.kind = null;
   $('#sheet').classList.add('hidden');
+  if (prof) renderProfiles();
   requestAnimationFrame(sizeCanvases);
 }
 // which group the device is in, picked from a list (dragging onto a group needs a mouse)
@@ -2582,9 +2604,10 @@ $('#sheet-group').addEventListener('change', e => {
 });
 $('#sheet-ident').addEventListener('click', () => send({ cmd: 'identify', zone: SHEET.zone }));
 $('#sheet-x').addEventListener('click', closeSheet);
+$('#fx-tune').addEventListener('click', e => { const r = e.currentTarget.getBoundingClientRect(); openSheet({ k: 'fx' }, r.left + r.width / 2, r.top); });
 $('#sheet').addEventListener('pointerdown', e => { if (e.target.id === 'sheet') closeSheet(); });
 $('#sheet-page').addEventListener('click', () => { const p = SHEET.page; closeSheet(); showTab(p); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && SHEET.kind && pk.classList.contains('hidden')) closeSheet(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && SHEET.kind && pk.classList.contains('hidden') && !$('.kbd.rec')) closeSheet(); });
 // drag it around by the top bar, like a small window
 $('#sheet-head').addEventListener('pointerdown', e => {
   if (e.target.closest('button') || matchMedia('(max-width: 700px)').matches) return;
@@ -2602,7 +2625,7 @@ function heroMenuEntries() {
   const out = [];
   for (const [k] of heroGroups()) {
     if (k === 'nano' && nanoCtls().length > 1) nanoCtls().forEach(n => out.push({ k: 'nano' + n.slot, group: 'nano', name: nanoName(n) }));
-    else if (k === 'bulbs' && S.bulbs.length > 1) S.bulbs.forEach((b, i) => out.push({ k: 'bulb' + i, group: 'bulbs', name: t('bulb', i + 1) }));
+    else if (k === 'bulbs' && S.bulbs.length > 1) S.bulbs.forEach((b, i) => out.push({ k: 'bulb' + i, group: 'bulbs', name: bulbName(i) }));
     else if (k === 'ext') S.ext.devs.forEach(d => out.push({ k: 'dev' + d.id, group: 'ext', name: d.name }));
     else out.push({ k, group: k, name: groupName(k) });
   }
@@ -2850,6 +2873,18 @@ function updateNano() {
 }
 $('#nano-device').addEventListener('change', e => { setCfg('nanoleaf', 'mode', e.target.checked ? 'device' : 'stream'); updateNano(); });
 
+// a switch has no words of its own: it is named by its row's title (kept live as the title changes) and read as on/off
+let SW_N = 0;
+function nameSwitches(root = document) {
+  root.querySelectorAll('.switch input:not([aria-labelledby])').forEach(i => {
+    const h = i.closest('.switch').parentElement.querySelector('h3, b');
+    if (!h) return;
+    h.id ||= 'sw-name-' + ++SW_N;
+    i.setAttribute('aria-labelledby', h.id); i.setAttribute('role', 'switch');
+  });
+}
+nameSwitches();
+
 // bulbs
 function buildBulbs() {
   if (SHEET.kind === 'bulb') closeSheet();
@@ -2859,9 +2894,8 @@ function buildBulbs() {
   S.bulbs.forEach((b, i) => {
     const d = document.createElement('div');
     d.className = 'card';
-    const short = (b.name.split(' ').pop() || b.name);
     d.innerHTML = `<div class="bulb-top"><div class="bulb-orb off" id="bulb-orb-${i}"></div>
-      <div><h3>${t('bulb', i + 1)}</h3><p class="muted" id="bulb-st-${i}"></p></div>
+      <div class="bulb-name"><h3>${esc(bulbName(i))}</h3><p class="muted" id="bulb-st-${i}"></p></div>
       <label class="switch"><input type="checkbox" data-toggle="light${i + 1}_enabled"><span></span></label></div>
       <div class="zone" data-zone="zone.light${i + 1}"></div>
       <div class="opts"><label class="num"><span>${t('fix.type')}</span><select class="select bulb-type">${typeOptions(bulbType(i), null, ['bulb', 'lamp', 'floor', 'strip'])}</select></label></div>`;
@@ -2872,16 +2906,15 @@ function buildBulbs() {
     sw.addEventListener('change', () => { setCfgLocal('layout', sw.dataset.toggle, sw.checked ? '1' : '0'); send({ cmd: 'toggle', k: sw.dataset.toggle }); });
     d.querySelector('.bulb-type').addEventListener('change', e => { setCfg('zone.light' + (i + 1), 'type', e.target.value); drawAll(); });
     renderZone(d.querySelector('.zone'));
-    d.querySelector('.muted').dataset.short = short;
   });
-  updateBulbs();
+  nameSwitches(grid); updateBulbs();
 }
 function updateBulbs() {
   const on = S.bulbs.filter(b => b.online).length;
   $('#bulbs-status').textContent = S.bulbs.length ? t('bulbs.status', on, S.bulbs.length) : t('bulbs.notset');
   S.bulbs.forEach((b, i) => {
     const el = $('#bulb-st-' + i); if (!el) return;
-    el.innerHTML = `<span class="dot ${b.online ? 'on' : 'off'}" style="display:inline-block;margin-right:6px"></span>${el.dataset.short || ''} · ${b.online ? b.ip : t('bulb.offline')}`;
+    el.innerHTML = `<span class="dot ${b.online ? 'on' : 'off'}" style="display:inline-block;margin-right:6px"></span>${b.online ? b.ip : t('bulb.offline')}`;
   });
   const sm = +cv('lights', 'smooth', 0.35); setRange($('#bulb-smooth'), Math.round(sm * 100)); $('#smooth-val').textContent = sm.toFixed(2) + t('sec');
   const rt = +cv('lights', 'rate', 4); setRange($('#bulb-rate'), rt); $('#rate-val').textContent = rt;
@@ -2927,6 +2960,10 @@ function chkText(d) {
     C.res === 'subnet' ? t('chk.subnet', ip) : t('chk.name');
 }
 const DEV_ADV = new Set();   // devices whose "Advanced" part is open (kept when the cards are built again)
+// set while it can't be reached: the core keeps [dev.N] and reads it again on every reconnect, so it does apply then,
+// as long as it stays on, haku's and still tries (not given back to its own lighting, not waiting for Pro)
+const DEV_SAVED = new Set();
+const devWaits = d => d.enabled && !d.own && !d.online && !(d.pro && proLocked());
 function buildDevices() {
   if (SHEET.kind === 'ext') closeSheet();
   buildBrandTabs();
@@ -2991,6 +3028,9 @@ function buildDevices() {
       </div>`;
     ($(`[data-brand-grid="${(brandOf(d.kind) || [])[0]}"]`) || grid).appendChild(el);
     renderZone(el.querySelector('.zone'));
+    const saved = () => { DEV_SAVED.add(d.id); updateDevices(); };
+    el.querySelector('.opts').addEventListener('change', saved);
+    el.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', saved));
     el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
     el.querySelector('.dev-adv').addEventListener('toggle', e => { e.target.open ? DEV_ADV.add(d.id) : DEV_ADV.delete(d.id); });
     el.querySelector('.dev-ident').addEventListener('click', () => send({ cmd: 'identify', zone: 'zone.dev' + d.id }));
@@ -3041,7 +3081,7 @@ function buildDevices() {
       send({ cmd: 'dev_remove', id: d.id });
     });
   });
-  updateDevices();
+  nameSwitches(); updateDevices();
   requestAnimationFrame(sizeCanvases);
 }
 // ---- undo the last change (Ctrl+Z, or the button that shows for a few seconds after one): a setting, the effect or the
@@ -3149,6 +3189,7 @@ function calClose() {
   (document.querySelector(`#dev-st-${id}`)?.closest('.card')?.querySelector('.dev-cal'))?.focus();
 }
 $('#cal-next').addEventListener('click', () => { if (CAL.i === CAL.steps.length - 1) calClose(); else { CAL.i++; calShow(); } });
+$('#cal-x').addEventListener('click', calClose);
 $('#cal-back').addEventListener('click', () => { CAL.i--; calShow(); $('#cal-next').focus(); });
 $('#cal').addEventListener('pointerdown', e => { if (e.target.id === 'cal') calClose(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && CAL) calClose(); });
@@ -3249,17 +3290,22 @@ function updateHw() {
   const lit = routes.filter(r => r.cls === 'on').length;
   $('#hw-status').textContent = H.busy || !H.done ? t('hw.busy') : t('hw.sum', items.length, lit);
   $('#hw-scan').disabled = !!H.busy;
-  const html = items.map((it, i) => {
-    const r = routes[i];
+  const row = i => {
+    const it = items[i], r = routes[i];
     const btn = r.act === 'add' ? t('dev.add') : r.act === 'setup' ? t('orgb.setup') : r.act === 'pawnio' ? t('hw.pawnio.install') : r.act === 'scan' ? t('hw.find') : r.act === 'check' ? t('orgb.check') : '';
     return `<div class="found-row"><span class="kind">${t('hw.cat.' + it.cat)}</span>
       <div class="what"><b>${esc([it.maker, it.name].filter(Boolean).join(' · ') || it.id)}</b><small><span class="dot ${r.cls}"></span> ${esc(r.text)}${it.id ? ' · ' + esc(it.id) : ''}</small></div>
       ${btn ? `<button class="btn small${r.act === 'add' || r.act === 'setup' ? '' : ' ghost'}" data-hw="${i}">${esc(btn)}</button>` : ''}</div>`;
-  }).join('');
-  const list = $('#hw-list');
-  if (list.dataset.html === html) return;
-  list.dataset.html = html; list.innerHTML = html;
-  list.querySelectorAll('[data-hw]').forEach(b => b.addEventListener('click', () => {
+  };
+  // set up (haku lights something): only what needs a step stays open, the rest behind "All hardware"
+  const fold = !!(H.done && lit), ix = items.map((_, i) => i), need = ix.filter(i => routes[i].cls === 'warn');
+  const top = (fold ? need : ix).map(row).join(''), rest = fold ? ix.filter(i => routes[i].cls !== 'warn').map(row).join('') : '';
+  const more = $('#hw-more'), card = $('.hw-card');
+  more.classList.toggle('hidden', !rest);
+  more.querySelector('summary').textContent = t('hw.all', items.length - need.length);
+  if (card.dataset.html === top + rest) return;
+  card.dataset.html = top + rest; $('#hw-list').innerHTML = top; $('#hw-rest').innerHTML = rest;
+  card.querySelectorAll('[data-hw]').forEach(b => b.addEventListener('click', () => {
     const r = routes[+b.dataset.hw];
     if (r.act === 'add') { b.disabled = true; r.ctls.forEach(orgbAdd); }
     else if (r.act === 'setup') { $('#orgb-setup').click(); $('#orgb-guide').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
@@ -3291,7 +3337,8 @@ function updateDevices() {
     el.innerHTML = `<span class="dot ${d.enabled && d.online ? 'on' : 'off'}" style="display:inline-block;margin-right:6px"></span>${esc(devStatus(d))}`;
     const own = el.closest('.card')?.querySelector('.dev-own'); if (own && own !== document.activeElement) own.checked = !!d.own;
     const ck = $('#dev-chk-' + d.id), mine = CHK_ID === d.id && (S.netchk || {}).id === d.id;
-    if (ck) { ck.textContent = mine ? chkText(d) : ''; ck.previousElementSibling.querySelector('.dev-check')?.toggleAttribute('disabled', mine && !!S.netchk.busy); }
+    if (d.online) DEV_SAVED.delete(d.id);
+    if (ck) { ck.textContent = mine ? chkText(d) : DEV_SAVED.has(d.id) && devWaits(d) ? t('dev.saved') : ''; ck.previousElementSibling.querySelector('.dev-check')?.toggleAttribute('disabled', mine && !!S.netchk.busy); }
   });
   const btn = $('#scan-btn');
   btn.disabled = !!E.scanning;
@@ -3386,6 +3433,15 @@ $('#autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.ta
 $('#ui-motion').addEventListener('change', e => { setCfg('general', 'ui_motion', e.target.checked ? 1 : 0); updateSettings(); });
 function setTheme(v) { setCfg('general', 'theme', v); applyTheme(); send({ cmd: 'theme', v }); drawAll(); }
 $$('#theme button').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.v)));
+// the code field stays folded behind a small "Code" until asked for; empty and left (or Esc), it folds back
+function codeShow(on) {
+  $('#code').classList.toggle('hidden', !on); $('#code-open').classList.toggle('hidden', on);
+  $('#code-open').setAttribute('aria-expanded', on);
+  if (on) $('#code-in').focus();
+}
+$('#code-open').addEventListener('click', () => codeShow(true));
+$('#code-in').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); $('#code-in').value = ''; codeShow(false); $('#code-open').focus(); } });
+$('#code').addEventListener('focusout', () => setTimeout(() => { if (!$('#code').contains(document.activeElement) && !$('#code-in').value.trim()) codeShow(false); }, 0));   // after the burst has measured it
 // the code field: a right code opens its theme and switches to it (with a little burst), a wrong one shakes
 $('#code').addEventListener('submit', e => {
   e.preventDefault();
@@ -3763,7 +3819,7 @@ $$('#lang button').forEach(b => b.addEventListener('click', () => {
   LANG = b.dataset.v;
   setCfg('general', 'lang', LANG);
   applyI18n(); applyTheme(); buildEffects(); buildHotkeys(); buildBulbs(); buildDevices(); renderEffectSide();
-  showTab(tab); updateNano(); updateChips(); updateSettings(); drawAll();
+  showTab(tab); updateNano(); updateChips(); updateSettings(); updateMood(); drawAll();
   if (!$('#wizard').classList.contains('hidden')) wzGo(wzStep);
 }));
 
@@ -3772,16 +3828,35 @@ $('#chips').addEventListener('click', e => {
   const c = e.target.closest('.chip.has-off'), pop = $('#chip-pop');
   if (!c || !pop.classList.contains('hidden') && pop.dataset.for === c.dataset.off) { pop.classList.add('hidden'); return; }
   pop.dataset.for = c.dataset.off;
-  pop.innerHTML = `<div class="lbl"><span>${t('chip.offlist')}</span></div>` + c.dataset.off.split('\n').map(n => `<div class="off-row"><span class="dot off"></span>${esc(n)}</div>`).join('');
+  pop.innerHTML = `<div class="lbl"><span>${t('chip.offlist')}</span></div>` + JSON.parse(c.dataset.off).map(o =>
+    `<button class="off-row" type="button" data-h="${esc(JSON.stringify(o.h))}"><span class="dot off"></span><span>${esc(o.n)}</span></button>`).join('');
   const r = c.getBoundingClientRect();
   pop.style.top = r.bottom + 6 + 'px'; pop.style.right = Math.max(8, innerWidth - r.right) + 'px';
   pop.classList.remove('hidden');
+  if (!e.detail) pop.querySelector('.off-row').focus();   // opened from the keyboard
+});
+// a name in the list opens that device's card, the same as its tile on the hero
+$('#chip-pop').addEventListener('click', e => {
+  const b = e.target.closest('.off-row'); if (!b) return;
+  $('#chip-pop').classList.add('hidden');
+  const r = b.getBoundingClientRect(); openSheet(JSON.parse(b.dataset.h), r.left + r.width / 2, r.top);
+});
+$('#chip-pop').addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  e.stopPropagation(); $('#chip-pop').classList.add('hidden');
+  $(`#chips .chip[data-off="${CSS.escape($('#chip-pop').dataset.for)}"]`)?.focus();
 });
 document.addEventListener('pointerdown', e => { if (!e.target.closest('#chip-pop, #chips')) $('#chip-pop').classList.add('hidden'); });
-function chip(dot, text, off) { return `<span class="chip${off && off.length ? ' has-off' : ''}"${off && off.length ? ` data-off="${esc(off.join('\n'))}"` : ''}><span class="dot ${dot}"></span>${text}</span>`; }
+// off: [{ n: name, h: the sheet it opens }]; with some, the chip is a button that lists them
+function chip(dot, text, off) {
+  return off && off.length ? `<button type="button" class="chip has-off" aria-haspopup="true" data-off="${esc(JSON.stringify(off))}"><span class="dot ${dot}"></span>${text}</button>`
+    : `<span class="chip"><span class="dot ${dot}"></span>${text}</span>`;
+}
+const OFF_ROW = { nano: n => ({ n: nanoName(n), h: { k: 'nano', slot: n.slot } }), bulb: (b, i) => ({ n: bulbName(i), h: { k: 'bulb', i } }), ext: d => ({ n: d.name, h: { k: 'ext', id: d.id } }) };
+const offs = (list, f) => list.map(f).filter((_, i) => !list[i].online);
 // a group of devices: its count while all answer, "N offline" (click: which ones) when some don't
-function chipSet(label, list, name) {
-  const off = list.filter(x => !x.online).map(name), k = off.length;
+function chipSet(label, list, f) {
+  const off = offs(list, f), k = off.length;
   return chip(!k ? 'on' : k < list.length ? 'warn' : 'off', `${label} <b>${k ? t('chip.off', k) : list.length}</b>`, off);
 }
 function updateChips() {
@@ -3790,12 +3865,12 @@ function updateChips() {
   if (S.sticks) h.push(chip(S.ram_own ? 'off' : 'on', `${t('chip.mem')} <b>${S.sticks} ${t('chip.pcs')}</b>`));
   if (S.gpu_temp != null) h.push(chip('on', `GPU <b>${S.gpu_temp}°</b>`));
   const nL = nanoCtls(), ed = S.ext.devs.filter(d => d.enabled);
-  if (nL.length) h.push(chipSet('Nanoleaf', nL, nanoName));
-  if (S.bulbs.length) h.push(chipSet(t('chip.lamps'), S.bulbs, b => b.name));
-  if (ed.length) h.push(chipSet(t('chip.devs'), ed, d => d.name));
+  if (nL.length) h.push(chipSet('Nanoleaf', nL, OFF_ROW.nano));
+  if (S.bulbs.length) h.push(chipSet(t('chip.lamps'), S.bulbs, OFF_ROW.bulb));
+  if (ed.length) h.push(chipSet(t('chip.devs'), ed, OFF_ROW.ext));
   // the full row only above the effects; elsewhere one chip sums it up
   if (tab !== 'effects' && h.length > 1) {
-    const off = [...nL, ...S.bulbs, ...ed].filter(x => !x.online).map(x => x.name || 'Nanoleaf');
+    const off = [...offs(nL, OFF_ROW.nano), ...offs(S.bulbs, OFF_ROW.bulb), ...offs(ed, OFF_ROW.ext)];
     const tip = h.map(x => x.replace(/<[^>]+>/g, '')).join('\n');
     $('#chips').innerHTML = chip(off.length ? 'warn' : 'on', `${t('chip.ok')} <b>${off.length ? t('chip.off', off.length) : t('chip.allok')}</b>`, off).replace('class="chip', `title="${esc(tip)}" class="chip`);
   } else $('#chips').innerHTML = h.join('');
@@ -3823,7 +3898,8 @@ function updateChips() {
 
 // ------------------------------------------------------------------ messages from the core
 function applyStatus(m) {
-  const bulbCountChanged = (m.bulbs || []).length !== S.bulbs.length;
+  const names = a => JSON.stringify((a || []).map(b => b.name));   // the cloud names can come after the first state
+  const bulbsChanged = names(m.bulbs) !== names(S.bulbs);
   const nanoSig = N => JSON.stringify(((N || {}).ctls || []).map(c => [c.slot, c.panels]));
   const nanoLayoutChanged = nanoSig(m.nano) !== nanoSig(S.nano);
   const effectChanged = m.effect !== S.effect;
@@ -3832,7 +3908,7 @@ function applyStatus(m) {
   const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type, d.zones]));
   if (!dragging) { setRange($('#bright'), S.brightness); $('#bright-val').textContent = S.brightness + '%'; }
   if (effectChanged) { markEffect(); renderEffectSide(); }
-  if (bulbCountChanged) buildBulbs(); else updateBulbs();
+  if (bulbsChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
   updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup(); fixedCheck();
   if (nanoLayoutChanged) drawAll();

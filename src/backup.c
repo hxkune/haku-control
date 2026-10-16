@@ -102,9 +102,24 @@ static void prof_path(int id, const wchar_t *ext, wchar_t *out) {
     wchar_t n[40]; swprintf(n, 40, L"profiles\\%d.ini%s", id, ext); app_data_path(n, out);
 }
 
+// where each profile is in the swap: 1 = the old file set aside as N.ini.old, 2 = the backup's in place as N.ini
+static unsigned char st[PROFILE_MAX + 1];
+
+// every profile back as it was before the swap
+static void profiles_back(void) {
+    for (int id = 1; id <= PROFILE_MAX; id++) {
+        wchar_t p[MAX_PATH], po[MAX_PATH]; prof_path(id, L"", p); prof_path(id, L".old", po);
+        if (st[id] & 2) DeleteFileW(p);
+        if ((st[id] & 1) && !MoveFileExW(po, p, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            logf_("backup: profile %d could not be put back (error %lu), it is in %d.ini.old", id, GetLastError(), id);
+        st[id] = 0;
+    }
+}
+
 // Nothing changes unless all of it can: the file is read and checked whole first (bad_file), the profiles are
-// written beside the old ones, and the settings go in only once those are on disk; a write that fails leaves
-// this PC's settings and profiles as they were (bad_write).
+// written beside the old ones, then swapped in with the old ones set aside (not deleted), and the settings go in
+// last; a write, swap or removal that fails puts every file and the settings in memory back as they were
+// (bad_write). The old profiles are deleted only once all of it is on disk.
 void backup_load(void *owner) {
     wchar_t file[MAX_PATH] = L"";
     if (!pick_file((HWND)owner, 0, file)) return;
@@ -164,6 +179,23 @@ void backup_load(void *owner) {
     }
     if (ok) ok = cfg_save_if_dirty();   // changes not yet written: kept if the restore has to be undone
 
+    // the swap: an old profile steps aside (one another program holds open cannot, and nothing is changed yet
+    // for it), the backup's takes its place; the ones the backup has not only step aside
+    memset(st, 0, sizeof(st));
+    for (int id = 1; id <= PROFILE_MAX && ok; id++) {
+        wchar_t p[MAX_PATH], po[MAX_PATH], pn[MAX_PATH]; prof_path(id, L"", p); prof_path(id, L".old", po); prof_path(id, L".new", pn);
+        DeleteFileW(po);   // left from a restore that was cut off
+        if (GetFileAttributesW(po) != INVALID_FILE_ATTRIBUTES) { ok = 0; break; }
+        if (GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES) {
+            if (!MoveFileExW(p, po, MOVEFILE_WRITE_THROUGH)) { logf_("backup: profile %d is held (error %lu)", id, GetLastError()); ok = 0; break; }
+            st[id] |= 1;
+        }
+        if (plen[id]) {
+            if (!MoveFileExW(pn, p, MOVEFILE_WRITE_THROUGH)) { ok = 0; break; }
+            st[id] |= 2;
+        }
+    }
+
     // this PC's secrets, to keep
     static entry keep[1024]; static char kind[1024][32], host[1024][64];
     static char secs[1024][64]; static cfg_item it[512];
@@ -191,19 +223,15 @@ void backup_load(void *owner) {
         if (!cfg_save_if_dirty()) { ok = 0; cfg_load(NULL); }   // the file on disk is still the old one: back to it
     }
     if (!ok) {
+        profiles_back();
         for (int id = 1; id <= PROFILE_MAX; id++) { wchar_t p[MAX_PATH]; prof_path(id, L".new", p); DeleteFileW(p); }
         say("bad_write", 0, 0);
         return;
     }
-    // settings in: the new profiles take the old ones' place, and the ones the backup has not are gone
-    int moved = 1;
-    for (int id = 1; id <= PROFILE_MAX; id++) {
-        wchar_t p[MAX_PATH], pn[MAX_PATH]; prof_path(id, L"", p); prof_path(id, L".new", pn);
-        if (!plen[id]) DeleteFileW(p);
-        else if (!MoveFileExW(pn, p, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { moved = 0; DeleteFileW(pn); }
-    }
+    // all of it in: the old profiles are not needed any more (one left behind is cleared by the next restore)
+    for (int id = 1; id <= PROFILE_MAX; id++) { wchar_t po[MAX_PATH]; prof_path(id, L".old", po); if (st[id] & 1) DeleteFileW(po); st[id] = 0; }
     app_reload_all();
-    if (moved) say("restored", n, np); else say("bad_write", 0, 0);
+    say("restored", n, np);
     logf_("backup: kept %d secrets of this PC, %d belonged to other devices", kept, lost);
 }
 

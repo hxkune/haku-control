@@ -101,13 +101,13 @@
     await fresh();
     setCfg('profile.3', 'at', '22:00'); setCfg('profile.3', 'days', ''); profMenu(true);
     $('#prof-list .prof-row[data-id="3"] .prof-ren').click();
-    const day = d => $(`#prof-list .prof-day[data-d="${d}"]`).click(), days = () => cv('profile.3', 'days', '');
+    const day = d => $(`#prof-panel .prof-day[data-d="${d}"]`).click(), days = () => cv('profile.3', 'days', '');
     day(7); ok(days() === '123456', 'Sunday off: ' + days());
     day(6); ok(days() === '12345', 'Saturday off: ' + days());
     day(7); day(6); ok(days() === '', 'all back is every day: ' + days());
     for (const d of '123456') day(d);
     day(7); ok(days() === '7', 'the last day went: ' + days());
-    profMenu(false);
+    closeSheet();
   });
 
   test('two profiles at the same minute and day show the clash; the clock switched off does not', async () => {
@@ -115,12 +115,12 @@
     setCfg('profile.2', 'at', '07:30'); setCfg('profile.2', 'days', '12345'); setCfg('profile.3', 'at', '07:30'); setCfg('profile.3', 'days', '5');
     setCfg('profile.3', 'at_off', '');
     profMenu(true); $('#prof-list .prof-row[data-id="3"] .prof-ren').click();
-    ok($('#prof-list .prof-edit .hint.warn'), 'no clash shown');
-    $('#prof-list .prof-day[data-d="6"]').click(); $('#prof-list .prof-day[data-d="5"]').click();   // Saturday only
-    ok(!$('#prof-list .prof-edit .hint.warn'), 'a clash on days not in common');
+    ok($('#prof-panel .prof-edit .hint.warn'), 'no clash shown');
+    $('#prof-panel .prof-day[data-d="6"]').click(); $('#prof-panel .prof-day[data-d="5"]').click();   // Saturday only
+    ok(!$('#prof-panel .prof-edit .hint.warn'), 'a clash on days not in common');
     setCfg('profile.3', 'days', '5'); setCfg('profile.2', 'at_off', '1'); renderProfiles();
-    ok(!$('#prof-list .prof-edit .hint.warn'), 'a clash with a clock switched off');
-    setCfg('profile.2', 'at', ''); setCfg('profile.3', 'at', ''); profMenu(false);
+    ok(!$('#prof-panel .prof-edit .hint.warn'), 'a clash with a clock switched off');
+    setCfg('profile.2', 'at', ''); setCfg('profile.3', 'at', ''); closeSheet();
   });
 
   test('pause shows on the switcher and is cleared by resume; Duplicate asks the core for a copy', async () => {
@@ -130,9 +130,9 @@
     ok(cv('general', 'auto_pause', '') === '1' && !$('#prof-paused').classList.contains('hidden'), 'not paused');
     $('#prof-state .prof-pause').click();
     ok(cv('general', 'auto_pause', '') === '' && $('#prof-paused').classList.contains('hidden'), 'not resumed');
-    $('#prof-list .prof-row[data-id="2"] .prof-ren').click(); sent.length = 0; $('#prof-list .prof-dup').click();
+    $('#prof-list .prof-row[data-id="2"] .prof-ren').click(); sent.length = 0; $('#prof-panel .prof-dup').click();
     ok(sent.some(o => o.cmd === 'profile_dup' && o.id === '2' && o.name), 'sent ' + JSON.stringify(sent));
-    setCfg('profile.1', 'apps', ''); profMenu(false);
+    setCfg('profile.1', 'apps', ''); closeSheet();
   });
 
   test('a phone keeps the kinds of devices in a row on Devices; the AI offer waits for a try or a download', async () => {
@@ -150,6 +150,114 @@
     MOOD.err = ''; S.ollama = { exe: 0, model: 0, stage: 5, pct: 40 }; updateAi();
     ok(!$('#mood-setup').classList.contains('hidden'), 'a download hidden');
     S.ollama = was; updateAi();
+  });
+
+  test('every switch and tick box can be reached with Tab, has a name and says if it is on', async () => {
+    await fresh();
+    showTab('devices');
+    const all = [...document.querySelectorAll('.switch input, .check input')];
+    ok(all.length > 10, 'only ' + all.length + ' found');
+    for (const i of all) {
+      const where = i.id || i.dataset.toggle || i.className || i.closest('label').textContent.trim();
+      ok(getComputedStyle(i).display !== 'none' && i.tabIndex === 0, where + ' not reachable');
+      const name = i.getAttribute('aria-labelledby') ? document.getElementById(i.getAttribute('aria-labelledby'))?.textContent.trim() : i.closest('label').textContent.trim();
+      ok(name, where + ' has no name');
+      if (i.closest('.switch')) ok(i.getAttribute('role') === 'switch', where + ' not a switch');
+    }
+    const names = [...document.querySelectorAll('.dev-on')].map(i => document.getElementById(i.getAttribute('aria-labelledby')).textContent);
+    ok(S.ext.devs.every(d => names.includes(d.name)), 'device switches not named after them: ' + names);
+  });
+
+  test('the pencil opens the profile in its own panel: the menu closes, Enter keeps a new name, Esc keeps the old one', async () => {
+    await fresh();
+    showTab('effects');   // the profile button lives here: focus comes back to it
+    const name = cv('profile.2', 'name', '');
+    profMenu(true); $('#prof-list .prof-row[data-id="2"] .prof-ren').click(); await wait(40);
+    ok($('#prof-menu').classList.contains('hidden'), 'the menu stayed open');
+    ok($('#sheet-body #prof-panel .prof-edit[data-id="2"]') && !$('#sheet').classList.contains('hidden'), 'not in the sheet');
+    ok(!$('#prof-list .prof-edit'), 'the editor is still in the menu');
+    ok(document.activeElement === $('#prof-panel .prof-name'), 'the name is not focused');
+    ok($('#sheet .sheet').getAttribute('aria-labelledby') === 'prof-panel-h' && $('#sheet-page').classList.contains('hidden'), 'the sheet is not named or shows Open page');
+    $('#prof-panel .prof-name').value = name + ' x'; key($('#prof-panel .prof-name'), 'Escape'); await wait(60);
+    ok(cv('profile.2', 'name', '') === name && $('#sheet').classList.contains('hidden'), 'Esc did not keep the old name and close');
+    ok(document.activeElement === $('#prof-btn'), 'focus is on ' + document.activeElement.id);
+    profMenu(true); $('#prof-list .prof-row[data-id="2"] .prof-ren').click(); await wait(40);
+    $('#prof-panel .prof-name').value = name + ' x'; key($('#prof-panel .prof-name'), 'Enter'); await wait(60);
+    ok(cv('profile.2', 'name', '') === name + ' x' && $('#sheet').classList.contains('hidden'), 'Enter did not keep the name and close');
+    ok($('#prof-panel').closest('#prof') && !$('#prof-panel .prof-edit'), 'the panel is not back in place and empty');
+    setCfg('profile.2', 'name', name); renderProfiles();
+  });
+
+  test('the PC tab: the light cards come first, the found hardware folds once haku lights some, what needs a step stays out', async () => {
+    await fresh();
+    const g = $('#tab-pc .pc-grid'), kids = [...g.children];
+    ok(kids.indexOf($('#ram-card')) < kids.indexOf($('.hw-card')) && kids.indexOf($('#gpu-card')) < kids.indexOf($('.hw-card')), 'the hardware list is above the light cards');
+    const was = S.hw;
+    S.hw = { busy: 0, done: 1, items: [{ cat: 'ram', maker: 'G.Skill', name: 'F4', id: '' }, { cat: 'gpu', maker: 'NVIDIA', name: 'RTX 4070', id: '' }, { cat: 'usb', maker: 'Corsair', name: 'Hub', id: '1B1C0C3F' }] };
+    const o = S.orgb; S.orgb = { state: 4, ctls: [] };
+    updateHw();
+    const lit = S.hw.items.map(hwRoute).filter(r => r.cls === 'on').length;
+    ok(lit, 'the memory sticks are not lit by haku in the preview');
+    ok(!$('#hw-more').classList.contains('hidden') && $$('#hw-rest .found-row').length === 2 && !$('#hw-more').open, 'the rest is not folded');
+    ok($$('#hw-list .found-row').length === 1 && $('#hw-list [data-hw]'), 'the row that needs a step is not in sight with its button');
+    S.hw = Object.assign({}, S.hw, { done: 0 }); updateHw();
+    ok($('#hw-more').classList.contains('hidden') && $$('#hw-list .found-row').length === 3, 'not everything shows before the first look is done');
+    S.hw = was; S.orgb = o; updateHw();
+  });
+
+  test('the offline list: the chip is a button, each name opens its device card, Esc goes back to the chip', async () => {
+    await fresh();
+    showTab('effects'); updateChips();
+    const c = $('#chips .chip.has-off');
+    ok(c && c.tagName === 'BUTTON', 'no offline chip, or not a button');
+    c.focus(); c.click(); await wait(20);
+    const row = $('#chip-pop .off-row');
+    ok(!$('#chip-pop').classList.contains('hidden') && document.activeElement === row, 'the list is not open with focus in it');
+    key(row, 'Escape'); await wait(20);
+    ok($('#chip-pop').classList.contains('hidden') && document.activeElement === $('#chips .chip.has-off'), 'Esc did not go back to the chip');
+    $('#chips .chip.has-off').click(); await wait(20);
+    const h = JSON.parse($('#chip-pop .off-row').dataset.h);
+    $('#chip-pop .off-row').click(); await wait(60);
+    ok(!$('#sheet').classList.contains('hidden') && $('#sheet-body .card') && SHEET.kind === h.k, 'the name did not open its card');
+    closeSheet(); await wait(20);
+  });
+
+  test('the theme code is folded behind a small Code button', async () => {
+    await fresh();
+    showTab('settings');
+    ok($('#code').classList.contains('hidden') && !$('#code-open').classList.contains('hidden'), 'the code field shows by itself');
+    $('#code-open').click();
+    ok(!$('#code').classList.contains('hidden') && document.activeElement === $('#code-in') && $('#code-open').classList.contains('hidden'), 'Code did not open the field');
+    key($('#code-in'), 'Escape'); await wait(20);
+    ok($('#code').classList.contains('hidden') && document.activeElement === $('#code-open'), 'Esc did not fold it back');
+    showTab('effects');
+  });
+
+  test('a phone opens the effect settings in the sheet: the same card, kept up to date, back in place on close', async () => {
+    await fresh();
+    showTab('effects'); $('#fx-tune').style.display = 'flex'; // shown on phones only: shown here so focus has a place to come back to
+    $('#fx-tune').focus(); $('#fx-tune').click(); await wait(80);
+    ok($('#sheet-body .fx-side') && !$('#sheet').classList.contains('hidden'), 'not in the sheet');
+    ok($$('#fx-name').length === 1, 'the settings card is there twice');
+    ok($('#sheet-page').classList.contains('hidden'), 'Open page shown for the page already open');
+    const was = S.effect; S.effect = was === 'wave' ? 'flow' : 'wave'; renderEffectSide();
+    ok($('#sheet-body #fx-name').textContent === fxName(S.effect) && $('#fx-tune-name').textContent === fxName(S.effect), 'not updated');
+    key(document.body, 'Escape'); await wait(60);
+    ok($('#sheet').classList.contains('hidden') && $('.fx-layout > .fx-side'), 'not back in place');
+    ok(document.activeElement === $('#fx-tune'), 'focus is on ' + document.activeElement.id);
+    S.effect = was; renderEffectSide(); $('#fx-tune').style.display = '';
+  });
+
+  test('a setting changed while a device is unreachable says it is saved, only while that is true', async () => {
+    await fresh();
+    const d = S.ext.devs.find(x => x.id === 3), w = S.ext.devs.find(x => x.id === 1), ck = $('#dev-chk-3');
+    const set = (id, v) => { const s = $(`#dev-chk-${id}`).closest('.card').querySelector('.dev-type'); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); };
+    set(1, 'tv'); ok($('#dev-chk-1').textContent === '', 'an online device says saved for later');
+    set(3, 'lamp'); ok(ck.textContent === t('dev.saved'), 'no note: ' + ck.textContent);
+    d.enabled = 0; updateDevices(); ok(ck.textContent === '', 'a switched-off device would not apply it');
+    d.enabled = 1; d.online = 1; updateDevices(); ok(ck.textContent === '', 'still shown once online');
+    d.online = 0; updateDevices(); ok(ck.textContent === '', 'came back after it applied');
+    setCfg('dev.1', 'type', 'auto'); setCfg('dev.3', 'type', 'auto'); w.online = 1;
   });
 
   for (const [name, fn] of tests) {

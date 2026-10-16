@@ -14,11 +14,16 @@ global.setInterval = f => timers.push(f);
 global.setTimeout = () => 0; global.clearTimeout = () => { };
 
 // the fake PC: what it answers, and what it was asked
-const pc = { rev: 1, up: true, profile: '1', calls: [] };
+const pc = { rev: 1, up: true, profile: '1', calls: [], prof: { 'profile.1': { name: 'Day' }, 'profile.2': { name: 'Night', pin: '1' } } };
 global.fetch = async (url, o = {}) => {
   pc.calls.push(url + (o.body ? ' ' + o.body : ''));
   if (!pc.up) throw new Error('offline');
-  const body = url === '/api/state' ? { type: 'state', rev: pc.rev, cfg: { general: { profile: pc.profile } } }
+  // what the PC does with a copy (app_profile_dup): the next free number, the source as it was
+  if (url === '/api/cmd' && /"cmd":"profile_dup"/.test(o.body)) {
+    const c = JSON.parse(o.body); let n = 1; while (pc.prof['profile.' + n]) n++;
+    pc.prof['profile.' + n] = { ...pc.prof['profile.' + c.id], name: c.name, pin: undefined }; pc.rev++;
+  }
+  const body = url === '/api/state' ? { type: 'state', rev: pc.rev, cfg: { general: { profile: pc.profile }, ...pc.prof } }
     : url === '/api/status' ? { type: 'status', rev: pc.rev } : url === '/api/cmd' && /"cmd":"open"/.test(o.body) ? null : {};
   return { ok: !!body, status: body ? 200 : 400, json: async () => body };
 };
@@ -47,6 +52,15 @@ const states = () => got.filter(d => d.type === 'state').length;
   assert.equal(states(), 3, 'the PC back after being away reloads the state');
   await tick();
   assert.equal(states(), 3, 'and only once');
+
+  // Duplicate on the phone: the PC gets it, and the copy shows up next to the original
+  window.chrome.webview.postMessage(JSON.stringify({ cmd: 'profile_dup', id: '2', name: 'Night (copy)' }));
+  await new Promise(r => setImmediate(r));
+  assert.ok(pc.calls.some(c => /\/api\/cmd .*"cmd":"profile_dup","id":"2"/.test(c)), 'the copy is asked of the PC');
+  await tick();
+  const cfg = got[got.length - 1].cfg;
+  assert.equal(cfg['profile.3'] && cfg['profile.3'].name, 'Night (copy)', 'the phone shows the copy');
+  assert.equal(cfg['profile.2'].name, 'Night', 'and the original is still there');
 
   window.chrome.webview.postMessage(JSON.stringify({ cmd: 'quit' }));
   assert.ok(!pc.calls.some(c => /quit/.test(c)), 'PC-only commands stay on the phone');

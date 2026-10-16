@@ -25,6 +25,12 @@ static char *get(const wchar_t *name) {
     FILE *f = _wfopen(p, L"rb"); if (!f) return "";
     size_t n = fread(b, 1, sizeof(b) - 1, f); b[n] = 0; fclose(f); return b;
 }
+// open as another program would that does not let it be moved or deleted (no FILE_SHARE_DELETE)
+static HANDLE hold(const wchar_t *name) {
+    wchar_t p[MAX_PATH]; app_data_path(name, p);
+    return CreateFileW(p, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+}
+static int there(const wchar_t *name) { wchar_t p[MAX_PATH]; app_data_path(name, p); return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }
 static const char *result(void) { static char b[128]; backup_json(b, sizeof(b)); return b; }
 static void use_file(const wchar_t *name) { wchar_t p[MAX_PATH]; app_data_path(name, p); SetEnvironmentVariableW(L"HAKU_BACKUP_FILE", p); }
 
@@ -74,6 +80,49 @@ int main(void) {
     CHECK(strstr(get(L"profiles\\2.ini"), "speed=9") != NULL, "old profile kept when the settings fail");
     CHECK(!*get(L"profiles\\2.ini.new"), "no leftover new profile");
     RemoveDirectoryW(blk);
+
+    // the profile in use is held open by another program (no delete sharing): the swap fails, all stays as it was
+    use_file(L"a.hakubackup");
+    HANDLE held = hold(L"profiles\\2.ini");
+    backup_load(NULL);
+    CloseHandle(held);
+    CHECK(strstr(result(), "bad_write"), "a held profile is reported");
+    CHECK(!strcmp(cfg_get("general", "name", ""), "mine"), "held profile: settings in memory untouched");
+    CHECK(strstr(get(L"settings.ini"), "name=mine") != NULL, "held profile: settings on disk untouched");
+    CHECK(strstr(get(L"profiles\\2.ini"), "speed=9") != NULL, "held profile: its file untouched");
+    CHECK(!there(L"profiles\\2.ini.old") && !there(L"profiles\\2.ini.new"), "held profile: nothing left beside it");
+
+    // several profiles: the first is swapped in, the second is held; the first goes back to the old one
+    put(L"two.hakubackup", "haku control backup 1\r\n#file settings.ini\r\n[general]\r\nname=desk\r\n"
+        "#file profiles/1.ini\r\n[flow]\r\nspeed=1\r\n#file profiles/2.ini\r\n[flow]\r\nspeed=2\r\n");
+    put(L"profiles\\1.ini", "[flow]\r\nspeed=7\r\n");
+    use_file(L"two.hakubackup");
+    held = hold(L"profiles\\2.ini");
+    backup_load(NULL);
+    CloseHandle(held);
+    CHECK(strstr(result(), "bad_write"), "second profile held: reported");
+    CHECK(strstr(get(L"profiles\\1.ini"), "speed=7") != NULL, "second profile held: the first is back to the old one");
+    CHECK(strstr(get(L"profiles\\2.ini"), "speed=9") != NULL, "second profile held: it is untouched");
+    CHECK(!strcmp(cfg_get("general", "name", ""), "mine"), "second profile held: settings untouched");
+    CHECK(!there(L"profiles\\1.ini.old") && !there(L"profiles\\1.ini.new"), "second profile held: nothing left beside the first");
+
+    // a profile the backup has not, held open: it cannot be removed, so nothing changes
+    put(L"profiles\\3.ini", "[flow]\r\nspeed=3\r\n");
+    held = hold(L"profiles\\3.ini");
+    backup_load(NULL);
+    CloseHandle(held);
+    CHECK(strstr(result(), "bad_write"), "a held extra profile is reported");
+    CHECK(strstr(get(L"profiles\\1.ini"), "speed=7") != NULL && strstr(get(L"profiles\\2.ini"), "speed=9") != NULL,
+          "held extra profile: the others back to the old ones");
+    CHECK(strstr(get(L"profiles\\3.ini"), "speed=3") != NULL, "held extra profile: it is still there");
+
+    // nothing held: all of it goes in, the extra profile is gone and no old file is left
+    backup_load(NULL);
+    CHECK(strstr(result(), "restored"), "free again: restored");
+    CHECK(!strcmp(cfg_get("general", "name", ""), "desk"), "free again: settings in");
+    CHECK(strstr(get(L"profiles\\1.ini"), "speed=1") != NULL && strstr(get(L"profiles\\2.ini"), "speed=2") != NULL, "free again: profiles in");
+    CHECK(!there(L"profiles\\3.ini") && !there(L"profiles\\1.ini.old") && !there(L"profiles\\2.ini.old"), "free again: extra and old files gone");
+    cfg_set("general", "name", "mine"); cfg_save_if_dirty();
 
     // a damaged file (a line that is not key=value) changes nothing
     put(L"bad.hakubackup", "haku control backup 1\r\n#file settings.ini\r\n[general]\r\nname=x\r\nthis is not a setting\r\n");
