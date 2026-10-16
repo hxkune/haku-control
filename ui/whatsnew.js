@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.14',
+    en: ['A calmer look: effect cards glow softly from their bottom edge, markers are small diamonds, and the menu, power and timer icons are drawn with straight lines.', 'The devices on the Effects tab have new pictures: flat and sharp, with a real bulb, a mouse, a framed fan and a clean glow on the light bars.', 'Delete, Cancel, Forget and Remove buttons are red, and buttons fill from the left when you point at them.'],
+    ru: ['Спокойнее на вид: карточки эффектов мягко светятся от нижнего края, метки стали маленькими ромбами, а иконки меню, питания и таймера нарисованы прямыми линиями.', 'У устройств на вкладке «Эффекты» новые картинки: плоские и чёткие, с настоящей лампочкой, мышью, вентилятором в рамке и чистым свечением световых полос.', 'Кнопки «Удалить», «Отмена», «Забыть» и «Убрать» красные, а кнопки заполняются слева при наведении.'],
+    fr: ['Un aspect plus calme : les cartes d’effets brillent doucement depuis leur bord inférieur, les repères sont de petits losanges, et les icônes du menu, de l’alimentation et de la minuterie sont tracées en lignes droites.', 'Les appareils de l’onglet Effets ont de nouvelles images : plates et nettes, avec une vraie ampoule, une souris, un ventilateur dans son cadre et une lueur nette sur les barres lumineuses.', 'Les boutons Supprimer, Annuler, Oublier et Retirer sont rouges, et les boutons se remplissent depuis la gauche au survol.'] },
   { v: '0.4.13',
     en: ['The buttons of the preset and group windows line up: Delete and Share are the same size as the others and sit on the same line.'],
     ru: ['Кнопки в окнах пресета и группы стоят ровно: «Удалить» и «Поделиться» того же размера, что и остальные, и на одной линии с ними.'],
