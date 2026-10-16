@@ -1693,9 +1693,13 @@ function ramStick(c, x, y, w, h, cols) {
 
 function drawRam(c, X, Y, W, H) {
   const d = devicePixelRatio, m = Math.min(4, Math.max(1, S.sticks || 2));
-  const sw = Math.min(W * 0.9, 300 * d, H * 0.9 / (m * 1.35 * 0.24)), sh = sw * 0.24;   // the same stick as a single one, just smaller when stacked
-  const gap = sh * 0.35, x = X + (W - sw) / 2, y0 = Y + (H - (sh * m + gap * (m - 1))) / 2;
-  for (let s = 0; s < m; s++) ramStick(c, x, y0 + s * (sh + gap), sw, sh, [...Array(8)].map((_, i) => (F.ram[s] || [])[i] || OFF));
+  const fit = (a, b) => Math.min(a * 0.9, 300 * d, b * 0.9 / (m * 1.35 * 0.24));   // the stick's length along a, stacked across b: the same stick as a single one, just smaller when stacked
+  const up = fit(H, W) > fit(W, H), sw = fit(up ? H : W, up ? W : H), sh = sw * 0.24, gap = sh * 0.35;   // stood up when that draws them bigger, as in a narrow tile
+  for (let s = 0; s < m; s++) {
+    c.save(); c.translate(X + W / 2, Y + H / 2); if (up) c.rotate(-Math.PI / 2);
+    ramStick(c, -sw / 2, (s - m / 2) * (sh + gap) + gap / 2, sw, sh, [...Array(8)].map((_, i) => (F.ram[s] || [])[i] || OFF));
+    c.restore();
+  }
 }
 
 function drawGpu(c, X, Y, W, H) {
@@ -1952,9 +1956,11 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
       c.beginPath(); c.arc(fx, fy, fr * 0.26, 0, 7); c.strokeStyle = 'rgba(255,255,255,.1)'; c.stroke();
     }
     lightBar(c, x + w * 0.04, y - Math.max(2 * dp, h * 0.06) - 3 * dp, w * 0.92, Math.max(2 * dp, h * 0.06), all(), false);
-  } else if (type === 'ram') {   // a memory stick lying down, seen from the front
-    const w = Math.min(W * 0.9, H * 3.2), h = w * 0.24;
-    ramStick(c, cx - w / 2, cy - h / 2, w, h, all());
+  } else if (type === 'ram') {   // a memory stick seen from the front, stood up when that draws it bigger
+    const up = Math.min(H * 0.9, W * 3.2) > Math.min(W * 0.9, H * 3.2), w = up ? Math.min(H * 0.9, W * 3.2) : Math.min(W * 0.9, H * 3.2), h = w * 0.24;
+    c.save(); c.translate(cx, cy); if (up) c.rotate(-Math.PI / 2);
+    ramStick(c, -w / 2, -h / 2, w, h, all());
+    c.restore();
   } else if (type === 'board') {   // a motherboard: socket, slots, the light down one edge
     const s = Math.min(W * 0.8, H * 0.9), x = cx - s / 2, y = cy - s / 2;
     box(x, y, s, s, DEEP);
