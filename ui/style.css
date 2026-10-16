@@ -272,7 +272,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .btn:active { transform: scale(.98); }
 /* a plain .btn is the secondary one: a faint fill and a visible edge, never the system's grey */
 .btn:not(.primary):not(.ghost):not(.danger) { background-color: rgba(var(--ink), .07); border-color: var(--line2); color: var(--text); --lc: var(--line2); }
-.btn:not(.primary):not(.ghost):not(.danger):hover { background-color: rgba(var(--ink), .12); border-color: var(--line3); --lc: var(--line3); }
+.btn:not(.primary):not(.ghost):not(.danger):hover { border-color: var(--line3); --lc: var(--line3); }
 .btn svg { width: 14px; height: 14px; }
 .btn.primary { background: var(--chrome); color: var(--on-strong); }
 .btn.primary:hover { filter: brightness(1.05); }
@@ -1400,3 +1400,20 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .09s linear infinite; 
 .hero-more:hover { color: var(--strong); }
 .hero-more svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; transition: transform .2s; }
 .hero-more.open svg { transform: rotate(180deg); }
+
+/* button hover: the other buttons fill from the left like a gauge and rise a hair; chrome ones keep their sweep */
+@media (hover: hover) {
+  .btn:not(.primary):not(.prog) {
+    --fill: rgba(var(--ink), .1);
+    background-image: var(--g1), var(--g1), linear-gradient(var(--fill), var(--fill));
+    background-size: var(--cut) var(--cut), var(--cut) var(--cut), 0% 100%;
+    background-position: left top, right bottom, left center;
+    transition-property: border-color, background-color, color, transform, opacity, filter, --lc, background-size;
+    transition-duration: .22s, .22s, .22s, .22s, .22s, .22s, .22s, .38s;
+  }
+  .btn.danger { --fill: rgba(255, 92, 108, .14); }
+  .btn:not(.primary):not(.prog):not(:disabled):hover { background-size: var(--cut) var(--cut), var(--cut) var(--cut), 100% 100%; }
+  .btn:not(.prog):not(:disabled):hover { transform: translateY(-1px); }
+  .btn:not(.prog):not(:disabled):active { transform: translateY(0) scale(.98); transition-duration: .08s; }
+}
+body.calm .btn:hover { transform: none; }
