@@ -550,12 +550,12 @@ const NAV_NEED = { nano: nanoOn, bulbs: () => S.bulbs.length > 0 };
 // ---- a tab for every brand of lights added (as Nanoleaf has its own): their device cards move there. PC hardware
 // (OpenRGB, Wooting, the Nanoleaf desk dock) and everything to find and add devices stay under Devices.
 const BRAND_ICON = {
-  panel: '<rect x="5" y="3" width="14" height="10" rx="1.5"/><path d="M12 13v6M8 21h8"/>',
-  bar: '<rect x="3" y="10" width="18" height="4" rx="2"/><path d="M6 17v2M18 17v2"/>',
-  strip: '<path d="M3 15c3-6 6 6 9 0s6 6 9 0"/>',
-  grid: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9.3 4v16M14.7 4v16M4 9.3h16M4 14.7h16"/>',
-  bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
-  plug: '<path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0zM12 17v4"/>',
+  panel: '<path d="M7 3h13v8l-3 3H4V6z"/><path d="M12 14v5M8 21h8"/>',
+  bar: '<path d="M5 9h17v3l-2 3H2v-3z"/><path d="M6 18v2M18 18v2"/>',
+  strip: '<path d="M2 15l5-6 5 6 5-6 5 6"/><path class="f" d="M7 6l1.5 1.5L7 9 5.5 7.5zM17 6l1.5 1.5L17 9l-1.5-1.5z"/>',
+  grid: '<path d="M7 4h13v13l-3 3H4V7z"/><path d="M9.3 4.5v15M14.7 4.5v15M4.5 9.3h15M4.5 14.7h15"/>',
+  bulb: '<path d="M12 3l6 5-2.5 7h-7L6 8z"/><path d="M9.5 18.5h5M10.5 21h3"/>',
+  plug: '<path d="M9 3v5M15 3v5"/><path d="M6.5 8h11v4l-3.5 4h-4l-3.5-4z"/><path d="M12 16v5"/>',
 };
 const BRANDS = {
   wled: ['wled', 'WLED', 'strip'], govee: ['govee', 'Govee', 'bar'], goveecloud: ['govee', 'Govee', 'bar'], lifx: ['lifx', 'LIFX', 'bulb'],

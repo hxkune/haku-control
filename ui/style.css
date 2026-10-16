@@ -1468,3 +1468,6 @@ body.calm .btn:hover { transform: none; }
 .check input:checked + span { background: var(--strong); }
 .check input:checked + span::after { content: ""; position: absolute; inset: 4.5px; width: auto; height: auto; border: 0; transform: none;
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); background: var(--strong); }
+/* faceted icons: sharp joins, square ends; .f is a filled diamond accent */
+nav button svg, .power svg, .off-timer svg { stroke-linecap: square; stroke-linejoin: miter; }
+svg .f { fill: currentColor; stroke: none; }
