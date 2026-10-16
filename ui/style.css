@@ -112,15 +112,15 @@ p { margin: 0; }
 .mt { margin-top: 26px; }
 
 /* small caps labels; everything else is plain Segoe UI */
-.lbl > span, .num span { text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.lbl > span, .num span { font-weight: 600; }
 h3 { font: 600 14px var(--display); color: var(--text); }
-h3::before { content: "✦"; margin-right: 9px; font-size: 10px; color: var(--muted); letter-spacing: 0; }
+h3::before { content: none; margin-right: 9px; font-size: 10px; color: var(--muted); letter-spacing: 0; }
 .num-i { font: 11px var(--mono); color: var(--faint); letter-spacing: .05em; }
 
 /* haku watermark: the user's logo, huge and barely there */
 .watermark {
-  position: fixed; right: -60px; bottom: -40px; width: 760px; aspect-ratio: 1540 / 903;
-  background: var(--strong); opacity: .022; pointer-events: none; z-index: 0;
+  position: fixed; right: -40px; bottom: -30px; width: 480px; aspect-ratio: 1540 / 903;
+  background: var(--strong); opacity: .012; pointer-events: none; z-index: 0;
   -webkit-mask: url(haku.svg) center / contain no-repeat; mask: url(haku.svg) center / contain no-repeat;
   transform: rotate(-8deg);
 }
@@ -156,7 +156,7 @@ nav button i { margin-left: auto; font: normal 10.5px var(--mono); color: var(--
 nav button:hover { color: var(--text); border-color: var(--line); }
 nav button.active { background: var(--chrome); color: var(--on-strong); }
 nav button.active i { color: var(--on-strong-dim); }
-.nav-cap { font: 600 9.5px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--faint); padding: 12px 14px 2px; }
+.nav-cap { font: 600 12px var(--font); color: var(--faint); padding: 14px 14px 2px; }
 .side-foot { margin-top: auto; padding: 0 4px; }
 .side-foot .range { margin: 10px 0 16px; }
 .power {
@@ -185,7 +185,6 @@ main::-webkit-scrollbar-thumb { background: rgba(var(--ink), .1); border-radius:
 header { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
 header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .sub { color: var(--muted); margin-top: 4px; font-size: 12.5px; }
-.sub::before { content: "✦ "; color: var(--faint); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .chip {
   display: inline-flex; align-items: center; gap: 8px;
@@ -232,7 +231,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .range:disabled { opacity: .3; cursor: default; }
 
 .lbl { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); }
-.lbl > span { font-size: 10.5px; }
+.lbl > span { font-size: 12.5px; }
 .lbl b { color: var(--text); font-weight: 500; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .field { margin-top: 20px; }
 .field .range { margin-top: 8px; }
@@ -329,7 +328,9 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
   transition: border-color .15s, background-color .15s;
 }
 .fx:hover { border-color: var(--line2); }
-.fx-head { grid-column: 1 / -1; font: 600 9.5px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--faint); margin: 8px 0 -2px; }
+.fx-head { grid-column: 1 / -1; font: 600 15px var(--display); color: var(--text); margin: 14px 0 0; }
+.fx-head i { font: 500 13px var(--font); color: var(--faint); margin-left: 8px; }
+.fx-head i::before { content: "· "; }
 .fx-head:first-child { margin-top: 0; }
 .fx .star { font-style: normal; color: var(--faint); margin-left: auto; padding: 0 8px; opacity: 0; transition: opacity .15s, color .15s; }
 .fx:hover .star, .fx .star.on { opacity: 1; }
@@ -612,7 +613,6 @@ nav button.active, .btn.primary, .seg button.on, .power.off, .kbd.rec {
 /* the hero keeps a square frame with its crosshair ticks */
 .hero { --cut: 0px; clip-path: none; }
 /* tiny square status dots, diamond when live */
-.dot.on { transform: rotate(45deg); }
 
 /* ================= collapsible sidebar ================= */
 .side { transition: margin-left .32s cubic-bezier(.4, 0, .2, 1); }
@@ -977,7 +977,7 @@ body.calm nav button { transition: none; }
 }
 .prof-btn:hover, .prof-btn[aria-expanded="true"] { border-color: var(--line3); background: var(--panel2); }
 .prof-btn > svg:first-child { color: var(--muted); }
-.prof-lbl { color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+.prof-lbl { color: var(--muted); font-size: 12.5px; }
 .prof-btn b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prof-btn.none b { color: var(--muted); font-weight: 400; }
 .prof-btn .chev { width: 14px; height: 14px; color: var(--muted); transition: transform .2s; }
@@ -1053,7 +1053,7 @@ body.calm nav button { transition: none; }
 .orgb-guide .ai-bar { margin: 4px 0 10px; }
 
 /* light theme: the watermark and the glows are shown a little stronger, the live colours still lead */
-:root[data-theme="light"] .watermark { opacity: .05; }
+:root[data-theme="light"] .watermark { opacity: .03; }
 
 /* ---- what is new */
 .card.pdlg.wn { width: min(520px, 100%); max-height: min(640px, calc(100vh - 48px)); }
@@ -1417,3 +1417,54 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .09s linear infinite; 
   .btn:not(.prog):not(:disabled):active { transform: translateY(0) scale(.98); transition-duration: .08s; }
 }
 body.calm .btn:hover { transform: none; }
+
+/* ================= calmer, less same-y =================
+   effect cards: the moving colour is the card, the name sits under it, the line about it shows on hover */
+.fx { display: flex; flex-direction: column; }
+.fx canvas { order: -1; width: calc(100% + 32px); height: 60px; margin: -14px -16px 10px; background: none; }
+/* effects and own presets: the effect's light rises from the card's bottom edge, the name sits above it */
+.fx:not(.comm):not(.add) { min-height: 96px; }
+.fx:not(.comm) canvas { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; }
+.fx:not(.comm) .top, .fx:not(.comm) small { position: relative; z-index: 1; }
+.fx:not(.comm) small { color: var(--muted); max-height: 0; margin-top: 0; opacity: 0; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis; transition: max-height .2s, margin-top .2s, opacity .2s; }
+.fx:not(.comm):hover small { max-height: 16px; margin-top: 3px; opacity: 1; }
+/* the mood bar: a plain field with a line under it, no frame */
+.card.mood { clip-path: none; border: 0; border-bottom: 1px solid var(--line2); background: none; padding: 4px 0 8px; box-shadow: none; }
+.card.mood:focus-within { border-color: var(--live, var(--strong)); }
+.mood-ic { width: 10px; height: 10px; flex: none; border: 1.5px solid var(--strong); border-right-color: transparent; display: none; }
+.mood.busy .mood-ic { display: block; }
+/* the effect tabs: plain words, the open one underlined */
+:root .seg.fx-tabs { clip-path: none; border: 0; padding: 0; gap: 22px; background: none; }
+:root .seg.fx-tabs button { flex: none; clip-path: none; background: none; padding: 6px 0; color: var(--muted); box-shadow: none; animation: none; }
+:root .seg.fx-tabs button:hover { color: var(--text); }
+:root .seg.fx-tabs button.on { color: var(--text); background: none; box-shadow: inset 0 -2px 0 var(--live, var(--strong)); }
+.fx-tabs button.lit:not(.on)::after { top: 4px; right: -8px; }
+/* status chips: what works stays quiet, what does not stands out */
+.chip { --lc: transparent; border-color: transparent; background-color: rgba(var(--ink), .04); }
+.chip b { color: var(--muted); }
+.chip .dot.on { display: none; }
+.chip.has-off { color: #ff8a95; background-color: rgba(255, 92, 108, .1); }
+.chip.has-off b { color: #ff8a95; }
+.chip.has-off .dot { border-color: #ff5c6c; background: #ff5c6c; box-shadow: 0 0 6px #ff5c6c; }
+/* switches: faceted like the buttons, the knob is a diamond */
+.switch { width: 42px; }
+.switch span { --cut: 6px; --lc: var(--line3);
+  --g1: linear-gradient(135deg, transparent calc(50% - .75px), var(--lc) calc(50% - .75px) calc(50% + .75px), transparent calc(50% + .75px));
+  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
+  background: var(--g1) left top / var(--cut) var(--cut) no-repeat border-box, var(--g1) right bottom / var(--cut) var(--cut) no-repeat border-box;
+  border: 0; box-shadow: inset 0 0 0 1px var(--lc); transition: background-color .2s, box-shadow .2s; }
+.switch span::after { left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 0; background: var(--muted);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.switch:hover span { --lc: var(--strong); }
+.switch input:checked + span { --lc: transparent; background-color: var(--live, var(--chrome)); box-shadow: none; }
+.switch input:checked + span::after { transform: translateX(20px); background: var(--bg); }
+.switch:has(input:checked) { filter: drop-shadow(0 0 6px var(--live, transparent)); }
+/* small markers are diamonds, not squares: status dots, the "running" mark on tabs, checkboxes */
+.dot, .fx-tabs button.lit:not(.on)::after { transform: rotate(45deg); border-radius: 0; }
+.check span { --lc: transparent; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); background: var(--line3); border: 0; position: relative; }
+.check span::before { content: ""; position: absolute; inset: 1.5px; clip-path: inherit; background: var(--bg); }
+.check:hover span { background: var(--strong); }
+.check input:checked + span { background: var(--strong); }
+.check input:checked + span::after { content: ""; position: absolute; inset: 4.5px; width: auto; height: auto; border: 0; transform: none;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); background: var(--strong); }

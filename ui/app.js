@@ -596,12 +596,10 @@ function buildBrandTabs() {
 }
 const brandName = tb => { const b = Object.values(BRANDS).find(x => 'brand-' + x[0] === tb); return b ? b[1] : ''; };
 function updateNav() {
-  let n = 0;
   $$('#nav button').forEach(b => {
     const need = NAV_NEED[b.dataset.tab], show = !need || !!need() || b.dataset.tab === tab;
     b.classList.toggle('gone', !show);
     b.tabIndex = show ? 0 : -1;
-    if (show) b.querySelector('i').textContent = String(++n).padStart(2, '0');
   });
   updateAccounts();
 }
@@ -972,16 +970,16 @@ function buildEffects() {
   if (FX_TAB === 'community') { buildCommunity(grid); return; }
   if (FX_TAB === 'fx') {
     // in groups (the starred ones first); an effect the map does not know goes with the lively ones
-    const fav = favs(), num = new Map(S.effects.map((e, n) => [e.id, n]));
+    const fav = favs();
     const groups = [['fav', S.effects.filter(e => fav.includes(e.id))]].concat(['calm', 'lively', 'reactive', 'off'].map(g =>
       [g, S.effects.filter(e => !fav.includes(e.id) && (FX_GROUP[e.id] || 'lively') === g)]));
     for (const [g, list] of groups) {
       if (!list.length) continue;
-      if (g !== 'off') { const h = document.createElement('div'); h.className = 'fx-head'; h.textContent = t('fx.g.' + g); grid.appendChild(h); }
+      if (g !== 'off') { const h = document.createElement('div'); h.className = 'fx-head'; h.innerHTML = `${t('fx.g.' + g)}<i>${list.length}</i>`; grid.appendChild(h); }
       for (const e of list) {
         const b = document.createElement('button'), on = fav.includes(e.id);
         b.className = 'fx'; b.dataset.id = e.id;
-        b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><i class="star${on ? ' on' : ''}" title="${t(on ? 'fx.unfav' : 'fx.fav')}">${on ? '★' : '☆'}</i><span class="num-i">${String(num.get(e.id) + 1).padStart(2, '0')}</span></div><small>${t('short.' + e.id)}</small><canvas></canvas>`;
+        b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><i class="star${on ? ' on' : ''}" title="${t(on ? 'fx.unfav' : 'fx.fav')}">${on ? '★' : '☆'}</i></div><small>${t('short.' + e.id)}</small><canvas></canvas>`;
         b.addEventListener('click', ev => {
           if (ev.target.closest('.star')) { ev.stopPropagation(); setCfg('general', 'fav', (on ? fav.filter(x => x !== e.id) : fav.concat(e.id)).join(',')); buildEffects(); return; }
           S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect();
@@ -995,7 +993,7 @@ function buildEffects() {
     const b = document.createElement('button');
     b.className = 'fx preset'; b.dataset.preset = P.id;
     const sub = [fxName(P.effect)].concat(P.bri ? [P.bri + '%'] : [], P.zones ? [t('preset.sub.zones')] : []).join(' · ');
-    b.innerHTML = `<div class="top"><b>${esc(P.name)}</b><span class="num-i">P${P.id}</span><i class="pmenu" title="${t('preset.edit')}">···</i></div><small>${esc(sub)}</small><canvas></canvas>`;
+    b.innerHTML = `<div class="top"><b>${esc(P.name)}</b><i class="pmenu" title="${t('preset.edit')}">···</i></div><small>${esc(sub)}</small><canvas></canvas>`;
     b.addEventListener('click', e => {
       if (e.target.closest('.pmenu')) { presetDialog(P.id); return; }
       S.effect = P.effect; setCfgLocal('general', 'preset', String(P.id));
@@ -1591,15 +1589,32 @@ function preview(id, pal, t, n) {
   }
   return out;
 }
-function drawStrip(cv2, cols) {
-  const c = cv2.getContext('2d'), w = cv2.width, h = cv2.height;
+// glow: the band takes the top 70% and its light falls off under it (cheaper than a blur at 30 fps);
+// spill: a lit line along the card's bottom edge and its light rising softly up the card
+function drawStrip(cv2, cols, mode) {
+  const glow = mode === 'glow';
+  const c = cv2.getContext('2d'), w = cv2.width, h = cv2.height, bh = glow ? Math.round(h * .7) : h;
   const g = c.createLinearGradient(0, 0, w, 0);
   cols.forEach((col, i) => g.addColorStop(i / (cols.length - 1), css(col.map(v => Math.min(255, v)))));
   c.clearRect(0, 0, w, h);
-  c.fillStyle = g; c.fillRect(0, 0, w, h);
-  const sh = c.createLinearGradient(0, 0, 0, h);
-  sh.addColorStop(0, 'rgba(255,255,255,.10)'); sh.addColorStop(.5, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.25)');
-  c.fillStyle = sh; c.fillRect(0, 0, w, h);
+  c.fillStyle = g;
+  if (glow) {
+    c.globalAlpha = .6; c.fillRect(0, bh, w, h - bh); c.globalAlpha = 1;
+    const f = c.createLinearGradient(0, bh, 0, h); f.addColorStop(0, 'rgba(0,0,0,0)'); f.addColorStop(1, 'rgba(0,0,0,1)');
+    c.globalCompositeOperation = 'destination-out'; c.fillStyle = f; c.fillRect(0, bh, w, h - bh);
+    c.globalCompositeOperation = 'source-over'; c.fillStyle = g;
+  }
+  c.fillRect(0, 0, w, bh);
+  if (mode === 'spill') {
+    const f = c.createLinearGradient(0, 0, 0, h);
+    [[0, 0], [.35, .03], [.65, .14], [.88, .38], [1, .6]].forEach(([o, a]) => f.addColorStop(o, `rgba(0,0,0,${a})`));
+    c.globalCompositeOperation = 'destination-in'; c.fillStyle = f; c.fillRect(0, 0, w, h);
+    c.globalCompositeOperation = 'source-over'; c.fillStyle = g; c.fillRect(0, h - 2 * devicePixelRatio, w, 2 * devicePixelRatio);
+    return;
+  }
+  const sh = c.createLinearGradient(0, 0, 0, bh);
+  sh.addColorStop(0, 'rgba(255,255,255,.10)'); sh.addColorStop(.5, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.1)');
+  c.fillStyle = sh; c.fillRect(0, 0, w, bh);
 }
 let t0 = performance.now(), lastPrev = 0;
 function animate(now) {
@@ -1616,7 +1631,7 @@ function animate(now) {
     if (cvs.width !== cvs.clientWidth * devicePixelRatio) { cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio; }
     const pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(id);
     const spd = +(P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5))) / 5;
-    drawStrip(cvs, preview(id, pal.map(hex2rgb), t * spd, 28));
+    drawStrip(cvs, preview(id, pal.map(hex2rgb), t * spd, 28), C ? 'glow' : 'spill');
   }
 }
 requestAnimationFrame(animate);
