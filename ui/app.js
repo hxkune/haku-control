@@ -42,10 +42,12 @@ let dragging = false;
 const cv = (s, k, d) => { const x = S.cfg[s]; return x && x[k] != null && x[k] !== '' ? x[k] : d; };
 function setCfg(s, k, v) {
   v = String(v);
+  if (!cfgDepth) undoPush(s, k, cv(s, k, ''));
   (S.cfg[s] = S.cfg[s] || {})[k] = v;
   send({ cmd: 'set', s, k, v });
-  groupSpread(s, k, v, setCfg);
+  cfgDepth++; groupSpread(s, k, v, setCfg); cfgDepth--;
 }
+let cfgDepth = 0;   // a group's look spread to its members is part of the one change
 const parsePal = str => (str || '').match(/#[0-9a-fA-F]{6}/g)?.map(x => x.toUpperCase()) || [];
 const palStr = a => a.join(', ');
 // the newer effects' own colours when none are set (as effects.c FX_DEFAULT); the others take the general palette
@@ -61,8 +63,9 @@ const effPal = id => { const p = parsePal(cv(id, 'palette')); if (p.length) retu
 const pendingSets = new Map();
 let flushTimer = 0;
 function setCfgSoon(s, k, v) {
+  if (!cfgDepth) undoPush(s, k, cv(s, k, ''));
   (S.cfg[s] = S.cfg[s] || {})[k] = String(v);
-  groupSpread(s, k, String(v), setCfgSoon);
+  cfgDepth++; groupSpread(s, k, String(v), setCfgSoon); cfgDepth--;
   pendingSets.set(s + '\u0001' + k, [s, k, String(v)]);
   if (!flushTimer) flushTimer = setTimeout(() => {
     flushTimer = 0;
@@ -989,7 +992,7 @@ function buildEffects() {
         b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><i class="star${on ? ' on' : ''}" title="${t(on ? 'fx.unfav' : 'fx.fav')}">${on ? '★' : '☆'}</i></div><small>${t('short.' + e.id)}</small><canvas></canvas>`;
         b.addEventListener('click', ev => {
           if (ev.target.closest('.star')) { ev.stopPropagation(); setCfg('general', 'fav', (on ? fav.filter(x => x !== e.id) : fav.concat(e.id)).join(',')); buildEffects(); return; }
-          S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect();
+          undoPush('', 'fx', S.effect); S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect();
         });
         grid.appendChild(b);
       }
@@ -2988,6 +2991,32 @@ function buildDevices() {
   updateDevices();
   requestAnimationFrame(sizeCanvases);
 }
+// ---- undo the last change (Ctrl+Z, or the button that shows for a few seconds after one): a setting, the effect or the
+// brightness. The core then sends its whole state again, so every control shows the value back.
+const UNDO = [], UNDO_SKIP = /^(general\.(seen_version|welcome|unlocked|recent)|ui\.brands_fold|community\..*)$/;
+let undoing = false, undoHide = 0;
+function undoPush(s, k, old) {
+  if (undoing || UNDO_SKIP.test(s + '.' + k) || document.documentElement.classList.contains('remote')) return;
+  const top = UNDO[UNDO.length - 1], now = Date.now();
+  if (top && top.s === s && top.k === k && now - top.at < 1500) top.at = now;   // one drag is one change
+  else { UNDO.push({ s, k, old: String(old ?? ''), at: now }); if (UNDO.length > 30) UNDO.shift(); }
+  $('#undo').classList.remove('hidden'); clearTimeout(undoHide); undoHide = setTimeout(() => $('#undo').classList.add('hidden'), 6000);
+}
+function undo() {
+  const u = UNDO.pop(); if (!u) return;
+  undoing = true;
+  if (u.s) setCfg(u.s, u.k, u.old);
+  else if (u.k === 'fx') { if (u.old) send({ cmd: 'effect', id: u.old }); }
+  else send({ cmd: 'brightness', v: +u.old });
+  undoing = false;
+  send({ cmd: 'get' });
+  if (!UNDO.length) $('#undo').classList.add('hidden');
+}
+$('#undo').addEventListener('click', undo);
+document.addEventListener('keydown', e => {
+  const typing = e.target.closest('input:not([type=range]):not([type=checkbox]), textarea, select, [contenteditable]');
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec')) { e.preventDefault(); undo(); }
+});
 // ---- calibration guide: red and blue on the device's two ends (its LED count, then which way effects run), then
 // everything white so its white can be matched to the other lights ([dev.N] warmth)
 let CAL = null;
@@ -3730,7 +3759,7 @@ if (wv) wv.addEventListener('message', e => {
   }
 });
 
-$('#bright').addEventListener('input', e => { $('#bright-val').textContent = e.target.value + '%'; send({ cmd: 'brightness', v: +e.target.value }); });
+$('#bright').addEventListener('input', e => { undoPush('', 'br', S.brightness); $('#bright-val').textContent = e.target.value + '%'; send({ cmd: 'brightness', v: +e.target.value }); });
 $('#power').addEventListener('click', () => send({ cmd: 'power' }));
 // off in N minutes (the core keeps the time; the last minute fades out)
 function updateOffTimer() {

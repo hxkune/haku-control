@@ -1483,3 +1483,7 @@ body.calm .btn:hover { transform: none; }
 /* faceted icons: sharp joins, square ends; .f is a filled diamond accent */
 nav button svg, .power svg, .off-timer svg { stroke-linecap: square; stroke-linejoin: miter; }
 svg .f { fill: currentColor; stroke: none; }
+
+/* undo the last change: a pill at the bottom that leaves by itself */
+.undo { position: fixed; z-index: 30; right: 20px; bottom: 20px; box-shadow: 0 6px 24px rgba(0, 0, 0, .35); animation: fade-in .2s ease; }
+@media (max-width: 700px) { .undo { bottom: 140px; } }
