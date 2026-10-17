@@ -123,7 +123,7 @@ static void got_conn(tryx_t *u, const char *text, void *ctx) {
     *(int *)ctx = 1;
 }
 
-typedef struct { const char *host; int sub; HANDLE h; USHORT pid; char com[16]; } find_ctx;
+typedef struct { const char *host; int sub; HANDLE h; USHORT pid; char com[16]; DWORD err; } find_ctx;
 
 static int take(const wchar_t *path, USHORT pid, int index, const char *com, void *arg) {
     find_ctx *f = arg;
@@ -131,7 +131,7 @@ static int take(const wchar_t *path, USHORT pid, int index, const char *com, voi
     if (_stricmp(host, f->host) || index != (f->sub < 0 ? 0 : f->sub)) return 0;
     f->pid = pid; strcpy_s(f->com, sizeof(f->com), com);
     f->h = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-    if (f->h == INVALID_HANDLE_VALUE) logf_("tryx: %s cannot be opened (error %lu): TRYX KANALI has it?", com, GetLastError());
+    if (f->h == INVALID_HANDLE_VALUE) f->err = GetLastError(), logf_("tryx: %s cannot be opened (error %lu): TRYX KANALI has it?", com, f->err);
     return 1;
 }
 
@@ -139,7 +139,11 @@ static void tryx_close(ext_dev *d);
 
 static int tryx_open(ext_dev *d) {
     find_ctx f = { d->host, d->sub, INVALID_HANDLE_VALUE };
-    if (!each_port(take, &f) || f.h == INVALID_HANDLE_VALUE) return 0;
+    if (!each_port(take, &f) || f.h == INVALID_HANDLE_VALUE) {
+        // access denied: another program holds the port, in practice TRYX KANALI (it lives on in the tray); the UI words it
+        if (f.err == ERROR_ACCESS_DENIED) snprintf(d->info, sizeof(d->info), "%s busy: TRYX KANALI", f.com);
+        return 0;
+    }
     tryx_t *u = calloc(1, sizeof(tryx_t));
     if (!u) { CloseHandle(f.h); return 0; }
     u->h = f.h; u->on = u->br = u->theme = -1;

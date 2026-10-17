@@ -212,6 +212,15 @@ void audio_stop(void);
 void audio_read(float *level, float *bass);
 void sensors_close(void);
 
+// ---- fans.c: Aqua Computer QUADRO fan hub (own thread)
+void fans_start(void);
+void fans_stop(void);                    // its channels get their own settings back
+void fans_suspend(int on);
+void fans_feed(float gpu_temp);         // the render loop's GPU reading, for curves
+int  fans_need_gpu(void);
+float fans_water(void);                 // the first connected temperature sensor, NAN when none
+int  fans_json(char *out, int cap);
+
 // ---- main.c: application state shared with the settings window
 #ifdef HAKU_DEV   // build.cmd dev: separate instance for testing, no PC hardware access, no admin rights
 #define APP_ID L"haku-control-dev"

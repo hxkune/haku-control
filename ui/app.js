@@ -549,7 +549,7 @@ document.addEventListener('pointerup', () => { dragging = false; });
 // Sidebar: only the tabs for hardware this PC has (Effects, PC, Devices and Settings always; the open tab stays too).
 // PC stays because its hardware list and OpenRGB set-up are for every PC, not only MSI boards and ENE memory.
 // Nanoleaf and AiDot are reached from Devices until they are set up.
-const NAV_NEED = { nano: nanoOn, bulbs: () => S.bulbs.length > 0 };
+const NAV_NEED = { nano: nanoOn, bulbs: () => S.bulbs.length > 0, fans: () => !!(S.fans || {}).on && !document.documentElement.classList.contains('remote') };
 
 // ---- a tab for every brand of lights added (as Nanoleaf has its own): their device cards move there. PC hardware
 // (OpenRGB, Wooting, the Nanoleaf desk dock) and everything to find and add devices stay under Devices.
@@ -601,7 +601,7 @@ function buildBrandTabs() {
   else updateNav();
 }
 const brandName = tb => { const b = Object.values(BRANDS).find(x => 'brand-' + x[0] === tb); return b ? b[1] : ''; };
-const devTab = t => ['devices', 'pc', 'nano', 'bulbs'].includes(t) || t.startsWith('brand-');
+const devTab = t => ['devices', 'pc', 'fans', 'nano', 'bulbs'].includes(t) || t.startsWith('brand-');
 const wideNav = matchMedia('(min-width: 701px)');   // the bottom bar of a narrow window has no caption to unfold with
 wideNav.addEventListener('change', () => updateNav());
 function updateNav() {
@@ -2946,6 +2946,7 @@ function devStatus(d) {
   if (d.own) return t('own.status');
   if (!d.online && devZones(d).length && devZones(d).every(z => !z.count)) return t('zones.need');
   if (d.pro && proLocked()) return t('dev.pro');
+  if (!d.online && d.kind === 'tryx' && /KANALI/.test(d.info)) return t('tx.busy');
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
 }
@@ -3007,7 +3008,7 @@ function buildDevices() {
             `<option value="${v}"${+cv(sec, 'theme', 0) === v ? ' selected' : ''}>${v ? v + '. ' + n : t('tx.keep')}</option>`).join('')}</select></label>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('tx.follow')}</em></label>
           <p class="hint">${t('tx.note')}</p>` : ''}
-        <details class="trouble dev-adv"${DEV_ADV.has(d.id) ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
+        <details class="trouble dev-adv"${DEV_ADV.has(d.id) || devStatus(d) === t('zones.need') ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
         ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
         <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
@@ -3897,6 +3898,127 @@ function updateChips() {
 }
 
 // ------------------------------------------------------------------ messages from the core
+// ------------------------------------------------------------------ fans: Aqua Computer QUADRO (fans.c)
+// [fans] fanN = '' as is | fix | curve, fanN_pct 20..100, fanN_src gpu | t1..t4, fanN_curve '30:30,50:45,70:75,85:100'
+const FAN_CURVE = '30:30,50:45,70:75,85:100';
+const FAN = { drag: null, sel: [] };
+const fanKey = (i, k) => `fan${i + 1}${k ? '_' + k : ''}`;
+const fanPts = s => String(s).split(',').map(p => p.split(':').map(Number)).filter(a => a.length === 2 && a.every(Number.isFinite));
+const fanCurve = i => { const p = fanPts(cv('fans', fanKey(i, 'curve'), FAN_CURVE)); return (p.length ? p : fanPts(FAN_CURVE)).sort((a, b) => a[0] - b[0]); };
+const fanTemp = src => src === 'gpu' ? S.gpu_temp ?? null : ((S.fans || {}).t || [])[+src.slice(1) - 1] ?? null;
+const clamp20 = v => Math.min(100, Math.max(20, v));
+// 20..100 °C across, 20..100 % up
+function fanGeo(cvs) {
+  const W = cvs.clientWidth, H = cvs.clientHeight, l = 34, r = 10, tp = 10, b = 22;
+  return { W, H, px: x => l + (x - 20) / 80 * (W - l - r), py: y => H - b - (y - 20) / 80 * (H - tp - b),
+    ix: x => 20 + (x - l) / (W - l - r) * 80, iy: y => 20 + (H - b - y) / (H - tp - b) * 80 };
+}
+function drawFanCurve(i) {
+  const cvs = $(`.fan[data-f="${i}"] canvas`); if (!cvs || !cvs.offsetParent) return;
+  const d = devicePixelRatio || 1, g = fanGeo(cvs);
+  if (cvs.width !== Math.round(g.W * d) || cvs.height !== Math.round(g.H * d)) { cvs.width = Math.round(g.W * d); cvs.height = Math.round(g.H * d); }
+  const c = cvs.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, g.W, g.H);
+  c.font = '10px system-ui'; c.fillStyle = c.strokeStyle = THEME.lo; c.lineWidth = 1; c.globalAlpha = .35;
+  c.beginPath();
+  for (let v = 20; v <= 100; v += 20) { c.moveTo(g.px(20), g.py(v) + .5); c.lineTo(g.px(100), g.py(v) + .5); c.moveTo(g.px(v) + .5, g.py(20)); c.lineTo(g.px(v) + .5, g.py(100)); }
+  c.stroke(); c.globalAlpha = 1;
+  c.textAlign = 'right'; c.textBaseline = 'middle';
+  for (let v = 20; v <= 100; v += 20) c.fillText(v + '%', g.px(20) - 5, g.py(v));
+  c.textAlign = 'center'; c.textBaseline = 'top';
+  for (let v = 20; v <= 100; v += 20) c.fillText(v + '°', g.px(v), g.py(20) + 6);
+  const pts = fanCurve(i), X = x => g.px(clamp20(x)), Y = y => g.py(clamp20(y));
+  c.strokeStyle = THEME.hi; c.lineWidth = 2; c.beginPath(); c.moveTo(g.px(20), Y(pts[0][1]));
+  pts.forEach(p => c.lineTo(X(p[0]), Y(p[1])));
+  c.lineTo(g.px(100), Y(pts[pts.length - 1][1])); c.stroke();
+  const focus = document.activeElement === cvs;
+  pts.forEach((p, k) => { c.fillStyle = focus && k === (FAN.sel[i] ?? 0) ? THEME.ink : THEME.hi; c.beginPath(); c.arc(X(p[0]), Y(p[1]), focus && k === (FAN.sel[i] ?? 0) ? 6 : 5, 0, 6.283); c.fill(); });
+  // where the fan is now: the source's temperature and the speed the QUADRO reports
+  const T = fanTemp(cv('fans', fanKey(i, 'src'), 'gpu')), f = ((S.fans || {}).f || [])[i];
+  if (T != null && f) {
+    c.strokeStyle = THEME.ink; c.lineWidth = 2; c.beginPath(); c.arc(X(T), Y(f.pct), 7, 0, 6.283); c.stroke();
+  }
+}
+function buildFans() {
+  const T = k => `data-i18n="${k}">${esc(t(k))}`;
+  $('#fan-list').innerHTML = [0, 1, 2, 3].map(i => `<div class="card fan" data-f="${i}">
+    <div class="card-head"><div><h3><span ${T('fans.ch')}</span> ${i + 1}</h3><p class="muted" data-live></p></div></div>
+    <div class="seg" data-mode><button data-v="" ${T('fans.asis')}</button><button data-v="fix" ${T('fans.fix')}</button><button data-v="curve" ${T('fans.curve')}</button></div>
+    <div class="opts" data-fix>
+      <div class="lbl"><span ${T('fans.speed')}</span><b data-pct-val></b></div>
+      <input type="range" class="range" data-pct min="20" max="100" step="1" value="50">
+      <p class="hint" ${T('fans.min')}</p>
+    </div>
+    <div class="opts" data-curve>
+      <div class="lbl"><span ${T('fans.src')}</span></div>
+      <div class="seg" data-src></div>
+      <canvas class="fan-cv" tabindex="0" data-i18n-title="fans.curve.note" title="${esc(t('fans.curve.note'))}"></canvas>
+      <p class="hint" ${T('fans.curve.note')}</p>
+    </div>
+  </div>`).join('');
+}
+function updateFans() {
+  const F = S.fans || {};
+  if (!F.on) { $('#fans-status').textContent = t('fans.off'); $('#fans-sensors').textContent = ''; $('#fan-list').innerHTML = ''; return; }
+  if (!$('#fan-list').children.length) buildFans();
+  $('#fans-status').textContent = t('fans.on', F.serial, F.fw);
+  const ts = (F.t || []).map((v, k) => v == null ? '' : `${k + 1}: ${v.toFixed(1)} °C`).filter(Boolean);
+  $('#fans-sensors').textContent = (ts.length ? t('fans.sensors', ts.join(', ')) : t('fans.nosensors')) + (F.flow > 0 ? ' · ' + t('fans.flow', F.flow) : '');
+  const srcs = ['gpu', ...(F.t || []).map((v, k) => v == null ? '' : 't' + (k + 1)).filter(Boolean)];
+  $$('#fan-list .fan').forEach(el => {
+    const i = +el.dataset.f, f = (F.f || [])[i] || {}, mode = cv('fans', fanKey(i), ''), src = cv('fans', fanKey(i, 'src'), 'gpu');
+    $('[data-live]', el).textContent = t('fans.live', f.rpm ?? 0, Math.round(f.pct ?? 0), (f.w ?? 0).toFixed(1)) + (f.own ? ' · ' + t('fans.own') : '');
+    $$('[data-mode] button', el).forEach(b => b.classList.toggle('on', b.dataset.v === mode));
+    $('[data-fix]', el).classList.toggle('hidden', mode !== 'fix');
+    $('[data-curve]', el).classList.toggle('hidden', mode !== 'curve');
+    const pct = cv('fans', fanKey(i, 'pct'), '50'); setRange($('[data-pct]', el), pct); $('[data-pct-val]', el).textContent = pct + '%';
+    const list = srcs.includes(src) ? srcs : [...srcs, src], box = $('[data-src]', el), sig = list.join() + LANG;
+    if (box.dataset.sig !== sig) { box.dataset.sig = sig; box.innerHTML = list.map(s => `<button data-v="${esc(s)}">${esc(s === 'gpu' ? t('fans.gpu') : t('fans.t', s.slice(1)))}</button>`).join(''); }
+    $$('button', box).forEach(b => b.classList.toggle('on', b.dataset.v === src));
+    if (mode === 'curve' && !FAN.drag) drawFanCurve(i);
+  });
+}
+const fanOf = e => +e.target.closest('.fan').dataset.f;
+const fanSave = (i, pts) => { setCfgSoon('fans', fanKey(i, 'curve'), pts.map(p => p.join(':')).join(',')); drawFanCurve(i); };
+$('#fan-list').addEventListener('click', e => {
+  const b = e.target.closest('[data-mode] button, [data-src] button'); if (!b) return;
+  const i = fanOf(e);
+  setCfg('fans', b.closest('[data-mode]') ? fanKey(i) : fanKey(i, 'src'), b.dataset.v);
+  updateFans();
+});
+$('#fan-list').addEventListener('input', e => {
+  if (!e.target.matches('[data-pct]')) return;
+  const i = fanOf(e); setCfgSoon('fans', fanKey(i, 'pct'), e.target.value);
+  $(`.fan[data-f="${i}"] [data-pct-val]`).textContent = e.target.value + '%';
+});
+// drag a point: x stays between its neighbours, y within 20..100 %
+$('#fan-list').addEventListener('pointerdown', e => {
+  const cvs = e.target.closest('canvas.fan-cv'); if (!cvs) return;
+  const i = fanOf(e), g = fanGeo(cvs), r = cvs.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, pts = fanCurve(i);
+  let k = -1, best = 18 * 18;
+  pts.forEach((p, j) => { const d2 = (g.px(clamp20(p[0])) - x) ** 2 + (g.py(clamp20(p[1])) - y) ** 2; if (d2 < best) { best = d2; k = j; } });
+  if (k < 0) return;
+  e.preventDefault(); cvs.focus(); cvs.setPointerCapture(e.pointerId);
+  FAN.drag = { i, k, pts, cvs }; FAN.sel[i] = k; drawFanCurve(i);
+});
+$('#fan-list').addEventListener('pointermove', e => {
+  const D = FAN.drag; if (!D) return;
+  const g = fanGeo(D.cvs), r = D.cvs.getBoundingClientRect(), p = D.pts;
+  const lo = D.k ? p[D.k - 1][0] + 1 : 20, hi = D.k < p.length - 1 ? p[D.k + 1][0] - 1 : 100;
+  p[D.k] = [Math.round(Math.min(hi, Math.max(lo, g.ix(e.clientX - r.left)))), Math.round(clamp20(g.iy(e.clientY - r.top)))];
+  fanSave(D.i, p);
+});
+['pointerup', 'pointercancel'].forEach(n => $('#fan-list').addEventListener(n, () => { FAN.drag = null; }));
+// keyboard: ←/→ pick a point, ↑/↓ its speed
+$('#fan-list').addEventListener('keydown', e => {
+  if (!e.target.matches('canvas.fan-cv') || !/^Arrow/.test(e.key)) return;
+  e.preventDefault();
+  const i = fanOf(e), pts = fanCurve(i), k = Math.min(pts.length - 1, Math.max(0, FAN.sel[i] ?? 0));
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { FAN.sel[i] = Math.min(pts.length - 1, Math.max(0, k + (e.key === 'ArrowRight' ? 1 : -1))); drawFanCurve(i); return; }
+  FAN.sel[i] = k; pts[k][1] = clamp20(pts[k][1] + (e.key === 'ArrowUp' ? 5 : -5));
+  fanSave(i, pts);
+});
+['focusin', 'focusout'].forEach(n => $('#fan-list').addEventListener(n, e => { if (e.target.matches('canvas.fan-cv')) drawFanCurve(fanOf(e)); }));
+
 function applyStatus(m) {
   const names = a => JSON.stringify((a || []).map(b => b.name));   // the cloud names can come after the first state
   const bulbsChanged = names(m.bulbs) !== names(S.bulbs);
@@ -3910,7 +4032,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbsChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup(); fixedCheck();
+  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup(); updateFans(); fixedCheck();
   if (nanoLayoutChanged) drawAll();
 }
 

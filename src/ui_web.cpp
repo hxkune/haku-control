@@ -418,11 +418,11 @@ static bool remote_allowed(const std::string &js) {
         return true;
     }
     if (cmd != "set") return true;
-    // settings that start programs or hold this PC's own access stay with the PC window
+    // settings that start programs, hold this PC's own access or drive its fans stay with the PC window
     std::string s = field(js, "s"), k = field(js, "k");
     // plain names only: a space, "=" or "]" would write a different ini line than the one checked
     for (char c : s + k) if (!isalnum((unsigned char)c) && c != '.' && c != '_' && c != '-') return false;
-    return !s.empty() && !k.empty() && _stricmp(s.c_str(), "remote") && _stricmp(s.c_str(), "mqtt") &&
+    return !s.empty() && !k.empty() && _stricmp(s.c_str(), "remote") && _stricmp(s.c_str(), "mqtt") && _stricmp(s.c_str(), "fans") &&
            !(!_stricmp(s.c_str(), "openrgb") && !_stricmp(k.c_str(), "path")) && !(!_stricmp(s.c_str(), "mood") && !_stricmp(k.c_str(), "ollama_path"));
 }
 

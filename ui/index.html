@@ -32,6 +32,9 @@
     <button data-tab="pc">
       <svg viewBox="0 0 24 24"><path d="M6 4h15v10l-3 3H3V7z"/><path d="M8 21h8M12 17v4"/></svg>
       <span data-i18n="nav.pc">PC</span></button>
+    <button data-tab="fans">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 12c-1.5-3-1-6.5 1.5-6.5s2.5 3.5-1.5 6.5zM12 12c3.3.2 6 2.3 4.8 4.5S12.8 16.6 12 12zM12 12c-1.8 2.8-5 4.2-6.3 2s1.4-4.4 6.3-2z"/></svg>
+      <span data-i18n="nav.fans">Fans</span></button>
     <button data-tab="nano">
       <svg viewBox="0 0 24 24"><path d="M2 19l5-9h10l5 9z"/><path d="M7 10l5 9 5-9"/></svg>
       <span data-i18n="nav.nano">Nanoleaf</span></button>
@@ -255,6 +258,16 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- ============ FANS (Aqua Computer QUADRO) ============ -->
+  <section class="tab" id="tab-fans">
+    <div class="card">
+      <div class="card-head"><div><h3>QUADRO</h3><p class="muted" id="fans-status"></p></div></div>
+      <p class="muted" id="fans-sensors"></p>
+      <p class="hint" data-i18n="fans.note">Channels set to "As is" keep the QUADRO's own setting. When haku closes or the PC sleeps, every channel gets its own setting back.</p>
+    </div>
+    <div class="pc-grid fan-grid" id="fan-list"></div>
   </section>
 
   <!-- ============ NANOLEAF ============ -->
