@@ -73,7 +73,7 @@ int  orgbapp_json(char *out, int cap);
 void orgbapp_stop(void);                      // OpenRGB started here closed (all its devices went back to their own lighting)
 
 extern const ext_driver drv_wled, drv_openrgb, drv_govee, drv_lifx, drv_yeelight, drv_hue, drv_wiz, drv_tuya, drv_nlusb, drv_goveecloud, drv_elgato, drv_wooting, drv_divoom,
-                        drv_razer, drv_steelseries, drv_logitech, drv_tryx;
+                        drv_razer, drv_steelseries, drv_logitech, drv_tryx, drv_aura;
 const ext_driver *ext_driver_by_kind(const char *kind);
 void ext_save_key(ext_dev *d, const char *key);   // stores a pairing token in [dev.N] key=
 // What the device can do, for the window ([dev.N] caps, kmin, kmax): "" everything, "white" white light only (its

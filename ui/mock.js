@@ -32,7 +32,7 @@ window.chrome = { webview: {
     if (o.cmd === 'brightness') STATE.brightness = +o.v;
     if (o.cmd === 'get') setTimeout(() => emit(STATE), 30);
     if (o.cmd === 'report') setTimeout(() => { STATE.diag = { busy: 0, ok: -1, file: '', report: { busy: 0, ok: o.text.includes('fail') ? 0 : 1, id: '3fa2c9d01e', err: o.text.includes('fail') ? 'offline' : '' } }; emit(STATE); }, 900);
-    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
+    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'dev_check') { STATE.netchk = { id: +o.id, busy: 1, res: '' }; emit(STATE); setTimeout(() => { STATE.netchk = { id: +o.id, busy: 0, res: o.id % 2 ? 'silent' : 'answers', ms: 0 }; emit(STATE); }, 1500); }
     if (o.cmd === 'profile') { G.profile = o.id; STATE.prof_why = 1; setTimeout(() => emit(STATE), 120); }
     if (o.cmd === 'profile_dup') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; setTimeout(() => emit(STATE), 60); }

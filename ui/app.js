@@ -2940,7 +2940,7 @@ const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).tit
 // TRYX PANORAMA's built-in themes, in the order the cooler numbers them (drv_tryx.c); 0: as TRYX KANALI left it
 const TRYX_THEMES = ['', 'Cooling delivery', 'Migration', 'Quantum time capsule', 'Exo-Ecologies', 'Racing', 'Shuttle', 'Gift of TRYX',
   'Sweet Cool Acrylic', 'Catch Me If You Can', 'The Battle of Ice and Fire', 'Oasis', 'Cyber Bunker', 'Edge Of Dream', 'Thermal Energy Prohibited'];
-const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx'].includes(d.kind);
+const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura'].includes(d.kind);
 // the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max}]
 const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max, at] = z.split(':'); return { name, count: +count, min: +min, max: +max, at: +at || 0 }; });
 // OpenRGB starts a board's ARGB connectors at 0 LEDs: nothing to light (not offline) until their counts are set
