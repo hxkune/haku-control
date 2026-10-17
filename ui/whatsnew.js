@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.26',
+    en: ['TRYX: your own video now shows on the PANORAMA (it was sent with a picture shape the cooler does not know); the card shows the sending progress.', 'The TRYX card is the screen only now: theme, your picture or video. The cooler’s fan lights are set on the motherboard’s card, where they are connected.'],
+    ru: ['TRYX: своё видео теперь показывается на PANORAMA (оно отправлялось с соотношением сторон, которого кулер не знает); карточка показывает ход отправки.', 'Карточка TRYX теперь только про экран: тема, своя картинка или видео. Подсветка вентиляторов кулера настраивается в карточке материнской платы, куда она подключена.'],
+    fr: ['TRYX : votre vidéo s’affiche maintenant sur le PANORAMA (elle partait avec un format d’image que le refroidisseur ne connaît pas) ; la carte montre la progression de l’envoi.', 'La carte TRYX ne concerne plus que l’écran : thème, votre image ou vidéo. Les LED des ventilateurs du refroidisseur se règlent sur la carte de la carte mère, où elles sont branchées.'] },
   { v: '0.4.25',
     en: ['TRYX PANORAMA and 240 SE (beta): show your own picture, GIF or mp4 on the cooler’s screen. In Devices pick “Your picture or video” and choose a file (up to 16 MB). It goes over the cable slowly, about 10 KB/s, and only once; the card shows the progress. Close TRYX KANALI first.'],
     ru: ['TRYX PANORAMA и 240 SE (бета): своя картинка, GIF или mp4 на экране кулера. В «Устройствах» выберите «Своя картинка или видео» и файл (до 16 МБ). Он идёт по кабелю медленно, около 10 КБ/с, и только один раз; карточка показывает прогресс. Сначала закройте TRYX KANALI.'],
