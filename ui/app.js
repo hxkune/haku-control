@@ -2989,7 +2989,7 @@ function buildDevices() {
     // TRYX: a screen card only (theme, own picture); its fans light from the motherboard's ARGB header, not from here
     const scr = d.kind === 'tryx';
     el.innerHTML = `<div class="card-head">
-        <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub : ''}</p></div>
+        <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p></div>
         <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
       </div>
       ${scr ? '' : `<canvas class="live" id="dev-live-${d.id}" data-h="${big ? 220 : d.per_led ? 70 : 90}"></canvas>
@@ -3405,7 +3405,7 @@ function updateDevices() {
   $('#scan-status').textContent = E.scanning ? t('dev.scanning.note') : E.found.length ? t('dev.found', E.found.length) : t('dev.scan.note');
   const list = $('#found-list');
   const html = E.found.map((f, i) => `<div class="found-row"><span class="kind">${esc(f.title)}</span>
-      <div class="what"><b>${esc(f.name || f.title)}</b><small>${esc(f.host)}${f.sub >= 0 && f.kind === 'openrgb' ? ' · #' + f.sub : ''}${f.leds ? ' · ' + t((S.ext.kinds.find(k => k.kind === f.kind) || {}).per_led ? 'dev.leds' : 'dev.lights', f.leds) : ''}${f.info ? ' · ' + esc(f.info) : ''}</small></div>
+      <div class="what"><b>${esc(f.name || f.title)}</b><small>${esc(f.host)}${f.sub >= 0 && f.kind === 'openrgb' ? ' · #' + f.sub % 1000 : ''}${f.leds ? ' · ' + t((S.ext.kinds.find(k => k.kind === f.kind) || {}).per_led ? 'dev.leds' : 'dev.lights', f.leds) : ''}${f.info ? ' · ' + esc(f.info) : ''}</small></div>
       ${f.added ? `<span class="added">${t('dev.added')}</span>` : `<button class="btn small" data-found="${i}">${t('dev.add')}</button>`}</div>`).join('');
   if (list.dataset.html !== html) {
     list.dataset.html = html; list.innerHTML = html;

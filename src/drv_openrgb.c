@@ -7,11 +7,13 @@
 // coolers of any brand): orgb_check_start() looks for the SDK server on this PC and the PC page lists what it has.
 // OpenRGB numbers its controllers in the order it finds them, and that order can change (a device unplugged, a
 // new one): [dev.N] match keeps the controller's name, and a device is looked up by it when the number no longer fits.
+// A board's ARGB connectors can also be devices of their own: sub = controller + PART_STEP x (zone + 1), lit zone by zone.
 #include "devices.h"
 #include <process.h>
 #include <stdlib.h>
 
 #define ORGB_PORT 6742
+#define PART_STEP 1000
 enum {
     PKT_REQUEST_CONTROLLER_COUNT = 0,
     PKT_REQUEST_CONTROLLER_DATA  = 1,
@@ -19,6 +21,7 @@ enum {
     PKT_DEVICE_LIST_UPDATED      = 100,
     PKT_RESIZEZONE               = 1000,
     PKT_UPDATELEDS               = 1050,
+    PKT_UPDATEZONELEDS           = 1051,
     PKT_SETCUSTOMMODE            = 1100,
     PKT_UPDATEMODE               = 1101,
 };
@@ -27,7 +30,7 @@ enum {
 // how / use: the way haku lights it (DRIVE_*) and, for its Static mode, that mode's description
 enum { DRIVE_DIRECT, DRIVE_STATIC, DRIVE_ONE, DRIVE_NONE };
 typedef struct {
-    unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; int mode_idx, mode_len; unsigned char mode[512];
+    unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; int part, mode_idx, mode_len; unsigned char mode[512];
     int how, use_idx, use_len, use_cmin; unsigned char use[512];
 } orgb_t;
 
@@ -213,12 +216,14 @@ static int pick_mode(const ctrl_t *c, orgb_t *o, float *rate, const char **how) 
 // zones as they are written to [dev.N] zones_found "name:count:min:max:first LED|..." for the window. 1: a size was changed.
 // An ARGB header cannot tell how many LEDs hang on it: one never set gets a guess so it lights at once, and the
 // calibration guide finds the count by eye (red on its first LED, blue on its last).
+// part >= 0: a device of one connector, which sizes only its own zone.
 #define ZONE_GUESS 40
-static int apply_zones(SOCKET s, unsigned idx, const char *sec, const ctrl_t *c) {
+static int apply_zones(SOCKET s, unsigned idx, const char *sec, const ctrl_t *c, int part) {
     const char *want = cfg_get(sec, "zones", "");
     char found[256] = ""; int n = 0, changed = 0, at = 0;
     for (int z = 0; z < c->nzones; z++) {
         const zone_t_ *x = &c->zn[z];
+        if (part >= 0 && z != part) continue;
         if (x->min >= x->max) { at += x->count; continue; }
         int size = x->count ? x->count : ZONE_GUESS;
         char key[40]; snprintf(key, sizeof(key), "%s=", x->name);
@@ -262,7 +267,8 @@ static int orgb_open(ext_dev *d) {
     char sec[16], want[64]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
     snprintf(want, sizeof(want), "%s", cfg_get(sec, "match", ""));
     // the controller: number sub, unless it has another name than the one it was added with
-    int idx = d->sub >= 0 && (unsigned)d->sub < count && c && read_ctrl(s, (unsigned)d->sub, c) ? d->sub : -1;
+    int ci = d->sub >= 0 ? d->sub % PART_STEP : -1, part = d->sub >= PART_STEP ? d->sub / PART_STEP - 1 : -1;
+    int idx = ci >= 0 && (unsigned)ci < count && c && read_ctrl(s, (unsigned)ci, c) ? ci : -1;
     // shortcut: the search takes the first controller of that name, so if the numbers of two same-named sticks move,
     // both devices can land on one stick; upgrade to rank-by-name (as openrgb_app.c adds them) if that is reported
     if (c && want[0] && (idx < 0 || strcmp(c->name, want))) {
@@ -273,21 +279,26 @@ static int orgb_open(ext_dev *d) {
     if (idx < 0) { free(c); closesocket(s); return 0; }
     if (!want[0]) { cfg_set(sec, "match", c->name); cfg_save_if_dirty(); }
     // ARGB headers sized as chosen in the window; then read again, with their LEDs
-    if (apply_zones(s, (unsigned)idx, sec, c)) { Sleep(150); if (!read_ctrl(s, (unsigned)idx, c)) { free(c); closesocket(s); return 0; } }
-    if (c->nleds < 1) {   // only zones still at 0 LEDs: nothing to light until the window gives them some
+    if (part >= c->nzones) { snprintf(d->info, sizeof(d->info), "OpenRGB · %s · no connector %d", c->name, part + 1); free(c); closesocket(s); return 0; }
+    if (apply_zones(s, (unsigned)idx, sec, c, part)) { Sleep(150); if (!read_ctrl(s, (unsigned)idx, c)) { free(c); closesocket(s); return 0; } }
+    int first = 0, nl = c->nleds;   // the LEDs this device lights: the controller's, or its connector's
+    if (part >= 0) { for (int z = 0; z < part; z++) first += c->zn[z].count; nl = c->zn[part].count; }
+    if (nl < 1) {   // only zones still at 0 LEDs: nothing to light until the window gives them some
         snprintf(d->info, sizeof(d->info), "OpenRGB · %s · set the LEDs on its connectors", c->name);
         free(c); closesocket(s); return 0;
     }
-    d->nleds = c->nleds > EXT_MAX_LEDS ? EXT_MAX_LEDS : c->nleds;
+    d->nleds = nl > EXT_MAX_LEDS ? EXT_MAX_LEDS : nl;
     snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s", c->name, type_name(c->type));
     orgb_t *o = calloc(1, sizeof(orgb_t));
     if (!o) { free(c); closesocket(s); return 0; }
-    memcpy(o->orig, c->colors, sizeof(unsigned) * c->ncolors); o->norig = c->ncolors; o->idx = (unsigned)idx;
+    o->norig = c->ncolors - first < d->nleds ? c->ncolors - first : d->nleds;
+    if (o->norig < 0) o->norig = 0;
+    memcpy(o->orig, c->colors + first, sizeof(unsigned) * o->norig); o->idx = (unsigned)idx; o->part = part;
     keep_mode(sec, c, o);
     const char *how = ""; float rate = 0;
     o->how = pick_mode(c, o, &rate, &how);
     d->rate = rate;
-    snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s · %s", c->name, type_name(c->type), how);
+    snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s · %s", c->name, part >= 0 ? c->zn[part].name : type_name(c->type), how);
     if (o->how != DRIVE_DIRECT) {   // which modes it has, as names and colour modes, so a report shows why
         char ml[400]; int k = 0;
         for (int m = 0; m < c->nmodes && k < (int)sizeof(ml) - 40; m++) k += snprintf(ml + k, sizeof(ml) - k, "%s%s/%d", m ? ", " : "", c->md[m].name, c->md[m].cm);
@@ -301,11 +312,13 @@ static int orgb_open(ext_dev *d) {
 }
 
 static int send_colors(ext_dev *d, const unsigned *col, int n) {
-    unsigned char buf[6 + EXT_MAX_LEDS * 4];
-    unsigned size = 6 + n * 4;
+    orgb_t *o = d->priv;
+    unsigned char buf[10 + EXT_MAX_LEDS * 4];
+    int z = o->part >= 0 ? 4 : 0;   // a connector: its zone's number after the size
+    unsigned size = 6 + z + n * 4;
     unsigned short nn = (unsigned short)n;
-    memcpy(buf, &size, 4); memcpy(buf + 4, &nn, 2); memcpy(buf + 6, col, n * 4);
-    return send_pkt(d->sock, ((orgb_t *)d->priv)->idx, PKT_UPDATELEDS, buf, size);
+    memcpy(buf, &size, 4); memcpy(buf + 4, &o->part, z); memcpy(buf + 4 + z, &nn, 2); memcpy(buf + 6 + z, col, n * 4);
+    return send_pkt(d->sock, o->idx, z ? PKT_UPDATEZONELEDS : PKT_UPDATELEDS, buf, size);
 }
 
 static int orgb_send(ext_dev *d, const rgbf *c, int n) {
@@ -346,7 +359,9 @@ static void orgb_leave(ext_dev *d, int how) {
     if (how == LEAVE_OFF) send_colors(d, col, d->nleds);
     else if (how == LEAVE_RESTORE) {
         if (o->norig) send_colors(d, o->orig, o->norig < d->nleds ? o->norig : d->nleds);
-        if (o->mode_len) {   // its own effect again: the mode it had, as it was described
+        // shortcut: a connector leaves the controller in Direct (the mode is the whole board's, and other connectors may
+        // still be lit by haku); give it back once the last one lets go if a board stays frozen after exit
+        if (o->mode_len && o->part < 0) {   // its own effect again: the mode it had, as it was described
             unsigned char buf[8 + sizeof(o->mode)];
             unsigned size = 8 + o->mode_len;
             memcpy(buf, &size, 4); memcpy(buf + 4, &o->mode_idx, 4); memcpy(buf + 8, o->mode, o->mode_len);
@@ -375,6 +390,13 @@ static void orgb_discover(int ms, void (*found)(const disc_t *)) {
         strcpy_s(x.name, sizeof(x.name), c->name);
         snprintf(x.info, sizeof(x.info), "OpenRGB · %s", type_name(c->type));
         found(&x);
+        for (int z = 0; z < c->nzones; z++) {   // each ARGB connector on its own too
+            if (c->zn[z].min >= c->zn[z].max) continue;
+            x.sub = (int)i + PART_STEP * (z + 1); x.nleds = c->zn[z].count;
+            snprintf(x.name, sizeof(x.name), "%s · %s", c->name, c->zn[z].name);
+            snprintf(x.info, sizeof(x.info), "OpenRGB · ARGB connector");
+            found(&x);
+        }
     }
     free(c);
     closesocket(s);

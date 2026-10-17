@@ -435,9 +435,11 @@ int ext_add(const char *kind, const char *host, int sub, const char *name, int l
         char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", i);
         const char *k = cfg_get(sec, "kind", NULL);
         // already there: the same address and number; for OpenRGB also the same controller name (two sticks of a kit
-        // share one name, so the name alone is not enough; callers check by name and rank first, as numbers change)
+        // share one name, so the name alone is not enough; callers check by name and rank first, as numbers change);
+        // a connector's name starts with its controller's
+        const char *m = k ? cfg_get(sec, "match", cfg_get(sec, "name", "")) : "";
         if (k && !_stricmp(k, kind) && !strcmp(cfg_get(sec, "host", ""), host) && cfg_geti(sec, "sub", -1) == sub &&
-            (_stricmp(kind, "openrgb") || !name || !*name || !strcmp(cfg_get(sec, "match", cfg_get(sec, "name", "")), name))) return i;
+            (_stricmp(kind, "openrgb") || !name || !*name || !strncmp(name, m, strlen(m)))) return i;
         if (!k && !id) id = i;
     }
     if (!id) return 0;
