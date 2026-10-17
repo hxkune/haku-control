@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.28',
+    en: ['Motherboard ARGB connectors light at once: one never set starts with a guessed LED count, and Calibrate finds the real one by eye, connector by connector (red on its first LED, blue on its last). A board left at 0 LEDs says it needs setup instead of looking offline.', 'TRYX: a sent picture or video waits longer for the cooler to confirm it, and is shown if the cooler took it without confirming.'],
+    ru: ['ARGB-разъёмы материнской платы светятся сразу: у ненастроенного стоит примерное число светодиодов, а «Калибровка» находит точное на глаз, разъём за разъёмом (красный на первом светодиоде, синий на последнем). Плата с 0 светодиодов пишет «нужна настройка», а не выглядит отключённой.', 'TRYX: отправленная картинка или видео дольше ждёт подтверждения от кулера и показывается, если кулер принял файл, но не подтвердил.'],
+    fr: ['Les connecteurs ARGB de la carte mère s’allument tout de suite : un connecteur jamais réglé part d’un nombre de LED estimé, et Calibrer trouve le vrai à l’œil, connecteur par connecteur (rouge sur sa première LED, bleu sur la dernière). Une carte restée à 0 LED indique qu’elle est à configurer au lieu de paraître hors ligne.', 'TRYX : une image ou vidéo envoyée attend plus longtemps la confirmation du refroidisseur, et s’affiche s’il l’a reçue sans confirmer.'] },
   { v: '0.4.27',
     en: ['Groups: choosing Colour or a colour swatch no longer closes the group window.', 'A bug report and the diagnostics file now list the other lighting programs running (Armoury Crate, iCUE, SignalRGB…), which can keep a board or controller from haku.'],
     ru: ['Группы: выбор «Цвет» или образца цвета больше не закрывает окно группы.', 'Отчёт о проблеме и файл диагностики теперь показывают другие запущенные программы подсветки (Armoury Crate, iCUE, SignalRGB…), которые могут не давать haku доступ к плате или контроллеру.'],
