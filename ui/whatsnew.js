@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.30',
+    en: ['Motherboard ARGB connectors: Find devices also lists each connector as a device of its own (board name · connector), so a strip, a lit cable or fans on one connector can be added and lit on their own. If you add them, remove the whole-board device. A strip never shows up by its own name: look for the board and its connector.'],
+    ru: ['ARGB-разъёмы материнской платы: «Найти устройства» показывает и каждый разъём отдельным устройством (название платы · разъём), так что ленту, подсвеченный кабель или вентиляторы на одном разъёме можно добавить и светить отдельно. Если добавите их, удалите устройство всей платы. Сама лента своим названием не появляется никогда: ищите плату и её разъём.'],
+    fr: ['Connecteurs ARGB de la carte mère : Trouver les appareils liste aussi chaque connecteur comme un appareil à part (nom de la carte · connecteur), pour ajouter et éclairer à part une bande, un câble lumineux ou des ventilateurs sur un connecteur. Si vous les ajoutez, retirez l’appareil de la carte entière. Une bande n’apparaît jamais sous son propre nom : cherchez la carte et son connecteur.'] },
   { v: '0.4.29',
     en: ['ASUS boards: haku now lights the board’s own LEDs (the ROG logo, the I/O cover) itself, over its USB Aura controller: Find devices › ASUS board LEDs. If the board does not say how many LEDs it has, Calibrate finds the count. Close Armoury Crate first.', 'Calibrate: no blue at all on a connector means its count is too high.'],
     ru: ['Платы ASUS: haku теперь сам управляет подсветкой платы (логотип ROG, кожух портов) через её USB-контроллер Aura: «Найти устройства» › ASUS board LEDs. Если плата не сообщает число светодиодов, его найдёт «Калибровка». Сначала закройте Armoury Crate.', 'Калибровка: если синего на разъёме не видно совсем, число светодиодов слишком большое.'],
