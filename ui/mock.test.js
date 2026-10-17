@@ -487,6 +487,19 @@
     await fanReset();
   });
 
+  test('a group: Colour and its swatch keep the group window open, the colour goes to every member', async () => {
+    await fresh();
+    const n = groupNew(); groupDialog(n, true);
+    const zs = heroItems(true).slice(0, 2).map(i => i.zone); zs.forEach(z => groupAdd(n, z)); gdlgDevs();
+    $('#gdlg-zone .seg button[data-m="static"]').click();
+    ok(!$('#gdlg').classList.contains('hidden'), 'Colour closed the group window');
+    $('#gdlg-zone .swatches .sw').click();
+    ok(!$('#gdlg').classList.contains('hidden') && !pk.classList.contains('hidden'), 'the swatch closed the group window or opened no picker');
+    PK.onChange('#112233');
+    ok(zs.every(z => cv(z, 'palette', '').startsWith('#112233') && cv(z, 'mode', '') === 'static'), 'members: ' + zs.map(z => cv(z, 'mode', '') + ' ' + cv(z, 'palette', '')).join(' / '));
+    $('#gdlg-cancel').click();
+  });
+
   test('TRYX: your own picture is picked in the PC window, its sending shows in the status', async () => {
     await fresh();
     STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D03', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'strip', info: 'TRYX PANORAMA · COM5 · USB' });

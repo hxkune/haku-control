@@ -12,6 +12,7 @@
 #include <intrin.h>
 #include <stdlib.h>
 #include <process.h>
+#include <tlhelp32.h>
 
 typedef struct { char *p; int n, cap; } hw_buf;
 
@@ -171,6 +172,27 @@ static void add_usb(hw_buf *b) {
     if (!shown) put(b, "usb: no devices of known RGB makers\r\n");
 }
 
+// other lighting programs running: one holding a controller (Armoury Crate's LightingService on ASUS) keeps OpenRGB and haku off it
+static void add_rgb_apps(hw_buf *b) {
+    static const wchar_t *const A[] = { L"armoury", L"lightingservice", L"aura", L"icue", L"corsair.service", L"signalrgb", L"openrgb",
+        L"mysticlight", L"msi.centralserver", L"rgbfusion", L"gcc.", L"nzxt", L"kanali", L"tryx", L"polychrome", L"openlinkhub" };
+    PROCESSENTRY32W pe = { sizeof(pe) };
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    put(b, "RGB programs running:");
+    int n = 0;
+    if (snap != INVALID_HANDLE_VALUE) {
+        for (BOOL ok = Process32FirstW(snap, &pe); ok && n < 24; ok = Process32NextW(snap, &pe)) {
+            wchar_t low[MAX_PATH]; wcsncpy_s(low, MAX_PATH, pe.szExeFile, _TRUNCATE); _wcslwr_s(low, MAX_PATH);
+            for (int i = 0; i < (int)(sizeof(A) / sizeof(A[0])); i++) if (wcsstr(low, A[i])) {
+                char x[MAX_PATH * 3]; WideCharToMultiByte(CP_UTF8, 0, pe.szExeFile, -1, x, sizeof(x), NULL, NULL);
+                put(b, "%s %s", n++ ? "," : "", x); break;
+            }
+        }
+        CloseHandle(snap);
+    }
+    put(b, "%s\r\n", n ? "" : " none");
+}
+
 static void add_openrgb(hw_buf *b) {
     static orgb_ctl c[64];
     net_init();
@@ -190,6 +212,7 @@ int hw_inventory(char *out, int cap) {
     add_devices(&b, NULL, "smbus", "CC_0C05", 0);
     add_usb(&b);
     put(&b, "PawnIO: %s\r\n", GetFileAttributesW(L"C:\\Program Files\\PawnIO\\PawnIOLib.dll") != INVALID_FILE_ATTRIBUTES ? "installed" : "not installed");
+    add_rgb_apps(&b);
     add_openrgb(&b);
     return b.n;
 }

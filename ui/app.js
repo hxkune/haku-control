@@ -818,6 +818,7 @@ function renderPalette(box, section, single, fallback) {
   box.innerHTML = '';
   shown.forEach((c, i) => {
     const b = document.createElement('button');
+    b.type = 'button';   // inside the group window's form a plain button would submit it, closing the window
     b.className = 'sw'; b.style.setProperty('--c', c); b.title = c;
     b.addEventListener('click', () => {
       $$('.sw.sel').forEach(s => s.classList.remove('sel'));
@@ -837,7 +838,7 @@ function renderPalette(box, section, single, fallback) {
   });
   if (!single && list.length < 8) {
     const a = document.createElement('button');
-    a.className = 'sw add'; a.textContent = '+'; a.title = t('add.colour');
+    a.type = 'button'; a.className = 'sw add'; a.textContent = '+'; a.title = t('add.colour');
     a.addEventListener('click', () => {
       list.push(list[list.length - 1] || '#FFFFFF');
       setCfg(section, 'palette', palStr(list));
@@ -911,7 +912,7 @@ function renderZone(el) {
       <select class="select zfx ${own ? 'own' : ''}">${opts.join('')}</select>
     </div>
     <div class="field"><div class="lbl"><span>${t('zone.mode')}</span></div></div>
-    <div class="seg">${MODES.map(m => `<button data-m="${m}" class="${m === mode ? 'on' : ''}">${t('mode.' + m)}</button>`).join('')}</div>
+    <div class="seg">${MODES.map(m => `<button type="button" data-m="${m}" class="${m === mode ? 'on' : ''}">${t('mode.' + m)}</button>`).join('')}</div>
     <div class="zbody"></div>
     <div class="field">
       <div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
