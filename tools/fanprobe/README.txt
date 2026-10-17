@@ -25,5 +25,11 @@ Open a command prompt as administrator in this folder and run:
 That sets SYS_FAN1 (control 2) to 40% for 10 seconds, then puts the board's own setting back.
 Controls 2..7 are SYS_FAN1..6. The CPU fan and the pump are never touched. Ctrl+C also puts it back.
 
+Optional, only if asked (ASUS boards with the NCT6799D chip)
+Same, as administrator in this folder:
+    fanprobe set 0 50 10
+That sets control 0 to 50% for 10 seconds, then puts the board's own setting back (controls 0..6, 30..100%, up to 30 s).
+Watch which fans change and say so. Ctrl+C also puts it back.
+
 LpcIO.bin is the unchanged module from PawnIO.Modules 0.2.11 (github.com/namazso/PawnIO.Modules).
 fanprobe source: tools/fanprobe in github.com/hxkune/haku-control.

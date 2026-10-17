@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // fanprobe: which fan chip a board has and what it reads, for testers. Needs admin, PawnIO, and LpcIO.bin next to the exe.
 //   fanprobe                 read-only: board, Super I/O chips, fans / temps, raw register dumps, USB fan hubs -> fanprobe.txt
-//   fanprobe set I PCT SECS  NCT6687D only: manual duty on control I (2..7, never 0 CPU or 1 PUMP) for SECS s, then the saved state back
+//   fanprobe set I PCT SECS  NCT6687D: manual duty on control I (2..7, never 0 CPU or 1 PUMP) for SECS s, then the saved state back
+//                            NCT6799D: control I (0..6), PCT 30..100, SECS 1..30, then its mode and duty back
 //   build.cmd's environment, then:
 //   cl /nologo /O2 /MT /D_CRT_SECURE_NO_WARNINGS tools\fanprobe\fanprobe.c setupapi.lib advapi32.lib /Fe:dist\fanprobe\fanprobe.exe /link /MANIFEST:EMBED /MANIFESTUAC:"level='requireAdministrator' uiAccess='false'"
 // Register layouts: LibreHardwareMonitor (Nct677X.cs, IT87XX.cs, LpcIO.cs); only the NCT6687D one is checked on hardware.
@@ -72,11 +73,12 @@ static void restore(void) {
     say("restored control %d: mode bit %d, cmd %d\n", set_i, !!saved_bit, saved_cmd);
     set_i = -1;
 }
-static BOOL WINAPI on_ctrl(DWORD t) { (void)t; restore(); return FALSE; }
+static void nrestore(void);
+static BOOL WINAPI on_ctrl(DWORD t) { (void)t; restore(); nrestore(); return FALSE; }
 
-static int seen6687;
+static int can_set;
 static void nct6687(int risky, int argc, char **argv) {
-    seen6687 = 1;
+    can_set = 1;
     say("NCT6687D. RPM 0 CPU, 1 PUMP, 2..7 SYS 1..6. PWM/cmd 0 CPU, 1 PUMP, 2..7 SYS 1..6\n");
     for (int r = 0; r < 5; r++) { nct6687_round(); Sleep(1000); }
     raw("EC", 0x100, 0x1FF, rd);
@@ -101,14 +103,50 @@ static void nct6687(int risky, int argc, char **argv) {
 
 // --- other Nuvoton (NCT679x, NCT6683/6686): banked, bank select at register 0x4E, index base+5, data base+6
 static int nrd(int a) { outb(base + 5, 0x4E); outb(base + 6, a >> 8); outb(base + 5, a & 0xFF); return inb(base + 6); }
-static void nuvoton(void) {
-    lock(); outb(base + 5, 0x4E); int bank = inb(base + 6);
-    for (int r = 0; r < 5; r++) {
-        say("RPM? 4C0..4CF:"); for (int i = 0; i < 8; i++) say(" %5d", nrd(0x4C0 + 2 * i) << 8 | nrd(0x4C1 + 2 * i)); say("\n");
-        unlock(); Sleep(1000); lock();
+static void nwr(int a, int v) { outb(base + 5, 0x4E); outb(base + 6, a >> 8); outb(base + 5, a & 0xFF); outb(base + 6, v); }
+// NCT6799D (LHM's NCT6797D/98D/99D layout): duty now, the duty asked in manual mode, the mode in the high nibble (0 manual)
+static const int n_out[7] = { 0x001, 0x003, 0x011, 0x013, 0x015, 0x017, 0x029 },
+                 n_cmd[7] = { 0x109, 0x209, 0x309, 0x809, 0x909, 0xA09, 0xB09 },
+                 n_mode[7] = { 0x102, 0x202, 0x302, 0x802, 0x902, 0xA02, 0xB02 };
+static int nset_i = -1, nsaved_mode, nsaved_cmd;
+static void n_round(int is6799) {
+    lock();
+    say("RPM 4C0..4CF:"); for (int i = 0; i < 8; i++) say(" %5d", nrd(0x4C0 + 2 * i) << 8 | nrd(0x4C1 + 2 * i));
+    if (is6799) {
+        say("\nPWM%%:"); for (int i = 0; i < 7; i++) say(" %3d", (nrd(n_out[i]) * 100 + 127) / 255);
+        say("   mode:"); for (int i = 0; i < 7; i++) say(" %X", nrd(n_mode[i]) >> 4);
+        say("   cmd:"); for (int i = 0; i < 7; i++) say(" %3d", nrd(n_cmd[i]));
     }
-    for (int pass = 0; pass < 2; pass++) { raw("bank", 0x000, 0x7FF, nrd); Sleep(2000); }
-    outb(base + 5, 0x4E); outb(base + 6, bank); unlock();
+    say("\n"); unlock();
+}
+static void nrestore(void) {
+    if (nset_i < 0) return;
+    lock(); nwr(n_cmd[nset_i], nsaved_cmd); nwr(n_mode[nset_i], nsaved_mode); unlock();
+    say("restored control %d: mode %02X, cmd %d\n", nset_i, nsaved_mode, nsaved_cmd);
+    nset_i = -1;
+}
+static void nuvoton(int is6799, int argc, char **argv) {
+    lock(); outb(base + 5, 0x4E); int bank = inb(base + 6); unlock();
+    if (is6799) say("NCT6799D. RPM 0..7 and controls 0..6 in the chip's order, not the board's header names\n");
+    for (int r = 0; r < 5; r++) { n_round(is6799); Sleep(1000); }
+    for (int pass = 0; pass < 2; pass++) { raw("bank", 0x000, 0xBFF, nrd); Sleep(2000); }
+    if (is6799 && argc == 5 && !strcmp(argv[1], "set")) {
+        can_set = 1;
+        int i = atoi(argv[2]), pct = atoi(argv[3]), secs = atoi(argv[4]);
+        if (i < 0 || i > 6 || pct < 30 || pct > 100 || secs < 1 || secs > 30) say("set: I 0..6, PCT 30..100, SECS 1..30\n");
+        else {
+            lock();
+            nsaved_mode = nrd(n_mode[i]); nsaved_cmd = nrd(n_cmd[i]); nset_i = i;
+            SetConsoleCtrlHandler(on_ctrl, TRUE);
+            nwr(n_mode[i], nsaved_mode & 0x0F); nwr(n_cmd[i], pct * 255 / 100);
+            unlock();
+            say("control %d -> %d%% for %d s (saved mode %02X, cmd %d)\n", i, pct, secs, nsaved_mode, nsaved_cmd);
+            for (int s = 0; s < secs; s += 2) { n_round(1); Sleep(2000); }
+            nrestore();
+            Sleep(3000); n_round(1);
+        }
+    }
+    lock(); outb(base + 5, 0x4E); outb(base + 6, bank); unlock();
 }
 
 // --- ITE IT86xx/IT87xx/IT89xx: index base+5, data base+6, 256 registers
@@ -146,6 +184,7 @@ static void hubs(void) {
     static const struct { unsigned vid; const char *who; } v[] = {
         { 0x0C70, "Aqua Computer" }, { 0x1B1C, "Corsair" }, { 0x1E71, "NZXT" }, { 0x0CF2, "Lian Li" },
         { 0x264A, "Thermaltake" }, { 0x2516, "Cooler Master" }, { 0x1044, "Gigabyte" }, { 0x0B05, "ASUS" },
+        { 0x0416, "Winbond (Lian Li wireless)" },
     };
     say("USB devices from fan / cooling vendors:\n");
     HDEVINFO di = SetupDiGetClassDevsW(NULL, L"USB", NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT);
@@ -175,7 +214,7 @@ int main(int argc, char **argv) {
     swprintf(p, MAX_PATH, L"%sfanprobe.txt", dir); out = _wfopen(p, L"a");
     if (!out) { printf("cannot write fanprobe.txt next to the exe: move the folder out of Program Files / Downloads zip\n"); getchar(); return 1; }
     SYSTEMTIME st; GetLocalTime(&st);
-    say("--- fanprobe 1, %04d-%02d-%02d %02d:%02d:%02d%s\n", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, argc > 1 ? " (set)" : "");
+    say("--- fanprobe 2, %04d-%02d-%02d %02d:%02d:%02d%s\n", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, argc > 1 ? " (set)" : "");
     const wchar_t *bios = L"HARDWARE\\DESCRIPTION\\System\\BIOS";
     wchar_t maker[256];
     reg(bios, L"BaseBoardManufacturer", "board maker", maker);
@@ -211,7 +250,7 @@ int main(int argc, char **argv) {
         outb(port, 0xAA);
         unlock();
         if (nct) {
-            if (a) { base = a; found = 1; if (is6687) nct6687(risky, argc, argv); else nuvoton(); }
+            if (a) { base = a; found = 1; if (is6687) nct6687(risky, argc, argv); else nuvoton(id == 0xD8, argc, argv); }
             continue;
         }
         lock();
@@ -225,7 +264,7 @@ int main(int argc, char **argv) {
         if (it && a) { base = a; found = 1; ite(); }
     }
     if (!found) say("no known fan chip found: the raw ids above still help\n");
-    if (argc > 1 && !seen6687) say("set: only the NCT6687D for now\n");
+    if (argc > 1 && !can_set) say("set: only the NCT6687D and NCT6799D for now\n");
     hubs();
     return done(0);
 }
