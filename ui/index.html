@@ -267,7 +267,34 @@
       <p class="muted" id="fans-sensors"></p>
       <p class="hint" data-i18n="fans.note">Channels set to "As is" keep the QUADRO's own setting. When haku closes or the PC sleeps, every channel gets its own setting back.</p>
     </div>
-    <div class="pc-grid fan-grid" id="fan-list"></div>
+    <div class="fan-panel" id="fan-panel"></div>
+    <p class="fan-removed muted hidden" id="fan-removed"></p>
+    <div class="hidden">
+      <div class="card fan-set" id="fan-set">
+        <div class="card-head"><div><h3 id="fs-title"></h3><p class="muted" id="fs-live"></p></div></div>
+        <label class="num"><span data-i18n="preset.name">Name</span><input type="text" id="fs-name" maxlength="24" spellcheck="false"></label>
+        <div class="field" id="fs-mem-f">
+          <div class="lbl"><span data-i18n="fans.members">Fans in the group</span></div>
+          <div class="gdlg-devs" id="fs-members"></div>
+          <p class="hint" data-i18n="fans.group.note">Settings here go to every fan of the group at once.</p>
+        </div>
+        <div id="fs-ctl">
+          <div class="seg" id="fs-mode"><button data-v="" data-i18n="fans.asis">As is</button><button data-v="fix" data-i18n="fans.fix">Fixed</button><button data-v="curve" data-i18n="fans.curve">Curve</button></div>
+          <div class="opts" id="fs-fix">
+            <div class="lbl"><span data-i18n="fans.speed">Speed</span><b id="fs-pct-val"></b></div>
+            <input type="range" class="range" id="fs-pct" min="20" max="100" step="1" value="50">
+            <p class="hint" data-i18n="fans.min">Never below 20%, so a fan or pump does not stop.</p>
+          </div>
+          <div class="opts" id="fs-curve">
+            <div class="lbl"><span data-i18n="fans.src">Follows</span></div>
+            <div class="seg" id="fs-src"></div>
+            <canvas class="fan-cv" id="fs-cv" tabindex="0" data-i18n-title="fans.curve.note"></canvas>
+            <p class="hint" data-i18n="fans.curve.note">Drag the points.</p>
+          </div>
+        </div>
+        <div class="btn-row"><span class="grow"></span><button class="btn danger" type="button" id="fs-del"><span></span></button></div>
+      </div>
+    </div>
   </section>
 
   <!-- ============ NANOLEAF ============ -->

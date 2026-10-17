@@ -5,6 +5,8 @@
 
 const STR = {
   en: {
+    'fans.members': 'Fans in the group', 'fans.group.note': 'Settings here go to every fan of the group at once.', 'fans.empty': 'No fans yet', 'fans.rpm': '{0} rpm · {1}%',
+    'fans.remove': 'Remove from the panel', 'fans.removed': 'Not on the panel:', 'fans.back': 'Put it back on the panel',
     'nav.fans': 'Fans', 'sub.fans': 'Aqua Computer QUADRO · speed by temperature',
     'fans.note': 'Channels set to “As is” keep the QUADRO’s own setting. When haku closes or the PC sleeps, every channel gets its own setting back.',
     'fans.ch': 'Fan', 'fans.asis': 'As is', 'fans.fix': 'Fixed', 'fans.curve': 'Curve', 'fans.speed': 'Speed', 'fans.src': 'Follows', 'fans.gpu': 'GPU', 'fans.t': 'Sensor {0}',
@@ -337,6 +339,8 @@ const STR = {
     'desc.off': 'Lighting is off.',
   },
   ru: {
+    'fans.members': 'Вентиляторы в группе', 'fans.group.note': 'Настройки здесь сразу применяются ко всем вентиляторам группы.', 'fans.empty': 'Пока без вентиляторов', 'fans.rpm': '{0} об/мин · {1}%',
+    'fans.remove': 'Убрать с панели', 'fans.removed': 'Не на панели:', 'fans.back': 'Вернуть на панель',
     'nav.fans': 'Вентиляторы', 'sub.fans': 'Aqua Computer QUADRO · обороты по температуре',
     'fans.note': 'Каналы в режиме «Как есть» работают по настройке самого QUADRO. Когда haku закрывается или ПК засыпает, каждому каналу возвращается его настройка.',
     'fans.ch': 'Вентилятор', 'fans.asis': 'Как есть', 'fans.fix': 'Постоянно', 'fans.curve': 'Кривая', 'fans.speed': 'Скорость', 'fans.src': 'По датчику', 'fans.gpu': 'Видеокарта', 'fans.t': 'Датчик {0}',
@@ -670,6 +674,8 @@ const STR = {
   fr: {
     'nav.effects': 'Effets',
     'nav.pc': 'PC',
+    'fans.members': 'Ventilateurs du groupe', 'fans.group.note': 'Les réglages ici vont à tous les ventilateurs du groupe à la fois.', 'fans.empty': 'Aucun ventilateur pour l’instant', 'fans.rpm': '{0} tr/min · {1} %',
+    'fans.remove': 'Retirer du panneau', 'fans.removed': 'Hors du panneau :', 'fans.back': 'Remettre sur le panneau',
     'nav.fans': 'Ventilateurs', 'sub.fans': 'Aqua Computer QUADRO · vitesse selon la température',
     'fans.note': 'Les canaux sur « Tel quel » gardent le réglage du QUADRO. Quand haku se ferme ou que le PC se met en veille, chaque canal retrouve son propre réglage.',
     'fans.ch': 'Ventilateur', 'fans.asis': 'Tel quel', 'fans.fix': 'Fixe', 'fans.curve': 'Courbe', 'fans.speed': 'Vitesse', 'fans.src': 'Suit', 'fans.gpu': 'Carte graphique', 'fans.t': 'Sonde {0}',

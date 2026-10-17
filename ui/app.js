@@ -2552,6 +2552,7 @@ function sheetCards(h) {
   if (h.k === 'add') return [[], 'devices'];
   if (h.k === 'fx') return [[$('.fx-side')], 'effects'];
   if (h.k === 'prof') return [[$('#prof-panel')], 'effects'];
+  if (h.k === 'fan') return [[$('#fan-set')], 'fans'];
   return [[], ''];
 }
 function openSheet(h, cx, cy) {
@@ -2567,8 +2568,8 @@ function openSheet(h, cx, cy) {
   SHEET.kind = h.k; SHEET.page = page; SHEET.zone = h.zone || '';
   sheetGroup();
   const wrap = $('#sheet'), sh = wrap.querySelector('.sheet');
-  $('#sheet-page').classList.toggle('hidden', h.k === 'fx' || h.k === 'prof');   // the effect's or profile's own settings: no page of their own
-  if (h.k === 'fx' || h.k === 'prof') sh.setAttribute('aria-labelledby', h.k === 'fx' ? 'fx-name' : 'prof-panel-h'); else sh.removeAttribute('aria-labelledby');
+  $('#sheet-page').classList.toggle('hidden', h.k === 'fx' || h.k === 'prof' || h.k === 'fan');   // the effect's, profile's or fan's own settings: no page of their own
+  if (h.k === 'fx' || h.k === 'prof' || h.k === 'fan') sh.setAttribute('aria-labelledby', { fx: 'fx-name', prof: 'prof-panel-h', fan: 'fs-title' }[h.k]); else sh.removeAttribute('aria-labelledby');
   sh.style.removeProperty('--dx'); sh.style.removeProperty('--dy');
   sh.classList.toggle('wide', h.k === 'nano' && nanoOn());
   wrap.classList.remove('hidden');
@@ -3900,21 +3901,33 @@ function updateChips() {
 // ------------------------------------------------------------------ messages from the core
 // ------------------------------------------------------------------ fans: Aqua Computer QUADRO (fans.c)
 // [fans] fanN = '' as is | fix | curve, fanN_pct 20..100, fanN_src gpu | t1..t4, fanN_curve '30:30,50:45,70:75,85:100'
-const FAN_CURVE = '30:30,50:45,70:75,85:100';
-const FAN = { drag: null, sel: [] };
+// the panel only (fans.c reads none of these): fanN_name, fanN_hide = 1, gN_name (the group exists while it has one), gN = '1,2'
+const FAN_CURVE = '30:30,50:45,70:75,85:100', FAN_N = 4, FAN_GROUPS = 4;
+const FAN = { drag: null, sel: 0, open: null, sig: '' };   // open: { i } a fan or { g } a group, shown in the sheet
 const fanKey = (i, k) => `fan${i + 1}${k ? '_' + k : ''}`;
 const fanPts = s => String(s).split(',').map(p => p.split(':').map(Number)).filter(a => a.length === 2 && a.every(Number.isFinite));
 const fanCurve = i => { const p = fanPts(cv('fans', fanKey(i, 'curve'), FAN_CURVE)); return (p.length ? p : fanPts(FAN_CURVE)).sort((a, b) => a[0] - b[0]); };
 const fanTemp = src => src === 'gpu' ? S.gpu_temp ?? null : ((S.fans || {}).t || [])[+src.slice(1) - 1] ?? null;
 const clamp20 = v => Math.min(100, Math.max(20, v));
+const fanName = i => cv('fans', fanKey(i, 'name'), '') || `${t('fans.ch')} ${i + 1}`;
+const fanHidden = i => cv('fans', fanKey(i, 'hide'), '') === '1';
+const fanGroups = () => Array.from({ length: FAN_GROUPS }, (_, k) => k + 1).filter(n => cv('fans', `g${n}_name`, ''))
+  .map(n => ({ n, name: cv('fans', `g${n}_name`, ''), m: cv('fans', `g${n}`, '').split(',').map(x => +x - 1).filter(i => i >= 0 && i < FAN_N && !fanHidden(i)) }));
+// what the open sheet changes: every fan of the group, or the one fan; the first one shows the settings
+const fanTargets = () => { const o = FAN.open; if (!o) return []; if (o.g) return (fanGroups().find(g => g.n === o.g) || { m: [] }).m; return [o.i]; };
+const fanSetAll = (k, v, soon) => fanTargets().forEach(i => (soon ? setCfgSoon : setCfg)('fans', fanKey(i, k), v));
+const fanMode = i => { const m = cv('fans', fanKey(i), '');
+  return m === 'fix' ? `${t('fans.fix')} · ${cv('fans', fanKey(i, 'pct'), '50')}%` : m === 'curve' ? `${t('fans.curve')} · ${fanSrcName(cv('fans', fanKey(i, 'src'), 'gpu'))}` : t('fans.asis'); };
+const fanSrcName = s => s === 'gpu' ? t('fans.gpu') : t('fans.t', s.slice(1));
+const fanLive = i => { const f = ((S.fans || {}).f || [])[i] || {}; return t('fans.live', f.rpm ?? 0, Math.round(f.pct ?? 0), (f.w ?? 0).toFixed(1)) + (f.own ? ' · ' + t('fans.own') : ''); };
 // 20..100 °C across, 20..100 % up
 function fanGeo(cvs) {
   const W = cvs.clientWidth, H = cvs.clientHeight, l = 34, r = 10, tp = 10, b = 22;
   return { W, H, px: x => l + (x - 20) / 80 * (W - l - r), py: y => H - b - (y - 20) / 80 * (H - tp - b),
     ix: x => 20 + (x - l) / (W - l - r) * 80, iy: y => 20 + (H - b - y) / (H - tp - b) * 80 };
 }
-function drawFanCurve(i) {
-  const cvs = $(`.fan[data-f="${i}"] canvas`); if (!cvs || !cvs.offsetParent) return;
+function drawFanCurve() {
+  const cvs = $('#fs-cv'), tg = fanTargets(), i = tg[0]; if (i == null || !cvs.offsetParent) return;
   const d = devicePixelRatio || 1, g = fanGeo(cvs);
   if (cvs.width !== Math.round(g.W * d) || cvs.height !== Math.round(g.H * d)) { cvs.width = Math.round(g.W * d); cvs.height = Math.round(g.H * d); }
   const c = cvs.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, g.W, g.H);
@@ -3931,93 +3944,149 @@ function drawFanCurve(i) {
   pts.forEach(p => c.lineTo(X(p[0]), Y(p[1])));
   c.lineTo(g.px(100), Y(pts[pts.length - 1][1])); c.stroke();
   const focus = document.activeElement === cvs;
-  pts.forEach((p, k) => { c.fillStyle = focus && k === (FAN.sel[i] ?? 0) ? THEME.ink : THEME.hi; c.beginPath(); c.arc(X(p[0]), Y(p[1]), focus && k === (FAN.sel[i] ?? 0) ? 6 : 5, 0, 6.283); c.fill(); });
-  // where the fan is now: the source's temperature and the speed the QUADRO reports
-  const T = fanTemp(cv('fans', fanKey(i, 'src'), 'gpu')), f = ((S.fans || {}).f || [])[i];
-  if (T != null && f) {
-    c.strokeStyle = THEME.ink; c.lineWidth = 2; c.beginPath(); c.arc(X(T), Y(f.pct), 7, 0, 6.283); c.stroke();
-  }
+  pts.forEach((p, k) => { const s = focus && k === FAN.sel; c.fillStyle = s ? THEME.ink : THEME.hi; c.beginPath(); c.arc(X(p[0]), Y(p[1]), s ? 6 : 5, 0, 6.283); c.fill(); });
+  // where each fan is now: the source's temperature and the speed the QUADRO reports
+  const T = fanTemp(cv('fans', fanKey(i, 'src'), 'gpu'));
+  if (T != null) tg.forEach(j => { const f = ((S.fans || {}).f || [])[j]; if (!f) return;
+    c.strokeStyle = THEME.ink; c.lineWidth = 2; c.beginPath(); c.arc(X(T), Y(f.pct), 7, 0, 6.283); c.stroke(); });
 }
-function buildFans() {
-  const T = k => `data-i18n="${k}">${esc(t(k))}`;
-  $('#fan-list').innerHTML = [0, 1, 2, 3].map(i => `<div class="card fan" data-f="${i}">
-    <div class="card-head"><div><h3><span ${T('fans.ch')}</span> ${i + 1}</h3><p class="muted" data-live></p></div></div>
-    <div class="seg" data-mode><button data-v="" ${T('fans.asis')}</button><button data-v="fix" ${T('fans.fix')}</button><button data-v="curve" ${T('fans.curve')}</button></div>
-    <div class="opts" data-fix>
-      <div class="lbl"><span ${T('fans.speed')}</span><b data-pct-val></b></div>
-      <input type="range" class="range" data-pct min="20" max="100" step="1" value="50">
-      <p class="hint" ${T('fans.min')}</p>
-    </div>
-    <div class="opts" data-curve>
-      <div class="lbl"><span ${T('fans.src')}</span></div>
-      <div class="seg" data-src></div>
-      <canvas class="fan-cv" tabindex="0" data-i18n-title="fans.curve.note" title="${esc(t('fans.curve.note'))}"></canvas>
-      <p class="hint" ${T('fans.curve.note')}</p>
-    </div>
-  </div>`).join('');
+// the panel: a tile per group and per fan not in one; the settings open in the sheet
+function renderFanPanel() {
+  const gs = fanGroups(), inG = new Set(gs.flatMap(g => g.m)), solo = [...Array(FAN_N).keys()].filter(i => !fanHidden(i) && !inG.has(i));
+  const tile = (attr, name, sub, rows) => `<button class="card fan-tile" ${attr}><b>${esc(name)}</b><small>${esc(sub)}</small>${rows.map(i => `<span data-live-f="${i}"></span>`).join('')}</button>`;
+  const html = gs.map(g => tile(`data-g="${g.n}"`, g.name, g.m.length ? fanMode(g.m[0]) : t('fans.empty'), g.m)).join('') +
+    solo.map(i => tile(`data-f="${i}"`, fanName(i), fanMode(i), [i])).join('') +
+    (gs.length < FAN_GROUPS ? `<button class="card fan-tile add" data-add>+ ${esc(t('group.add'))}</button>` : '');
+  const sig = html + LANG;
+  if (FAN.sig !== sig) { FAN.sig = sig; $('#fan-panel').innerHTML = html; }
+  const F = (S.fans || {}).f || [], grp = el => el.closest('[data-g]');
+  $$('#fan-panel [data-live-f]').forEach(el => { const i = +el.dataset.liveF, f = F[i] || {};
+    el.textContent = (grp(el) ? fanName(i) + ': ' : '') + t('fans.rpm', f.rpm ?? 0, Math.round(f.pct ?? 0)); });
+  const off = [...Array(FAN_N).keys()].filter(fanHidden);
+  $('#fan-removed').classList.toggle('hidden', !off.length);
+  $('#fan-removed').innerHTML = `<span>${esc(t('fans.removed'))}</span> ` + off.map(i => `<button class="btn small ghost" data-back="${i}" title="${esc(t('fans.back'))}">${esc(fanName(i))} ↩</button>`).join(' ');
+}
+// the settings in the sheet, for the open fan or group
+function fanSheet() {
+  const o = FAN.open; if (!o) return;
+  const g = o.g && fanGroups().find(x => x.n === o.g);
+  if (o.g && !g) { closeSheet(); return; }
+  const tg = fanTargets(), i = tg[0], F = S.fans || {}, has = i != null;
+  $('#fs-title').textContent = g ? g.name : fanName(o.i);
+  $('#fs-live').textContent = g ? tg.map(j => fanName(j) + ': ' + fanLive(j)).join(' · ') || t('fans.empty') : fanLive(o.i);
+  const nm = $('#fs-name');
+  if (document.activeElement !== nm) { nm.value = g ? g.name : cv('fans', fanKey(o.i, 'name'), ''); nm.placeholder = g ? t('group.n', g.n) : `${t('fans.ch')} ${o.i + 1}`; }
+  $('#fs-mem-f').classList.toggle('hidden', !g);
+  if (g) {
+    const other = j => fanGroups().find(x => x.n !== g.n && x.m.includes(j));
+    $('#fs-members').innerHTML = [...Array(FAN_N).keys()].filter(j => !fanHidden(j)).map(j => { const ot = other(j);
+      return `<button type="button" data-m="${j}" class="${g.m.includes(j) ? 'on' : ''}" aria-pressed="${g.m.includes(j)}"><i></i><b>${esc(fanName(j))}</b>${ot ? `<small>${esc(t('group.in', ot.name))}</small>` : ''}</button>`; }).join('');
+  }
+  $('#fs-ctl').classList.toggle('hidden', !has);
+  const del = $('#fs-del span'); del.textContent = t(g ? 'group.delete' : 'fans.remove');
+  if (!has) return;
+  const mode = cv('fans', fanKey(i), ''), src = cv('fans', fanKey(i, 'src'), 'gpu');
+  $$('#fs-mode button').forEach(b => b.classList.toggle('on', b.dataset.v === mode));
+  $('#fs-fix').classList.toggle('hidden', mode !== 'fix');
+  $('#fs-curve').classList.toggle('hidden', mode !== 'curve');
+  const pct = cv('fans', fanKey(i, 'pct'), '50'); setRange($('#fs-pct'), pct); $('#fs-pct-val').textContent = pct + '%';
+  const srcs = ['gpu', ...(F.t || []).map((v, k) => v == null ? '' : 't' + (k + 1)).filter(Boolean)];
+  const list = srcs.includes(src) ? srcs : [...srcs, src], box = $('#fs-src'), sig = list.join() + LANG;
+  if (box.dataset.sig !== sig) { box.dataset.sig = sig; box.innerHTML = list.map(s => `<button data-v="${esc(s)}">${esc(fanSrcName(s))}</button>`).join(''); }
+  $$('button', box).forEach(b => b.classList.toggle('on', b.dataset.v === src));
+  if (mode === 'curve' && !FAN.drag) drawFanCurve();
 }
 function updateFans() {
   const F = S.fans || {};
-  if (!F.on) { $('#fans-status').textContent = t('fans.off'); $('#fans-sensors').textContent = ''; $('#fan-list').innerHTML = ''; return; }
-  if (!$('#fan-list').children.length) buildFans();
+  if (!F.on) { $('#fans-status').textContent = t('fans.off'); $('#fans-sensors').textContent = ''; $('#fan-panel').innerHTML = ''; FAN.sig = ''; $('#fan-removed').classList.add('hidden'); if (SHEET.kind === 'fan') closeSheet(); return; }
   $('#fans-status').textContent = t('fans.on', F.serial, F.fw);
   const ts = (F.t || []).map((v, k) => v == null ? '' : `${k + 1}: ${v.toFixed(1)} °C`).filter(Boolean);
   $('#fans-sensors').textContent = (ts.length ? t('fans.sensors', ts.join(', ')) : t('fans.nosensors')) + (F.flow > 0 ? ' · ' + t('fans.flow', F.flow) : '');
-  const srcs = ['gpu', ...(F.t || []).map((v, k) => v == null ? '' : 't' + (k + 1)).filter(Boolean)];
-  $$('#fan-list .fan').forEach(el => {
-    const i = +el.dataset.f, f = (F.f || [])[i] || {}, mode = cv('fans', fanKey(i), ''), src = cv('fans', fanKey(i, 'src'), 'gpu');
-    $('[data-live]', el).textContent = t('fans.live', f.rpm ?? 0, Math.round(f.pct ?? 0), (f.w ?? 0).toFixed(1)) + (f.own ? ' · ' + t('fans.own') : '');
-    $$('[data-mode] button', el).forEach(b => b.classList.toggle('on', b.dataset.v === mode));
-    $('[data-fix]', el).classList.toggle('hidden', mode !== 'fix');
-    $('[data-curve]', el).classList.toggle('hidden', mode !== 'curve');
-    const pct = cv('fans', fanKey(i, 'pct'), '50'); setRange($('[data-pct]', el), pct); $('[data-pct-val]', el).textContent = pct + '%';
-    const list = srcs.includes(src) ? srcs : [...srcs, src], box = $('[data-src]', el), sig = list.join() + LANG;
-    if (box.dataset.sig !== sig) { box.dataset.sig = sig; box.innerHTML = list.map(s => `<button data-v="${esc(s)}">${esc(s === 'gpu' ? t('fans.gpu') : t('fans.t', s.slice(1)))}</button>`).join(''); }
-    $$('button', box).forEach(b => b.classList.toggle('on', b.dataset.v === src));
-    if (mode === 'curve' && !FAN.drag) drawFanCurve(i);
-  });
+  renderFanPanel();
+  if (SHEET.kind === 'fan') fanSheet();
 }
-const fanOf = e => +e.target.closest('.fan').dataset.f;
-const fanSave = (i, pts) => { setCfgSoon('fans', fanKey(i, 'curve'), pts.map(p => p.join(':')).join(',')); drawFanCurve(i); };
-$('#fan-list').addEventListener('click', e => {
-  const b = e.target.closest('[data-mode] button, [data-src] button'); if (!b) return;
-  const i = fanOf(e);
-  setCfg('fans', b.closest('[data-mode]') ? fanKey(i) : fanKey(i, 'src'), b.dataset.v);
+function fanOpen(o, el) {
+  FAN.open = o; FAN.sel = 0;
+  const r = el.getBoundingClientRect();
+  openSheet({ k: 'fan' }, r.left + r.width / 2, r.top + r.height / 2);
+  fanSheet(); requestAnimationFrame(drawFanCurve);
+}
+$('#fan-panel').addEventListener('click', e => {
+  const el = e.target.closest('.fan-tile'); if (!el) return;
+  if (el.dataset.add != null) {   // a new group, empty: its fans are picked in the sheet
+    const n = Array.from({ length: FAN_GROUPS }, (_, k) => k + 1).find(k => !cv('fans', `g${k}_name`, '')); if (!n) return;
+    setCfg('fans', `g${n}`, ''); setCfg('fans', `g${n}_name`, t('group.n', n)); updateFans();
+    fanOpen({ g: n }, el); return;
+  }
+  fanOpen(el.dataset.g ? { g: +el.dataset.g } : { i: +el.dataset.f }, el);
+});
+$('#fan-removed').addEventListener('click', e => {
+  const b = e.target.closest('[data-back]'); if (!b) return;
+  setCfg('fans', fanKey(+b.dataset.back, 'hide'), ''); updateFans();
+});
+const fanMembers = (n, m) => setCfg('fans', `g${n}`, [...new Set(m)].sort((a, b) => a - b).map(i => i + 1).join(','));
+$('#fan-set').addEventListener('click', e => {
+  const o = FAN.open; if (!o) return;
+  const b = e.target.closest('#fs-mode button, #fs-src button, #fs-members button, #fs-del');
+  if (!b) return;
+  if (b.id === 'fs-del') {
+    if (o.g) { setCfg('fans', `g${o.g}`, ''); setCfg('fans', `g${o.g}_name`, ''); }
+    else {   // off the panel: back to the QUADRO's own setting and out of its group
+      setCfg('fans', fanKey(o.i), ''); setCfg('fans', fanKey(o.i, 'hide'), '1');
+      fanGroups().filter(g => g.m.includes(o.i)).forEach(g => fanMembers(g.n, g.m.filter(j => j !== o.i)));
+    }
+    closeSheet(); updateFans(); return;
+  }
+  if (b.dataset.m != null) {
+    const j = +b.dataset.m, gs = fanGroups(), g = gs.find(x => x.n === o.g); if (!g) return;
+    if (g.m.includes(j)) fanMembers(g.n, g.m.filter(x => x !== j));
+    else {   // a fan joins: out of any other group, and it takes the group's settings
+      gs.filter(x => x.n !== g.n && x.m.includes(j)).forEach(x => fanMembers(x.n, x.m.filter(y => y !== j)));
+      if (g.m.length) ['', 'pct', 'src', 'curve'].forEach(k => setCfg('fans', fanKey(j, k), cv('fans', fanKey(g.m[0], k), '')));
+      fanMembers(g.n, [...g.m, j]);
+    }
+  } else fanSetAll(b.closest('#fs-mode') ? '' : 'src', b.dataset.v);
   updateFans();
 });
-$('#fan-list').addEventListener('input', e => {
-  if (!e.target.matches('[data-pct]')) return;
-  const i = fanOf(e); setCfgSoon('fans', fanKey(i, 'pct'), e.target.value);
-  $(`.fan[data-f="${i}"] [data-pct-val]`).textContent = e.target.value + '%';
+$('#fs-name').addEventListener('change', e => {
+  const o = FAN.open; if (!o) return;
+  const v = e.target.value.replace(/[\x00-\x1f]/g, '').trim().slice(0, 24);
+  if (o.g) setCfg('fans', `g${o.g}_name`, v || t('group.n', o.g));   // an empty name would delete the group
+  else setCfg('fans', fanKey(o.i, 'name'), v);
+  FAN.sig = ''; updateFans();
 });
+$('#fs-name').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
+$('#fs-pct').addEventListener('input', e => { fanSetAll('pct', e.target.value, true); $('#fs-pct-val').textContent = e.target.value + '%'; });
+const fanSave = pts => { fanSetAll('curve', pts.map(p => p.join(':')).join(','), true); drawFanCurve(); };
 // drag a point: x stays between its neighbours, y within 20..100 %
-$('#fan-list').addEventListener('pointerdown', e => {
-  const cvs = e.target.closest('canvas.fan-cv'); if (!cvs) return;
-  const i = fanOf(e), g = fanGeo(cvs), r = cvs.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, pts = fanCurve(i);
+const fcv = $('#fs-cv');
+fcv.addEventListener('pointerdown', e => {
+  const i = fanTargets()[0]; if (i == null) return;
+  const g = fanGeo(fcv), r = fcv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, pts = fanCurve(i);
   let k = -1, best = 18 * 18;
   pts.forEach((p, j) => { const d2 = (g.px(clamp20(p[0])) - x) ** 2 + (g.py(clamp20(p[1])) - y) ** 2; if (d2 < best) { best = d2; k = j; } });
   if (k < 0) return;
-  e.preventDefault(); cvs.focus(); cvs.setPointerCapture(e.pointerId);
-  FAN.drag = { i, k, pts, cvs }; FAN.sel[i] = k; drawFanCurve(i);
+  e.preventDefault(); fcv.focus(); fcv.setPointerCapture(e.pointerId);
+  FAN.drag = { k, pts }; FAN.sel = k; drawFanCurve();
 });
-$('#fan-list').addEventListener('pointermove', e => {
+fcv.addEventListener('pointermove', e => {
   const D = FAN.drag; if (!D) return;
-  const g = fanGeo(D.cvs), r = D.cvs.getBoundingClientRect(), p = D.pts;
+  const g = fanGeo(fcv), r = fcv.getBoundingClientRect(), p = D.pts;
   const lo = D.k ? p[D.k - 1][0] + 1 : 20, hi = D.k < p.length - 1 ? p[D.k + 1][0] - 1 : 100;
   p[D.k] = [Math.round(Math.min(hi, Math.max(lo, g.ix(e.clientX - r.left)))), Math.round(clamp20(g.iy(e.clientY - r.top)))];
-  fanSave(D.i, p);
+  fanSave(p);
 });
-['pointerup', 'pointercancel'].forEach(n => $('#fan-list').addEventListener(n, () => { FAN.drag = null; }));
+['pointerup', 'pointercancel'].forEach(n => fcv.addEventListener(n, () => { FAN.drag = null; }));
 // keyboard: ←/→ pick a point, ↑/↓ its speed
-$('#fan-list').addEventListener('keydown', e => {
-  if (!e.target.matches('canvas.fan-cv') || !/^Arrow/.test(e.key)) return;
+fcv.addEventListener('keydown', e => {
+  const i = fanTargets()[0]; if (i == null || !/^Arrow/.test(e.key)) return;
   e.preventDefault();
-  const i = fanOf(e), pts = fanCurve(i), k = Math.min(pts.length - 1, Math.max(0, FAN.sel[i] ?? 0));
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { FAN.sel[i] = Math.min(pts.length - 1, Math.max(0, k + (e.key === 'ArrowRight' ? 1 : -1))); drawFanCurve(i); return; }
-  FAN.sel[i] = k; pts[k][1] = clamp20(pts[k][1] + (e.key === 'ArrowUp' ? 5 : -5));
-  fanSave(i, pts);
+  const pts = fanCurve(i), k = Math.min(pts.length - 1, Math.max(0, FAN.sel));
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { FAN.sel = Math.min(pts.length - 1, Math.max(0, k + (e.key === 'ArrowRight' ? 1 : -1))); drawFanCurve(); return; }
+  FAN.sel = k; pts[k][1] = clamp20(pts[k][1] + (e.key === 'ArrowUp' ? 5 : -5));
+  fanSave(pts);
 });
-['focusin', 'focusout'].forEach(n => $('#fan-list').addEventListener(n, e => { if (e.target.matches('canvas.fan-cv')) drawFanCurve(fanOf(e)); }));
+['focus', 'blur'].forEach(n => fcv.addEventListener(n, drawFanCurve));
 
 function applyStatus(m) {
   const names = a => JSON.stringify((a || []).map(b => b.name));   // the cloud names can come after the first state
