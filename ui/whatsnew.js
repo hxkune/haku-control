@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.27',
+    en: ['Groups: choosing Colour or a colour swatch no longer closes the group window.', 'A bug report and the diagnostics file now list the other lighting programs running (Armoury Crate, iCUE, SignalRGB…), which can keep a board or controller from haku.'],
+    ru: ['Группы: выбор «Цвет» или образца цвета больше не закрывает окно группы.', 'Отчёт о проблеме и файл диагностики теперь показывают другие запущенные программы подсветки (Armoury Crate, iCUE, SignalRGB…), которые могут не давать haku доступ к плате или контроллеру.'],
+    fr: ['Groupes : choisir Couleur ou un échantillon de couleur ne ferme plus la fenêtre du groupe.', 'Le rapport de problème et le fichier de diagnostic listent maintenant les autres logiciels d’éclairage en cours (Armoury Crate, iCUE, SignalRGB…), qui peuvent empêcher haku d’accéder à une carte ou un contrôleur.'] },
   { v: '0.4.26',
     en: ['TRYX: your own video now shows on the PANORAMA (it was sent with a picture shape the cooler does not know); the card shows the sending progress.', 'The TRYX card is the screen only now: theme, your picture or video. The cooler’s fan lights are set on the motherboard’s card, where they are connected.'],
     ru: ['TRYX: своё видео теперь показывается на PANORAMA (оно отправлялось с соотношением сторон, которого кулер не знает); карточка показывает ход отправки.', 'Карточка TRYX теперь только про экран: тема, своя картинка или видео. Подсветка вентиляторов кулера настраивается в карточке материнской платы, куда она подключена.'],
