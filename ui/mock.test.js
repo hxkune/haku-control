@@ -264,9 +264,10 @@
   const fanEmit = async () => { bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(120); };
   const fanReset = async () => {
     const F = STATE.fans; Object.assign(F, { link: 1, age: 400, rfail: 0, log: [] });
-    F.f.forEach(f => Object.assign(f, { em: '', own: 0, want: -1, out: -1, ok: 1 }));
+    F.f.forEach(f => Object.assign(f, { em: '', own: 0, want: -1, out: -1, ok: 1, err: '' }));
     Object.keys(STATE.cfg.fans || {}).forEach(k => { STATE.cfg.fans[k] = ''; });
     if (SHEET.kind === 'fan') closeSheet();
+    FAN.draft = null; FAN.open = null; FAN.fold = {};
     await fanEmit(); showTab('fans'); FAN.back = 0; FAN.sig = ''; updateFans();
   };
   const fanSheetOf = async i => { $(`#fan-panel [data-f="${i}"]`).click(); await wait(120); };
@@ -298,21 +299,125 @@
     setCfg('fans', 'fan1', 'curve'); setCfg('fans', 'fan1_curve', '50:40,30:60'); await fanEmit(); await fanSheetOf(0);
     ok(!$('#fs-bad').classList.contains('hidden'), 'no warning for a curve going backwards');
     ok(!fanParse('50:40,30:60') && !fanParse('30:40') && !fanParse('30:40,50:101') && !fanParse('30:40,a:50') && fanParse('30:30,50:45'), 'fanParse');
-    setCfg('fans', 'fan1_curve', '30:30,50:45,70:75,85:100'); updateFans();
+    setCfg('fans', 'fan1_curve', '30:30,50:45,70:75,85:100'); FAN.draft = null; updateFans();
     ok($('#fs-bad').classList.contains('hidden'), 'the warning stays on a good curve');
     FAN.sel = 1; updateFans();
     const x = $('#fs-pt-x'), y = $('#fs-pt-y');
     x.value = '999'; x.dispatchEvent(new Event('change')); y.value = '5'; y.dispatchEvent(new Event('change')); await wait(400);
-    ok(cv('fans', 'fan1_curve', '') === '30:30,69:20,70:75,85:100', 'saved: ' + cv('fans', 'fan1_curve', ''));
+    ok(cv('fans', 'fan1_curve', '') === '30:30,50:45,70:75,85:100', 'an edit reached the core before Apply: ' + cv('fans', 'fan1_curve', ''));
+    ok(fanSer(FAN.draft.pts) === '30:30,69:20,70:75,85:100' && !$('#fs-draft').classList.contains('hidden'), 'the draft: ' + fanSer(FAN.draft.pts));
+    $('#fs-apply').click(); await wait(60);
+    ok(cv('fans', 'fan1_curve', '') === '30:30,69:20,70:75,85:100' && $('#fs-draft').classList.contains('hidden'), 'saved: ' + cv('fans', 'fan1_curve', ''));
     x.value = ''; x.dispatchEvent(new Event('change'));
     ok(x.value === '69', 'an empty field did not come back: ' + x.value);
     // the keyboard: right goes to the next point, up adds five
     const c = $('#fs-cv'); c.focus(); key(c, 'ArrowRight'); key(c, 'ArrowUp'); await wait(400);
+    $('#fs-apply').click(); await wait(60);
     ok(cv('fans', 'fan1_curve', '') === '30:30,69:20,70:80,85:100', 'keys: ' + cv('fans', 'fan1_curve', ''));
-    // another kind of source starts from its own default
+    // another kind of source starts from its own default; the GPU curve waits for the GPU
     $('#fs-src [data-v="t1"]').click();
-    ok(cv('fans', 'fan1_src', '') === 't1' && cv('fans', 'fan1_curve', '') === '', 'the GPU curve went to the water sensor');
+    ok(cv('fans', 'fan1_src', 'gpu') === 'gpu', 'a source change went out before Apply');
+    $('#fs-apply').click(); await wait(60);
+    ok(cv('fans', 'fan1_src', '') === 't1' && cv('fans', 'fan1_curve_gpu', '') === '30:30,69:20,70:80,85:100' && cv('fans', 'fan1_curve', '') === fanScale('t1').def,
+      'the GPU curve went to the water sensor: ' + cv('fans', 'fan1_curve', '') + ' / ' + cv('fans', 'fan1_curve_gpu', ''));
     ok($('#fs-src [data-v="t1"]').textContent.includes('31'), 'the source shows no temperature: ' + $('#fs-src [data-v="t1"]').textContent);
+    $('#fs-src [data-v="gpu"]').click();
+    ok(fanSer(FAN.draft.pts) === '30:30,69:20,70:80,85:100', 'back on the GPU, its curve is gone: ' + fanSer(FAN.draft.pts));
+    // Cancel sends nothing; the reading keeps coming and leaves the draft and the focus alone
+    key(c, 'ArrowUp'); const d = fanSer(FAN.draft.pts); c.focus(); await fanEmit(); await fanEmit();
+    ok(fanSer(FAN.draft.pts) === d && document.activeElement === c, 'a reading reset the draft or the focus');
+    const n = sent.length; $('#fs-cancel').click(); await wait(60);
+    ok(sent.length === n && cv('fans', 'fan1_src', '') === 't1' && !fanDirty(FAN.draft), 'Cancel sent ' + (sent.length - n));
+    // Reset puts the source's default into the draft, to be applied like any edit
+    $('#fs-reset').click();
+    ok(fanSer(FAN.draft.pts) === fanSer(fanParse(fanScale('t1').def)), 'reset: ' + fanSer(FAN.draft.pts));
+    await fanReset();
+  });
+
+  test('fans: the chart is what fans.c sets: the curve first, then the floor', async () => {
+    await fresh(); await fanReset();
+    const p = fanParse('20:20,40:100');
+    ok(fanOut(p, 30, 50) === 60 && fanOut(p, 22, 50) === 50 && fanOut(p, 40, 50) === 100 && fanAt(p, 30) === 60, 'fanOut: ' + fanOut(p, 30, 50));
+    // a group whose fans have different floors draws one applied line per floor
+    setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,3'); setCfg('fans', 'fan1', 'curve'); setCfg('fans', 'fan3', 'curve');
+    setCfg('fans', 'fan1_min', '50'); setCfg('fans', 'fan3_min', '35'); await fanEmit();
+    $('#fan-panel [data-g="1"] .fan-hd').click(); await wait(120);
+    ok(FAN.open.g === 1 && FAN.open.i == null && !$('#fs-ctl').classList.contains('hidden'), 'the group did not open');
+    await fanReset();
+  });
+
+  test('fans: the originals could not be saved, or the temperature went and the write failed: each says so', async () => {
+    await fresh(); await fanReset();
+    setCfg('fans', 'fan1', 'fix'); Object.assign(STATE.fans.f[0], { own: 0, ok: -1, err: 'save', want: -1, out: -1 }); await fanEmit();
+    const row = () => $('#fan-panel [data-live-f="0"]').textContent;
+    ok(row().includes(t('fans.st.save')) && !row().includes(t('fans.st.ok')), 'save failed: ' + row());
+    Object.assign(STATE.fans.f[0], { own: 1, ok: -1, err: 'write', em: 'nosensor', want: 100 }); await fanEmit();
+    ok(row().includes(t('fans.em.nosensor')) && row().includes(t('fans.em.fail', 100)) && row().includes(t('fans.err.write')) && !row().includes(t('fans.em.ok', 100)), 'emergency: ' + row());
+    Object.assign(STATE.fans.f[0], { ok: 1, err: '' }); await fanEmit();
+    ok(row().includes(t('fans.em.ok', 100)), 'emergency confirmed: ' + row());
+    await fanReset();
+  });
+
+  test('fans: a fan opened inside its group keeps its own name and limits; the shared ones stay with the group', async () => {
+    await fresh(); await fanReset();
+    setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,3'); setCfg('fans', 'fan1', 'curve'); setCfg('fans', 'fan3', 'fix'); await fanEmit();
+    $('#fan-panel [data-g="1"] .fan-hd').click(); await wait(120);
+    ok(!$('#fs-diff').classList.contains('hidden') && $('#fs-diff').textContent.includes(t('fans.diff.mode')), 'the mode differs and nothing says so');
+    $('#fan-panel [data-gm="2"]').click(); await wait(120);
+    ok(FAN.open.g === 1 && FAN.open.i === 2 && !$('#fs-crumb').classList.contains('hidden') && !$('#fs-shared').classList.contains('hidden') && $('#fs-ctl').classList.contains('hidden'), 'the member view');
+    const m = $('#fs-min'); m.value = '40'; m.dispatchEvent(new Event('change'));
+    ok(cv('fans', 'fan3_min', '') === '40' && cv('fans', 'fan1_min', '') === '', 'the floor went to the wrong fan');
+    $('#fs-up').click(); await wait(60);
+    ok(FAN.open.g === 1 && FAN.open.i == null, 'back to the group');
+    await fanReset();
+  });
+
+  test('fans: the history takes no old readings, marks a lost link once and keeps each source to itself', async () => {
+    await fresh(); await fanReset();
+    setCfg('fans', 'fan1', 'curve'); setCfg('fans', 'fan1_curve', '20:20,40:100'); await fanEmit(); await fanSheetOf(0);
+    const F = STATE.fans, h = () => FAN.hist[0], older = () => h().forEach(p => { p.at -= 3000; });
+    FAN.hist[0] = [];
+    fanSample({ ...F, age: 9000 });
+    ok(!h().length, 'a reading 9 s old went in as now');
+    fanSample({ ...F, gage: 9000 });
+    ok(h().length === 1 && h()[0].t == null && h()[0].src === 'gpu', 'an old GPU temperature went in: ' + JSON.stringify(h()));
+    older(); Object.assign(F.f[0], { own: 1, want: 60, pct: 58, em: '' }); fanSample({ ...F, gage: 600 });
+    ok(h().length === 2 && h()[1].t === 41 && h()[1].w === 60 && h()[1].p === 58, 'the sample: ' + JSON.stringify(h()[1]));
+    fanSample({ ...F, link: 0 }); fanSample({ ...F, link: 0 });
+    ok(h().filter(p => p.lost).length === 1, 'the lost link: ' + h().filter(p => p.lost).length);
+    setCfg('fans', 'fan1_src', 't1'); F.f[0].em = 'nosensor'; fanSample({ ...F });
+    const l = h()[h().length - 1];
+    ok(l.src === 't1' && l.t === 31.4 && l.em === 'nosensor', 'after the change: ' + JSON.stringify(l));
+    const s = fanHistText(h()[1], 65000, 't1');
+    ok(s.includes(t('fans.gpu')) && s.includes('1:05') && s.includes(t('fans.hist.w', 60)) && s.includes(t('fans.hist.p', 58)), 'an older GPU reading: ' + s);
+    ok(fanHistText(l, 0, 't1').includes(t('fans.em.nosensor')) && fanHistText(h()[2], 0, 't1') === t('fans.hist.lost'), 'the marks: ' + fanHistText(l, 0, 't1'));
+    FAN.sig = ''; updateFans(); drawFanHist(0);
+    ok($('#fs-legend').textContent.includes(fanDeg(31.4)) && !$('#fs-legend').textContent.includes(t('fans.gpu')), 'the legend: ' + $('#fs-legend').textContent);
+    const b = $('#fs-hl [data-l="t"]'); b.click();
+    ok(!FAN.hl.t && b.getAttribute('aria-pressed') === 'false', 'the line did not go off'); b.click();
+    ok(FAN.hl.t && b.getAttribute('aria-pressed') === 'true', 'the line did not come back');
+    F.f[0].em = ''; FAN.hist[0] = []; await fanReset();
+  });
+
+  test('fans: a saved curve gives the draft its points only, and is offered for its kind of source', async () => {
+    await fresh(); await fanReset();
+    ['1', '2'].forEach(n => setCfg('fans', 'fan' + n, 'curve')); setCfg('fans', 'fan1_min', '45'); setCfg('fans', 'fan2_min', '30');
+    setCfg('fans', 'fan1_curve', '30:40,60:80,80:100'); await fanEmit(); await fanSheetOf(0);
+    const nm = $('#fs-sv-name'), sv = $('#fs-sv');
+    $('#fs-sv-save').click();
+    ok(cv('fans', 'c1_name', '') === '' && $('#fs-sv-msg').textContent === t('fans.sv.noname'), 'saved without a name');
+    nm.value = ' Quiet;er '; $('#fs-sv-save').click();
+    ok(cv('fans', 'c1', '') === '30:40,60:80,80:100' && cv('fans', 'c1_k', '') === 'gpu' && cv('fans', 'c1_name', '') === 'Quieter', 'the save: ' + cv('fans', 'c1_name', ''));
+    await fanSheetOf(1);
+    ok(sv.options.length === 2 && sv.options[1].textContent === 'Quieter', 'not offered on fan 2');
+    sv.value = '1'; sv.dispatchEvent(new Event('change'));
+    ok(fanSer(FAN.draft.pts) === '30:40,60:80,80:100' && cv('fans', 'fan2_curve', '') === '', 'the draft: ' + fanSer(FAN.draft.pts));
+    $('#fs-apply').click(); await wait(60);
+    ok(cv('fans', 'fan2_curve', '') === '30:40,60:80,80:100' && cv('fans', 'fan2_min', '') === '30' && cv('fans', 'fan1_min', '') === '45', 'the limits moved');
+    $('#fs-src [data-v="t1"]').click();
+    ok(sv.options.length === 1 && sv.disabled, 'a GPU curve offered for the water');
+    $('#fs-src [data-v="gpu"]').click(); sv.value = '1'; sv.dispatchEvent(new Event('change')); $('#fs-sv-del').click();
+    ok(cv('fans', 'c1_name', '') === '' && cv('fans', 'c1', '') === '' && sv.options.length === 1, 'not deleted');
     await fanReset();
   });
 
@@ -324,7 +429,7 @@
     m.value = '35'; m.dispatchEvent(new Event('change'));
     closeSheet(); await wait(80);
     setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1'); setCfg('fans', 'fan1', 'fix'); setCfg('fans', 'fan1_pct', '60'); FAN.sig = ''; updateFans();
-    $('#fan-panel [data-g="1"]').click(); await wait(120);
+    $('#fan-panel [data-g="1"]').click(); await wait(120); $('#fs-lim').open = true;
     const b2 = () => $('#fs-members [data-m="1"]');
     ok(b2().textContent.includes(t('fans.join', fanMode(0))) && b2().textContent.includes(t('fans.join.min', 35)), 'no preview: ' + b2().textContent);
     b2().focus(); const el = document.activeElement; updateFans(); updateFans();
@@ -346,7 +451,7 @@
     STATE.fans.rfail = 0; await fanEmit();
     ok($('#fans-back-msg').textContent === t('fans.back.ok'), 'done: ' + $('#fans-back-msg').textContent);
     const tile = $('#fan-panel [data-f="2"]'), nm = tile.querySelector('b');
-    ok(tile.scrollWidth <= tile.clientWidth + 1 && nm.scrollWidth > nm.clientWidth, 'the name spills out of the tile');
+    ok(tile.scrollWidth <= tile.clientWidth + 1 && (nm.scrollWidth <= nm.clientWidth || getComputedStyle(nm).textOverflow === 'ellipsis') && nm.title === 'A really long name for the pump', 'the name spills out of the tile');
     STATE.fans.log = [{ t: '12:00:01', m: 'fan 1: read-back "differs"', n: 3 }]; await fanEmit();
     ok(!$('#fans-log-d').classList.contains('hidden') && $('#fans-log').textContent.includes(String.fromCharCode(215) + '3'), 'the error log');
     await fanReset();

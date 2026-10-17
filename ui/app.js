@@ -3874,7 +3874,7 @@ function updateChips() {
   if (tab !== 'effects' && h.length > 1) {
     const off = [...offs(nL, OFF_ROW.nano), ...offs(S.bulbs, OFF_ROW.bulb), ...offs(ed, OFF_ROW.ext)];
     const tip = h.map(x => x.replace(/<[^>]+>/g, '')).join('\n');
-    $('#chips').innerHTML = chip(off.length ? 'warn' : 'on', `${t('chip.ok')} <b>${off.length ? t('chip.off', off.length) : t('chip.allok')}</b>`, off).replace('class="chip', `title="${esc(tip)}" class="chip`);
+    $('#chips').innerHTML = chip(off.length ? 'warn' : 'on', `${t(tab === 'fans' ? 'chip.light' : 'chip.ok')} <b>${off.length ? t('chip.off', off.length) : t('chip.allok')}</b>`, off).replace('class="chip', `title="${esc(tip)}" class="chip`);
   } else $('#chips').innerHTML = h.join('');
   $('#ram-status').textContent = !S.sticks ? t('ram.none') : S.ram_own ? t('own.status') : t('ram.status', S.sticks);
   $$('[data-own]').forEach(el => { if (el !== document.activeElement) el.checked = !!S[el.dataset.own === 'msi_own' ? 'msi_own' : 'ram_own']; });
@@ -3900,14 +3900,19 @@ function updateChips() {
 
 // ------------------------------------------------------------------ messages from the core
 // ------------------------------------------------------------------ fans: Aqua Computer QUADRO (fans.c)
-// [fans] fanN = '' the QUADRO's own setting | fix | curve, fanN_pct 20..100, fanN_src gpu | t1..t4, fanN_curve '30:30,50:45,85:100',
-//        fanN_min the channel's floor (20 and up), fanN_fail its speed while the temperature is lost or the curve does not read (100)
-// the panel only (fans.c reads none of these): fanN_name, fanN_hide = 1, fanN_kind = pump, fanN_notach = 1 (no speed signal),
-//        tN_name, gN_name (the group exists while it has one), gN = '1,2'
+// [fans] fanN = '' the QUADRO's own setting | fix | curve, fanN_pct 20..100, fanN_src gpu | t1..t4, fanN_curve '30:30,50:45,85:100' (for fanN_src),
+//        fanN_min the channel's floor (20 and up), fanN_fail its speed while the temperature is lost or the curve does not read (100),
+//        fanN_down how many % a curve may slow per 2 s (3)
+// the panel only (fans.c reads none of these): fanN_curve_<src> the curve kept for a source not in use, fanN_name, fanN_hide = 1,
+//        fanN_kind = pump, fanN_notach = 1 (no speed signal), tN_name, gN_name (the group exists while it has one), gN = '1,2'
+//        cN_name, cN, cN_k = gpu | t: curves saved by name (only their points are ever used)
 const FAN_N = 4, FAN_GROUPS = 4, FAN_HIST = 5 * 60000;
 // the chart and the default curve follow the source: a GPU runs far hotter than the loop's water (fans.c has the same defaults)
 const FAN_SCALE = { gpu: { lo: 20, hi: 100, def: '30:30,50:45,70:75,85:100' }, t: { lo: 15, hi: 55, def: '25:30,30:40,35:70,40:100' } };
-const FAN = { drag: null, sel: 0, open: null, sig: '', last: null, hist: [[], [], [], []], zero: [0, 0, 0, 0], back: 0 };   // open: { i } a fan or { g } a group
+// open: { i } a fan, { g } a group, { g, i } a fan of a group; draft: the curve being edited, sent only by Apply
+const FAN = { drag: null, sel: 0, open: null, sig: '', last: null, hist: [[], [], [], []], zero: [0, 0, 0, 0], back: 0, draft: null, done: null, fold: {}, hl: { w: 1, p: 1, r: 1, t: 1 }, hov: null };
+// the settings beside the panel when the window is wide enough (as .fan-main in style.css), in the sheet otherwise
+const FAN_WIDE = matchMedia('(min-width: 1100px)');
 const fanKey = (i, k) => `fan${i + 1}${k ? '_' + k : ''}`;
 const fanSrc = i => cv('fans', fanKey(i, 'src'), 'gpu');
 const fanScale = s => FAN_SCALE[s === 'gpu' ? 'gpu' : 't'];
@@ -3916,42 +3921,73 @@ const fanParse = s => { const r = [];
   for (const q of String(s).split(',')) { const m = /^(\d+):(\d+)$/.exec(q); if (!m) return null;
     const x = +m[1], y = +m[2]; if (x > 110 || y > 100 || (r.length && x <= r[r.length - 1][0])) return null; r.push([x, y]); }
   return r.length >= 2 && r.length <= 8 ? r : null; };
-const fanCurveRaw = i => cv('fans', fanKey(i, 'curve'), '') || fanScale(fanSrc(i)).def;
+const fanSer = pts => pts.map(p => p.join(':')).join(',');
+// a curve per source: the one in use is fanN_curve, the others wait under fanN_curve_<src>; empty is the source's default
+const fanCurveOf = (i, s) => cv('fans', fanKey(i, s === fanSrc(i) ? 'curve' : 'curve_' + s), '') || fanScale(s).def;
+const fanCurveRaw = i => fanCurveOf(i, fanSrc(i));
 const fanCurve = i => fanParse(fanCurveRaw(i)) || fanParse(fanScale(fanSrc(i)).def);
+// fans.c's curve_at: flat outside the points, straight between them, rounded; then the channel's floor and 100 on top
+const fanAt = (pts, x) => { if (x <= pts[0][0]) return pts[0][1];
+  for (let k = 1; k < pts.length; k++) if (x <= pts[k][0]) return Math.floor(pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * (x - pts[k - 1][0]) / (pts[k][0] - pts[k - 1][0]) + .5);
+  return pts[pts.length - 1][1]; };
+const fanOut = (pts, x, lo) => Math.max(lo, Math.min(100, fanAt(pts, x)));
 const fanTemp = s => { const F = S.fans || {}; return s === 'gpu' ? F.gpu ?? S.gpu_temp ?? null : (F.t || [])[+s.slice(1) - 1] ?? null; };
 const fanDeg = v => v.toLocaleString(LANG, { maximumFractionDigits: 1 }) + '°C';
 const fanMin = i => Math.min(100, Math.max(20, +cv('fans', fanKey(i, 'min'), '') || 20));
+const fanDown = i => Math.min(100, Math.max(1, +cv('fans', fanKey(i, 'down'), '') || 3));
 const clamp20 = v => Math.min(100, Math.max(20, v));
 const fanName = i => cv('fans', fanKey(i, 'name'), '') || `${t(cv('fans', fanKey(i, 'kind'), '') === 'pump' ? 'fans.kind.pump' : 'fans.ch')} ${i + 1}`;
 const fanHidden = i => cv('fans', fanKey(i, 'hide'), '') === '1';
 const fanGroups = () => Array.from({ length: FAN_GROUPS }, (_, k) => k + 1).filter(n => cv('fans', `g${n}_name`, ''))
   .map(n => ({ n, name: cv('fans', `g${n}_name`, ''), m: cv('fans', `g${n}`, '').split(',').map(x => +x - 1).filter(i => i >= 0 && i < FAN_N && !fanHidden(i)) }));
-// what the open sheet changes: every fan of the group, or the one fan; the first one shows the settings
-const fanTargets = () => { const o = FAN.open; if (!o) return []; if (o.g) return (fanGroups().find(g => g.n === o.g) || { m: [] }).m; return [o.i]; };
+// what the open settings change: the one fan (alone or opened inside its group), or every fan of the group
+const fanTargets = () => { const o = FAN.open; if (!o) return []; if (o.i != null) return [o.i]; return (fanGroups().find(g => g.n === o.g) || { m: [] }).m; };
 const fanSetAll = (k, v, soon) => fanTargets().forEach(i => (soon ? setCfgSoon : setCfg)('fans', fanKey(i, k), v));
 const fanSrcName = s => s === 'gpu' ? t('fans.gpu') : cv('fans', s + '_name', '') || t('fans.t', s.slice(1));
 const fanMode = i => { const m = cv('fans', fanKey(i), '');
   return m === 'fix' ? `${t('fans.fix')} · ${cv('fans', fanKey(i, 'pct'), '50')}%` : m === 'curve' ? `${t('fans.curve')} · ${fanSrcName(fanSrc(i))}` : t('fans.asis'); };
 const fanCh = i => ((S.fans || {}).f || [])[i] || {};
+const fanDKey = o => !o ? '' : o.i != null ? 'f' + o.i : 'g' + o.g;
+const fanValid = o => !!o && (o.g ? fanGroups().some(g => g.n === o.g && (o.i == null || g.m.includes(o.i))) : !fanHidden(o.i));
 // who drives the channel, and only what the QUADRO read back counts as done: [text, '' | 'warn' | 'bad']
 function fanState(i) {
-  const F = S.fans || {}, f = fanCh(i), m = cv('fans', fanKey(i), '');
+  const F = S.fans || {}, f = fanCh(i), m = cv('fans', fanKey(i), ''), why = f.err ? ' · ' + t('fans.err.' + f.err) : '';
   if (F.link === 0) return [t('fans.st.stale'), 'bad'];
-  if (f.em) return [t('fans.em.' + f.em), 'bad'];
-  if (!m) return !f.own ? [t('fans.asis'), ''] : F.rfail ? [t('fans.st.back'), 'bad'] : [t('fans.back.wait'), 'warn'];
+  // an emergency: why it was needed, then the speed asked and whether the QUADRO took it
+  if (f.em) { const ep = f.want >= 0 ? f.want : Math.max(fanMin(i), Math.min(100, +cv('fans', fanKey(i, 'fail'), '') || 100));
+    return [t('fans.em.' + f.em) + '. ' + t(f.ok === -1 ? 'fans.em.fail' : !f.own || f.want == null || f.want < 0 ? 'fans.em.wait' : f.ok === 0 ? 'fans.em.unconf' : 'fans.em.ok', ep) + why, 'bad']; }
+  if (!m) return !f.own ? ['', ''] : F.rfail ? [t('fans.st.back'), 'bad'] : [t('fans.back.wait'), 'warn'];   // the tile already says “By the QUADRO”
+  if (f.err === 'save') return [t('fans.st.save'), 'bad'];   // not taken: fans.c never drives a channel whose own setting it could not keep
   if (f.want === -2) return [t('fans.st.wait'), 'warn'];
-  if (f.ok === -1) return [t('fans.st.fail'), 'bad'];
+  if (f.ok === -1) return [t('fans.st.fail') + why, 'bad'];
   if (!f.own || f.want == null || f.want < 0) return [t('fans.st.pend'), 'warn'];
-  if (f.ok === 0) return [t('fans.st.unconf'), 'warn'];
+  if (f.ok === 0) return [t('fans.st.unconf') + why, 'warn'];
   return [t('fans.st.ok'), ''];
 }
 const fanNoRpm = i => FAN.zero[i] >= 3 && cv('fans', fanKey(i, 'notach'), '') !== '1';
 // a channel's live line: rpm first, then the speed, who drives it, what haku asked for
 function fanRow(i, named) {
   const f = fanCh(i), [st, cls] = fanState(i), m = cv('fans', fanKey(i), '');
-  const ask = m && f.want >= 0 ? ' · ' + t('fans.asked', f.want) + (f.out >= 0 && f.out !== f.want ? ' · ' + t('fans.out', f.out) : '') : '';
+  const ask = m && !f.em && f.want >= 0 ? (st ? ' · ' : '') + t('fans.asked', f.want) + (f.out >= 0 && f.out !== f.want ? ' · ' + t('fans.out', f.out) : '') : '';
   return (named ? `<i>${esc(fanName(i))}</i>` : '') + `<em>${f.rpm ?? 0}</em> ${esc(t('fans.rpmu'))} · ${Math.round(f.pct ?? 0)}%` +
-    `<span class="fan-st ${cls}">${esc(st + ask)}</span>` + (fanNoRpm(i) ? `<span class="fan-st warn">${esc(t('fans.norpm'))}</span>` : '');
+    (st + ask ? `<span class="fan-st ${cls}">${esc(st + ask)}</span>` : '') + (fanNoRpm(i) ? `<span class="fan-st warn">${esc(t('fans.norpm'))}</span>` : '');
+}
+// the chosen fan now: the curve's value at the temperature, what the limits make of it, and the speed while it slows down
+function fanNow(i) {
+  const f = fanCh(i), T = fanTemp(fanSrc(i));
+  if (cv('fans', fanKey(i), '') !== 'curve' || (S.fans || {}).link === 0 || f.em || T == null || f.want == null || f.want < 0) return '';
+  const raw = fanAt(fanCurve(i), T), r = [t('fans.now', fanDeg(T), raw)];
+  if (f.want !== raw) r.push(t('fans.now.lim', f.want));
+  if (f.out >= 0 && f.out > f.want) r.push(t('fans.now.slow', f.out, fanDown(i)));
+  return r.join(' · ');
+}
+// what the group's fans do not share; only what the mode they share uses
+function fanDiff(tg) {
+  const d = k => new Set(tg.map(i => k === 'curve' ? fanCurveRaw(i) : k === 'src' ? fanSrc(i) : cv('fans', fanKey(i, k), k === 'pct' ? '50' : ''))).size > 1;
+  if (tg.length < 2) return [];
+  if (d('')) return ['mode'];
+  const m = cv('fans', fanKey(tg[0]), '');
+  return m === 'fix' ? (d('pct') ? ['pct'] : []) : m === 'curve' ? ['src', 'curve'].filter(d) : [];
 }
 // the chart: the source's range across, 20..100 % up
 function fanGeo(cvs, sc) {
@@ -3962,97 +3998,187 @@ function fanGeo(cvs, sc) {
 const fanFit = cvs => { const d = devicePixelRatio || 1, W = Math.round(cvs.clientWidth * d), H = Math.round(cvs.clientHeight * d);
   if (cvs.width !== W || cvs.height !== H) { cvs.width = W; cvs.height = H; }
   const c = cvs.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, cvs.clientWidth, cvs.clientHeight); return c; };
+// the curve being edited (the applied one until something changes); telemetry never touches it
+function fanDraft() {
+  const o = FAN.open, i = fanTargets()[0], key = fanDKey(o);
+  if (i == null || (o.g && o.i != null)) return null;   // a fan inside its group takes the group's curve
+  const D = FAN.draft, now = fanSrc(i) + '|' + fanSer(fanCurve(i));
+  // kept while it is being edited; one not touched follows the settings when they change elsewhere (another window, a profile)
+  if (D && D.key === key && (D.b === now || D.src + '|' + fanSer(D.pts) !== D.b || Object.keys(D.by).length)) return D;
+  return FAN.draft = { key, src: fanSrc(i), pts: fanCurve(i), by: {}, b: now };   // by: the curves of the other sources picked meanwhile
+}
+const fanDirty = D => { const i = D && fanTargets()[0]; if (i == null || D.key !== fanDKey(FAN.open)) return !!D && D.dirty;
+  return D.dirty = D.src !== fanSrc(i) || fanSer(D.pts) !== fanCurveRaw(i) || Object.keys(D.by).some(s => s !== D.src && D.by[s] !== fanCurveOf(i, s)); };
 function drawFanCurve() {
-  const cvs = $('#fs-cv'), tg = fanTargets(), i = tg[0]; if (i == null || !cvs.offsetParent) return;
-  const src = fanSrc(i), sc = fanScale(src), g = fanGeo(cvs, sc), c = fanFit(cvs), step = sc.hi - sc.lo > 50 ? 20 : 10;
+  const cvs = $('#fs-cv'), tg = fanTargets(), D = fanDraft(); if (!D || !cvs.offsetParent) return;
+  const sc = fanScale(D.src), g = fanGeo(cvs, sc), c = fanFit(cvs), step = sc.hi - sc.lo > 50 ? 20 : 10, x0 = g.px(sc.lo), x1 = g.px(sc.hi);
   c.font = '11px system-ui'; c.strokeStyle = THEME.mid; c.lineWidth = 1; c.globalAlpha = .35;
   c.beginPath();
-  for (let v = 20; v <= 100; v += 20) { c.moveTo(g.px(sc.lo), Math.round(g.py(v)) + .5); c.lineTo(g.px(sc.hi), Math.round(g.py(v)) + .5); }
+  for (let v = 20; v <= 100; v += 20) { c.moveTo(x0, Math.round(g.py(v)) + .5); c.lineTo(x1, Math.round(g.py(v)) + .5); }
   for (let v = Math.ceil(sc.lo / step) * step; v <= sc.hi; v += step) { c.moveTo(Math.round(g.px(v)) + .5, g.py(20)); c.lineTo(Math.round(g.px(v)) + .5, g.py(100)); }
   c.stroke(); c.globalAlpha = 1; c.fillStyle = THEME.mid;
   c.textAlign = 'right'; c.textBaseline = 'middle';
-  for (let v = 20; v <= 100; v += 20) c.fillText(v + '%', g.px(sc.lo) - 6, g.py(v));
+  for (let v = 20; v <= 100; v += 20) c.fillText(v + '%', x0 - 6, g.py(v));
   c.textAlign = 'center'; c.textBaseline = 'top';
   for (let v = Math.ceil(sc.lo / step) * step; v <= sc.hi; v += step) c.fillText(v + '°', g.px(v), g.py(20) + 7);
-  const lo = fanMin(i);   // the channel's floor: fans.c never goes under it
-  if (lo > 20) { c.fillStyle = `rgba(${THEME.ink}, .06)`; c.fillRect(g.px(sc.lo), g.py(lo), g.px(sc.hi) - g.px(sc.lo), g.py(20) - g.py(lo)); }
-  const pts = fanCurve(i), Y = y => g.py(Math.max(lo, clamp20(y)));
-  c.beginPath(); c.moveTo(g.px(sc.lo), Y(pts[0][1])); pts.forEach(p => c.lineTo(g.px(p[0]), Y(p[1]))); c.lineTo(g.px(sc.hi), Y(pts[pts.length - 1][1]));
-  c.strokeStyle = THEME.hi; c.lineWidth = 2.5; c.stroke();
-  c.lineTo(g.px(sc.hi), g.py(20)); c.lineTo(g.px(sc.lo), g.py(20)); c.closePath(); c.fillStyle = `rgba(${THEME.ink}, .07)`; c.fill();
+  // under each fan's floor: fans.c never sets less (a group's higher floors show darker)
+  const pts = D.pts, mins = [...new Set(tg.map(fanMin))].sort((a, b) => a - b);
+  mins.forEach(lo => { if (lo > 20) { c.fillStyle = `rgba(${THEME.ink}, .07)`; c.fillRect(x0, g.py(lo), x1 - x0, g.py(20) - g.py(lo)); } });
+  // what fans.c sets: the curve first, then the floor (fanOut); its corners are the points and where a slope crosses the floor
+  const out = lo => { const v = [[g.ix(x0), pts[0][1]], ...pts, [g.ix(x1), pts[pts.length - 1][1]]], p = [];
+    v.forEach(([x, y], k) => { const [a, b] = v[k - 1] || [];
+      if (k && (b - lo) * (y - lo) < 0) p.push([g.px(a + (lo - b) * (x - a) / (y - b)), g.py(lo)]);
+      p.push([g.px(x), g.py(Math.max(lo, clamp20(y)))]); }); return p; };
+  const o0 = out(mins[0]);
+  c.beginPath(); o0.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.lineTo(x1, g.py(20)); c.lineTo(x0, g.py(20)); c.closePath();
+  c.fillStyle = `rgba(${THEME.ink}, .06)`; c.fill();
+  mins.forEach((lo, n) => { const p = n ? out(lo) : o0;
+    c.beginPath(); p.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.strokeStyle = THEME.hi; c.lineWidth = 2.5; c.stroke();
+    if (mins.length > 1) { c.fillStyle = THEME.hi; c.textAlign = 'left'; c.textBaseline = 'bottom'; c.fillText(t('fans.cv.min', lo), x0 + 4, g.py(lo) - 3); } });
+  // the curve as set, before the limits: thin and dashed, the points on it
+  const RY = y => g.py(clamp20(y));
+  c.beginPath(); c.moveTo(x0, RY(pts[0][1])); pts.forEach(p => c.lineTo(g.px(p[0]), RY(p[1]))); c.lineTo(x1, RY(pts[pts.length - 1][1]));
+  c.setLineDash([5, 4]); c.strokeStyle = `rgb(${THEME.ink})`; c.globalAlpha = .55; c.lineWidth = 1.25; c.stroke(); c.setLineDash([]); c.globalAlpha = 1;
   const focus = document.activeElement === cvs, k0 = Math.min(pts.length - 1, FAN.sel);
-  pts.forEach((p, k) => { const s = k === k0; c.fillStyle = s && focus ? `rgb(${THEME.ink})` : THEME.hi; c.beginPath(); c.arc(g.px(p[0]), Y(p[1]), s ? 7 : 5, 0, 6.283); c.fill();
-    if (s) { c.strokeStyle = `rgb(${THEME.ink})`; c.lineWidth = 1.5; c.beginPath(); c.arc(g.px(p[0]), Y(p[1]), 10, 0, 6.283); c.stroke(); } });
-  // where each fan is now: the source's temperature and the speed the QUADRO reports
-  const T = fanTemp(src);
-  if (T != null && (S.fans || {}).link !== 0) tg.forEach(j => { const f = fanCh(j); if (f.pct == null) return;
+  pts.forEach((p, k) => { const s = k === k0; c.fillStyle = s && focus ? `rgb(${THEME.ink})` : THEME.hi; c.beginPath(); c.arc(g.px(p[0]), RY(p[1]), s ? 7 : 5, 0, 6.283); c.fill();
+    if (s) { c.strokeStyle = `rgb(${THEME.ink})`; c.lineWidth = 1.5; c.beginPath(); c.arc(g.px(p[0]), RY(p[1]), 10, 0, 6.283); c.stroke(); } });
+  // where each fan on this source is now: the temperature and the speed the QUADRO reports
+  const T = fanTemp(D.src);
+  if (T != null && (S.fans || {}).link !== 0) tg.forEach(j => { const f = fanCh(j); if (f.pct == null || fanSrc(j) !== D.src) return;
     c.strokeStyle = `rgb(${THEME.ink})`; c.setLineDash([3, 3]); c.lineWidth = 1; c.beginPath(); c.moveTo(g.px(T) + .5, g.py(20)); c.lineTo(g.px(T) + .5, g.py(100)); c.stroke(); c.setLineDash([]);
     c.lineWidth = 2; c.beginPath(); c.arc(g.px(T), g.py(clamp20(f.pct)), 7, 0, 6.283); c.stroke(); });
   fanPoint(pts);
 }
-// the chosen point's exact values, bounded by its neighbours
+// the chosen point's exact values, bounded by its neighbours; the buttons that add and take away points
 function fanPoint(pts) {
   const k = Math.min(pts.length - 1, FAN.sel), x = $('#fs-pt-x'), y = $('#fs-pt-y');
   x.min = k ? pts[k - 1][0] + 1 : 0; x.max = k < pts.length - 1 ? pts[k + 1][0] - 1 : 110;
   if (document.activeElement !== x) x.value = pts[k][0];
   if (document.activeElement !== y) y.value = pts[k][1];
   $('#fs-pt-n').textContent = t('fans.pt', k + 1, pts.length);
+  $('#fs-pt-add').disabled = pts.length >= 8 || !fanGap(pts, k);
+  $('#fs-pt-del').disabled = pts.length <= 2;
 }
-// the last few minutes of one channel: speed asked (solid), rpm (grey), the source's temperature (dashed)
+// the last five minutes of one channel, each line on or off (FAN.hl): asked (dashed), read back (solid), rpm (grey), the
+// temperature of the source in use now (dotted, broken where the source changed); marks: source changed, no link, emergency
 function drawFanHist(i) {
   const cvs = $('#fs-hist'); if (!cvs.offsetParent) return;
-  const c = fanFit(cvs), W = cvs.clientWidth, H = cvs.clientHeight, h = FAN.hist[i], now = Date.now(), sc = fanScale(fanSrc(i));
-  const X = at => W - (now - at) / FAN_HIST * W, rmax = Math.max(500, ...h.map(p => p.r));
-  c.strokeStyle = THEME.lo; c.globalAlpha = .5; c.strokeRect(.5, .5, W - 1, H - 1); c.globalAlpha = 1;
-  const line = (val, col, dash) => { c.strokeStyle = col; c.setLineDash(dash); c.lineWidth = 1.5; c.beginPath(); let on = 0, prev = 0;
-    h.forEach(p => { const v = val(p); if (v == null || p.at - prev > 6000) on = 0; prev = p.at; if (v == null) return;
-      const y = H - 3 - Math.min(1, Math.max(0, v)) * (H - 6); on ? c.lineTo(X(p.at), y) : c.moveTo(X(p.at), y); on = 1; });
+  const c = fanFit(cvs), W = cvs.clientWidth, H = cvs.clientHeight, h = FAN.hist[i], now = Date.now(), src = fanSrc(i), sc = fanScale(src);
+  const L = 32, R = W - 30, T = 6, B = H - 16, X = at => R - (now - at) / FAN_HIST * (R - L), Y = v => B - Math.min(1, Math.max(0, v)) * (B - T);
+  const rmax = Math.max(500, ...h.map(p => p.r || 0));
+  // the axes: % on the left, the source's °C on the right, minutes along the bottom
+  c.font = '10px ' + getComputedStyle(cvs).fontFamily; c.fillStyle = THEME.mid; c.strokeStyle = THEME.lo; c.lineWidth = 1;
+  c.globalAlpha = .4; [0, .5, 1].forEach(v => { c.beginPath(); c.moveTo(L, Math.round(Y(v)) + .5); c.lineTo(R, Math.round(Y(v)) + .5); c.stroke(); }); c.globalAlpha = 1;
+  c.textBaseline = 'middle'; c.textAlign = 'right'; [0, 50, 100].forEach(v => c.fillText(v + '%', L - 4, Y(v / 100)));
+  c.textAlign = 'left'; [sc.lo, (sc.lo + sc.hi) / 2, sc.hi].forEach((v, k) => c.fillText(v + '°', R + 4, Y(k / 2)));
+  c.textBaseline = 'alphabetic';
+  for (let m = 5; m >= 0; m--) { if (W < 420 && (m === 4 || m === 2 || m === 1)) continue;
+    c.textAlign = m === 5 ? 'left' : m ? 'center' : 'right'; c.fillText(m ? t('fans.hist.ago', m) : t('fans.hist.now'), X(now - m * 60000), H - 3); }
+  // the marks: no link (grey to the next reading), emergency (red along the bottom), another source (a dotted line and its name)
+  let was = null;
+  h.forEach((p, k) => { const n = h[k + 1], x = X(p.at), x2 = n && n.at - p.at <= 6000 ? X(n.at) : x + 2;
+    if (p.lost) { c.fillStyle = `rgba(${THEME.ink}, .1)`; c.fillRect(x, T, Math.max(2, (n ? X(n.at) : R) - x), B - T); return; }
+    if (p.em) { c.fillStyle = '#ff8a8a'; c.fillRect(x, B - 3, Math.max(2, x2 - x), 3); }
+    if (was && was !== p.src) { c.strokeStyle = THEME.mid; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(Math.round(x) + .5, T); c.lineTo(Math.round(x) + .5, B); c.stroke(); c.setLineDash([]);
+      c.fillStyle = THEME.mid; c.textAlign = x > R - 60 ? 'right' : 'left'; c.fillText(fanSrcName(p.src), x + (x > R - 60 ? -3 : 3), T + 9); }
+    was = p.src; });
+  const line = (k, val, col, dash, w) => { if (!FAN.hl[k]) return; c.strokeStyle = col; c.setLineDash(dash); c.lineWidth = w; c.beginPath(); let up = 0, prev = null;
+    h.forEach(p => { const v = p.lost ? null : val(p); if (v == null || !prev || p.at - prev.at > 6000 || p.src !== prev.src) up = 0; prev = p; if (v == null) return;
+      up ? c.lineTo(X(p.at), Y(v)) : c.moveTo(X(p.at), Y(v)); up = 1; });
     c.stroke(); c.setLineDash([]); };
-  line(p => p.r / rmax, THEME.mid, []);
-  line(p => p.t == null ? null : (p.t - sc.lo) / (sc.hi - sc.lo), `rgb(${THEME.ink})`, [4, 3]);
-  line(p => p.p / 100, THEME.hi, []);
-  const last = h[h.length - 1];
-  $('#fs-legend').textContent = last ? [last.t != null ? fanDeg(last.t) : '', last.r + ' ' + t('fans.rpmu'), last.p + '%'].filter(Boolean).join(' · ') : '';
+  line('r', p => p.r / rmax, THEME.mid, [], 1.5);
+  line('t', p => p.src === src && p.t != null ? (p.t - sc.lo) / (sc.hi - sc.lo) : null, `rgb(${THEME.ink})`, [1.5, 2.5], 1.5);
+  line('w', p => p.w == null ? null : p.w / 100, THEME.hi, [5, 3], 1.5);
+  line('p', p => p.p / 100, THEME.hi, [], 2);
+  // under the pointer: the nearest reading and how long ago; else the last one
+  const hv = FAN.hov != null && h.length ? h.reduce((a, p) => Math.abs(X(p.at) - FAN.hov) < Math.abs(X(a.at) - FAN.hov) ? p : a) : null;
+  if (hv) { c.strokeStyle = `rgb(${THEME.ink})`; c.globalAlpha = .5; c.beginPath(); c.moveTo(Math.round(X(hv.at)) + .5, T); c.lineTo(Math.round(X(hv.at)) + .5, B); c.stroke(); c.globalAlpha = 1; }
+  $('#fs-legend').textContent = fanHistText(hv || h[h.length - 1], hv ? now - hv.at : 0, src);
 }
-// what a status adds: one sample per channel at most every 2 s, and how long a driven fan has shown no rpm
+const fanHistText = (p, ago, src) => { if (!p) return '';
+  const s = Math.round(ago / 1000), when = s ? t('fans.hist.at', Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')) : '';
+  if (p.lost) return [when, t('fans.hist.lost')].filter(Boolean).join(' · ');
+  return [when, p.t != null ? (p.src !== src ? fanSrcName(p.src) + ' ' : '') + fanDeg(p.t) : '', p.r + ' ' + t('fans.rpmu'),
+    p.w != null ? t('fans.hist.w', p.w) : '', t('fans.hist.p', p.p), p.em ? t('fans.em.' + p.em) : ''].filter(Boolean).join(' · '); };
+const fanHistNow = () => { const tg = fanTargets(); if (tg.length === 1) drawFanHist(tg[0]); };
+// what a status adds: one sample per channel at most every 2 s, and how long a driven fan has shown no rpm; a reading
+// older than 5 s is not drawn as now, a lost link leaves one mark, a GPU temperature older than 5 s none
 function fanSample(F) {
   if (F === FAN.last) return; FAN.last = F;
-  const now = Date.now();
+  const now = Date.now(), lost = F.link === 0;
   (F.f || []).forEach((f, i) => {
-    FAN.zero[i] = F.link !== 0 && f.own && f.pct >= 20 && !f.rpm ? FAN.zero[i] + 1 : 0;
+    FAN.zero[i] = !lost && f.own && f.pct >= 20 && !f.rpm ? FAN.zero[i] + 1 : 0;
     const h = FAN.hist[i];
-    if (F.link === 0 || (h.length && now - h[h.length - 1].at < 2000)) return;
-    h.push({ at: now, t: fanTemp(fanSrc(i)), r: f.rpm || 0, p: Math.round(f.pct || 0) });
     while (h.length && now - h[0].at > FAN_HIST) h.shift();
+    const l = h[h.length - 1];
+    if (lost) { if (!l || !l.lost) h.push({ at: now, lost: 1 }); return; }
+    if ((F.age || 0) > 5000 || (l && !l.lost && now - l.at < 2000)) return;
+    const src = fanSrc(i);
+    h.push({ at: now, src, t: src === 'gpu' && (F.gage || 0) > 5000 ? null : fanTemp(src), r: f.rpm || 0, p: Math.round(f.pct || 0),
+      w: f.own && f.want >= 0 ? f.want : null, em: f.em || '' });
   });
 }
-// the panel: a tile per group and per fan not in one; the settings open in the sheet
+// the panel: a tile per group (its fans open on their own inside it) and per fan not in one
 function renderFanPanel() {
   const gs = fanGroups(), inG = new Set(gs.flatMap(g => g.m)), solo = [...Array(FAN_N).keys()].filter(i => !fanHidden(i) && !inG.has(i));
-  const tile = (attr, name, sub, rows) => `<button class="card fan-tile" ${attr}><b>${esc(name)}</b><small>${esc(sub)}</small>${rows.map(i => `<span class="fan-row" data-live-f="${i}"></span>`).join('')}</button>`;
-  const html = gs.map(g => tile(`data-g="${g.n}"`, g.name, g.m.length ? fanMode(g.m[0]) : t('fans.empty'), g.m)).join('') +
-    solo.map(i => tile(`data-f="${i}"`, fanName(i), fanMode(i), [i])).join('') +
-    (gs.length < FAN_GROUPS ? `<button class="card fan-tile add" data-add>+ ${esc(t('group.add'))}</button>` : '');
+  const o = FAN_WIDE.matches && FAN.open || {}, on = x => x ? ' on' : '';
+  const grp = g => { const fold = !!FAN.fold[g.n];
+    return `<div class="card fan-tile${on(o.g === g.n && o.i == null)}" data-g="${g.n}"><div class="fan-gh"><button type="button" class="fan-hd"><b title="${esc(g.name)}">${esc(g.name)}</b><small>${esc(g.m.length ? fanMode(g.m[0]) : t('fans.empty'))}</small></button>` +
+      (g.m.length ? `<button type="button" class="fan-fold" data-fold="${g.n}" aria-expanded="${!fold}" title="${esc(t(fold ? 'fans.unfold' : 'fans.fold'))}" aria-label="${esc(t(fold ? 'fans.unfold' : 'fans.fold'))}">${fold ? '▸' : '▾'}</button>` : '') + '</div>' +
+      (fold ? '' : g.m.map(i => `<button type="button" class="fan-row fan-mem${on(o.g === g.n && o.i === i)}" data-gm="${i}" data-live-f="${i}"></button>`).join('')) + '</div>'; };
+  const html = gs.map(grp).join('') + solo.map(i => `<div class="card fan-tile${on(!o.g && o.i === i)}" data-f="${i}"><button type="button" class="fan-hd"><b title="${esc(fanName(i))}">${esc(fanName(i))}</b><small>${esc(fanMode(i))}</small><span class="fan-row" data-live-f="${i}"></span></button></div>`).join('');
   const sig = html + LANG;
-  if (FAN.sig !== sig) { FAN.sig = sig; $('#fan-panel').innerHTML = html; }
+  if (FAN.sig !== sig) {   // rebuilt only when something on it changes, so a status keeps focus where it is
+    const a = document.activeElement, fk = a && $('#fan-panel').contains(a) && (a.dataset.gm != null ? `[data-gm="${a.dataset.gm}"]` : a.dataset.fold ? `[data-fold="${a.dataset.fold}"]` : a.closest('[data-g]') ? `[data-g="${a.closest('[data-g]').dataset.g}"] .fan-hd` : a.closest('[data-f]') ? `[data-f="${a.closest('[data-f]').dataset.f}"] .fan-hd` : '');
+    FAN.sig = sig; $('#fan-panel').innerHTML = html;
+    if (fk) { const b = $('#fan-panel').querySelector(fk); if (b) b.focus(); }
+  }
   $$('#fan-panel [data-live-f]').forEach(el => { el.innerHTML = fanRow(+el.dataset.liveF, !!el.closest('[data-g]')); });
+  $('#fan-add').classList.toggle('hidden', gs.length >= FAN_GROUPS);
   const off = [...Array(FAN_N).keys()].filter(fanHidden);
   $('#fan-removed').classList.toggle('hidden', !off.length);
   $('#fan-removed').innerHTML = `<span>${esc(t('fans.removed'))}</span> ` + off.map(i => `<button class="btn small ghost" data-back="${i}" title="${esc(t('fans.back'))}">${esc(fanName(i))} ↩</button>`).join(' ');
 }
-// the settings in the sheet, for the open fan or group
+// Apply / Cancel under the curve, and after Apply what the QUADRO made of it
+function fanDraftBar() {
+  const D = FAN.draft, dirty = !!D && D.key === fanDKey(FAN.open) && fanDirty(D), d = FAN.done, msg = $('#fs-applied');
+  $('#fs-draft').classList.toggle('hidden', !dirty);
+  if (dirty) { $('#fs-draft-msg').textContent = t('fans.draft.dirty'); msg.textContent = ''; return; }
+  if (!d || d.key !== fanDKey(FAN.open)) { msg.textContent = ''; msg.className = 'pair-msg'; return; }
+  // a status from before Apply says nothing about it: wait for one at least a control round later
+  const tg = fanTargets(), fresh = S.fans !== d.F && Date.now() - d.at > 2500, st = tg.map(fanState), bad = st.find(s => s[1] === 'bad') || st.find(s => s[1] === 'warn');
+  msg.textContent = !fresh && !(bad && bad[1] === 'bad') ? t('fans.draft.sent') : bad ? t('fans.draft.done') + ' · ' + bad[0] : t('fans.draft.ok');
+  msg.className = 'pair-msg' + (bad && fresh || bad && bad[1] === 'bad' ? ' ' + bad[1] : '');
+}
+function fanFlash() {
+  const b = $('#fs-draft'); b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash');
+  $('#fs-draft-msg').textContent = t('fans.draft.first'); b.scrollIntoView({ block: 'nearest' }); $('#fs-apply').focus();
+}
+// the settings for the open fan or group: beside the panel, or in the sheet
 function fanSheet() {
   const o = FAN.open; if (!o) return;
-  const g = o.g && fanGroups().find(x => x.n === o.g);
-  if (o.g && !g) { closeSheet(); return; }
+  const g = o.g && fanGroups().find(x => x.n === o.g), mem = !!g && o.i != null;
+  if (!fanValid(o)) { FAN.open = null; if (SHEET.kind === 'fan') closeSheet(); return; }
   const tg = fanTargets(), i = tg[0], F = S.fans || {}, has = i != null;
-  $('#fs-title').textContent = g ? g.name : fanName(o.i);
-  $('#fs-live').innerHTML = tg.length ? tg.map(j => `<div class="fan-row">${fanRow(j, !!g)}</div>`).join('') : `<div class="fan-row">${esc(t('fans.empty'))}</div>`;
-  $('#fs-live').classList.toggle('stale', F.link === 0);
+  $('#fs-crumb').classList.toggle('hidden', !mem);
+  if (mem) $('#fs-up').textContent = g.name;
+  $('#fs-title').textContent = g && !mem ? g.name : fanName(o.i);
+  // a group lists its fans; each opens on its own, still inside the group
+  $('#fs-live').innerHTML = !tg.length ? `<div class="fan-row">${esc(t('fans.empty'))}</div>` : g && !mem
+    ? tg.map(j => `<button type="button" class="fan-row fan-mem" data-gm="${j}">${fanRow(j, true)}</button>`).join('')
+    : `<div class="fan-row">${fanRow(i, false)}</div>`;
+  $('#fs-live').classList.toggle('stale', F.link === 0); $('#fs-live').classList.toggle('g', !!g && !mem);
+  const now = tg.map(j => { const s = fanNow(j); return s && g && !mem ? fanName(j) + ': ' + s : s; }).filter(Boolean);
+  $('#fs-now').textContent = now.join('\n'); $('#fs-now').classList.toggle('hidden', !now.length);
   const nm = $('#fs-name');
-  if (document.activeElement !== nm) { nm.value = g ? g.name : cv('fans', fanKey(o.i, 'name'), ''); nm.placeholder = g ? t('group.n', g.n) : fanName(o.i); }
-  $('#fs-mem-f').classList.toggle('hidden', !g);
-  if (g) {   // rebuilt only when something on them changes, so a status keeps focus and the keyboard where they are
+  if (document.activeElement !== nm) { nm.value = g && !mem ? g.name : cv('fans', fanKey(o.i, 'name'), ''); nm.placeholder = g && !mem ? t('group.n', g.n) : fanName(o.i); }
+  $('#fs-lim-s').textContent = t(g && !mem ? 'fans.lim.g' : 'fans.lim');
+  $('#fs-own').classList.toggle('hidden', !!g && !mem);
+  $('#fs-mem-f').classList.toggle('hidden', !g || mem);
+  if (g && !mem && !g.m.length) $('#fs-lim').open = true;   // an empty group: show where its fans are picked
+  $('#fs-shared').classList.toggle('hidden', !mem);
+  if (mem) $('#fs-shared-t').textContent = t('fans.shared', g.name, fanMode(o.i));
+  if (g && !mem) {   // rebuilt only when something on them changes, so a status keeps focus and the keyboard where they are
     const other = j => fanGroups().find(x => x.n !== g.n && x.m.includes(j));
     const gets = j => g.m.length && !g.m.includes(j) ? t('fans.join', fanMode(g.m[0])) + (fanMin(j) > 20 ? ' · ' + t('fans.join.min', fanMin(j)) : '') : '';
     const ms = $('#fs-members'), list = [...Array(FAN_N).keys()].filter(j => !fanHidden(j));
@@ -4064,16 +4190,28 @@ function fanSheet() {
       if (fj) { const b = ms.querySelector(`[data-m="${fj.dataset.m}"]`); if (b) b.focus(); }
     }
   }
-  $('#fs-ctl').classList.toggle('hidden', !has);
-  $('#fs-del span').textContent = t(g ? 'group.delete' : 'fans.remove');
-  $('#fs-del-note').classList.toggle('hidden', !!g);
+  $('#fs-ctl').classList.toggle('hidden', !has || mem);
+  $('#fs-del span').textContent = t(g && !mem ? 'group.delete' : 'fans.remove');
+  $('#fs-del-note').classList.toggle('hidden', !!g && !mem);
+  $('#fs-hist-f').classList.toggle('hidden', !!g && !mem);
   if (!has) return;
-  const mode = cv('fans', fanKey(i), ''), src = fanSrc(i);
+  if (!g || mem) {   // a fan's own: kind, limits, how gently it slows, its history
+    const kind = cv('fans', fanKey(i, 'kind'), '');
+    $$('#fs-kind button').forEach(b => { b.classList.toggle('on', b.dataset.v === kind); b.setAttribute('aria-pressed', b.dataset.v === kind); });
+    ['min', 'fail', 'down'].forEach(k => { const el = $('#fs-' + k); if (document.activeElement !== el) el.value = cv('fans', fanKey(i, k), ''); });
+    $('#fs-notach').checked = cv('fans', fanKey(i, 'notach'), '') === '1';
+    drawFanHist(i);
+  }
+  if (mem) return;
+  // shared by the group: shown as the group's only where its fans agree
+  const diff = fanDiff(tg), mode = diff.includes('mode') ? null : cv('fans', fanKey(i), ''), D = fanDraft();
+  $('#fs-diff').classList.toggle('hidden', !diff.length);
+  $('#fs-diff').textContent = diff.length ? t('fans.diff', diff.map(k => t('fans.diff.' + k)).join(', ')) : '';
   $$('#fs-mode button').forEach(b => { b.classList.toggle('on', b.dataset.v === mode); b.setAttribute('aria-pressed', b.dataset.v === mode); });
   $('#fs-fix').classList.toggle('hidden', mode !== 'fix');
   $('#fs-curve').classList.toggle('hidden', mode !== 'curve');
-  const pct = cv('fans', fanKey(i, 'pct'), '50'); setRange($('#fs-pct'), pct); $('#fs-pct-val').textContent = pct + '%';
-  const srcs = ['gpu', ...(F.t || []).map((v, k) => v == null ? '' : 't' + (k + 1)).filter(Boolean)];
+  const pct = cv('fans', fanKey(i, 'pct'), '50'); setRange($('#fs-pct'), pct); $('#fs-pct-val').textContent = diff.includes('pct') ? '—' : pct + '%';
+  const src = D.src, srcs = ['gpu', ...(F.t || []).map((v, k) => v == null ? '' : 't' + (k + 1)).filter(Boolean)];
   const list = srcs.includes(src) ? srcs : [...srcs, src], box = $('#fs-src'), sig = list.map(fanSrcName).join() + list.join() + LANG;
   if (box.dataset.sig !== sig) { box.dataset.sig = sig; box.innerHTML = list.map(s => `<button type="button" data-v="${esc(s)}">${esc(fanSrcName(s))}<span data-tv></span></button>`).join(''); }
   $$('button', box).forEach(b => { const v = fanTemp(b.dataset.v); b.classList.toggle('on', b.dataset.v === src); b.setAttribute('aria-pressed', b.dataset.v === src);
@@ -4081,21 +4219,14 @@ function fanSheet() {
   const sn = $('#fs-src-name'), sens = src !== 'gpu';
   $('#fs-src-nm').classList.toggle('hidden', !sens);
   if (sens && document.activeElement !== sn) { sn.value = cv('fans', src + '_name', ''); sn.placeholder = t('fans.t', src.slice(1)); }
-  $('#fs-bad').classList.toggle('hidden', mode !== 'curve' || !!fanParse(fanCurveRaw(i)));
-  $('#fs-lim').classList.toggle('hidden', !!g);
-  $('#fs-hist-f').classList.toggle('hidden', !!g);
-  if (!g) {
-    const kind = cv('fans', fanKey(i, 'kind'), '');
-    $$('#fs-kind button').forEach(b => { b.classList.toggle('on', b.dataset.v === kind); b.setAttribute('aria-pressed', b.dataset.v === kind); });
-    [['#fs-min', 'min', ''], ['#fs-fail', 'fail', '']].forEach(([s, k]) => { const el = $(s); if (document.activeElement !== el) el.value = cv('fans', fanKey(i, k), ''); });
-    $('#fs-notach').checked = cv('fans', fanKey(i, 'notach'), '') === '1';
-    drawFanHist(i);
-  }
+  $('#fs-bad').classList.toggle('hidden', mode !== 'curve' || tg.every(j => fanParse(fanCurveRaw(j))));
+  fanDraftBar(); fanSavedList(D);
   if (mode === 'curve' && !FAN.drag) drawFanCurve();
 }
 function updateFans() {
   const F = S.fans || {};
-  if (!F.on) { $('#fans-status').textContent = t('fans.off'); $('#fans-sensors').textContent = ''; $('#fan-panel').innerHTML = ''; FAN.sig = ''; $('#fan-removed').classList.add('hidden'); $('#fans-back-msg').textContent = ''; if (SHEET.kind === 'fan') closeSheet(); return; }
+  if (!F.on) { $('#fans-status').textContent = t('fans.off'); $('#fans-sensors').textContent = ''; $('#fan-panel').innerHTML = ''; FAN.sig = ''; $('#fan-removed').classList.add('hidden'); $('#fans-back-msg').textContent = ''; $('#fan-main').classList.add('hidden'); if (SHEET.kind === 'fan') closeSheet(); return; }
+  $('#fan-main').classList.remove('hidden');
   fanSample(F);
   const age = Math.round((F.age || 0) / 1000);
   // the link down: the page stays, with the last readings marked old
@@ -4111,24 +4242,47 @@ function updateFans() {
   $('#fans-log-d').classList.toggle('hidden', !lg.length);
   $('#fans-log-s').textContent = t('fans.log', lg.length);
   $('#fans-log').textContent = fanLogText();
+  // a wide window always shows one: the last opened while it is still there, else the first on the panel
+  if (FAN_WIDE.matches && !fanValid(FAN.open)) {
+    const g = fanGroups()[0], i = [...Array(FAN_N).keys()].find(j => !fanHidden(j) && !fanGroups().some(x => x.m.includes(j)));
+    FAN.open = g ? { g: g.n } : i != null ? { i } : null; FAN.sel = 0;
+  }
   renderFanPanel();
-  if (SHEET.kind === 'fan') fanSheet();
+  $('#fan-set').classList.toggle('hidden', !FAN.open);
+  if (SHEET.kind === 'fan' || FAN_WIDE.matches) fanSheet();
 }
 const fanLogText = () => ((S.fans || {}).log || []).map(l => `${l.t} ${l.m}${l.n > 1 ? ' ×' + l.n : ''}`).join('\n');
+// open a fan or group; with curve changes not applied, back to them first: switching never drops them
 function fanOpen(o, el) {
-  FAN.open = o; FAN.sel = 0;
-  const r = el.getBoundingClientRect();
-  openSheet({ k: 'fan' }, r.left + r.width / 2, r.top + r.height / 2);
-  fanSheet(); requestAnimationFrame(() => { drawFanCurve(); if (o.i != null) drawFanHist(o.i); });
+  const D = FAN.draft;
+  if (D && D.key !== fanDKey(o) && fanDirty(D)) { fanShow(el); fanFlash(); return false; }
+  if (fanDKey(o) !== fanDKey(FAN.open) || (o.i != null) !== (FAN.open && FAN.open.i != null)) { FAN.sel = 0; FAN.draft = null; FAN.done = null; }
+  FAN.open = o; if (o.g && o.i != null) $('#fs-lim').open = true;
+  fanShow(el);
+  return true;
 }
-$('#fan-panel').addEventListener('click', e => {
-  const el = e.target.closest('.fan-tile'); if (!el) return;
-  if (el.dataset.add != null) {   // a new group, empty: its fans are picked in the sheet
-    const n = Array.from({ length: FAN_GROUPS }, (_, k) => k + 1).find(k => !cv('fans', `g${k}_name`, '')); if (!n) return;
-    setCfg('fans', `g${n}`, ''); setCfg('fans', `g${n}_name`, t('group.n', n)); updateFans();
-    fanOpen({ g: n }, el); return;
-  }
+function fanShow(el) {
+  if (FAN_WIDE.matches) { if (SHEET.kind === 'fan') closeSheet(); }
+  else if (SHEET.kind !== 'fan') { const r = (el || $('#fan-panel')).getBoundingClientRect(); openSheet({ k: 'fan' }, r.left + r.width / 2, r.top + r.height / 2); }
+  FAN.sig = ''; updateFans();
+  requestAnimationFrame(() => { drawFanCurve(); const tg = fanTargets(); if (tg.length === 1) drawFanHist(tg[0]); });
+}
+FAN_WIDE.addEventListener('change', () => { if (FAN_WIDE.matches && SHEET.kind === 'fan') closeSheet(); FAN.sig = ''; updateFans(); requestAnimationFrame(drawFanCurve); });
+const fanOpenAt = (el, from) => {
+  if (el.dataset.gm != null) return fanOpen({ g: +(from.dataset.g || FAN.open.g), i: +el.dataset.gm }, el);
+  if (el.dataset.fold) { FAN.fold[el.dataset.fold] = !FAN.fold[el.dataset.fold]; FAN.sig = ''; updateFans(); return; }
   fanOpen(el.dataset.g ? { g: +el.dataset.g } : { i: +el.dataset.f }, el);
+};
+$('#fan-panel').addEventListener('click', e => {
+  const el = e.target.closest('[data-gm], [data-fold], .fan-tile'); if (!el) return;
+  fanOpenAt(el, el.closest('.fan-tile'));
+});
+// a new group, empty: its fans are picked in its settings
+$('#fan-add').addEventListener('click', e => {
+  const n = Array.from({ length: FAN_GROUPS }, (_, k) => k + 1).find(k => !cv('fans', `g${k}_name`, '')); if (!n) return;
+  if (FAN.draft && fanDirty(FAN.draft)) { fanShow(e.currentTarget); fanFlash(); return; }
+  setCfg('fans', `g${n}`, ''); setCfg('fans', `g${n}_name`, t('group.n', n));
+  fanOpen({ g: n }, e.currentTarget);
 });
 $('#fan-removed').addEventListener('click', e => {
   const b = e.target.closest('[data-back]'); if (!b) return;
@@ -4147,15 +4301,23 @@ $('#fans-log-copy').addEventListener('click', async e => {
 const fanMembers = (n, m) => setCfg('fans', `g${n}`, [...new Set(m)].sort((a, b) => a - b).map(i => i + 1).join(','));
 $('#fan-set').addEventListener('click', e => {
   const o = FAN.open; if (!o) return;
-  const b = e.target.closest('#fs-mode button, #fs-src button, #fs-kind button, #fs-members button, #fs-del');
+  const b = e.target.closest('#fs-mode button, #fs-src button, #fs-kind button, #fs-members button, #fs-live [data-gm], #fs-up, #fs-shared button, #fs-del, #fs-apply, #fs-cancel, #fs-pt-add, #fs-pt-del, #fs-reset');
   if (!b) return;
+  const D = FAN.draft;
+  if (b.id === 'fs-apply') { fanApply(); return; }
+  if (b.id === 'fs-cancel') { FAN.draft = null; FAN.done = null; FAN.sel = 0; updateFans(); $('#fs-cv').focus(); return; }   // nothing was sent
+  if (b.id === 'fs-pt-add' || b.id === 'fs-pt-del') { fanPts(b.id === 'fs-pt-add' ? 1 : -1); return; }
+  if (b.id === 'fs-reset') { const P = fanDraft(); if (P) { FAN.sel = 0; fanEdit(fanParse(fanScale(P.src).def)); } return; }
+  if (b.dataset.gm != null) { fanOpen({ g: o.g, i: +b.dataset.gm }, b); return; }
+  if (b.id === 'fs-up' || b.closest('#fs-shared')) { fanOpen({ g: o.g }, b); return; }
   if (b.id === 'fs-del') {
-    if (o.g) { setCfg('fans', `g${o.g}`, ''); setCfg('fans', `g${o.g}_name`, ''); }
+    if (o.i == null) { setCfg('fans', `g${o.g}`, ''); setCfg('fans', `g${o.g}_name`, ''); }
     else {   // off the panel: back to the QUADRO's own setting (the button says so) and out of its group
       setCfg('fans', fanKey(o.i), ''); setCfg('fans', fanKey(o.i, 'hide'), '1');
       fanGroups().filter(g => g.m.includes(o.i)).forEach(g => fanMembers(g.n, g.m.filter(j => j !== o.i)));
     }
-    closeSheet(); updateFans(); return;
+    if (D && D.key === fanDKey(o)) FAN.draft = null;
+    FAN.open = null; if (SHEET.kind === 'fan') closeSheet(); FAN.sig = ''; updateFans(); return;
   }
   if (b.dataset.m != null) {
     const j = +b.dataset.m, gs = fanGroups(), g = gs.find(x => x.n === o.g); if (!g) return;
@@ -4167,53 +4329,109 @@ $('#fan-set').addEventListener('click', e => {
     }
   } else if (b.closest('#fs-kind')) setCfg('fans', fanKey(o.i, 'kind'), b.dataset.v);
   else if (b.closest('#fs-mode')) { fanSetAll('', b.dataset.v); FAN.back = 0; }
-  else {   // another source: a curve made for the GPU means nothing for the water, so a change of kind starts from its default
-    const i = fanTargets()[0], was = i != null && fanSrc(i);
-    fanSetAll('src', b.dataset.v);
-    if (was && fanScale(was) !== fanScale(b.dataset.v)) { fanSetAll('curve', ''); FAN.sel = 0; }
+  else {   // another source, in the draft: this one's curve is kept for it, the other's comes back (or its default the first time)
+    const P = fanDraft(), i = fanTargets()[0], s = b.dataset.v; if (!P || P.src === s) return;
+    P.by[P.src] = fanSer(P.pts); P.pts = fanParse(P.by[s] ?? fanCurveOf(i, s)) || fanParse(fanScale(s).def); P.src = s; FAN.sel = 0; FAN.done = null;
   }
   FAN.sig = ''; updateFans();
 });
-const fanText = v => v.replace(/[\x00-\x1f]/g, '').trim().slice(0, 24);
+// Apply: the curve and source to every fan it is for; the curves of the sources left are kept under their names
+function fanApply() {
+  const D = FAN.draft, tg = fanTargets(), cur = D && fanSer(D.pts); if (!D || !tg.length || !fanParse(cur)) return;
+  tg.forEach(i => {
+    const was = fanSrc(i);
+    Object.keys(D.by).forEach(s => { if (s !== D.src && s !== was) setCfg('fans', fanKey(i, 'curve_' + s), D.by[s]); });
+    if (was !== D.src) setCfg('fans', fanKey(i, 'curve_' + was), D.by[was] ?? cv('fans', fanKey(i, 'curve'), ''));
+    setCfg('fans', fanKey(i, 'curve'), cur); setCfg('fans', fanKey(i, 'src'), D.src);
+  });
+  FAN.draft = null; FAN.done = { key: D.key, at: Date.now(), F: S.fans };
+  FAN.sig = ''; updateFans();
+}
+const fanText = v => v.replace(/[\x00-\x1f;]/g, '').trim().slice(0, 24);   // ; starts a comment in haku.ini
 $('#fs-name').addEventListener('change', e => {
   const o = FAN.open; if (!o) return;
   const v = fanText(e.target.value);
-  if (o.g) setCfg('fans', `g${o.g}_name`, v || t('group.n', o.g));   // an empty name would delete the group
+  if (o.i == null) setCfg('fans', `g${o.g}_name`, v || t('group.n', o.g));   // an empty name would delete the group
   else setCfg('fans', fanKey(o.i, 'name'), v);
   FAN.sig = ''; updateFans();
 });
 $('#fs-src-name').addEventListener('change', e => {
-  const i = fanTargets()[0]; if (i == null || fanSrc(i) === 'gpu') return;
-  setCfg('fans', fanSrc(i) + '_name', fanText(e.target.value)); $('#fs-src').dataset.sig = ''; FAN.sig = ''; updateFans();
+  const D = fanDraft(); if (!D || D.src === 'gpu') return;
+  setCfg('fans', D.src + '_name', fanText(e.target.value)); $('#fs-src').dataset.sig = ''; FAN.sig = ''; updateFans();
 });
-['#fs-name', '#fs-src-name', '#fs-pt-x', '#fs-pt-y', '#fs-min', '#fs-fail'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); }));
+['#fs-name', '#fs-src-name', '#fs-pt-x', '#fs-pt-y', '#fs-min', '#fs-fail', '#fs-down'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); }));
 $('#fs-pct').addEventListener('input', e => { fanSetAll('pct', e.target.value, true); $('#fs-pct-val').textContent = e.target.value + '%'; });
-// a limit: 20..100 or empty for the default (20 for the floor, 100 for the emergency speed)
-['min', 'fail'].forEach(k => $('#fs-' + k).addEventListener('change', e => {
+// a limit: in its range or empty for the default (20 for the floor, 100 for the emergency speed, 3 for slowing down)
+[['min', 20], ['fail', 20], ['down', 1]].forEach(([k, lo]) => $('#fs-' + k).addEventListener('change', e => {
   const o = FAN.open; if (!o || o.i == null) return;
-  const v = e.target.value.trim() === '' || !Number.isFinite(+e.target.value) ? '' : String(clamp20(Math.round(+e.target.value)));
+  const v = e.target.value.trim() === '' || !Number.isFinite(+e.target.value) ? '' : String(Math.min(100, Math.max(lo, Math.round(+e.target.value))));
   e.target.value = v; setCfg('fans', fanKey(o.i, k), v); updateFans();
 }));
 $('#fs-notach').addEventListener('change', e => { const o = FAN.open; if (o && o.i != null) { setCfg('fans', fanKey(o.i, 'notach'), e.target.checked ? '1' : ''); updateFans(); } });
-// saved only when it reads by fans.c's rules
-const fanSave = pts => { const s = pts.map(p => p.join(':')).join(','); if (!fanParse(s)) return false; fanSetAll('curve', s, true); drawFanCurve(); return true; };
-// the chosen point, typed: kept between its neighbours and within 20..100 %
-['x', 'y'].forEach((a, ax) => $('#fs-pt-' + a).addEventListener('change', e => {
-  const i = fanTargets()[0]; if (i == null) return;
-  const pts = fanCurve(i), k = Math.min(pts.length - 1, FAN.sel), v = Math.round(+e.target.value);
-  if (e.target.value.trim() !== '' && Number.isFinite(v)) {
-    pts[k][ax] = ax ? clamp20(v) : Math.min(+e.target.max, Math.max(+e.target.min, v));
-    fanSave(pts);
+// an edit goes to the draft only, and only when it reads by fans.c's rules
+const fanEdit = pts => { const D = fanDraft(); if (!D || !pts || !fanParse(fanSer(pts))) return false; D.pts = pts; FAN.done = null; fanDraftBar(); drawFanCurve(); return true; };
+// where a point can go next to point k: the middle of the wider free gap beside it
+const fanGap = (pts, k) => [[k, k + 1], [k - 1, k]].find(([a, b]) => a >= 0 && b < pts.length && pts[b][0] - pts[a][0] >= 2) ||
+  (k === pts.length - 1 && pts[k][0] <= 108 ? [k, k + 1] : k === 0 && pts[0][0] >= 2 ? [-1, 0] : null);
+function fanPts(d) {
+  const D = fanDraft(); if (!D) return;
+  const pts = D.pts.map(p => [...p]), k = Math.min(pts.length - 1, FAN.sel);
+  if (d < 0) { if (pts.length <= 2) return; pts.splice(k, 1); FAN.sel = Math.min(k, pts.length - 1); }
+  else {
+    const gp = pts.length < 8 && fanGap(pts, k); if (!gp) return;
+    const [a, b] = gp, x = a < 0 ? Math.floor(pts[0][0] / 2) : b >= pts.length ? Math.min(110, pts[a][0] + 10) : Math.round((pts[a][0] + pts[b][0]) / 2);
+    pts.splice(a + 1, 0, [x, Math.max(0, fanAt(pts, x))]); FAN.sel = a + 1;
   }
-  e.target.value = fanCurve(i)[k][ax]; drawFanCurve();
+  fanEdit(pts);
+}
+// the chosen point, typed: kept between its neighbours and within 20..100 %, and said so when it was moved
+['x', 'y'].forEach((a, ax) => $('#fs-pt-' + a).addEventListener('change', e => {
+  const D = fanDraft(); if (!D) return;
+  const pts = D.pts.map(p => [...p]), k = Math.min(pts.length - 1, FAN.sel), v = Math.round(+e.target.value), lo = ax ? 20 : +e.target.min, hi = ax ? 100 : +e.target.max;
+  let m = '';
+  if (e.target.value.trim() !== '' && Number.isFinite(v)) { pts[k][ax] = Math.min(hi, Math.max(lo, v)); if (pts[k][ax] !== v) m = t(ax ? 'fans.pt.ylim' : 'fans.pt.xlim', lo, hi); fanEdit(pts); }
+  $('#fs-pt-msg').textContent = m;
+  e.target.value = D.pts[k][ax]; drawFanCurve();
 }));
+// curves kept by name for any channel: [fans] cN_name, cN (the points), cN_k (gpu or t: a GPU curve is no use on water);
+// taking one changes the draft's points only, never a channel's limits
+const FAN_SAVED = 8, fanSlots = Array.from({ length: FAN_SAVED }, (_, j) => j + 1);
+const fanKind = s => s === 'gpu' ? 'gpu' : 't';
+const fanSaved = k => fanSlots.filter(n => cv('fans', `c${n}_name`, '') && cv('fans', `c${n}_k`, 'gpu') === k && fanParse(cv('fans', `c${n}`, '')));
+function fanSavedList(D) {
+  const s = $('#fs-sv'), list = fanSaved(fanKind(D.src));
+  const html = `<option value="">${esc(t(list.length ? 'fans.sv.pick' : 'fans.sv.none'))}</option>` + list.map(n => `<option value="${n}">${esc(cv('fans', `c${n}_name`, ''))}</option>`).join('');
+  if (s.dataset.sig !== html + LANG) { const v = s.value; s.dataset.sig = html + LANG; s.innerHTML = html; s.value = list.includes(+v) ? v : ''; }
+  s.disabled = !list.length; s.setAttribute('aria-label', t('fans.sv.pick'));
+  $('#fs-sv-name').placeholder = t('fans.sv.ph'); $('#fs-sv-name').setAttribute('aria-label', t('fans.sv.ph'));
+  $('#fs-sv-del').disabled = !s.value;
+}
+$('#fs-sv').addEventListener('change', e => { const n = e.target.value; $('#fs-sv-msg').textContent = '';
+  if (n) { FAN.sel = 0; fanEdit(fanParse(cv('fans', `c${n}`, ''))); } $('#fs-sv-del').disabled = !n; });
+$('#fs-sv-save').addEventListener('click', () => {
+  const D = fanDraft(), name = fanText($('#fs-sv-name').value), m = $('#fs-sv-msg'); if (!D) return;
+  if (!name) { m.textContent = t('fans.sv.noname'); $('#fs-sv-name').focus(); return; }
+  const k = fanKind(D.src), n = fanSlots.find(j => cv('fans', `c${j}_name`, '') === name && cv('fans', `c${j}_k`, 'gpu') === k) || fanSlots.find(j => !cv('fans', `c${j}_name`, ''));
+  if (!n) { m.textContent = t('fans.sv.full', FAN_SAVED); return; }
+  setCfg('fans', `c${n}`, fanSer(D.pts)); setCfg('fans', `c${n}_k`, k); setCfg('fans', `c${n}_name`, name);
+  $('#fs-sv-name').value = ''; m.textContent = t('fans.sv.done', name); fanSavedList(D); $('#fs-sv').value = n; $('#fs-sv-del').disabled = false;
+});
+$('#fs-sv-name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#fs-sv-save').click(); });
+$('#fs-sv-del').addEventListener('click', () => { const n = $('#fs-sv').value, D = fanDraft(); if (!n) return;
+  const name = cv('fans', `c${n}_name`, ''); ['', '_k', '_name'].forEach(x => setCfg('fans', `c${n}${x}`, ''));
+  $('#fs-sv-msg').textContent = t('fans.sv.gone', name); $('#fs-sv').value = ''; if (D) fanSavedList(D); $('#fs-sv').focus(); });
+// the history: lines on and off, the reading under the pointer
+$('#fs-hl').addEventListener('click', e => { const b = e.target.closest('[data-l]'); if (!b) return;
+  const on = FAN.hl[b.dataset.l] = !FAN.hl[b.dataset.l]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); fanHistNow(); });
+$('#fs-hist').addEventListener('pointermove', e => { FAN.hov = e.offsetX; fanHistNow(); });
+$('#fs-hist').addEventListener('pointerleave', () => { FAN.hov = null; fanHistNow(); });
 // drag a point: x stays between its neighbours and on the chart, y within 20..100 %
 const fcv = $('#fs-cv');
 fcv.addEventListener('pointerdown', e => {
-  const i = fanTargets()[0]; if (i == null) return;
-  const sc = fanScale(fanSrc(i)), g = fanGeo(fcv, sc), r = fcv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, pts = fanCurve(i), lo = fanMin(i);
+  const D = fanDraft(); if (!D) return;
+  const sc = fanScale(D.src), g = fanGeo(fcv, sc), r = fcv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, pts = D.pts.map(p => [...p]);
   let k = -1, best = 18 * 18;
-  pts.forEach((p, j) => { const d2 = (g.px(p[0]) - x) ** 2 + (g.py(Math.max(lo, clamp20(p[1]))) - y) ** 2; if (d2 < best) { best = d2; k = j; } });
+  pts.forEach((p, j) => { const d2 = (g.px(p[0]) - x) ** 2 + (g.py(clamp20(p[1])) - y) ** 2; if (d2 < best) { best = d2; k = j; } });
   if (k < 0) return;
   e.preventDefault(); fcv.focus(); fcv.setPointerCapture(e.pointerId);
   FAN.drag = { k, pts, sc }; FAN.sel = k; drawFanCurve();
@@ -4224,17 +4442,20 @@ fcv.addEventListener('pointermove', e => {
   const lo = D.k ? p[D.k - 1][0] + 1 : 0, hi = D.k < p.length - 1 ? p[D.k + 1][0] - 1 : 110;
   const x = Math.min(D.sc.hi, Math.max(D.sc.lo, g.ix(e.clientX - r.left)));
   p[D.k] = [Math.round(Math.min(hi, Math.max(lo, x))), Math.round(clamp20(g.iy(e.clientY - r.top)))];
-  fanSave(p);
+  fanEdit(p.map(q => [...q]));
 });
 ['pointerup', 'pointercancel'].forEach(n => fcv.addEventListener(n, () => { FAN.drag = null; }));
-// keyboard: ←/→ pick a point, ↑/↓ its speed (the exact values are in the fields under the chart)
+// keyboard: ←/→ pick a point, ↑/↓ its speed (Shift: by 1), Insert/+ add one, Delete/− take it away
 fcv.addEventListener('keydown', e => {
-  const i = fanTargets()[0]; if (i == null || !/^Arrow/.test(e.key)) return;
+  const D = fanDraft(); if (!D) return;
+  if (e.key === 'Insert' || e.key === '+') { e.preventDefault(); fanPts(1); return; }
+  if (e.key === 'Delete' || e.key === '-') { e.preventDefault(); fanPts(-1); return; }
+  if (!/^Arrow/.test(e.key)) return;
   e.preventDefault();
-  const pts = fanCurve(i), k = Math.min(pts.length - 1, Math.max(0, FAN.sel));
+  const pts = D.pts.map(p => [...p]), k = Math.min(pts.length - 1, Math.max(0, FAN.sel));
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { FAN.sel = Math.min(pts.length - 1, Math.max(0, k + (e.key === 'ArrowRight' ? 1 : -1))); drawFanCurve(); return; }
-  FAN.sel = k; pts[k][1] = clamp20(pts[k][1] + (e.key === 'ArrowUp' ? 5 : -5));
-  fanSave(pts);
+  FAN.sel = k; pts[k][1] = clamp20(pts[k][1] + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 1 : 5));
+  fanEdit(pts);
 });
 ['focus', 'blur'].forEach(n => fcv.addEventListener(n, drawFanCurve));
 

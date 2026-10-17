@@ -8,6 +8,7 @@
 // [fans] fanN = "" (as is) | fix | curve, fanN_pct = 20..100, fanN_src = gpu | t1..t4, fanN_curve = "30:25,50:40,85:100"
 //        fanN_min = the channel's floor (never under 20), fanN_fail = its speed while the curve's temperature is
 //        missing or stale or the curve does not read (100 by default)
+//        fanN_down = how many % a curve may slow per 2 s (1..100, 3 by default); it speeds up and goes to emergency at once
 #include "common.h"
 #include <setupapi.h>
 #include <hidsdi.h>
@@ -20,10 +21,13 @@
 #define MIN_PCT 20        // haku's floor for every channel: a channel may be set higher (fanN_min), never lower
 #define STALE_MS 5000     // a temperature older than this is not used
 #define GRACE_MS 5000     // after the GPU is first asked for, before its absence counts
-#define DOWN_STEP 300     // a curve slows by at most 3 % per control round (2 s); it speeds up at once
+#define DOWN_PCT 3        // fanN_down: a curve slows by at most this many % per control round (2 s); it speeds up at once
 static const int st_fan[FANS] = { 0x70, 0x7D, 0x8A, 0x97 }, ctl_fan[FANS] = { 0x36, 0x8B, 0xE0, 0x135 };
 enum { EM_NONE, EM_NOSENSOR, EM_STALE, EM_CURVE };
 static const char *const em_name[] = { "", "nosensor", "stale", "curve" };
+// why the last write of a channel did not land, for the page
+enum { ER_NONE, ER_NOLINK, ER_READ, ER_CRC, ER_SAVE, ER_WRITE, ER_BACK, ER_KEPT };
+static const char *const er_name[] = { "", "nolink", "read", "crc", "save", "write", "back", "kept" };
 
 #ifdef FANS_TEST   // the self-test below stands in for the QUADRO: no device is opened
 static int sim_get(BYTE *r, int n); static int sim_set(const BYTE *r, int n);
@@ -43,12 +47,12 @@ static int sim_get(BYTE *r, int n); static int sim_set(const BYTE *r, int n);
 // cs: the readings, the channels' state for the page and the problem log; io: the control handle and what was taken
 static CRITICAL_SECTION cs, io;
 static struct { int on, link, ser1, ser2, fw, temp[4], flow; DWORD seen; struct { int duty, cv, ma, cw, rpm; } f[FANS]; } st;
-static struct { int want, out, ok, em, own; } ch[FANS];   // asked (centi-%, -1 as is, -2 waiting), sent, read back (1/0/-1)
+static struct { int want, out, ok, em, own, er; } ch[FANS];   // asked (centi-%, -1 as is, -2 waiting), sent, read back (1/0/-1)
 static int rfail;                                           // channels whose own setting could not be given back
 static struct { char t[9], m[100]; int n; } lg[8]; static int lgn;   // recent problems, oldest first
 static HANDLE th, stop_ev, hc = INVALID_HANDLE_VALUE;      // hc: control (feature reports), synchronous
 static int flen, paused, bound, bad_crc;
-static BYTE orig[FANS][3]; static int taken[FANS], chk[FANS], sent[FANS] = { -1, -1, -1, -1 };
+static BYTE orig[FANS][3]; static int taken[FANS], chk[FANS], sent[FANS] = { -1, -1, -1, -1 }, cer[FANS];
 static wchar_t sec[16];                                     // the serial taken/orig belong to
 static volatile LONG need_gpu, gpu_c = -1000, gpu_at, need_since;   // gpu_c: whole degrees, fed by the render loop
 
@@ -78,10 +82,12 @@ static void flog(const char *fmt, ...) {
 
 // fans-state.ini [serial] fanN = the channel's own 3 bytes while haku holds it. Caller holds io.
 static void state_path(wchar_t *p) { app_data_path(L"fans-state.ini", p); }
-static void state_put(int f, const BYTE *o) {
+static int state_put(int f, const BYTE *o) {
     wchar_t p[MAX_PATH], k[8], v[8]; state_path(p); swprintf(k, 8, L"fan%d", f + 1);
     if (o) swprintf(v, 8, L"%02X%02X%02X", o[0], o[1], o[2]);
-    if (!WritePrivateProfileStringW(sec, k, o ? v : NULL, p) && o) flog("could not save the QUADRO's own setting of channel %d to disk", f + 1);
+    if (WritePrivateProfileStringW(sec, k, o ? v : NULL, p)) return 1;
+    if (o) flog("could not save the QUADRO's own setting of channel %d to disk (error %lu); not taking it", f + 1, GetLastError());
+    return 0;
 }
 static void state_load(void) {
     wchar_t p[MAX_PATH], k[8], v[8]; state_path(p);
@@ -95,18 +101,19 @@ static void state_load(void) {
 }
 
 // want[f]: -2 leave, -1 put the original back (if taken), else centi-percent in direct mode. Caller holds io.
-// res[f]: 1 read back as sent (or already so), 0 sent but not read back so, -1 not sent, 2 not touched.
+// res[f]: 1 read back as sent (or already so), 0 sent but not read back so, -1 not sent, 2 not touched; cer[f]: why not.
+static int not_sent(const int *res, int e) { for (int f = 0; f < FANS; f++) if (res[f] != 2 && !cer[f]) cer[f] = e; return 0; }
 static int ctl_write(const int *want, int *res) {
     static BYTE r[2048], b[2048];
     int tk[FANS]; BYTE og[FANS][3];
     memcpy(tk, taken, sizeof(tk)); memcpy(og, orig, sizeof(og));
-    for (int f = 0; f < FANS; f++) res[f] = want[f] >= 0 || (want[f] == -1 && tk[f]) ? -1 : 2;
-    if (hc == INVALID_HANDLE_VALUE) return 0;
+    for (int f = 0; f < FANS; f++) { res[f] = want[f] >= 0 || (want[f] == -1 && tk[f]) ? -1 : 2; cer[f] = ER_NONE; }
+    if (hc == INVALID_HANDLE_VALUE) return not_sent(res, ER_NOLINK);
     memset(r, 0, flen); r[0] = 3;
-    if (!GET_FEATURE(r, flen)) { flog("could not read the QUADRO's settings (error %lu)", GetLastError()); return 0; }
+    if (!GET_FEATURE(r, flen)) { flog("could not read the QUADRO's settings (error %lu)", GetLastError()); return not_sent(res, ER_READ); }
     if (!crc_ok(r)) {   // a layout this code does not know: hands off
         if (!bad_crc++) flog("the QUADRO's settings fail their checksum; not writing");
-        return 0;
+        return not_sent(res, ER_CRC);
     }
     for (int f = 0; f < FANS; f++) {   // first look after (re)connecting: is what was kept still what to give back?
         BYTE *p = r + ctl_fan[f];
@@ -118,16 +125,18 @@ static int ctl_write(const int *want, int *res) {
             flog("channel %d was changed outside haku; its old saved setting is dropped", f + 1);
         }
     }
-    int chg = 0, nt[FANS] = { 0 };
+    int chg = 0;
     for (int f = 0; f < FANS; f++) {
         BYTE *p = r + ctl_fan[f];
         if (want[f] >= 0) {
-            if (!tk[f]) { memcpy(og[f], p, 3); tk[f] = nt[f] = 1; }
+            if (!tk[f]) {   // its own setting on disk before haku touches it; if that fails it is left alone, tried again next round
+                if (!state_put(f, p)) { cer[f] = ER_SAVE; continue; }
+                memcpy(og[f], p, 3); tk[f] = 1;
+            }
             BYTE n[3] = { 0, (BYTE)(want[f] >> 8), (BYTE)want[f] };
             if (memcmp(p, n, 3)) { memcpy(p, n, 3); chg = 1; }
         } else if (want[f] == -1 && tk[f] && memcmp(p, og[f], 3)) { memcpy(p, og[f], 3); chg = 1; }
     }
-    for (int f = 0; f < FANS; f++) if (nt[f]) state_put(f, og[f]);   // on disk before anything is written
     int ok = 1;
     if (chg) {
         int c = crc16usb(r + 1, 0x3C1 - 3); r[0x3BF] = (BYTE)(c >> 8); r[0x3C0] = (BYTE)c;
@@ -135,16 +144,17 @@ static int ctl_write(const int *want, int *res) {
         if (!SET_FEATURE(r, flen)) {
             flog("writing to the QUADRO failed (error %lu)", GetLastError());
             memcpy(taken, tk, sizeof(tk)); memcpy(orig, og, sizeof(og));   // maybe half done: still to give back
-            return 0;
+            return not_sent(res, ER_WRITE);
         }
         PAUSE(200);
         memset(b, 0, flen); b[0] = 3;
         if (!GET_FEATURE(b, flen) || !crc_ok(b)) { flog("could not read the QUADRO's settings back after writing"); ok = 0; }
     } else memcpy(b, r, flen);   // nothing to change: what was just read is the check
     for (int f = 0; f < FANS; f++) {
-        if (res[f] == 2) continue;
+        if (res[f] == 2 || cer[f] == ER_SAVE) continue;
         int same = ok && !memcmp(b + ctl_fan[f], r + ctl_fan[f], 3);
         res[f] = same;
+        if (!same) cer[f] = ok ? ER_KEPT : ER_BACK;
         if (!same && ok) flog("the QUADRO did not keep the setting of channel %d", f + 1);
         if (same && want[f] == -1) { tk[f] = 0; state_put(f, NULL); }
     }
@@ -240,8 +250,9 @@ static void control(void) {
     EnterCriticalSection(&io);
     if (paused || !bound) { LeaveCriticalSection(&io); return; }
     for (int f = 0; f < FANS; f++) {
+        int dn = pct_key(f, "down", DOWN_PCT); dn = (dn < 1 ? 1 : dn > 100 ? 100 : dn) * 100;
         want[f] = t[f].want;
-        if (want[f] >= 0 && t[f].smooth && sent[f] >= 0 && want[f] < sent[f] - DOWN_STEP) want[f] = sent[f] - DOWN_STEP;
+        if (want[f] >= 0 && t[f].smooth && sent[f] >= 0 && want[f] < sent[f] - dn) want[f] = sent[f] - dn;
     }
     ctl_write(want, res);
     for (int f = 0; f < FANS; f++) {
@@ -252,7 +263,7 @@ static void control(void) {
     EnterCriticalSection(&cs);
     rfail = fail;
     for (int f = 0; f < FANS; f++) {
-        ch[f].want = t[f].want; ch[f].out = sent[f]; ch[f].em = t[f].em; ch[f].own = taken[f];
+        ch[f].want = t[f].want; ch[f].out = sent[f]; ch[f].em = t[f].em; ch[f].own = taken[f]; ch[f].er = cer[f];
         ch[f].ok = res[f] == 2 ? 1 : res[f];
     }
     LeaveCriticalSection(&cs);
@@ -412,9 +423,9 @@ int fans_json(char *out, int cap) {
         if (g > -1000 && at) n += snprintf(out + n, cap - n, "],\"gpu\":%ld,\"gage\":%lu,\"f\":[", g, now - at);
         else n += snprintf(out + n, cap - n, "],\"gpu\":null,\"f\":[");
         for (int f = 0; f < FANS; f++)
-            n += snprintf(out + n, cap - n, "%s{\"rpm\":%d,\"pct\":%.1f,\"v\":%.2f,\"w\":%.2f,\"own\":%d,\"want\":%d,\"out\":%d,\"ok\":%d,\"em\":\"%s\"}", f ? "," : "",
+            n += snprintf(out + n, cap - n, "%s{\"rpm\":%d,\"pct\":%.1f,\"v\":%.2f,\"w\":%.2f,\"own\":%d,\"want\":%d,\"out\":%d,\"ok\":%d,\"em\":\"%s\",\"err\":\"%s\"}", f ? "," : "",
                           st.f[f].rpm, st.f[f].duty / 100.0, st.f[f].cv / 100.0, st.f[f].cw / 100.0, ch[f].own,
-                          ch[f].want < 0 ? ch[f].want : ch[f].want / 100, ch[f].out < 0 ? -1 : ch[f].out / 100, ch[f].ok, em_name[ch[f].em]);
+                          ch[f].want < 0 ? ch[f].want : ch[f].want / 100, ch[f].out < 0 ? -1 : ch[f].out / 100, ch[f].ok, em_name[ch[f].em], er_name[ch[f].er]);
         n += snprintf(out + n, cap - n, "],\"log\":[");
         for (int i = 0; i < lgn; i++) n += snprintf(out + n, cap - n, "%s{\"t\":\"%s\",\"m\":\"%s\",\"n\":%d}", i ? "," : "", lg[i].t, lg[i].m, lg[i].n);
         n += snprintf(out + n, cap - n, "]");
@@ -520,9 +531,28 @@ int main(void) {
     st.temp[0] = 0x7FFF; control(); assert(dev_is(0, 100) && !strcmp(em_name[ch[0].em], "nosensor"));
     set("fan1", "fix"); set("fan1_pct", "30"); control(); assert(dev_is(0, 30));
     set("fan1", ""); control(); assert(!memcmp(dev + ctl_fan[0], O1, 3) && !ch[0].own && !saved(0));
+    // the channel's own setting cannot be saved: it is not touched, the page is told why, the next round tries again
+    DeleteFileW(ini); assert(CreateDirectoryW(ini, NULL));
+    set("fan1", "fix"); control(); assert(!memcmp(dev + ctl_fan[0], O1, 3) && !taken[0] && ch[0].ok == -1 && ch[0].er == ER_SAVE && !ch[0].own);
+    control(); assert(!memcmp(dev + ctl_fan[0], O1, 3) && !taken[0]);
+    RemoveDirectoryW(ini);
+    control(); assert(dev_is(0, 30) && taken[0] && saved(0) && !ch[0].er && ch[0].ok == 1 && !memcmp(orig[0], O1, 3));
+    // the sensor lost and the write failing together: the reason, the speed asked and that it did not land, each on its own
+    set("fan1", "curve"); st.temp[0] = 0x7FFF; st.seen = GetTickCount(); set_fail = 1;
+    control(); assert(ch[0].em == EM_NOSENSOR && ch[0].want == 10000 && ch[0].ok == -1 && ch[0].er == ER_WRITE && dev_is(0, 30));
+    set_fail = 0; control(); assert(ch[0].em == EM_NOSENSOR && dev_is(0, 100) && ch[0].ok == 1 && !ch[0].er);
+    // the curve first, then the floor: 20:20,40:100 at 30 °C is 60 %, which a floor of 50 leaves alone
+    set("fan1_min", "50"); st.temp[0] = 3000; targets(t); assert(t[0].want == 6000);
+    st.temp[0] = 2200; targets(t); assert(t[0].want == 5000); set("fan1_min", NULL);
+    // how fast it slows is the channel's own; an emergency is never eased
+    set("fan1_down", "10"); st.temp[0] = 2000; control(); assert(dev_is(0, 90)); control(); assert(dev_is(0, 80));
+    st.temp[0] = 0x7FFF; control(); assert(dev_is(0, 100));
+    set("fan1_down", "100"); st.temp[0] = 2000; control(); assert(dev_is(0, 20));
+    set("fan1_down", "0"); st.temp[0] = 4000; control(); st.temp[0] = 2000; control(); assert(dev_is(0, 99));   // under 1: 1
+    set("fan1", ""); set("fan1_down", NULL); control(); assert(!memcmp(dev + ctl_fan[0], O1, 3) && !taken[0]);
     // the page's view
     static char js[8192]; th = (HANDLE)1; fans_json(js, sizeof(js)); th = NULL;
-    assert(strstr(js, "\"link\":1") && strstr(js, "\"log\":[") && strstr(js, "\"em\":\"\""));
+    assert(strstr(js, "\"link\":1") && strstr(js, "\"log\":[") && strstr(js, "\"em\":\"\"") && strstr(js, "\"err\":\"\""));
     DeleteFileW(ini);
     puts("fans: ok");
     return 0;

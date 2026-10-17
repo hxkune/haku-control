@@ -434,33 +434,97 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .own-item b { color: var(--text); font-weight: 400; }
 
 .pc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
-.fan-panel { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; margin-top: 20px; }
-.fan-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-height: 108px; padding: 16px 18px; text-align: left; font: inherit; color: var(--text); cursor: pointer; transition: border-color .15s; }
-.fan-tile:hover, .fan-tile:focus-visible { border-color: var(--line3); outline: none; }
-.fan-tile { min-width: 0; }
+.fans-top { padding: 14px 20px; }
+.fans-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.fans-line .muted { font-size: 12.5px; }
+.fans-more { display: flex; flex-wrap: wrap; gap: 0 22px; }
+.fans-more .trouble { margin-top: 8px; }
+.fans-more .trouble[open] { flex-basis: 100%; }
+.fan-main { margin-top: 16px; }
+.fan-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.fan-bar .lbl { color: var(--muted); font-size: 12px; }
+.fan-panel { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.fan-edit { display: none; }
+/* wide: the list on the left, the chosen one's settings beside it (FAN_WIDE in app.js has the same width) */
+@media (min-width: 1100px) {
+  .fan-main { display: grid; grid-template-columns: minmax(220px, 270px) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .fan-panel { grid-template-columns: 1fr; gap: 10px; }
+  .fan-edit { display: block; min-width: 0; }
+  .fan-edit .fan-set { padding: 18px 20px; }
+}
+.fan-tile { display: flex; flex-direction: column; min-width: 0; padding: 0; transition: border-color .15s; }
+.fan-tile:hover { --lc: var(--line3); border-color: var(--line3); }
+.fan-tile.on { --lc: var(--strong); border-color: var(--strong); }
+.fan-gh { display: flex; align-items: stretch; min-width: 0; }
+.fan-hd { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; flex: 1; width: 100%; min-width: 0; padding: 13px 16px; background: none; border: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.fan-fold { flex: none; padding: 0 14px; background: none; border: 0; color: var(--muted); font-size: 13px; cursor: pointer; }
+.fan-fold:hover { color: var(--text); }
+.fan-hd:focus-visible, .fan-fold:focus-visible, .fan-mem:focus-visible { outline: 2px solid var(--line3); outline-offset: -2px; }
 .fan-tile b, .fan-tile small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fan-tile b { font-size: 14px; font-weight: 600; }
-.fan-tile small { color: var(--muted); font-size: 11.5px; margin-bottom: auto; }
-/* a channel live: rpm big, then the speed, then who drives it */
+.fan-tile small { color: var(--muted); font-size: 11.5px; }
+.fan-mem { width: 100%; padding: 8px 16px 10px; background: none; border: 0; border-top: 1px solid var(--line); font: inherit; text-align: left; cursor: pointer; }
+.fan-mem:hover { background: rgba(var(--ink), .03); }
+.fan-mem.on { box-shadow: inset 3px 0 0 var(--strong); }
 .fan-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; max-width: 100%; min-width: 0; font-size: 12px; color: var(--muted); }
 .fan-row i { flex-basis: 100%; font-style: normal; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fan-row em { font: 600 20px var(--display); font-style: normal; color: var(--text); font-variant-numeric: tabular-nums; }
+.fan-row em { font: 600 18px var(--display); font-style: normal; color: var(--text); font-variant-numeric: tabular-nums; }
 .fan-st { flex-basis: 100%; font-size: 11.5px; color: var(--faint); }
-.fan-st.warn { color: #f0b44a; }
-.fan-st.bad, #fans-status.bad, .fs-bad { color: #ff8a8a; }
+.fan-st.warn, .pair-msg.warn { color: #f0b44a; }
+.fan-st.bad, #fans-status.bad, .fs-bad, .pair-msg.bad { color: #ff8a8a; }
 .fan-panel.stale .fan-row em, .fs-live.stale .fan-row em { opacity: .4; }
-.fs-live { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; }
+.fs-crumb { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px; color: var(--faint); }
+.fan-set .card-head { margin-bottom: 8px; }
+.fs-live { display: flex; flex-direction: column; gap: 8px; margin: 0 0 10px; }
+#fs-live .fan-mem { border: 1px solid var(--line); }
+.fan-edit .fs-live.g { display: none; }  /* wide: the group's fans are already in the list beside it */
+#fs-lim #fs-mem-f { margin-top: 12px; }
+.fs-shared .btn { margin-left: 6px; vertical-align: baseline; }
 .beta { display: inline-block; margin-left: 6px; padding: 1px 7px; border: 1px solid var(--line3); border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); vertical-align: middle; cursor: help; }
 .fans-log { margin: 8px 0; max-height: 160px; overflow: auto; font: 11px/1.5 var(--mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.fan-set #fs-ctl { margin-top: 10px; }
+.fan-set #fs-ctl > .seg { margin-top: 0; }
+.fs-srcs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
 .fs-src { flex-wrap: wrap; border-radius: 14px; }
-.fs-pt-n { margin-top: 10px; }
-.fan-hist { display: block; width: 100%; height: 70px; margin-top: 8px; }
-#fs-lim .row2, #fs-lim .fs-notach { margin-top: 12px; }
-.fan-tile.add { align-items: center; justify-content: center; color: var(--muted); border-style: dashed; }
-.fan-removed { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
-.fan-set #fs-ctl { margin-top: 20px; }
-.fan-cv { display: block; width: 100%; height: 240px; margin-top: 12px; touch-action: none; cursor: grab; border-radius: 8px; }
+.fs-ed { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 14px; margin-top: 12px; align-items: start; }
+.fs-pt { display: flex; flex-direction: column; gap: 9px; }
+.fs-pt .pair-msg { margin-top: 0; font-size: 11.5px; }
+.fs-pt .btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.fs-pt .btn-row .btn { flex: 1; padding-inline: 8px; white-space: nowrap; }
+.fan-cv { display: block; width: 100%; height: 240px; touch-action: none; cursor: grab; border-radius: 8px; }
 .fan-cv:focus-visible { outline: 2px solid var(--line3); outline-offset: 2px; }
+.fs-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 8px; font-size: 11.5px; color: var(--faint); }
+.fs-key i { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid var(--text); }
+.fs-key i + span { margin-right: 8px; }
+.fs-key .k-raw { border-top: 1.5px dashed var(--text); opacity: .6; }
+.fs-key .k-min { height: 10px; border: 0; background: rgba(var(--ink), .1); }
+.fs-now { margin-top: 6px; font-size: 12.5px; color: var(--text); white-space: pre-line; }
+.fs-draft { position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line3); font-size: 12.5px; color: #f0b44a; }
+.fs-draft.flash { animation: fs-flash .9s ease 2; }
+@keyframes fs-flash { 50% { border-color: #f0b44a; background: rgba(240, 180, 74, .12); } }
+@media (prefers-reduced-motion: reduce) { .fs-draft.flash { animation: none; border-color: #f0b44a; } }
+.fan-hist { display: block; width: 100%; height: 110px; margin-top: 8px; cursor: crosshair; }
+.fs-hl { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
+.fs-hl button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; background: none; border: 1px solid var(--line); border-radius: 999px; font: 11.5px var(--font); color: var(--faint); cursor: pointer; }
+.fs-hl button.on { color: var(--text); border-color: var(--line3); }
+.fs-hl button:focus-visible { outline: 2px solid var(--line3); outline-offset: 1px; }
+.fs-hl i { width: 16px; height: 0; border-top: 2px solid var(--text); }
+.fs-hl .k-w { border-top-style: dashed; }
+.fs-hl .k-r { border-top-color: var(--muted); }
+.fs-hl .k-t { border-top-style: dotted; }
+.fs-hl button:not(.on) i { opacity: .3; }
+.fs-saved { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.fs-saved .select { flex: 1 1 170px; width: auto; margin-top: 0; padding-block: 6px; }
+.fs-saved input[type=text] { flex: 1 1 140px; width: auto; padding: 6px 12px; }
+.fs-pt .btn:disabled, .fs-saved .btn:disabled, .fs-saved .select:disabled { opacity: .4; cursor: default; }
+#fs-lim .num, #fs-lim .row3, #fs-lim .fs-notach { margin-top: 12px; }
+.row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.fan-removed { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+/* narrow (the sheet): the point's fields under the chart */
+.sheet .fs-ed { grid-template-columns: 1fr; }
+.sheet .fs-pt { display: grid; grid-template-columns: 1fr 1fr; }
+.sheet .fs-pt > :not(.num) { grid-column: 1 / -1; }
+@media (max-width: 700px) { .row3 { grid-template-columns: 1fr; } }
 .nano-grid { display: grid; grid-template-columns: 1fr 330px; gap: 20px; align-items: start; }
 .tools { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 /* several Nanoleaf controllers: one button each above the page; the add button is always there */
