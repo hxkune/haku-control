@@ -139,7 +139,9 @@ void orgbapp_removed(const char *name) {
     cfg_set_and_save("openrgb", "removed", v);
 }
 
-static int added_already(const orgb_ctl *c) {
+// nth: 1 for the first controller of that name, 2 for the second (a RAM kit gives both sticks one name)
+static int added_already(const orgb_ctl *c, int nth) {
+    int have = 0;
     for (int id = 1; id <= 64; id++) {
         char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", id);
         const char *k = cfg_get(sec, "kind", NULL);
@@ -147,7 +149,8 @@ static int added_already(const orgb_ctl *c) {
         const char *h = cfg_get(sec, "host", "");
         if (strncmp(h, "127.0.0.1", 9) && strncmp(h, "localhost", 9)) continue;
         const char *m = cfg_get(sec, "match", "");
-        if (*m ? !strcmp(m, c->name) : cfg_geti(sec, "sub", -1) == c->idx) return 1;
+        if (!*m && cfg_geti(sec, "sub", -1) == c->idx) return 1;
+        if (*m && !strcmp(m, c->name) && ++have >= nth) return 1;
     }
     return 0;
 }
@@ -172,7 +175,9 @@ static int driven_directly(const char *name) {
 void orgbapp_add_new(const orgb_ctl *c, int n) {
     if (!orgbapp_auto()) return;
     for (int i = 0; i < n; i++) {
-        if (app_hw_own(c[i].type, c[i].name) || driven_directly(c[i].name) || added_already(&c[i]) || removed_by_hand(c[i].name)) continue;
+        int nth = 1;
+        for (int j = 0; j < i; j++) nth += !strcmp(c[j].name, c[i].name);
+        if (app_hw_own(c[i].type, c[i].name) || driven_directly(c[i].name) || added_already(&c[i], nth) || removed_by_hand(c[i].name)) continue;
         int id = ext_add("openrgb", "127.0.0.1", c[i].idx, c[i].name, 0);
         if (!id) continue;
         char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", id);

@@ -205,6 +205,36 @@
     S.hw = was; S.orgb = o; updateHw();
   });
 
+  test('OpenRGB: two sticks of one kit share a name, the second is not taken as added with the first', async () => {
+    await fresh();
+    const o = S.orgb, devs = S.ext.devs, N = 'Corsair Vengeance RGB DDR5';
+    const a = { i: 0, name: N, type: 1 }, b = { i: 1, name: N, type: 1 };
+    S.orgb = { state: 4, ctls: [a, b] };
+    S.ext.devs = [{ id: 91, kind: 'openrgb', host: '127.0.0.1', sub: 0 }]; setCfgLocal('dev.91', 'match', N);
+    ok(orgbDev(a) && orgbDev(a).id === 91 && !orgbAdded(b), 'the second stick counts as added with the first');
+    S.ext.devs.push({ id: 92, kind: 'openrgb', host: '127.0.0.1', sub: 5 }); setCfgLocal('dev.92', 'match', N);
+    ok(orgbDev(b) && orgbDev(b).id === 92, 'a stick whose number moved is not found by its rank');
+    delete S.cfg['dev.91']; delete S.cfg['dev.92']; S.ext.devs = devs; S.orgb = o;
+  });
+
+  test('iCUE LINK: hidden until found, off until asked, then the PSU with its watts and a warning while iCUE runs', async () => {
+    await fresh();
+    const K = S.link;
+    S.link = { st: 'off', found: 0 }; updateLink();
+    ok($('#link-card').classList.contains('hidden'), 'shown with no hub');
+    S.link = K; updateLink();
+    ok(!$('#link-card').classList.contains('hidden') && !$('#link-on').checked && !$('#link-list').children.length, 'read before it was switched on');
+    $('#link-on').click(); await wait(60);
+    ok(cv('link', 'on', '') === '1', 'the switch did not reach the settings');
+    const rows = [...$('#link-list').children].map(r => r.textContent.replace(/\s+/g, ' '));
+    ok(rows.length === 5 && rows[0].includes('25.6'), 'hub + 4 devices: ' + rows.length);
+    ok(rows.some(r => r.includes('HX1000i') && r.includes(t('link.w', 157)) && r.includes('12.03 V 10.25 A')), 'the PSU row: ' + rows.join(' | '));
+    ok(rows.some(r => r.includes('TITAN 360 AIO') && r.includes('35.2')), 'the AIO row');
+    S.link = Object.assign({}, K, { st: 'app', app: 'iCUE.exe' }); updateLink();
+    ok($('#link-status').textContent === t('link.st.app', 'iCUE.exe') && !$('#link-list').children.length, 'no warning or stale rows while iCUE runs');
+    setCfg('link', 'on', '0'); S.link = K; updateLink();
+  });
+
   test('the offline list: the chip is a button, each name opens its device card, Esc goes back to the chip', async () => {
     await fresh();
     showTab('effects'); updateChips();

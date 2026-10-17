@@ -259,6 +259,8 @@ static int orgb_open(ext_dev *d) {
     snprintf(want, sizeof(want), "%s", cfg_get(sec, "match", ""));
     // the controller: number sub, unless it has another name than the one it was added with
     int idx = d->sub >= 0 && (unsigned)d->sub < count && c && read_ctrl(s, (unsigned)d->sub, c) ? d->sub : -1;
+    // shortcut: the search takes the first controller of that name, so if the numbers of two same-named sticks move,
+    // both devices can land on one stick; upgrade to rank-by-name (as openrgb_app.c adds them) if that is reported
     if (c && want[0] && (idx < 0 || strcmp(c->name, want))) {
         idx = -1;
         for (unsigned i = 0; i < count && i < 64 && idx < 0; i++) if (read_ctrl(s, i, c) && !strcmp(c->name, want)) idx = (int)i;

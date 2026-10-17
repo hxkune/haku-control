@@ -3202,8 +3202,15 @@ const ORGB_TYPES = { 0: 'board', 1: 'ram', 2: 'gpu', 3: 'fan', 4: 'strip', 5: 'k
 const orgbOwn = c => (c.type === 1 && S.sticks > 0) || (c.type === 0 && S.msi && /msi|mystic/i.test(c.name)) ||
   S.ext.devs.some(d => d.kind !== 'openrgb' && (d.title || '').split(' ')[0].length >= 3 && c.name.toLowerCase().includes(d.title.split(' ')[0].toLowerCase())) ||
   (nanoOn() && /nanoleaf/i.test(c.name));
-const orgbDev = c => S.ext.devs.find(d => d.kind === 'openrgb' && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(d.host) &&
-  (cv('dev.' + d.id, 'match', '') ? cv('dev.' + d.id, 'match', '') === c.name : d.sub === c.i));
+// by name, and for controllers sharing one name (two sticks of a kit) by their rank among them, as numbers change
+const orgbDev = c => {
+  const local = S.ext.devs.filter(d => d.kind === 'openrgb' && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(d.host));
+  const old = local.find(d => !cv('dev.' + d.id, 'match', '') && d.sub === c.i);
+  if (old) return old;
+  const same = local.filter(d => cv('dev.' + d.id, 'match', '') === c.name), mine = same.find(d => d.sub === c.i);
+  return mine || same.filter(d => !(S.orgb.ctls || []).some(x => x.name === c.name && x.i === d.sub))
+    [(S.orgb.ctls || []).filter(x => x.name === c.name && x.i < c.i && !same.some(d => d.sub === x.i)).length];
+};
 const orgbAdded = c => !!orgbDev(c);
 const orgbAdd = c => send({ cmd: 'dev_add', kind: 'openrgb', host: '127.0.0.1', sub: c.i, name: c.name, leds: 0 });
 function updateOrgb() {
@@ -3240,6 +3247,31 @@ function updateOrgb() {
     }));
   }
 }
+// ---- the iCUE LINK hub and the PSU on it (link.c), read only: device types and models as in OpenLinkHub
+const LINK_TYPES = { 1: 'QX RGB', 2: 'LX RGB', 3: 'RX RGB MAX', 4: 'RX MAX', 5: 'LINK Adapter', 6: 'LCD', 7: 'H100i/H115i/H150i/H170i', 9: 'XC7 ELITE',
+  10: 'XG3 HYBRID', 12: 'XD5 ELITE', 13: 'XG7 RGB', 15: 'RX RGB', 16: 'VRM cooler', 17: 'TITAN AIO', 19: 'RX', 25: 'XD6 ELITE', 27: 'COMMANDER DUO' };
+const linkKind = ty => ty === 11 ? 'psu' : [7, 17].includes(ty) ? 'aio' : [1, 2, 3, 4, 15, 19].includes(ty) ? 'fan' : 'dev';
+const linkName = d => d.type === 11 ? ['HX1000i', 'HX1200i', 'HX1500i'][d.model] || 'HXi' :
+  d.type === 17 ? 'TITAN ' + ({ 0: 240, 4: 240, 1: 280, 2: 360, 5: 360, 3: 420 }[d.model] || '') + ' AIO' : LINK_TYPES[d.type] || t('link.k.dev') + ' ' + d.type;
+function updateLink() {
+  const K = S.link || {}, on = cv('link', 'on', '0') === '1';
+  $('#link-card').classList.toggle('hidden', !K.found && !on);
+  $('#link-on').checked = on; $('#link-on').setAttribute('aria-label', t('link.on'));
+  $('#link-status').textContent = !on ? t('link.st.off') : K.st === 'ok' ? t('link.st.ok', K.fw, Math.round((K.age || 0) / 1000)) :
+    t('link.st.' + (K.st || 'off'), K.app || '');
+  const v = K.v || [], a = K.a || [], w = v.reduce((s, x, i) => s + x * (a[i] || 0), 0);
+  const val = d => [d.rpm != null && t('link.rpm', d.rpm), d.t != null && d.t.toFixed(1) + ' °C'].filter(Boolean).join(' · ');
+  const rows = !on || K.st !== 'ok' ? [] : (K.dev || []).map(d => {
+    const psu = d.type === 11 && v.length, sub = psu ? v.map((x, i) => x.toFixed(2) + ' V ' + a[i].toFixed(2) + ' A').join(' · ') : t('link.ch', d.ch);
+    return `<div class="found-row"><span class="kind">${t('link.k.' + linkKind(d.type))}</span>
+      <div class="what"><b>${esc(linkName(d))}</b><small>${esc(sub)}</small></div>
+      <span class="added">${esc([psu && t('link.w', Math.round(w)), val(d)].filter(Boolean).join(' · '))}</span></div>`;
+  });
+  if (on && K.st === 'ok' && K.hub_t != null) rows.unshift(`<div class="found-row"><span class="kind">${t('link.k.hub')}</span><div class="what"><b>iCUE LINK System Hub</b><small>${t('link.ch', 0)}</small></div><span class="added">${K.hub_t.toFixed(1)} °C</span></div>`);
+  const list = $('#link-list'), html = rows.join('');
+  if (list.dataset.html !== html) { list.dataset.html = html; list.innerHTML = html; }
+}
+$('#link-on').addEventListener('change', e => { setCfg('link', 'on', e.target.checked ? '1' : '0'); updateLink(); });
 // ---- lighting in this PC: what haku found (hw, from hwinfo.c) and which way each is lit: by haku itself, through
 // OpenRGB (found there, added or not), OpenRGB still to set up, PawnIO missing, or nothing known
 const HW_KEYS = {   // USB maker -> words its OpenRGB controllers carry in their names
@@ -3890,6 +3922,7 @@ function updateChips() {
     requestAnimationFrame(sizeCanvases);
   }
   updateOrgb();
+  updateLink();
   updateHw();
   if (S.effect === 'screen') updateScreen();
   $('#gpu-status').textContent = !S.msi ? t('gpu.none') : S.msi_own ? t('own.status') : t('gpu.status');

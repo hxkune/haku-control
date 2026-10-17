@@ -88,6 +88,9 @@ const STATE = {
     'preset.2': { name: 'Cyberpunk', effect: 'comet', palette: '#00E5FF, #FF00A8, #7B2CFF', speed: '7' },
     hotkeys: { next: 'Ctrl+Alt+Right', prev: 'Ctrl+Alt+Left', off: 'Ctrl+Alt+Down', brighter: 'Ctrl+Alt+PageUp', dimmer: 'Ctrl+Alt+PageDown' } },
 };
+// link.c: the iCUE LINK hub of a real report (psuprobe, 2026-10-17), shortened
+STATE.link = { st: 'ok', found: 1, app: '', fw: '3.10.636', hw: 0, age: 4000, hub_t: 25.6, v: [3.31, 5.05, 12.03], a: [1.75, 5.5, 10.25],
+  dev: [{ ch: 1, type: 15, model: 0, rpm: 311, t: null }, { ch: 17, type: 6, model: 0, rpm: null, t: null }, { ch: 20, type: 17, model: 2, rpm: 2277, t: 35.2 }, { ch: 25, type: 11, model: 0, rpm: 457, t: 40.5 }] };
 const pal = [[0,200,255],[122,60,255],[255,45,149]];
 const pc = p => { p = (p % 1 + 1) % 1 * 3; const i = Math.floor(p), f = p - i, a = pal[i % 3], b = pal[(i + 1) % 3]; return a.map((v, k) => Math.round(v + (b[k] - v) * f)); };
 const hx = c => c.map(v => v.toString(16).padStart(2, '0')).join('');

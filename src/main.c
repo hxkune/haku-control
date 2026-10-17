@@ -1103,6 +1103,8 @@ static int status_body(char *out, int cap) {
     n += backup_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"fans\":");
     n += fans_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"link\":");
+    n += link_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"mqtt\":");
     n += mqtt_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"remote\":");
@@ -1467,15 +1469,15 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_POWERBROADCAST:
-        if (wp == PBT_APMSUSPEND) { logf_("sleep"); sleeping = 1; nano_suspend(1); lights_suspend(1); ext_suspend(1); fans_suspend(1); }
+        if (wp == PBT_APMSUSPEND) { logf_("sleep"); sleeping = 1; nano_suspend(1); lights_suspend(1); ext_suspend(1); fans_suspend(1); link_suspend(1); }
         if (wp == PBT_APMRESUMEAUTOMATIC) { InterlockedExchange(&need_reinit, 1); logf_("resume"); }
-        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { sleeping = 0; nano_suspend(pro_off); lights_suspend(pro_off); ext_suspend(0); fans_suspend(0); }
+        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { sleeping = 0; nano_suspend(pro_off); lights_suspend(pro_off); ext_suspend(0); fans_suspend(0); link_suspend(0); }
         return TRUE;
     case WM_QUERYENDSESSION:
         return TRUE;
     case WM_ENDSESSION:
         // shutdown / log off: room lights get their exit action while the network is still up
-        if (wp) { running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000); close_devices(1); nano_stop(); lights_stop(); ext_stop(); fans_stop(); }
+        if (wp) { running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000); close_devices(1); nano_stop(); lights_stop(); ext_stop(); fans_stop(); link_stop(); }
         return 0;
     case WM_DESTROY:
         Shell_NotifyIconW(NIM_DELETE, &nid);
@@ -1578,6 +1580,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     hotspot_watch_start();
     sensors_init();
     fans_start();
+    link_start();
     load_config();
     logf_("started: msi=%d ene=%d sticks=%d effect=%s", have_msi, have_ene, ene_count(), g_effects[cur_effect].id);
 
@@ -1622,6 +1625,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     update_stop();
     hotspot_watch_stop();
     fans_stop();
+    link_stop();
     sensors_close();
     timeEndPeriod(1);
     logf_("exit");

@@ -432,9 +432,10 @@ int ext_add(const char *kind, const char *host, int sub, const char *name, int l
     for (int i = 1; i <= 64; i++) {
         char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", i);
         const char *k = cfg_get(sec, "kind", NULL);
-        // already there: the same address and number; for OpenRGB the same controller name (its numbers change)
-        if (k && !_stricmp(k, kind) && !strcmp(cfg_get(sec, "host", ""), host) &&
-            (!_stricmp(kind, "openrgb") && name && *name ? !strcmp(cfg_get(sec, "match", cfg_get(sec, "name", "")), name) : cfg_geti(sec, "sub", -1) == sub)) return i;
+        // already there: the same address and number; for OpenRGB also the same controller name (two sticks of a kit
+        // share one name, so the name alone is not enough; callers check by name and rank first, as numbers change)
+        if (k && !_stricmp(k, kind) && !strcmp(cfg_get(sec, "host", ""), host) && cfg_geti(sec, "sub", -1) == sub &&
+            (_stricmp(kind, "openrgb") || !name || !*name || !strcmp(cfg_get(sec, "match", cfg_get(sec, "name", "")), name))) return i;
         if (!k && !id) id = i;
     }
     if (!id) return 0;

@@ -222,6 +222,12 @@ int  fans_need_gpu(void);
 float fans_water(void);                 // the first connected temperature sensor, NAN when none
 int  fans_json(char *out, int cap);
 
+// ---- link.c: Corsair iCUE LINK hub and the PSU on it, read only (own thread, [link] on=1)
+void link_start(void);
+void link_stop(void);                    // hardware mode back if a visit left the hub in software mode
+void link_suspend(int on);
+int  link_json(char *out, int cap);
+
 // ---- main.c: application state shared with the settings window
 #ifdef HAKU_DEV   // build.cmd dev: separate instance for testing, no PC hardware access, no admin rights
 #define APP_ID L"haku-control-dev"
