@@ -2337,7 +2337,7 @@ function drawHero() {
     const v = heroAnim('a:' + it.key, 1);
     const x = p.x * d, y = p.y * d, w = p.w * d, h = p.h * d, hot = HERO.hover === it.key || (to && to.key === it.key);
     // not reachable: the tile is dimmed and says so (a device switched off in haku is not offline, only dark)
-    const ext = it.k === 'ext' && S.ext.devs[it.i], off = ext ? ext.enabled && !ext.online : it.k === 'bulb' ? !(S.bulbs[it.i] || {}).online :
+    const ext = it.k === 'ext' && S.ext.devs[it.i], setup = ext && zonesNeed(ext), off = ext ? (ext.enabled || setup) && !ext.online : it.k === 'bulb' ? !(S.bulbs[it.i] || {}).online :
       it.k === 'nano' ? !(nanoCtls().find(n => n.slot === it.slot) || {}).online : false;
     c.save();
     c.globalAlpha = drag && drag.src.key === it.key ? v * .35 : v;
@@ -2354,8 +2354,8 @@ function drawHero() {
     c.restore();
     // given back to its own lighting: what it shows is not haku's, said on the tile
     if (off || (it.k === 'ram' ? S.ram_own : it.k === 'gpu' ? S.msi_own : ext ? ext.own : 0)) {
-      c.font = `${8 * d}px ${WIDE}`; c.letterSpacing = `${1.5 * d}px`; c.textAlign = 'center'; c.fillStyle = off ? '#d0605a' : THEME.mid;
-      let s = t(off ? 'hero.offline' : 'hero.own').toUpperCase();
+      c.font = `${8 * d}px ${WIDE}`; c.letterSpacing = `${1.5 * d}px`; c.textAlign = 'center'; c.fillStyle = off && !setup ? '#d0605a' : THEME.mid;
+      let s = t(setup ? 'hero.setup' : off ? 'hero.offline' : 'hero.own').toUpperCase();
       while (s.length > 1 && c.measureText(s).width > w - 16 * d) s = s.slice(0, -2) + '…';
       c.fillText(s, x + w / 2, y + h - 26 * d); c.letterSpacing = '0px';
     }
@@ -2942,11 +2942,13 @@ const TRYX_THEMES = ['', 'Cooling delivery', 'Migration', 'Quantum time capsule'
   'Sweet Cool Acrylic', 'Catch Me If You Can', 'The Battle of Ice and Fire', 'Oasis', 'Cyber Bunker', 'Edge Of Dream', 'Thermal Energy Prohibited'];
 const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx'].includes(d.kind);
 // the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max}]
-const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max] = z.split(':'); return { name, count: +count, min: +min, max: +max }; });
+const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max, at] = z.split(':'); return { name, count: +count, min: +min, max: +max, at: +at || 0 }; });
+// OpenRGB starts a board's ARGB connectors at 0 LEDs: nothing to light (not offline) until their counts are set
+const zonesNeed = d => !d.online && devZones(d).length > 0 && devZones(d).every(z => !z.count);
 function devStatus(d) {
+  if (zonesNeed(d)) return t('zones.need');   // first, also when switched off: it was likely switched off for looking offline
   if (!d.enabled) return t('dev.off');
   if (d.own) return t('own.status');
-  if (!d.online && devZones(d).length && devZones(d).every(z => !z.count)) return t('zones.need');
   if (d.pro && proLocked()) return t('dev.pro');
   if (!d.online && d.kind === 'tryx' && /KANALI/.test(d.info)) return t('tx.busy');
   if (d.online && d.kind === 'tryx' && / upload (\d+)%/.test(d.info)) return t('tx.up', RegExp.$1);
@@ -3162,31 +3164,46 @@ document.addEventListener('keydown', e => {
   // (the group window has its own Cancel for what was changed in it)
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec') && $('#gdlg').classList.contains('hidden')) { e.preventDefault(); undo(); }
 });
-// ---- calibration guide: red and blue on the device's two ends (its LED count, then which way effects run), then
-// everything white so its white can be matched to the other lights ([dev.N] warmth)
+// ---- calibration guide: red and blue on the device's two ends (its LED count; a board's ARGB connectors one by one,
+// as they cannot tell it), then which way effects run, then everything white so its white can be matched to the
+// other lights ([dev.N] warmth)
 let CAL = null;
 function calOpen(d, from) {
-  CAL = { d, from, sec: 'dev.' + d.id, i: 0, steps: [...(d.per_led && !devZones(d).length ? ['ends'] : []), ...(d.per_led ? ['dir'] : []), 'white'] };
+  const zs = devZones(d);
+  CAL = { d, from, sec: 'dev.' + d.id, i: 0, zc: Object.fromEntries(zs.map(z => [z.name, z.count])),
+    steps: [...(d.per_led ? (zs.length ? zs.map((z, j) => 'z' + j) : ['ends']) : []), ...(d.per_led ? ['dir'] : []), 'white'] };
   $('#cal').classList.remove('hidden'); calShow(); $('#cal-next').focus();
 }
 function calShow() {
   const { d, sec, steps, i } = CAL, s = steps[i], last = i === steps.length - 1;
-  send({ cmd: 'calib', zone: 'zone.dev' + d.id, mode: s === 'white' ? 2 : 1 });
+  // a connector: where it starts among the device's LEDs, with the counts already changed here before it
+  const zs = devZones(S.ext.devs.find(x => x.id === d.id) || d), zi = s[0] === 'z' ? +s.slice(1) : -1, z = zs[zi];
+  const zfrom = () => z.at + zs.slice(0, zi).reduce((a, y) => a + CAL.zc[y.name] - y.count, 0);
+  const show = () => send(z ? { cmd: 'calib', zone: 'zone.dev' + d.id, mode: 3, from: zfrom(), n: CAL.zc[z.name] } : { cmd: 'calib', zone: 'zone.dev' + d.id, mode: s === 'white' ? 2 : 1 });
+  show();
   $('#cal-title').textContent = t('cal.title', cv(sec, 'name', d.name));
   $('#cal-step').textContent = t('cal.step', i + 1, steps.length);
-  $('#cal-text').textContent = t('cal.' + s);
+  $('#cal-text').textContent = z ? t('cal.zone', z.name) : t('cal.' + s);
   // what the guide leaves out for this device, and why
-  const lim = !d.per_led ? 'cal.lim.one' : devZones(d).length ? 'cal.lim.zones' : '';
+  const lim = !d.per_led ? 'cal.lim.one' : '';
   $('#cal-lim').textContent = lim ? t(lim) : ''; $('#cal-lim').classList.toggle('hidden', !lim);
   $('#cal-back').classList.toggle('hidden', !i);
   $('#cal-next span').textContent = t(last ? 'cal.done' : 'cal.next');
   const ctl = $('#cal-ctl'), w = +cv(sec, 'warmth', 0);
-  ctl.innerHTML = s === 'ends' ? `<label class="num"><span>${t('leds')}</span><input type="number" id="cal-leds" min="1" max="512" value="${+cv(sec, 'leds', 0) || d.leds}"></label>`
+  ctl.innerHTML = z ? `<div class="wb"><div class="lbl"><span>${t('leds')}</span><b id="cal-zv">${CAL.zc[z.name]}</b></div>
+       <input type="range" class="range" id="cal-z" min="${z.min}" max="${Math.min(z.max, 512)}" value="${CAL.zc[z.name]}" aria-label="${esc(z.name)}"></div>`
+    : s === 'ends' ? `<label class="num"><span>${t('leds')}</span><input type="number" id="cal-leds" min="1" max="512" value="${+cv(sec, 'leds', 0) || d.leds}"></label>`
     : s === 'dir' ? `<button class="btn small" type="button" id="cal-swap">${t('cal.swap')}</button>`
     : `<div class="wb"><div class="lbl"><span>${t('wb')}</span><b id="cal-wv">${(w > 0 ? '+' : '') + w}</b></div>
        <input type="range" class="range wbr" id="cal-w" min="-100" max="100" step="5" value="${w}" aria-label="${esc(t('wb'))}">
        <div class="wb-ends"><span>${t('wb.cool')}</span><span>${t('wb.warm')}</span></div></div>`;
   $('#cal-leds')?.addEventListener('input', e => { const n = Math.round(+e.target.value); if (n >= 1 && n <= 512) setCfgSoon(sec, 'leds', n); });
+  // a connector's count: the pattern follows at once, the device takes the new size (reconnects) a moment later
+  const zr = $('#cal-z'); if (zr) { fill(zr); zr.addEventListener('input', () => {
+    fill(zr); CAL.zc[z.name] = +zr.value; $('#cal-zv').textContent = zr.value; show();
+    if (+cv(sec, 'leds', 0)) setCfg(sec, 'leds', 0);
+    setCfgSoon(sec, 'zones', zs.map(y => `${y.name}=${CAL.zc[y.name]}`).join('|'));
+  }); }
   $('#cal-swap')?.addEventListener('click', () => setCfg(sec, 'reverse', cv(sec, 'reverse', '0') === '1' ? 0 : 1));
   const r = $('#cal-w'); if (r) { fill(r); r.addEventListener('input', () => { fill(r); $('#cal-wv').textContent = (+r.value > 0 ? '+' : '') + r.value; setCfgSoon(sec, 'warmth', r.value); }); }
 }
@@ -3894,7 +3911,7 @@ function chip(dot, text, off) {
   return off && off.length ? `<button type="button" class="chip has-off" aria-haspopup="true" data-off="${esc(JSON.stringify(off))}"><span class="dot ${dot}"></span>${text}</button>`
     : `<span class="chip"><span class="dot ${dot}"></span>${text}</span>`;
 }
-const OFF_ROW = { nano: n => ({ n: nanoName(n), h: { k: 'nano', slot: n.slot } }), bulb: (b, i) => ({ n: bulbName(i), h: { k: 'bulb', i } }), ext: d => ({ n: d.name, h: { k: 'ext', id: d.id } }) };
+const OFF_ROW = { nano: n => ({ n: nanoName(n), h: { k: 'nano', slot: n.slot } }), bulb: (b, i) => ({ n: bulbName(i), h: { k: 'bulb', i } }), ext: d => ({ n: d.name + (zonesNeed(d) ? ' · ' + t('hero.setup') : ''), h: { k: 'ext', id: d.id } }) };
 const offs = (list, f) => list.map(f).filter((_, i) => !list[i].online);
 // a group of devices: its count while all answer, "N offline" (click: which ones) when some don't
 function chipSet(label, list, f) {

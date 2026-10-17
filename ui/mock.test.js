@@ -516,6 +516,32 @@
     STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
   });
 
+  test('OpenRGB: a board whose connectors have 0 LEDs says it needs setup, even switched off, and opens its LED counts', async () => {
+    await fresh();
+    STATE.ext.devs.push({ id: 15, kind: 'openrgb', title: 'OpenRGB', name: 'X870E', host: '127.0.0.1', sub: 5, leds: 0, per_led: 1, online: 0, enabled: 0, type: 'board', info: 'OpenRGB · set the LEDs on its connectors', zones: 'Addressable RGB Header 1:0:0:120|Addressable RGB Header 2:0:0:120' });
+    STATE.cfg['dev.15'] = { kind: 'openrgb', enabled: '0' }; await fanEmit();
+    ok($('#dev-st-15').textContent === t('zones.need'), 'the status: ' + $('#dev-st-15').textContent);
+    ok($('#dev-st-15').closest('.card').querySelector('details.dev-adv').open, 'the LED counts are not open');
+    STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit();
+  });
+
+  test('calibrate: each ARGB connector of a board gets its own step, its ends counted from where it starts', async () => {
+    await fresh();
+    STATE.ext.devs.push({ id: 16, kind: 'openrgb', title: 'OpenRGB', name: 'X870E', host: '127.0.0.1', sub: 6, leds: 88, per_led: 1, online: 1, enabled: 1, type: 'board', info: 'OpenRGB · X870E · motherboard', zones: 'Header 1:40:0:120:8|Header 2:40:0:120:48' });
+    STATE.cfg['dev.16'] = { kind: 'openrgb' }; await fanEmit();
+    calOpen(S.ext.devs.find(x => x.id === 16));
+    ok($('#cal-step').textContent === t('cal.step', 1, 4) && $('#cal-text').textContent === t('cal.zone', 'Header 1'), 'the first step: ' + $('#cal-step').textContent + ' / ' + $('#cal-text').textContent);
+    const r = $('#cal-z'); r.value = 24; r.dispatchEvent(new Event('input', { bubbles: true }));
+    const cal = () => sent.filter(o => o.cmd === 'calib').pop();
+    ok(cal().mode === 3 && cal().from === 8 && cal().n === 24, 'connector 1: ' + JSON.stringify(cal()));
+    ok(cv('dev.16', 'zones', '') === 'Header 1=24|Header 2=40', 'saved: ' + cv('dev.16', 'zones', ''));
+    $('#cal-next').click();
+    ok(cal().mode === 3 && cal().from === 32 && cal().n === 40, 'connector 2 starts after the new count of 1: ' + JSON.stringify(cal()));
+    $('#cal-x').click();
+    ok(cal().mode === 0, 'closing leaves the pattern on');
+    STATE.ext.devs.pop(); delete STATE.cfg['dev.16']; await fanEmit();
+  });
+
   for (const [name, fn] of tests) {
     try { await fn(); log.push('ok   ' + name); }
     catch (e) { R.failed++; log.push('FAIL ' + name + ': ' + e.message); }

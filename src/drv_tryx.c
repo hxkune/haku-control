@@ -210,7 +210,7 @@ static DWORD WINAPI upload(void *arg) {
     wchar_t wp[MAX_PATH]; FILE *f = NULL; BYTE *buf = NULL; long size = 0;
     if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wp, MAX_PATH) && (f = _wfopen(wp, L"rb"))) {
         fseek(f, 0, SEEK_END); size = ftell(f); fseek(f, 0, SEEK_SET);
-        // shortcut: the whole file in memory, 16 MB at most (the port carries ~10 KB/s: minutes already)
+        // shortcut: the whole file in memory, 16 MB at most (the port carries ~40-70 KB/s: 16 MB is 4-7 minutes)
         if (size > 0 && size <= 16 << 20 && (buf = malloc(size)) && fread(buf, 1, size, f) != (size_t)size) { free(buf); buf = NULL; }
         fclose(f);
     }
@@ -232,10 +232,17 @@ static DWORD WINAPI upload(void *arg) {
         }
         int got = answer(u, 15000);   // the device answers once it has fileSize bytes
         snprintf(b, sizeof(b), "{\"fileName\":\"%s\",\"md5\":\"%s\"}", name, md5);
-        if (!tx(u, "POST", "transported", b) || !answer(u, 5000)) { logf_("tryx: transported refused (%s the file)", got ? "after" : "no answer to"); goto fail; }
+        // a PANORAMA SE took over 5 s to answer for a 2 MB file (a report); a timeout may still mean the file is there
+        int done = tx(u, "POST", "transported", b) && answer(u, 20000);
         port_setup(u->h);
-        cfg_set_and_save(sec, "media_sent", name);
-        logf_("tryx: %s sent", name);
+        if (done) { cfg_set_and_save(sec, "media_sent", name); logf_("tryx: %s sent", name); }
+        else {   // not marked sent (sent again next time); shown if the device took the whole file (it answered) after all
+            logf_("tryx: transported not confirmed (%s the file)", got ? "after" : "no answer to");
+            if (!got || !show_media(u, name)) { logf_("tryx: %s not shown", name); goto fail; }
+            logf_("tryx: %s shown without the confirmation", name);
+            free(buf);
+            return 0;
+        }
     }
     if (!show_media(u, name)) logf_("tryx: %s sent but not shown", name);
     else logf_("tryx: %s shown", name);

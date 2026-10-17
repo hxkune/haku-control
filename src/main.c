@@ -157,6 +157,7 @@ static volatile LONG msi_own, ram_own, need_own;
 static volatile LONG off_at;              // GetTickCount() when the lights go off (0: no timer); the last minute fades
 static volatile LONG ident_zone = -1, ident_at;   // that zone blinks white for a few seconds
 static volatile LONG cal_zone = -1, cal_mode, cal_at;   // the calibration guide's pattern: 1 the zone's ends (first red, last blue), 2 all white
+static volatile LONG cal_from, cal_n, cal_rev;          // 3: the ends of one connector, LEDs cal_from.. as they sit on the cable
 #define CAL_MS       300000   // left on by a window that went away: it stops by itself
 #define OFF_FADE_MS  60000
 #define IDENT_MS     3000
@@ -409,7 +410,7 @@ static unsigned __stdcall render_thread(void *p) {
         }
         int iz = tk - (DWORD)ident_at < IDENT_MS ? ident_zone : -1, iblink = (tk - (DWORD)ident_at) / 250 % 2 == 0;
         int cm = tk - (DWORD)cal_at < CAL_MS ? cal_mode : 0, cz = cal_zone, cn = 0;
-        if (cm == 1) for (int i = 0; i < sc.count; i++) if (sc.leds[i].zone == cz && sc.leds[i].index >= cn) cn = sc.leds[i].index + 1;
+        if (cm == 1 || cm == 3) for (int i = 0; i < sc.count; i++) if (sc.leds[i].zone == cz && sc.leds[i].index >= cn) cn = sc.leds[i].index + 1;
         effects_render(fx, &sc, &sn, dt, out);
         int bulb_k[8] = { 0 };
         for (int i = 0; i < sc.count; i++)
@@ -427,9 +428,11 @@ static unsigned __stdcall render_thread(void *p) {
             if (was) c = mixc(*was, c, xk);   // (an LED new to this profile just starts)
             if (sc.leds[i].zone == iz) c.r = c.g = c.b = iblink ? 1.0f : 0.0f;
             if (cm == 2) c.r = c.g = c.b = 0.8f;
-            else if (cm == 1 && sc.leds[i].zone == cz) {
-                int x = sc.leds[i].index;
-                c.r = x == 0 ? 1.0f : x == cn - 1 ? 0 : 0.05f; c.g = x == 0 || x == cn - 1 ? 0 : 0.05f; c.b = x == cn - 1 ? 1.0f : x == 0 ? 0 : 0.05f;
+            else if ((cm == 1 || cm == 3) && sc.leds[i].zone == cz) {
+                // 3: counted on the cable, so [dev.N] reverse (applied after this) does not move it to another connector
+                int x = cm == 3 ? (cal_rev ? cn - 1 - sc.leds[i].index : sc.leds[i].index) - cal_from : sc.leds[i].index, m = cm == 3 ? cal_n : cn;
+                if (x < 0 || x >= m) c.r = c.g = c.b = 0;
+                else { c.r = x == 0 ? 1.0f : x == m - 1 ? 0 : 0.05f; c.g = x == 0 || x == m - 1 ? 0 : 0.05f; c.b = x == m - 1 ? 1.0f : x == 0 ? 0 : 0.05f; }
             }
             out[i] = c;   // kept for the preview (before the white-bulb conversion below)
             const led_t *l = &sc.leds[i];
@@ -1221,13 +1224,14 @@ void app_identify(const char *zone) {
     }
 }
 
-void app_calib(const char *zone, int mode) {
+void app_calib(const char *zone, int mode, int from, int n) {
     char z[64];
     cal_mode = 0;
     if (mode == 2) { cal_at = (LONG)GetTickCount(); cal_mode = 2; return; }
-    for (int k = 0; mode == 1 && k < MAX_ZONES; k++) {
+    if (mode == 3) { snprintf(z, sizeof(z), "dev.%d", _strnicmp(zone, "zone.dev", 8) ? 0 : atoi(zone + 8)); cal_rev = cfg_geti(z, "reverse", 0); cal_from = from; cal_n = n; }
+    for (int k = 0; (mode == 1 || mode == 3) && k < MAX_ZONES; k++) {
         zone_section(k, z, sizeof(z));
-        if (!_stricmp(z, zone)) { cal_zone = k; cal_at = (LONG)GetTickCount(); cal_mode = 1; return; }
+        if (!_stricmp(z, zone)) { cal_zone = k; cal_at = (LONG)GetTickCount(); cal_mode = mode; return; }
     }
 }
 

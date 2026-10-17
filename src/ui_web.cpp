@@ -176,7 +176,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "power") { app_power(); post_status(); }
     else if (cmd == "timed_off") { app_timed_off(atoi(field(js, "min").c_str())); post_status(); }
     else if (cmd == "identify") app_identify(field(js, "zone").c_str());
-    else if (cmd == "calib") app_calib(field(js, "zone").c_str(), atoi(field(js, "mode").c_str()));
+    else if (cmd == "calib") app_calib(field(js, "zone").c_str(), atoi(field(js, "mode").c_str()), atoi(field(js, "from").c_str()), atoi(field(js, "n").c_str()));
     else if (cmd == "dev_check") { std::string id = field(js, "id"); ext_retry(); net_check_start(atoi(id.c_str()), cfg_get(("dev." + id).c_str(), "host", "")); post_status(); }
     else if (cmd == "pair") { std::string ip = field(js, "ip"); nano_pair_start_ip(ip.c_str()); post_status(); }
     else if (cmd == "preset") { app_preset_apply(atoi(field(js, "id").c_str())); post_state(); }
@@ -426,7 +426,8 @@ static bool remote_allowed(const std::string &js) {
     }
     if (cmd == "calib") {
         std::string m = field(js, "mode"), z = field(js, "zone");
-        if (m.size() != 1 || m[0] < '0' || m[0] > '2' || z.size() > 60) return false;
+        if (m.size() != 1 || m[0] < '0' || m[0] > '3' || z.size() > 60) return false;
+        for (const char *k : { "from", "n" }) { std::string v = field(js, k); if (v.size() > 3) return false; for (char c : v) if (!isdigit((unsigned char)c)) return false; }
         for (char c : z) if (!isalnum((unsigned char)c) && c != '.' && c != '_' && c != '-') return false;
         return true;
     }

@@ -210,14 +210,17 @@ static int pick_mode(const ctrl_t *c, orgb_t *o, float *rate, const char **how) 
 
 // The resizable zones (ARGB headers): the sizes chosen in the window ([dev.N] zones "name=count|...") given to
 // OpenRGB (it starts them at 0 and keeps a size only until it restarts, so this is done at every connect), and the
-// zones as they are written to [dev.N] zones_found "name:count:min:max|..." for the window. 1: a size was changed.
+// zones as they are written to [dev.N] zones_found "name:count:min:max:first LED|..." for the window. 1: a size was changed.
+// An ARGB header cannot tell how many LEDs hang on it: one never set gets a guess so it lights at once, and the
+// calibration guide finds the count by eye (red on its first LED, blue on its last).
+#define ZONE_GUESS 40
 static int apply_zones(SOCKET s, unsigned idx, const char *sec, const ctrl_t *c) {
     const char *want = cfg_get(sec, "zones", "");
-    char found[256] = ""; int n = 0, changed = 0;
+    char found[256] = ""; int n = 0, changed = 0, at = 0;
     for (int z = 0; z < c->nzones; z++) {
         const zone_t_ *x = &c->zn[z];
-        if (x->min >= x->max) continue;
-        int size = x->count;
+        if (x->min >= x->max) { at += x->count; continue; }
+        int size = x->count ? x->count : ZONE_GUESS;
         char key[40]; snprintf(key, sizeof(key), "%s=", x->name);
         for (const char *p = want; (p = strstr(p, key)) != NULL; p += strlen(key))
             if (p == want || p[-1] == '|') { size = atoi(p + strlen(key)); break; }
@@ -229,7 +232,8 @@ static int apply_zones(SOCKET s, unsigned idx, const char *sec, const ctrl_t *c)
             memcpy(b, &zi, 4); memcpy(b + 4, &size, 4);
             if (send_pkt(s, idx, PKT_RESIZEZONE, b, 8)) changed = 1;
         }
-        n += snprintf(found + n, sizeof(found) - n, "%s%s:%d:%d:%d", n ? "|" : "", x->name, size, x->min, x->max);
+        n += snprintf(found + n, sizeof(found) - n, "%s%s:%d:%d:%d:%d", n ? "|" : "", x->name, size, x->min, x->max, at);
+        at += size;
         if (n >= (int)sizeof(found)) break;
     }
     if (strcmp(cfg_get(sec, "zones_found", ""), found)) { cfg_set(sec, "zones_found", found); cfg_save_if_dirty(); }
