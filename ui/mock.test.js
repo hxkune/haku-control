@@ -487,6 +487,21 @@
     await fanReset();
   });
 
+  test('TRYX: your own picture is picked in the PC window, its sending shows in the status', async () => {
+    await fresh();
+    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D03', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'strip', info: 'TRYX PANORAMA · COM5 · USB' });
+    STATE.cfg['dev.14'] = { kind: 'tryx' }; await fanEmit();
+    const card = () => $('#dev-st-14').closest('.card'), sel = card().querySelector('.dev-theme');
+    ok([...sel.options].some(o => o.value === '-1'), 'no option for your own picture');
+    sel.value = '-1'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    ok(sent.some(o => o.cmd === 'tryx_media' && o.id === '14') && !sets('dev.14', 'theme').length, 'picking "your own" without a file: ' + JSON.stringify(sent));
+    await wait(150); await fanEmit();
+    ok(card().querySelector('.dev-media-name').textContent === 'cat.gif' && card().querySelector('.dev-theme').value === '-1', 'the picked file: ' + card().querySelector('.dev-media-name').textContent);
+    STATE.ext.devs[STATE.ext.devs.length - 1].info += ' · upload 42%'; await fanEmit();
+    ok($('#dev-st-14').textContent === t('tx.up', 42), 'the status while sending: ' + $('#dev-st-14').textContent);
+    STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+  });
+
   for (const [name, fn] of tests) {
     try { await fn(); log.push('ok   ' + name); }
     catch (e) { R.failed++; log.push('FAIL ' + name + ': ' + e.message); }

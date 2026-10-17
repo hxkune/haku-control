@@ -2948,6 +2948,8 @@ function devStatus(d) {
   if (!d.online && devZones(d).length && devZones(d).every(z => !z.count)) return t('zones.need');
   if (d.pro && proLocked()) return t('dev.pro');
   if (!d.online && d.kind === 'tryx' && /KANALI/.test(d.info)) return t('tx.busy');
+  if (d.online && d.kind === 'tryx' && / upload (\d+)%/.test(d.info)) return t('tx.up', RegExp.$1);
+  if (d.online && d.kind === 'tryx' && / upload failed/.test(d.info)) return t('tx.up.fail');
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
 }
@@ -3006,7 +3008,8 @@ function buildDevices() {
           <p class="hint">${t('dv.lights.note')}</p>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>`}` : ''}
         ${d.kind === 'tryx' ? `<label class="num"><span>${t('tx.theme')}</span><select class="select dev-theme">${TRYX_THEMES.map((n, v) =>
-            `<option value="${v}"${+cv(sec, 'theme', 0) === v ? ' selected' : ''}>${v ? v + '. ' + n : t('tx.keep')}</option>`).join('')}</select></label>
+            `<option value="${v}"${+cv(sec, 'theme', 0) === v ? ' selected' : ''}>${v ? v + '. ' + n : t('tx.keep')}</option>`).join('')}<option value="-1"${+cv(sec, 'theme', 0) === -1 ? ' selected' : ''}>${t('tx.own')}</option></select></label>
+          <div class="pc-only" style="display:flex;gap:10px;align-items:center;margin:4px 0"><button class="btn small ghost dev-media" type="button"><span>${t('tx.pick')}</span></button><span class="muted dev-media-name">${esc(cv(sec, 'media', '').split(/[\\/]/).pop())}</span></div>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('tx.follow')}</em></label>
           <p class="hint">${t('tx.note')}</p>` : ''}
         <details class="trouble dev-adv"${DEV_ADV.has(d.id) || devStatus(d) === t('zones.need') ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
@@ -3058,7 +3061,9 @@ function buildDevices() {
       setCfg(sec, 'zones', v);
     }));
     el.querySelector('.dev-fx')?.addEventListener('change', e => setCfg(sec, 'frame_fx', e.target.value));
-    el.querySelector('.dev-theme')?.addEventListener('change', e => setCfg(sec, 'theme', e.target.value));
+    // the own picture: picked in the PC's file window (the core sets media and theme=-1), never typed in
+    el.querySelector('.dev-theme')?.addEventListener('change', e => e.target.value === '-1' && !cv(sec, 'media', '') ? send({ cmd: 'tryx_media', id: String(d.id) }) : setCfg(sec, 'theme', e.target.value));
+    el.querySelector('.dev-media')?.addEventListener('click', () => send({ cmd: 'tryx_media', id: String(d.id) }));
     el.querySelector('.dev-screen')?.addEventListener('change', e => {
       setCfg(sec, 'screen', e.target.value);
       el.querySelector('.dev-dial-box').classList.toggle('hidden', e.target.value !== 'dial');

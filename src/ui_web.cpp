@@ -216,6 +216,19 @@ static void on_message(const std::string &js) {
         }
         post_state();
     }
+    else if (cmd == "tryx_media") {   // the TRYX screen's own picture / GIF / video: a file on this PC, picked here only
+        std::string sec = "dev." + field(js, "id");
+        wchar_t file[MAX_PATH] = L"";
+        OPENFILENAMEW of = { sizeof(of) };
+        of.hwndOwner = wnd; of.lpstrFilter = L"*.png; *.jpg; *.gif; *.webp; *.bmp; *.mp4\0*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.mp4\0"; of.lpstrFile = file; of.nMaxFile = MAX_PATH;
+        of.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        if (!_stricmp(cfg_get(sec.c_str(), "kind", ""), "tryx") && GetOpenFileNameW(&of)) {
+            cfg_set(sec.c_str(), "media", narrow(file).c_str());
+            cfg_set(sec.c_str(), "media_at", std::to_string(GetTickCount()).c_str());   // the same file picked again is sent again
+            app_set(sec.c_str(), "theme", "-1");
+        }
+        post_state();
+    }
     else if (cmd == "ai_on_demand") { ollama_set_on_demand(field(js, "v") == "1"); post_state(); }
     else if (cmd == "dev_add") {
         ext_add(field(js, "kind").c_str(), field(js, "host").c_str(), atoi(field(js, "sub").c_str()),
@@ -423,7 +436,8 @@ static bool remote_allowed(const std::string &js) {
     // plain names only: a space, "=" or "]" would write a different ini line than the one checked
     for (char c : s + k) if (!isalnum((unsigned char)c) && c != '.' && c != '_' && c != '-') return false;
     return !s.empty() && !k.empty() && _stricmp(s.c_str(), "remote") && _stricmp(s.c_str(), "mqtt") && _stricmp(s.c_str(), "fans") && _stricmp(s.c_str(), "link") &&
-           !(!_stricmp(s.c_str(), "openrgb") && !_stricmp(k.c_str(), "path")) && !(!_stricmp(s.c_str(), "mood") && !_stricmp(k.c_str(), "ollama_path"));
+           !(!_stricmp(s.c_str(), "openrgb") && !_stricmp(k.c_str(), "path")) && !(!_stricmp(s.c_str(), "mood") && !_stricmp(k.c_str(), "ollama_path")) &&
+           !(!_strnicmp(s.c_str(), "dev.", 4) && !_strnicmp(k.c_str(), "media", 5));   // a file on this PC for the TRYX screen
 }
 
 extern "C" int ui_dispatch(const char *json) {

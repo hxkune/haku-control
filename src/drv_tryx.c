@@ -11,7 +11,10 @@
 // What it does here: the screen follows the lights ([dev.N] screen_follow, default on: off when the effect is
 // Off, brightness with the app's brightness) and [dev.N] theme=1..14 picks one of the PANORAMA's built-in themes
 // (0: leave the screen as TRYX KANALI set it). The haku device itself is one light that shows nothing: the cooler's
-// own LEDs are on the motherboard's ARGB header. Own pictures need ADB (files go to /sdcard/pcMedia), not done.
+// own LEDs are on the motherboard's ARGB header. theme=-1 shows [dev.N] media, a picture / GIF / mp4 on this PC, sent
+// over the same port the way tryxctl does it: transport {fileName, fileSize, type "media"}, the raw bytes unframed,
+// then transported {fileName, md5}; the device keeps it in sdcard/pcMedia and waterBlockScreenId "Customization"
+// shows it. The name on the device is the md5 + the extension, so the same file is not sent twice ([dev.N] media_sent).
 // Untested on hardware: every answer that is not 200 is logged.
 #include "devices.h"
 #include "tryx_frame.h"
@@ -27,11 +30,27 @@ static const char *const THEMES[] = { "Cooling delivery", "Migration", "Quantum 
     "Cyber Bunker", "Edge Of Dream", "Thermal Energy Prohibited" };
 #define NTHEMES (int)(sizeof(THEMES) / sizeof(THEMES[0]))
 
+// The device's name for a file: the md5's first 16 hex digits + its extension in lower case; 0: not a kind it shows
+// (mp4 plays as a video, the rest go to its picture viewer; .mov / .avi / .mkv show nothing)
+static int media_name(const char *path, const char *md5, char *out, int cap) {
+    static const char *const EXT[] = { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".mp4" };
+    const char *dot = strrchr(path, '.'), *sl = strrchr(path, '\\');
+    if (!dot || (sl && dot < sl) || strlen(dot) > 5) return 0;
+    char ext[8]; strcpy_s(ext, sizeof(ext), dot); _strlwr_s(ext, sizeof(ext));
+    for (int i = 0; i < (int)(sizeof(EXT) / sizeof(EXT[0])); i++)
+        if (!strcmp(ext, EXT[i])) return snprintf(out, cap, "%.16s%s", md5, ext) > 0;
+    return 0;
+}
+
+#ifndef TRYX_TEST
 typedef struct {
     HANDLE h;
-    int seq, on, br, theme;     // what was last sent (-1: nothing yet)
+    int seq, on, br, theme;     // what was last sent (-1: own media, 0: nothing yet)
     DWORD last_state;
     int rn; unsigned char rx[4096];
+    // own media: its thread has the port while it runs, tryx_send leaves it alone
+    HANDLE up; volatile LONG stop, pct; int id, force, failed; USHORT pid;
+    char media[MAX_PATH * 3 + 16], base[96];   // [dev.N] media|media_at last tried; the info line
 } tryx_t;
 
 // Walks the TRYX serial ports in a stable order; cb returns 1 to stop.
@@ -146,7 +165,7 @@ static int tryx_open(ext_dev *d) {
     }
     tryx_t *u = calloc(1, sizeof(tryx_t));
     if (!u) { CloseHandle(f.h); return 0; }
-    u->h = f.h; u->on = u->br = u->theme = -1;
+    u->h = f.h; u->on = u->br = -1; u->pid = f.pid;
     d->priv = u;
     // the device ignores the port for a few seconds after it starts: conn until it answers
     int ok = port_setup(u->h), up = 0;
@@ -157,18 +176,95 @@ static int tryx_open(ext_dev *d) {
     if (!up) { logf_("tryx: %s does not answer conn", f.com); tryx_close(d); return 0; }
     d->nleds = 1;
     snprintf(d->info, sizeof(d->info), "TRYX PANORAMA%s · %s · USB", f.pid == 0x2D04 ? " SE" : "", f.com);
+    strcpy_s(u->base, sizeof(u->base), d->info);
     return 1;
+}
+
+static void got_any(tryx_t *u, const char *text, void *ctx) { (void)u; *(int *)ctx = strncmp(text, "1 200", 5) ? -1 : 1; }
+
+// Waits for the next answer: 1 when it is 200
+static int answer(tryx_t *u, int ms) {
+    int r = 0;
+    for (int w = 0; !r && w < ms / 20 && !u->stop; w++) { Sleep(20); if (!rx(u, got_any, &r)) return 0; }
+    return r == 1;
+}
+
+static int show_media(tryx_t *u, const char *name) {
+    // ratio: 2:1 is the PANORAMA's 2240x1080 (what TRYX KANALI sends), 16:9 the SE's 1920x1080
+    char b[512]; int vid = strstr(name, ".mp4") != NULL;
+    snprintf(b, sizeof(b), "{\"Type\":\"%s\",\"id\":\"Customization\",\"screenMode\":\"Full Screen\",\"ratio\":\"%s\",\"playMode\":\"Single\","
+             "\"media\":[\"%s\"],\"sysinfoDisplay\":[],\"settings\":{\"align\":\"Center\",\"color\":\"#FFFFFF\",\"badges\":[],"
+             "\"position\":\"Top\",\"filter\":{\"value\":\"\",\"opacity\":0}}}", vid ? "media" : "image", u->pid == 0x2D04 ? "16:9" : "2:1", name);
+    // twice, half a second apart: the device may keep the screen it had cached (reed-tpse)
+    int ok = tx(u, "POST", "waterBlockScreenId", b) && answer(u, 1500);
+    Sleep(500);
+    return tx(u, "POST", "waterBlockScreenId", b) && answer(u, 1500) && ok;
+}
+
+// The thread that sends [dev.N] media and shows it
+static DWORD WINAPI upload(void *arg) {
+    tryx_t *u = arg;
+    char sec[24], path[MAX_PATH * 3], md5[33] = "", name[40] = "", b[256];
+    snprintf(sec, sizeof(sec), "dev.%d", u->id);
+    strcpy_s(path, sizeof(path), cfg_get(sec, "media", ""));
+    wchar_t wp[MAX_PATH]; FILE *f = NULL; BYTE *buf = NULL; long size = 0;
+    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, wp, MAX_PATH) && (f = _wfopen(wp, L"rb"))) {
+        fseek(f, 0, SEEK_END); size = ftell(f); fseek(f, 0, SEEK_SET);
+        // shortcut: the whole file in memory, 16 MB at most (the port carries ~10 KB/s: minutes already)
+        if (size > 0 && size <= 16 << 20 && (buf = malloc(size)) && fread(buf, 1, size, f) != (size_t)size) { free(buf); buf = NULL; }
+        fclose(f);
+    }
+    BYTE h[16];
+    if (!buf || BCryptHash(BCRYPT_MD5_ALG_HANDLE, NULL, 0, buf, (ULONG)size, h, 16)) { logf_("tryx: %s cannot be read or is over 16 MB", path); goto fail; }
+    for (int i = 0; i < 16; i++) sprintf(md5 + i * 2, "%02x", h[i]);
+    if (!media_name(path, md5, name, sizeof(name))) { logf_("tryx: %s is not a picture, GIF or mp4", path); goto fail; }
+    if (u->force || strcmp(cfg_get(sec, "media_sent", ""), name)) {
+        logf_("tryx: sending %s as %s (%ld bytes)", path, name, size);
+        COMMTIMEOUTS to = { MAXDWORD, 0, 0, 0, 5000 };   // a whole chunk may take ~0.4 s at 115200
+        SetCommTimeouts(u->h, &to);
+        snprintf(b, sizeof(b), "{\"fileName\":\"%s\",\"fileSize\":%ld,\"type\":\"media\"}", name, size);   // never "firmware"
+        if (!tx(u, "POST", "transport", b) || !answer(u, 3000)) { logf_("tryx: transport refused"); goto fail; }
+        for (long at = 0; at < size; ) {
+            DWORD wr = 0, n = size - at > 4096 ? 4096 : (DWORD)(size - at);
+            if (u->stop || !WriteFile(u->h, buf + at, n, &wr, NULL) || !wr) { logf_("tryx: sending stopped at %ld of %ld (error %lu)", at, size, GetLastError()); goto fail; }
+            at += wr; u->pct = (LONG)((long long)at * 100 / size);
+            Sleep(20);   // tryxctl's pace: the device has no flow control
+        }
+        int got = answer(u, 15000);   // the device answers once it has fileSize bytes
+        snprintf(b, sizeof(b), "{\"fileName\":\"%s\",\"md5\":\"%s\"}", name, md5);
+        if (!tx(u, "POST", "transported", b) || !answer(u, 5000)) { logf_("tryx: transported refused (%s the file)", got ? "after" : "no answer to"); goto fail; }
+        port_setup(u->h);
+        cfg_set_and_save(sec, "media_sent", name);
+    }
+    if (!show_media(u, name)) logf_("tryx: %s sent but not shown", name);
+    free(buf);
+    return 0;
+fail:
+    free(buf); port_setup(u->h);
+    u->failed = 1;
+    return 0;
 }
 
 static int tryx_send(ext_dev *d, const rgbf *c, int n) {
     (void)c; (void)n;
     tryx_t *u = d->priv;
+    if (u->up) {   // own media on its way: the port is the thread's
+        if (WaitForSingleObject(u->up, 0) == WAIT_TIMEOUT) { snprintf(d->info, sizeof(d->info), "%s · upload %ld%%", u->base, u->pct); return 1; }
+        CloseHandle(u->up); u->up = NULL; u->rn = 0;
+        snprintf(d->info, sizeof(d->info), "%s%s", u->base, u->failed ? " · upload failed" : "");
+    }
     if (!rx(u, NULL, NULL)) return 0;
-    char sec[24], b[512]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    char sec[24], b[512], key[sizeof(u->media)]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
     // one setting per round at most: the device drops reads that hold more than two frames
     int follow = cfg_geti(sec, "screen_follow", 1), theme = cfg_geti(sec, "theme", 0);
     int on = _stricmp(cfg_get("general", "effect", ""), "off") != 0, br = (int)(app_brightness_now() * 100 + 0.5f);
-    if (theme != u->theme && theme >= 1 && theme <= NTHEMES) {
+    snprintf(key, sizeof(key), "%s|%s", cfg_get(sec, "media", ""), cfg_get(sec, "media_at", ""));
+    if (theme == -1 && key[0] != '|' && (u->theme != -1 || strcmp(key, u->media))) {
+        // a new pick sends the file again; else what the device already has is shown (media_sent)
+        u->force = u->media[0] && strcmp(key, u->media); u->id = d->id; u->pct = 0; u->failed = 0; u->stop = 0;
+        strcpy_s(u->media, sizeof(u->media), key); u->theme = -1;
+        if (!(u->up = CreateThread(NULL, 0, upload, u, 0, NULL))) logf_("tryx: no upload thread");
+    } else if (theme != u->theme && theme >= 1 && theme <= NTHEMES) {
         snprintf(b, sizeof(b), "{\"id\":\"Pre-set %d: %s\",\"settings\":{\"color\":\"#dcdcdc\",\"align\":\"Left\",\"filter\":{\"value\":null,"
                  "\"opacity\":100},\"badges\":[]},\"sysinfoDisplay\":[\"Date&Time\"]}", theme, THEMES[theme - 1]);
         if (!tx(u, "POST", "waterBlockScreenId", b)) return 0;
@@ -195,6 +291,7 @@ static int tryx_send(ext_dev *d, const rgbf *c, int n) {
 
 static void tryx_leave(ext_dev *d, int how) {
     char sec[24]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    if (((tryx_t *)d->priv)->up) return;   // the upload has the port; close stops it
     // off: the screen goes dark; otherwise it keeps what it shows (its own "disconnected" screen after a minute)
     if (how == LEAVE_OFF && cfg_geti(sec, "screen_follow", 1)) tx(d->priv, "POST", "waterBlockScreen", "{\"enable\":false}");
 }
@@ -202,6 +299,7 @@ static void tryx_leave(ext_dev *d, int how) {
 static void tryx_close(ext_dev *d) {
     tryx_t *u = d->priv;
     if (!u) return;
+    if (u->up) { u->stop = 1; WaitForSingleObject(u->up, INFINITE); CloseHandle(u->up); }   // a write gives up within 5 s
     if (u->h && u->h != INVALID_HANDLE_VALUE) CloseHandle(u->h);
     free(u); d->priv = NULL;
 }
@@ -227,3 +325,16 @@ static void tryx_discover(int ms, void (*found)(const disc_t *)) {
 }
 
 const ext_driver drv_tryx = { "tryx", "TRYX PANORAMA", 2, 0, tryx_open, tryx_send, tryx_leave, tryx_close, tryx_discover };
+
+#else   // cl /DTRYX_TEST src\drv_tryx.c
+#include <assert.h>
+int main(void) {
+    const char *m = "0123456789abcdef0123456789abcdef"; char n[40];
+    assert(media_name("C:\\Pics\\Кот.GIF", m, n, sizeof(n)) && !strcmp(n, "0123456789abcdef.gif"));
+    assert(media_name("D:\\v\\clip.mp4", m, n, sizeof(n)) && !strcmp(n, "0123456789abcdef.mp4"));
+    assert(media_name("a.jpeg", m, n, sizeof(n)) && !strcmp(n, "0123456789abcdef.jpeg"));
+    assert(!media_name("clip.mov", m, n, sizeof(n)) && !media_name("C:\\x.y\\noext", m, n, sizeof(n)) && !media_name("a.firmware", m, n, sizeof(n)));
+    puts("tryx ok");
+    return 0;
+}
+#endif
