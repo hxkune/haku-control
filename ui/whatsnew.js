@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.31',
+    en: ['OpenRGB devices: a new Mode setting in the device card, auto (Direct) or Static. If a board’s LEDs flicker in random colours even with few updates (seen on ASRock boards), choose Static: steady colours, changed a few times a second.'],
+    ru: ['Устройства OpenRGB: новая настройка «Режим» в карточке устройства, авто (Direct) или Static. Если диоды платы мерцают случайными цветами даже при малом числе обновлений (бывает на платах ASRock), выберите Static: ровные цвета, меняются несколько раз в секунду.'],
+    fr: ['Appareils OpenRGB : nouveau réglage Mode dans la fiche de l’appareil, auto (Direct) ou Static. Si les LED d’une carte scintillent de couleurs au hasard même avec peu de mises à jour (vu sur des cartes ASRock), choisissez Static : couleurs stables, changées quelques fois par seconde.'] },
   { v: '0.4.30',
     en: ['Motherboard ARGB connectors: Find devices also lists each connector as a device of its own (board name · connector), so a strip, a lit cable or fans on one connector can be added and lit on their own. If you add them, remove the whole-board device. A strip never shows up by its own name: look for the board and its connector.'],
     ru: ['ARGB-разъёмы материнской платы: «Найти устройства» показывает и каждый разъём отдельным устройством (название платы · разъём), так что ленту, подсвеченный кабель или вентиляторы на одном разъёме можно добавить и светить отдельно. Если добавите их, удалите устройство всей платы. Сама лента своим названием не появляется никогда: ищите плату и её разъём.'],
