@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.21',
+    en: ['Fans: a panel of tiles. Click a fan or a group to open its settings in a window.', 'Groups: put fans together and set them all at once.', 'Rename a fan (say, Pump) or a group; take a fan you do not have off the panel and put it back any time.'],
+    ru: ['Вентиляторы: теперь это панель плиток. Нажмите на вентилятор или группу, и настройки откроются в окне.', 'Группы: соберите вентиляторы вместе и настраивайте их все сразу.', 'Вентилятор (например, помпу) и группу можно переименовать; лишний вентилятор убирается с панели и возвращается в любой момент.'],
+    fr: ['Ventilateurs : un panneau de tuiles. Cliquez sur un ventilateur ou un groupe pour ouvrir ses réglages dans une fenêtre.', 'Groupes : réunissez des ventilateurs et réglez-les tous à la fois.', 'Renommez un ventilateur (une pompe, par exemple) ou un groupe ; retirez du panneau un ventilateur que vous n’avez pas et remettez-le quand vous voulez.'] },
   { v: '0.4.20',
     en: ['Fans: a new tab for the Aqua Computer QUADRO. Each fan stays as is, runs at a fixed speed or follows a curve by the GPU or a QUADRO sensor; drag the points or use the arrow keys. Never below 20%, and the QUADRO gets its own settings back when haku closes or the PC sleeps. Experimental: reports are very welcome.', 'The QUADRO’s water temperature now feeds the Temperature effect.', 'TRYX PANORAMA: when TRYX KANALI holds the port, the card says so.'],
     ru: ['Вентиляторы: новая вкладка для Aqua Computer QUADRO. Каждый вентилятор работает как есть, на постоянной скорости или по кривой от видеокарты или датчика QUADRO; точки перетаскиваются мышью или стрелками. Не ниже 20%, а когда haku закрывается или ПК засыпает, QUADRO получает свои настройки обратно. Экспериментально: отчёты очень помогут.', 'Температура воды с QUADRO теперь идёт в эффект «Температура».', 'TRYX PANORAMA: если порт занят TRYX KANALI, карточка так и говорит.'],
