@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.25',
+    en: ['TRYX PANORAMA and 240 SE (beta): show your own picture, GIF or mp4 on the cooler’s screen. In Devices pick “Your picture or video” and choose a file (up to 16 MB). It goes over the cable slowly, about 10 KB/s, and only once; the card shows the progress. Close TRYX KANALI first.'],
+    ru: ['TRYX PANORAMA и 240 SE (бета): своя картинка, GIF или mp4 на экране кулера. В «Устройствах» выберите «Своя картинка или видео» и файл (до 16 МБ). Он идёт по кабелю медленно, около 10 КБ/с, и только один раз; карточка показывает прогресс. Сначала закройте TRYX KANALI.'],
+    fr: ['TRYX PANORAMA et 240 SE (bêta) : votre image, GIF ou mp4 sur l’écran du refroidisseur. Dans Appareils, choisissez « Votre image ou vidéo » puis un fichier (16 Mo au plus). Il passe lentement par le câble, environ 10 Ko/s, et une seule fois ; la carte montre la progression. Fermez d’abord TRYX KANALI.'] },
   { v: '0.4.24',
     en: ['iCUE LINK (beta, read only): turn it on in the PC tab to see the RPM and temperature of each device on the hub, and the Corsair power supply’s voltages, currents and watts. Close iCUE first: while it runs, the card says so and haku leaves the hub alone.', 'OpenRGB: two RAM sticks of one kit, which share a name, are both added now.'],
     ru: ['iCUE LINK (бета, только чтение): включите на вкладке ПК, чтобы видеть обороты и температуру каждого устройства на хабе, а также напряжение, ток и мощность блока питания Corsair. Сначала закройте iCUE: пока он работает, карточка об этом говорит, и haku не трогает хаб.', 'OpenRGB: две планки памяти из одного комплекта с одинаковым названием теперь добавляются обе.'],
