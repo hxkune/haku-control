@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.29',
+    en: ['ASUS boards: haku now lights the board’s own LEDs (the ROG logo, the I/O cover) itself, over its USB Aura controller: Find devices › ASUS board LEDs. If the board does not say how many LEDs it has, Calibrate finds the count. Close Armoury Crate first.', 'Calibrate: no blue at all on a connector means its count is too high.'],
+    ru: ['Платы ASUS: haku теперь сам управляет подсветкой платы (логотип ROG, кожух портов) через её USB-контроллер Aura: «Найти устройства» › ASUS board LEDs. Если плата не сообщает число светодиодов, его найдёт «Калибровка». Сначала закройте Armoury Crate.', 'Калибровка: если синего на разъёме не видно совсем, число светодиодов слишком большое.'],
+    fr: ['Cartes ASUS : haku allume maintenant lui-même les LED de la carte (logo ROG, cache des ports) par son contrôleur USB Aura : Trouver les appareils › ASUS board LEDs. Si la carte ne dit pas combien de LED elle a, Calibrer trouve le nombre. Fermez d’abord Armoury Crate.', 'Calibrer : pas de bleu du tout sur un connecteur, son nombre est trop grand.'] },
   { v: '0.4.28',
     en: ['Motherboard ARGB connectors light at once: one never set starts with a guessed LED count, and Calibrate finds the real one by eye, connector by connector (red on its first LED, blue on its last). A board left at 0 LEDs says it needs setup instead of looking offline.', 'TRYX: a sent picture or video waits longer for the cooler to confirm it, and is shown if the cooler took it without confirming.'],
     ru: ['ARGB-разъёмы материнской платы светятся сразу: у ненастроенного стоит примерное число светодиодов, а «Калибровка» находит точное на глаз, разъём за разъёмом (красный на первом светодиоде, синий на последнем). Плата с 0 светодиодов пишет «нужна настройка», а не выглядит отключённой.', 'TRYX: отправленная картинка или видео дольше ждёт подтверждения от кулера и показывается, если кулер принял файл, но не подтвердил.'],
