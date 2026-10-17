@@ -52,6 +52,7 @@ struct ext_dev {
     float rate;               // frames/s this device takes (set by the driver on open; 0: the driver's rate)
     float gain[3];            // [dev.N] warmth as r/g/b gains
     float cfg_rate;           // [dev.N] rate: chosen in the window (0: auto)
+    int   cfg_static;         // [dev.N] static=1: OpenRGB through its Static mode even if it has Direct (a board that flickers in Direct)
     char  zones[160];         // [dev.N] zones: LEDs on each resizable zone, "name=count|..." (a | as ; starts a comment in settings.ini) (OpenRGB's ARGB headers)
     int   online;
     DWORD next_try;           // reconnect backoff

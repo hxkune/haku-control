@@ -160,6 +160,7 @@ static void load_config(void) {
         d->enabled = cfg_geti(sec, "enabled", 1);
         d->own = cfg_geti(sec, "own", 0);
         d->cfg_rate = (float)cfg_geti(sec, "rate", 0);
+        d->cfg_static = cfg_geti(sec, "static", 0);
         strcpy_s(d->zones, sizeof(d->zones), cfg_get(sec, "zones", ""));
         strcpy_s(d->key, sizeof(d->key), cfg_get(sec, "key", ""));
     }
@@ -168,7 +169,7 @@ static void load_config(void) {
         for (int k = 0; k < ndevs; k++) {
             ext_dev *o = &devs[k];
             if (o->id == nd[i].id && o->drv == nd[i].drv && !strcmp(o->host, nd[i].host) && o->sub == nd[i].sub && o->cfg_leds == nd[i].cfg_leds &&
-                !strcmp(o->key, nd[i].key) && !strcmp(o->zones, nd[i].zones)) {
+                !strcmp(o->key, nd[i].key) && !strcmp(o->zones, nd[i].zones) && o->cfg_static == nd[i].cfg_static) {
                 ext_dev keep = *o;
                 keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own; keep.cfg_rate = nd[i].cfg_rate;
                 memcpy(keep.gain, nd[i].gain, sizeof(keep.gain));

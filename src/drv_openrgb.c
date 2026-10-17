@@ -193,9 +193,10 @@ static void keep_mode(const char *sec, const ctrl_t *c, orgb_t *o) {
 // controller with none of them in its own effect (a flashing one, say) and says nothing: haku's colours then only
 // flash over it. So: Direct / Custom with colours per LED, frame by frame; else its Static mode, slower (many such
 // controllers fade or blink at every colour), per LED or one colour for all; else not at all.
-static int pick_mode(const ctrl_t *c, orgb_t *o, float *rate, const char **how) {
+// only_static: chosen in the window for a controller whose Direct mode flickers (ASRock Polychrome USB on a B550M).
+static int pick_mode(const ctrl_t *c, orgb_t *o, int only_static, float *rate, const char **how) {
     static const char *const NAMES[] = { "Direct", "Custom" };
-    for (int k = 0; k < 2; k++)
+    for (int k = 0; k < 2 && !only_static; k++)
         for (int m = 0; m < c->nmodes; m++)
             if (!_stricmp(c->md[m].name, NAMES[k]) && c->md[m].cm == COLORS_PER_LED) { *how = c->md[m].name; return DRIVE_DIRECT; }
     for (int pass = 0; pass < 2; pass++)
@@ -296,13 +297,13 @@ static int orgb_open(ext_dev *d) {
     memcpy(o->orig, c->colors + first, sizeof(unsigned) * o->norig); o->idx = (unsigned)idx; o->part = part;
     keep_mode(sec, c, o);
     const char *how = ""; float rate = 0;
-    o->how = pick_mode(c, o, &rate, &how);
+    o->how = pick_mode(c, o, d->cfg_static, &rate, &how);
     d->rate = rate;
     snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s · %s", c->name, part >= 0 ? c->zn[part].name : type_name(c->type), how);
     if (o->how != DRIVE_DIRECT) {   // which modes it has, as names and colour modes, so a report shows why
         char ml[400]; int k = 0;
         for (int m = 0; m < c->nmodes && k < (int)sizeof(ml) - 40; m++) k += snprintf(ml + k, sizeof(ml) - k, "%s%s/%d", m ? ", " : "", c->md[m].name, c->md[m].cm);
-        logf_("dev.%d (openrgb): '%s' has no Direct mode: %s (modes: %s)", d->id, c->name, how, ml);
+        logf_("dev.%d (openrgb): '%s' %s: %s (modes: %s)", d->id, c->name, d->cfg_static ? "set to Static in the window" : "has no Direct mode", how, ml);
     }
     free(c);
     d->priv = o; d->sock = s;

@@ -3026,7 +3026,10 @@ function buildDevices() {
           <p class="hint">${t('zones.note')}</p></div>` : ''}
         ${d.kind === 'openrgb' ? `<label class="num"><span>${t('dev.rate')}</span><select class="select dev-rate">${[0, 30, 10, 5, 2].map(v =>
           `<option value="${v}"${+cv(sec, 'rate', 0) === v ? ' selected' : ''}>${v ? t('dev.rate.n', v) : t('dev.rate.auto')}</option>`).join('')}</select></label>
-          <p class="hint">${t('dev.rate.note')}</p>` : ''}
+          <p class="hint">${t('dev.rate.note')}</p>
+          <label class="num"><span>${t('dev.mode')}</span><select class="select dev-static">${[0, 1].map(v =>
+          `<option value="${v}"${+cv(sec, 'static', 0) === v ? ' selected' : ''}>${t(v ? 'dev.mode.static' : 'dev.mode.auto')}</option>`).join('')}</select></label>
+          <p class="hint">${t('dev.mode.note')}</p>` : ''}
         ${!pcDev(d) ? '' : `<label class="check"><input type="checkbox" class="dev-own" ${d.own ? 'checked' : ''}><span></span><em>${t('own')}</em></label>
           <p class="hint">${t('own.note.dev')}</p>`}
         </div></details>
@@ -3056,6 +3059,7 @@ function buildDevices() {
     el.querySelector('.dev-type')?.addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
     el.querySelector('.dev-rate')?.addEventListener('change', e => setCfg(sec, 'rate', e.target.value));
+    el.querySelector('.dev-static')?.addEventListener('change', e => setCfg(sec, 'static', e.target.value));
     // LEDs on each connector: all of them saved together ([dev.N] zones), the device reconnects with them
     el.querySelectorAll('.dev-zone').forEach(inp => inp.addEventListener('change', () => {
       const v = [...el.querySelectorAll('.dev-zone')].map(x => {
