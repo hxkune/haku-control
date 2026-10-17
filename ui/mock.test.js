@@ -499,6 +499,7 @@
     ok(card().querySelector('.dev-media-name').textContent === 'cat.gif' && card().querySelector('.dev-theme').value === '-1', 'the picked file: ' + card().querySelector('.dev-media-name').textContent);
     STATE.ext.devs[STATE.ext.devs.length - 1].info += ' · upload 42%'; await fanEmit();
     ok($('#dev-st-14').textContent === t('tx.up', 42), 'the status while sending: ' + $('#dev-st-14').textContent);
+    ok(!card().querySelector('.live, .zone, .dev-type, .dev-cal, .dev-ident'), 'the screen card has no light settings');
     STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
   });
 

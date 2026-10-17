@@ -2548,7 +2548,7 @@ function sheetCards(h) {
   if (h.k === 'gpu') return [[$('#gpu-card')], 'pc'];
   if (h.k === 'nano') { if (h.slot) { nanoSlot = h.slot; updateNano(); } return [nanoOn() ? $$('#nano-main > .card') : [$('#nano-empty')], 'nano']; }
   if (h.k === 'bulb') return [[$('#bulb-grid').children[h.i]], 'bulbs'];
-  if (h.k === 'ext') { const d = S.ext.devs.find(x => x.id === h.id); return [[$(`#dev-live-${h.id}`)?.closest('.card')], d ? brandTab(d) : 'devices']; }
+  if (h.k === 'ext') { const d = S.ext.devs.find(x => x.id === h.id); return [[$(`#dev-st-${h.id}`)?.closest('.card')], d ? brandTab(d) : 'devices']; }
   if (h.k === 'add') return [[], 'devices'];
   if (h.k === 'fx') return [[$('.fx-side')], 'effects'];
   if (h.k === 'prof') return [[$('#prof-panel')], 'effects'];
@@ -2983,12 +2983,14 @@ function buildDevices() {
     el.className = 'card dev-card';
     const big = (per[(brandOf(d.kind) || [])[0]] || 9) <= 2;
     const sec = 'dev.' + d.id;
+    // TRYX: a screen card only (theme, own picture); its fans light from the motherboard's ARGB header, not from here
+    const scr = d.kind === 'tryx';
     el.innerHTML = `<div class="card-head">
         <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub : ''}</p></div>
         <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
       </div>
-      <canvas class="live" id="dev-live-${d.id}" data-h="${big ? 220 : d.per_led ? 70 : 90}"></canvas>
-      <div class="zone" data-zone="zone.dev${d.id}"></div>
+      ${scr ? '' : `<canvas class="live" id="dev-live-${d.id}" data-h="${big ? 220 : d.per_led ? 70 : 90}"></canvas>
+      <div class="zone" data-zone="zone.dev${d.id}"></div>`}
       <div class="opts">
         <label class="num"><span>${t('strip.name')}</span><input type="text" class="dev-name" maxlength="40" spellcheck="false" value="${esc(cv(sec, 'name', d.name))}"></label>
         ${d.kind === 'goveecloud' ? `<label class="num"><span>${t('gc.mode')}</span><select class="select dev-mode">${['auto', 'sync', 'colour'].map(v =>
@@ -3015,7 +3017,7 @@ function buildDevices() {
         <details class="trouble dev-adv"${DEV_ADV.has(d.id) || devStatus(d) === t('zones.need') ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
         ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
-        <label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>
+        ${scr ? '' : `<label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>`}
         ${devZones(d).length ? `<div class="field dev-zones"><div class="lbl"><span>${t('zones.title')}</span></div>
           ${devZones(d).map(z => `<label class="num"><span>${esc(z.name)}</span><input type="number" class="dev-zone" data-zone="${esc(z.name)}" min="${z.min}" max="${Math.min(z.max, 512)}" value="${z.count}"></label>`).join('')}
           <p class="hint">${t('zones.note')}</p></div>` : ''}
@@ -3025,21 +3027,21 @@ function buildDevices() {
         ${!pcDev(d) ? '' : `<label class="check"><input type="checkbox" class="dev-own" ${d.own ? 'checked' : ''}><span></span><em>${t('own')}</em></label>
           <p class="hint">${t('own.note.dev')}</p>`}
         </div></details>
-        <div class="btn-row"><button class="btn small dev-ident" title="${esc(t('dev.identify.title'))}"><span>${t('dev.identify')}</span></button>
+        <div class="btn-row">${scr ? '' : `<button class="btn small dev-ident" title="${esc(t('dev.identify.title'))}"><span>${t('dev.identify')}</span></button>`}
         ${pcDev(d) ? '' : `<button class="btn small dev-check">${t('dev.check')}</button>`}
-        <button class="btn small dev-cal">${t('cal.btn')}</button>
+        ${scr ? '' : `<button class="btn small dev-cal">${t('cal.btn')}</button>`}
         <button class="btn danger small dev-del">${t('dev.remove')}</button></div>
         <p class="hint dev-chk" id="dev-chk-${d.id}" aria-live="polite"></p>
       </div>`;
     ($(`[data-brand-grid="${(brandOf(d.kind) || [])[0]}"]`) || grid).appendChild(el);
-    renderZone(el.querySelector('.zone'));
+    if (!scr) renderZone(el.querySelector('.zone'));
     const saved = () => { DEV_SAVED.add(d.id); updateDevices(); };
     el.querySelector('.opts').addEventListener('change', saved);
     el.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', saved));
     el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
     el.querySelector('.dev-adv').addEventListener('toggle', e => { e.target.open ? DEV_ADV.add(d.id) : DEV_ADV.delete(d.id); });
-    el.querySelector('.dev-ident').addEventListener('click', () => send({ cmd: 'identify', zone: 'zone.dev' + d.id }));
-    el.querySelector('.dev-cal').addEventListener('click', e => calOpen(d, e.currentTarget));
+    el.querySelector('.dev-ident')?.addEventListener('click', () => send({ cmd: 'identify', zone: 'zone.dev' + d.id }));
+    el.querySelector('.dev-cal')?.addEventListener('click', e => calOpen(d, e.currentTarget));
     el.querySelector('.dev-check')?.addEventListener('click', () => { CHK_ID = d.id; S.netchk = { id: d.id, busy: 1 }; updateDevices(); send({ cmd: 'dev_check', id: String(d.id) }); });
     el.querySelector('.dev-own')?.addEventListener('change', e => { d.own = e.target.checked ? 1 : 0; setCfg(sec, 'own', d.own); updateDevices(); drawHero(); });
     el.querySelector('.dev-name').addEventListener('change', e => {
@@ -3048,7 +3050,7 @@ function buildDevices() {
     });
     el.querySelector('.dev-rev')?.addEventListener('change', e => setCfg(sec, 'reverse', e.target.checked ? 1 : 0));
     el.querySelector('.dev-token')?.addEventListener('change', e => { const v = e.target.value.replace(/\D/g, ''); e.target.value = v; setCfg(sec, 'key', v); });
-    el.querySelector('.dev-type').addEventListener('change', e => setCfg(sec, 'type', e.target.value));
+    el.querySelector('.dev-type')?.addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
     el.querySelector('.dev-rate')?.addEventListener('change', e => setCfg(sec, 'rate', e.target.value));
     // LEDs on each connector: all of them saved together ([dev.N] zones), the device reconnects with them

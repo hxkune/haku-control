@@ -280,9 +280,11 @@ static unsigned __stdcall worker(void *p) {
             if (same && now - last_send[k] < 1000) continue;   // unchanged: keep-alive only
             seen[k] = seq;
             if (d->reverse) for (int i = 0; i < n / 2; i++) { rgbf t = cur[i]; cur[i] = cur[n - 1 - i]; cur[n - 1 - i] = t; }
+            char was[sizeof(d->info)]; strcpy_s(was, sizeof(was), d->info);
             if (d->drv->send(d, cur, n)) {
                 memcpy(last8[k], q, n * 3);
                 last_send[k] = now;
+                if (strcmp(was, d->info)) changed_state = 1;   // the driver's own news (TRYX: the upload's %)
             } else {
                 logf_("dev.%d (%s %s): connection lost", d->id, d->drv->kind, d->host);
                 d->drv->close(d);

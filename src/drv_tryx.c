@@ -190,11 +190,11 @@ static int answer(tryx_t *u, int ms) {
 }
 
 static int show_media(tryx_t *u, const char *name) {
-    // ratio: 2:1 is the PANORAMA's 2240x1080 (what TRYX KANALI sends), 16:9 the SE's 1920x1080
+    // ratio: the firmware knows only "" (native), 1:1, 3:2, 4:3 and 16:9 (tryxctl); 16:9 is 2D04's 1920x1080
     char b[512]; int vid = strstr(name, ".mp4") != NULL;
     snprintf(b, sizeof(b), "{\"Type\":\"%s\",\"id\":\"Customization\",\"screenMode\":\"Full Screen\",\"ratio\":\"%s\",\"playMode\":\"Single\","
              "\"media\":[\"%s\"],\"sysinfoDisplay\":[],\"settings\":{\"align\":\"Center\",\"color\":\"#FFFFFF\",\"badges\":[],"
-             "\"position\":\"Top\",\"filter\":{\"value\":\"\",\"opacity\":0}}}", vid ? "media" : "image", u->pid == 0x2D04 ? "16:9" : "2:1", name);
+             "\"position\":\"Top\",\"filter\":{\"value\":\"\",\"opacity\":0}}}", vid ? "media" : "image", u->pid == 0x2D04 ? "16:9" : "", name);
     // twice, half a second apart: the device may keep the screen it had cached (reed-tpse)
     int ok = tx(u, "POST", "waterBlockScreenId", b) && answer(u, 1500);
     Sleep(500);
@@ -235,8 +235,10 @@ static DWORD WINAPI upload(void *arg) {
         if (!tx(u, "POST", "transported", b) || !answer(u, 5000)) { logf_("tryx: transported refused (%s the file)", got ? "after" : "no answer to"); goto fail; }
         port_setup(u->h);
         cfg_set_and_save(sec, "media_sent", name);
+        logf_("tryx: %s sent", name);
     }
     if (!show_media(u, name)) logf_("tryx: %s sent but not shown", name);
+    else logf_("tryx: %s shown", name);
     free(buf);
     return 0;
 fail:
