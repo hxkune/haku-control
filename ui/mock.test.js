@@ -260,6 +260,98 @@
     setCfg('dev.1', 'type', 'auto'); setCfg('dev.3', 'type', 'auto'); w.online = 1;
   });
 
+  // fans: the browser has no core, so nothing here reaches a QUADRO; the mock stands in for what fans.c reports
+  const fanEmit = async () => { bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(120); };
+  const fanReset = async () => {
+    const F = STATE.fans; Object.assign(F, { link: 1, age: 400, rfail: 0, log: [] });
+    F.f.forEach(f => Object.assign(f, { em: '', own: 0, want: -1, out: -1, ok: 1 }));
+    Object.keys(STATE.cfg.fans || {}).forEach(k => { STATE.cfg.fans[k] = ''; });
+    if (SHEET.kind === 'fan') closeSheet();
+    await fanEmit(); showTab('fans'); FAN.back = 0; FAN.sig = ''; updateFans();
+  };
+  const fanSheetOf = async i => { $(`#fan-panel [data-f="${i}"]`).click(); await wait(120); };
+
+  test('fans: a lost link keeps the page and says so; the readings show as old', async () => {
+    await fresh(); await fanReset();
+    STATE.fans.link = 0; STATE.fans.age = 12000; await fanEmit();
+    ok(NAV_NEED.fans(), 'the tab went away');
+    ok($('#fans-status').textContent === t('fans.nolink', 12), 'status: ' + $('#fans-status').textContent);
+    ok($('#fan-panel').classList.contains('stale') && $$('#fan-panel [data-live-f]').length === 4, 'the tiles are gone or not marked old');
+    ok($('#fan-panel [data-live-f]').textContent.includes(t('fans.st.stale')), 'a tile does not say the reading is old');
+    await fanReset();
+  });
+
+  test('fans: a picked mode is not shown as done until the QUADRO confirms it; the emergency reason shows', async () => {
+    await fresh(); await fanReset(); await fanSheetOf(0);
+    $('#fs-mode [data-v="fix"]').click();
+    const row = () => $('#fan-panel [data-live-f="0"]').textContent;
+    ok(row().includes(t('fans.st.pend')) && !row().includes(t('fans.st.ok')), 'before the core answers: ' + row());
+    await fanEmit(); ok(row().includes(t('fans.st.ok')), 'after the read-back: ' + row());
+    STATE.fans.f[0].ok = 0; await fanEmit(); ok(row().includes(t('fans.st.unconf')), 'not kept: ' + row());
+    STATE.fans.f[0].ok = -1; await fanEmit(); ok(row().includes(t('fans.st.fail')), 'write failed: ' + row());
+    STATE.fans.f[0].em = 'nosensor'; await fanEmit(); ok(row().includes(t('fans.em.nosensor')), 'emergency: ' + row());
+    await fanReset();
+  });
+
+  test('fans: a curve that does not read is flagged; typed point values stay between the neighbours and 20..100', async () => {
+    await fresh(); await fanReset();
+    setCfg('fans', 'fan1', 'curve'); setCfg('fans', 'fan1_curve', '50:40,30:60'); await fanEmit(); await fanSheetOf(0);
+    ok(!$('#fs-bad').classList.contains('hidden'), 'no warning for a curve going backwards');
+    ok(!fanParse('50:40,30:60') && !fanParse('30:40') && !fanParse('30:40,50:101') && !fanParse('30:40,a:50') && fanParse('30:30,50:45'), 'fanParse');
+    setCfg('fans', 'fan1_curve', '30:30,50:45,70:75,85:100'); updateFans();
+    ok($('#fs-bad').classList.contains('hidden'), 'the warning stays on a good curve');
+    FAN.sel = 1; updateFans();
+    const x = $('#fs-pt-x'), y = $('#fs-pt-y');
+    x.value = '999'; x.dispatchEvent(new Event('change')); y.value = '5'; y.dispatchEvent(new Event('change')); await wait(400);
+    ok(cv('fans', 'fan1_curve', '') === '30:30,69:20,70:75,85:100', 'saved: ' + cv('fans', 'fan1_curve', ''));
+    x.value = ''; x.dispatchEvent(new Event('change'));
+    ok(x.value === '69', 'an empty field did not come back: ' + x.value);
+    // the keyboard: right goes to the next point, up adds five
+    const c = $('#fs-cv'); c.focus(); key(c, 'ArrowRight'); key(c, 'ArrowUp'); await wait(400);
+    ok(cv('fans', 'fan1_curve', '') === '30:30,69:20,70:80,85:100', 'keys: ' + cv('fans', 'fan1_curve', ''));
+    // another kind of source starts from its own default
+    $('#fs-src [data-v="t1"]').click();
+    ok(cv('fans', 'fan1_src', '') === 't1' && cv('fans', 'fan1_curve', '') === '', 'the GPU curve went to the water sensor');
+    ok($('#fs-src [data-v="t1"]').textContent.includes('31'), 'the source shows no temperature: ' + $('#fs-src [data-v="t1"]').textContent);
+    await fanReset();
+  });
+
+  test('fans: limits are kept in 20..100 per fan; the group window keeps focus and says what a fan gets', async () => {
+    await fresh(); await fanReset(); await fanSheetOf(1);
+    $('#fs-lim').open = true;
+    const m = $('#fs-min'); m.value = '5'; m.dispatchEvent(new Event('change'));
+    ok(cv('fans', 'fan2_min', '') === '20' && m.value === '20', 'min: ' + cv('fans', 'fan2_min', ''));
+    m.value = '35'; m.dispatchEvent(new Event('change'));
+    closeSheet(); await wait(80);
+    setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1'); setCfg('fans', 'fan1', 'fix'); setCfg('fans', 'fan1_pct', '60'); FAN.sig = ''; updateFans();
+    $('#fan-panel [data-g="1"]').click(); await wait(120);
+    const b2 = () => $('#fs-members [data-m="1"]');
+    ok(b2().textContent.includes(t('fans.join', fanMode(0))) && b2().textContent.includes(t('fans.join.min', 35)), 'no preview: ' + b2().textContent);
+    b2().focus(); const el = document.activeElement; updateFans(); updateFans();
+    ok(document.activeElement === el && el.isConnected, 'a status took the focus away');
+    b2().click(); await wait(60);
+    ok(cv('fans', 'fan2', '') === 'fix' && cv('fans', 'fan2_pct', '') === '60' && cv('fans', 'fan2_min', '') === '35', 'joined: mode/pct copied, its own floor kept');
+    ok(document.activeElement && document.activeElement.dataset.m === '1', 'focus lost after the click');
+    await fanReset();
+  });
+
+  test('fans: "give every channel back" says what happened; long names stay inside the tile', async () => {
+    await fresh(); await fanReset();
+    setCfg('fans', 'fan1', 'fix'); setCfg('fans', 'fan3', 'curve'); setCfg('fans', 'fan3_name', 'A really long name for the pump'); await fanEmit();
+    $('#fans-back').click();
+    ok(cv('fans', 'fan1', '') === '' && cv('fans', 'fan3', '') === '', 'not every channel cleared');
+    ok($('#fans-back-msg').textContent === t('fans.back.wait'), 'before the core: ' + $('#fans-back-msg').textContent);
+    STATE.fans.rfail = 1; await fanEmit();
+    ok($('#fans-back-msg').textContent === t('fans.back.fail', 1), 'a failure: ' + $('#fans-back-msg').textContent);
+    STATE.fans.rfail = 0; await fanEmit();
+    ok($('#fans-back-msg').textContent === t('fans.back.ok'), 'done: ' + $('#fans-back-msg').textContent);
+    const tile = $('#fan-panel [data-f="2"]'), nm = tile.querySelector('b');
+    ok(tile.scrollWidth <= tile.clientWidth + 1 && nm.scrollWidth > nm.clientWidth, 'the name spills out of the tile');
+    STATE.fans.log = [{ t: '12:00:01', m: 'fan 1: read-back "differs"', n: 3 }]; await fanEmit();
+    ok(!$('#fans-log-d').classList.contains('hidden') && $('#fans-log').textContent.includes(String.fromCharCode(215) + '3'), 'the error log');
+    await fanReset();
+  });
+
   for (const [name, fn] of tests) {
     try { await fn(); log.push('ok   ' + name); }
     catch (e) { R.failed++; log.push('FAIL ' + name + ': ' + e.message); }

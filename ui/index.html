@@ -263,36 +263,63 @@
   <!-- ============ FANS (Aqua Computer QUADRO) ============ -->
   <section class="tab" id="tab-fans">
     <div class="card">
-      <div class="card-head"><div><h3>QUADRO</h3><p class="muted" id="fans-status"></p></div></div>
+      <div class="card-head"><div><h3>QUADRO <span class="beta" data-i18n="fans.beta" data-i18n-title="fans.beta.t">beta</span></h3><p class="muted" id="fans-status"></p></div>
+        <button class="btn small ghost" type="button" id="fans-back" data-i18n="fans.back.all">Give every channel back to the QUADRO</button></div>
+      <p class="pair-msg" id="fans-back-msg" role="status"></p>
       <p class="muted" id="fans-sensors"></p>
-      <p class="hint" data-i18n="fans.note">Channels set to "As is" keep the QUADRO's own setting. When haku closes or the PC sleeps, every channel gets its own setting back.</p>
+      <p class="hint" data-i18n="fans.note"></p>
+      <details class="trouble" id="fans-dev"><summary data-i18n="fans.dev">Device</summary><p class="hint" id="fans-dev-t"></p></details>
+      <details class="trouble hidden" id="fans-log-d"><summary id="fans-log-s"></summary><pre class="fans-log" id="fans-log"></pre><button class="btn small ghost" type="button" id="fans-log-copy" data-i18n="share.copy">Copy</button></details>
     </div>
     <div class="fan-panel" id="fan-panel"></div>
     <p class="fan-removed muted hidden" id="fan-removed"></p>
     <div class="hidden">
       <div class="card fan-set" id="fan-set">
-        <div class="card-head"><div><h3 id="fs-title"></h3><p class="muted" id="fs-live"></p></div></div>
+        <div class="card-head"><div><h3 id="fs-title"></h3></div></div>
+        <div class="fs-live" id="fs-live"></div>
         <label class="num"><span data-i18n="preset.name">Name</span><input type="text" id="fs-name" maxlength="24" spellcheck="false"></label>
         <div class="field" id="fs-mem-f">
           <div class="lbl"><span data-i18n="fans.members">Fans in the group</span></div>
           <div class="gdlg-devs" id="fs-members"></div>
-          <p class="hint" data-i18n="fans.group.note">Settings here go to every fan of the group at once.</p>
+          <p class="hint" data-i18n="fans.group.note"></p>
         </div>
         <div id="fs-ctl">
-          <div class="seg" id="fs-mode"><button data-v="" data-i18n="fans.asis">As is</button><button data-v="fix" data-i18n="fans.fix">Fixed</button><button data-v="curve" data-i18n="fans.curve">Curve</button></div>
+          <div class="seg" id="fs-mode"><button type="button" data-v="" data-i18n="fans.asis">By the QUADRO</button><button type="button" data-v="fix" data-i18n="fans.fix">Fixed</button><button type="button" data-v="curve" data-i18n="fans.curve">Curve</button></div>
           <div class="opts" id="fs-fix">
             <div class="lbl"><span data-i18n="fans.speed">Speed</span><b id="fs-pct-val"></b></div>
             <input type="range" class="range" id="fs-pct" min="20" max="100" step="1" value="50">
-            <p class="hint" data-i18n="fans.min">Never below 20%, so a fan or pump does not stop.</p>
+            <p class="hint" data-i18n="fans.min"></p>
           </div>
           <div class="opts" id="fs-curve">
             <div class="lbl"><span data-i18n="fans.src">Follows</span></div>
-            <div class="seg" id="fs-src"></div>
+            <div class="seg fs-src" id="fs-src"></div>
+            <label class="num hidden" id="fs-src-nm"><span data-i18n="fans.src.name">Sensor name</span><input type="text" id="fs-src-name" maxlength="24" spellcheck="false"></label>
+            <p class="pair-msg fs-bad hidden" id="fs-bad" role="alert" data-i18n="fans.curve.bad"></p>
             <canvas class="fan-cv" id="fs-cv" tabindex="0" data-i18n-title="fans.curve.note"></canvas>
-            <p class="hint" data-i18n="fans.curve.note">Drag the points.</p>
+            <div class="lbl fs-pt-n"><span id="fs-pt-n"></span></div>
+            <div class="row2">
+              <label class="num"><span data-i18n="fans.pt.t">Temperature, °C</span><input type="number" id="fs-pt-x" step="1" inputmode="numeric"></label>
+              <label class="num"><span data-i18n="fans.pt.p">Speed, %</span><input type="number" id="fs-pt-y" min="20" max="100" step="1" inputmode="numeric"></label>
+            </div>
+            <p class="hint" data-i18n="fans.curve.note"></p>
           </div>
+          <div class="field" id="fs-hist-f">
+            <div class="lbl"><span data-i18n="fans.hist">Last 5 minutes</span><b id="fs-legend"></b></div>
+            <canvas class="fan-hist" id="fs-hist"></canvas>
+            <p class="hint" data-i18n="fans.hist.note"></p>
+          </div>
+          <details class="trouble" id="fs-lim"><summary data-i18n="fans.lim">Limits</summary>
+            <div class="seg" id="fs-kind"><button type="button" data-v="" data-i18n="fans.kind.fan">Fan</button><button type="button" data-v="pump" data-i18n="fans.kind.pump">Pump</button></div>
+            <div class="row2">
+              <label class="num"><span data-i18n="fans.lim.min">Never below, %</span><input type="number" id="fs-min" min="20" max="100" step="1" placeholder="20" inputmode="numeric"></label>
+              <label class="num"><span data-i18n="fans.lim.fail">Without a temperature, %</span><input type="number" id="fs-fail" min="20" max="100" step="1" placeholder="100" inputmode="numeric"></label>
+            </div>
+            <label class="check fs-notach"><input type="checkbox" id="fs-notach"><span></span><em data-i18n="fans.notach">No speed signal (3-pin or splitter)</em></label>
+            <p class="hint" data-i18n="fans.lim.note"></p>
+          </details>
         </div>
         <div class="btn-row"><span class="grow"></span><button class="btn danger" type="button" id="fs-del"><span></span></button></div>
+        <p class="hint" id="fs-del-note" data-i18n="fans.remove.note"></p>
       </div>
     </div>
   </section>

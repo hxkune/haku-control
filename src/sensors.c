@@ -68,6 +68,7 @@ void sensors_poll(sensors_t *s, int need_gpu, int need_audio) {
         last_poll = now;
         unsigned int t;
         cache.gpu_temp = (gpu && nvml_temp(gpu, 0, &t) == 0) ? (float)t : NAN;
+        cache.gpu_at = now;
     }
     *s = cache;
 }

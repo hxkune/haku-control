@@ -42,6 +42,7 @@ typedef struct {
     float flow;        // l/h or pump rpm fraction 0..1
     float audio_level; // 0..1
     float audio_bass;  // 0..1
+    DWORD gpu_at;      // GetTickCount of the last GPU reading attempt, 0 never
 } sensors_t;
 
 // ---- config.c
@@ -216,7 +217,7 @@ void sensors_close(void);
 void fans_start(void);
 void fans_stop(void);                    // its channels get their own settings back
 void fans_suspend(int on);
-void fans_feed(float gpu_temp);         // the render loop's GPU reading, for curves
+void fans_feed(float gpu_temp, DWORD at); // the render loop's GPU reading and when it was taken, for curves
 int  fans_need_gpu(void);
 float fans_water(void);                 // the first connected temperature sensor, NAN when none
 int  fans_json(char *out, int cap);

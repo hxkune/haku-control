@@ -391,7 +391,7 @@ static unsigned __stdcall render_thread(void *p) {
         if (dt > 0.25) dt = 0.25;
 
         sensors_t sn; sensors_poll(&sn, effects_need_gpu_temp() || cur_effect == effect_index("temperature") || fans_need_gpu(), effects_need_audio() || cur_effect == effect_index("audio"));
-        sn.water_temp = fans_water(); fans_feed(sn.gpu_temp);
+        sn.water_temp = fans_water(); fans_feed(sn.gpu_temp, sn.gpu_at);
         last_sensors = sn;
         static scene_t sc; static int sc_unit[MAX_ZONES];
         static xfade_t xf; static DWORD xf_at;

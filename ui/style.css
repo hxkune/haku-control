@@ -437,13 +437,29 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .fan-panel { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; margin-top: 20px; }
 .fan-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-height: 108px; padding: 16px 18px; text-align: left; font: inherit; color: var(--text); cursor: pointer; transition: border-color .15s; }
 .fan-tile:hover, .fan-tile:focus-visible { border-color: var(--line3); outline: none; }
+.fan-tile { min-width: 0; }
+.fan-tile b, .fan-tile small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fan-tile b { font-size: 14px; font-weight: 600; }
 .fan-tile small { color: var(--muted); font-size: 11.5px; margin-bottom: auto; }
-.fan-tile span { font: 11px var(--mono); color: var(--faint); }
+/* a channel live: rpm big, then the speed, then who drives it */
+.fan-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; max-width: 100%; min-width: 0; font-size: 12px; color: var(--muted); }
+.fan-row i { flex-basis: 100%; font-style: normal; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fan-row em { font: 600 20px var(--display); font-style: normal; color: var(--text); font-variant-numeric: tabular-nums; }
+.fan-st { flex-basis: 100%; font-size: 11.5px; color: var(--faint); }
+.fan-st.warn { color: #f0b44a; }
+.fan-st.bad, #fans-status.bad, .fs-bad { color: #ff8a8a; }
+.fan-panel.stale .fan-row em, .fs-live.stale .fan-row em { opacity: .4; }
+.fs-live { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 14px; }
+.beta { display: inline-block; margin-left: 6px; padding: 1px 7px; border: 1px solid var(--line3); border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); vertical-align: middle; cursor: help; }
+.fans-log { margin: 8px 0; max-height: 160px; overflow: auto; font: 11px/1.5 var(--mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.fs-src { flex-wrap: wrap; border-radius: 14px; }
+.fs-pt-n { margin-top: 10px; }
+.fan-hist { display: block; width: 100%; height: 70px; margin-top: 8px; }
+#fs-lim .row2, #fs-lim .fs-notach { margin-top: 12px; }
 .fan-tile.add { align-items: center; justify-content: center; color: var(--muted); border-style: dashed; }
 .fan-removed { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
 .fan-set #fs-ctl { margin-top: 20px; }
-.fan-cv { display: block; width: 100%; height: 180px; margin-top: 12px; touch-action: none; cursor: grab; border-radius: 8px; }
+.fan-cv { display: block; width: 100%; height: 240px; margin-top: 12px; touch-action: none; cursor: grab; border-radius: 8px; }
 .fan-cv:focus-visible { outline: 2px solid var(--line3); outline-offset: 2px; }
 .nano-grid { display: grid; grid-template-columns: 1fr 330px; gap: 20px; align-items: start; }
 .tools { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
