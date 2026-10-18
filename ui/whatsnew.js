@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.36',
+    en: ['Lian Li wireless fans: when haku cannot read the receiver, the log now says why: the step that failed, the receiver’s first replies as they came, and its error codes. Send the diagnostics if your fans do not show up.', 'The diagnostics list L-Connect among the lighting programs running.'],
+    ru: ['Беспроводные вентиляторы Lian Li: если haku не может прочитать приёмник, в журнале теперь видно почему: шаг, на котором не получилось, первые ответы приёмника как есть и коды ошибок. Если вентиляторы не появились, пришлите диагностику.', 'Диагностика показывает L-Connect среди запущенных программ подсветки.'],
+    fr: ['Ventilateurs sans fil Lian Li : quand haku ne peut pas lire le récepteur, le journal dit maintenant pourquoi : l’étape qui a échoué, les premières réponses du récepteur telles quelles et ses codes d’erreur. Envoyez le diagnostic si vos ventilateurs n’apparaissent pas.', 'Le diagnostic cite L-Connect parmi les programmes d’éclairage en cours.'] },
   { v: '0.4.35',
     en: ['Lian Li wireless fans (UNI FAN TL/SL Wireless) on the Fans page: the speed and duty of each fan, as their USB receiver hears them. Read only for now: control comes next.', 'While L-Connect holds the receiver, the page says so: quit L-Connect and stop its service to read the fans in haku.'],
     ru: ['Беспроводные вентиляторы Lian Li (UNI FAN TL/SL Wireless) на странице «Вентиляторы»: обороты и заполнение каждого, как их слышит USB-приёмник. Пока только чтение: управление будет следующим.', 'Пока приёмник занят L-Connect, страница так и пишет: закройте L-Connect и остановите его службу, чтобы читать вентиляторы в haku.'],
