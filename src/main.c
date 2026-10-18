@@ -1106,6 +1106,8 @@ static int status_body(char *out, int cap) {
     n += backup_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"fans\":");
     n += fans_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"ll\":");
+    n += ll_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"link\":");
     n += link_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"mqtt\":");
@@ -1481,7 +1483,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return TRUE;
     case WM_ENDSESSION:
         // shutdown / log off: room lights get their exit action while the network is still up
-        if (wp) { running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000); close_devices(1); nano_stop(); lights_stop(); ext_stop(); fans_stop(); link_stop(); }
+        if (wp) { running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000); close_devices(1); nano_stop(); lights_stop(); ext_stop(); fans_stop(); ll_stop(); link_stop(); }
         return 0;
     case WM_DESTROY:
         Shell_NotifyIconW(NIM_DELETE, &nid);
@@ -1584,6 +1586,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     hotspot_watch_start();
     sensors_init();
     fans_start();
+    ll_start();
     link_start();
     load_config();
     logf_("started: msi=%d ene=%d sticks=%d effect=%s", have_msi, have_ene, ene_count(), g_effects[cur_effect].id);
@@ -1629,6 +1632,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     update_stop();
     hotspot_watch_stop();
     fans_stop();
+    ll_stop();
     link_stop();
     sensors_close();
     timeEndPeriod(1);

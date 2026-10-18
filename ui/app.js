@@ -3301,6 +3301,17 @@ function updateLink() {
   const list = $('#link-list'), html = rows.join('');
   if (list.dataset.html !== html) { list.dataset.html = html; list.innerHTML = html; }
 }
+// ---- Lian Li wireless fans (lianli.c), read only: the groups the receiver hears, rpm and duty per fan
+function updateLL() {
+  const L = S.ll || {}, g = L.g || [];
+  $('#ll-card').classList.toggle('hidden', !L.st || L.st === 'none');
+  $('#ll-status').textContent = L.st === 'ok' ? (g.length ? t('ll.st.ok', g.length) : t('ll.st.empty')) : t('ll.st.' + (L.st || 'none'), L.err || 0);
+  const html = g.map(d => `<div class="found-row"><span class="kind">${t(d.type ? 'link.k.dev' : 'link.k.fan')}</span>
+    <div class="what"><b>${esc(t('ll.n', d.n))}</b><small>${esc(d.mac + (d.own ? '' : ' · ' + t('ll.other')))}</small></div>
+    <span class="added">${esc((d.rpm || []).map((r, i) => t('link.rpm', r) + ' ' + (d.pct || [])[i] + ' %').join(' · '))}</span></div>`).join('');
+  const list = $('#ll-list');
+  if (list.dataset.html !== html) { list.dataset.html = html; list.innerHTML = html; }
+}
 $('#link-on').addEventListener('change', e => { setCfg('link', 'on', e.target.checked ? '1' : '0'); updateLink(); });
 // ---- lighting in this PC: what haku found (hw, from hwinfo.c) and which way each is lit: by haku itself, through
 // OpenRGB (found there, added or not), OpenRGB still to set up, PawnIO missing, or nothing known
@@ -3957,6 +3968,7 @@ function updateChips() {
   }
   updateOrgb();
   updateLink();
+  updateLL();
   updateHw();
   if (S.effect === 'screen') updateScreen();
   $('#gpu-status').textContent = !S.msi ? t('gpu.none') : S.msi_own ? t('own.status') : t('gpu.status');

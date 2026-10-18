@@ -35,6 +35,26 @@ unmodified (SHA-256 `dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d4
 `d6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f`). GNU LGPL 2.1, see `third_party/pawnio/COPYING`.
 The source code is available from that repository.
 
+**Lian Li wireless fans** (`src/lianli.c`): the receiver's discovery request and reply layout (device records, fan
+count, rpm and duty fields) are ported from [MarcusSanchez/FanControl.LianLiWireless](https://github.com/MarcusSanchez/FanControl.LianLiWireless)
+and [Yoinky3000/LL-Connect-Wireless](https://github.com/Yoinky3000/LL-Connect-Wireless), both under the MIT License:
+
+> Copyright (c) 2026 Marcus Sanchez
+> Copyright (c) 2026 Yoinky3000
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+> documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+> rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+> persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+> Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+> WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+> COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+> OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## Downloaded on request
 
 **OpenRGB** 1.0: not bundled. When the PC page finds lighting only OpenRGB can reach (or when asked to there), haku downloads the official Windows build
