@@ -3968,7 +3968,7 @@ function updateChips() {
 // ------------------------------------------------------------------ messages from the core
 // ------------------------------------------------------------------ fans: Aqua Computer QUADRO and the board's Super I/O (fans.c, sio.c)
 // channels 1..4 are the QUADRO's (null in S.fans.f without one), 5.. the board's (b: 1)
-// [fans] fanN = '' the QUADRO's own setting | fix | curve, fanN_pct 20..100, fanN_src cpu | gpu | t1..t4 (unset: cpu where it reads, else gpu), fanN_curve '30:30,50:45,85:100' (for fanN_src),
+// [fans] fanN = '' the QUADRO's own setting | fix | curve, fanN_pct 20..100, fanN_src gpu | cpu | t1..t4 (unset: gpu; the CPU is read only while a curve follows it), fanN_curve '30:30,50:45,85:100' (for fanN_src),
 //        fanN_min the channel's floor (20 and up), fanN_fail its speed while the temperature is lost or the curve does not read (100),
 //        fanN_down how many % a curve may slow per 2 s (3)
 // the panel only (fans.c reads none of these): fanN_curve_<src> the curve kept for a source not in use, fanN_name, fanN_hide = 1,
@@ -3982,7 +3982,7 @@ const FAN = { drag: null, sel: 0, open: null, sig: '', last: null, hist: [], zer
 // the settings beside the panel when the window is wide enough (as .fan-main in style.css), in the sheet otherwise
 const FAN_WIDE = matchMedia('(min-width: 1100px)');
 const fanKey = (i, k) => `fan${i + 1}${k ? '_' + k : ''}`;
-const fanSrc = i => cv('fans', fanKey(i, 'src'), (S.fans || {}).cpu != null ? 'cpu' : 'gpu');
+const fanSrc = i => cv('fans', fanKey(i, 'src'), 'gpu');
 const fanScale = s => FAN_SCALE[s === 'gpu' || s === 'cpu' ? s : 't'];
 // the rules fans.c reads a curve by: 2..8 points "°C:%", temperature 0..110 rising strictly, speed 0..100; null if it does not read
 const fanParse = s => { const r = [];
@@ -4282,7 +4282,7 @@ function fanSheet() {
   $('#fs-fix').classList.toggle('hidden', mode !== 'fix');
   $('#fs-curve').classList.toggle('hidden', mode !== 'curve');
   const pct = cv('fans', fanKey(i, 'pct'), '50'); setRange($('#fs-pct'), pct); $('#fs-pct-val').textContent = diff.includes('pct') ? '—' : pct + '%';
-  const src = D.src, srcs = [...(F.cpu != null ? ['cpu'] : []), 'gpu', ...(F.t || []).map((v, k) => v == null ? '' : 't' + (k + 1)).filter(Boolean)];
+  const src = D.src, srcs = ['gpu', ...(F.cpuok ? ['cpu'] : []), ...(F.t || []).map((v, k) => v == null ? '' : 't' + (k + 1)).filter(Boolean)];
   const list = srcs.includes(src) ? srcs : [...srcs, src], box = $('#fs-src'), sig = list.map(fanSrcName).join() + list.join() + LANG;
   if (box.dataset.sig !== sig) { box.dataset.sig = sig; box.innerHTML = list.map(s => `<button type="button" data-v="${esc(s)}">${esc(fanSrcName(s))}<span data-tv></span></button>`).join(''); }
   $$('button', box).forEach(b => { const v = fanTemp(b.dataset.v); b.classList.toggle('on', b.dataset.v === src); b.setAttribute('aria-pressed', b.dataset.v === src);

@@ -222,6 +222,7 @@ int  fans_need_gpu(void);
 float fans_water(void);                 // the first connected temperature sensor, NAN when none
 int  fans_json(char *out, int cap);
 // ---- sio.c: the board's Super I/O fan controls (Nuvoton NCT67xx) over PawnIO; one thread only (fans.c)
+int cpu_can(void); float cpu_last(void);   // whether it reads, the last reading (NAN when none is followed)
 float cpu_temp(void);                   // °C (cputemp.c, PawnIO), NAN when the CPU does not read
 int  sio_open(char *chip, int cap);      // how many fan controls, 0: none, or no PawnIO or LpcIO.bin
 void sio_close(void);

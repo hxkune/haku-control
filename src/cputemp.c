@@ -73,12 +73,20 @@ static float cpu_read(void) {
     return (float)(tjmax - (int)(v >> 16 & 0x7F));
 }
 
+static void try_open(DWORD now) { if (!h && !never && (!failed_at || now - failed_at > 60000) && !cpu_open()) failed_at = now ? now : 1; }
+
+// reads (at most once a second): only for a curve that follows the CPU, since reading it while the board's
+// firmware reads it too sent board fans up and down on an ASUS X870E with fixed speeds (0.4.33)
 float cpu_temp(void) {
     AcquireSRWLockExclusive(&lk);
     DWORD now = GetTickCount();
-    if (!h && !never && (!failed_at || now - failed_at > 60000) && !cpu_open()) failed_at = now ? now : 1;
+    try_open(now);
     if (h && now - at >= 1000) { at = now; last = cpu_read(); }
     float t = last;
     ReleaseSRWLockExclusive(&lk);
     return t;
 }
+
+// for the page, without reading: whether the CPU can be followed, and its last reading while one is followed
+int cpu_can(void) { AcquireSRWLockExclusive(&lk); try_open(GetTickCount()); int ok = h != NULL; ReleaseSRWLockExclusive(&lk); return ok; }
+float cpu_last(void) { AcquireSRWLockExclusive(&lk); float t = at && GetTickCount() - at < 5000 ? last : NAN; ReleaseSRWLockExclusive(&lk); return t; }

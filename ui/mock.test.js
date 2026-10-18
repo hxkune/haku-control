@@ -516,18 +516,20 @@
     await fanReset();
   });
 
-  test('fans: the CPU leads the sources and is the unset one where it reads; no QUADRO, no QUADRO in the words', async () => {
+  test('fans: the CPU is a source where it reads, never the unset one; no QUADRO, no QUADRO in the words', async () => {
     await fresh(); await fanReset();
     const F = STATE.fans;
     setCfg('fans', 'fan1', 'curve'); await fanEmit(); await fanSheetOf(0);
     ok(fanSrc(0) === 'gpu' && !$('#fs-src [data-v="cpu"]'), 'no CPU reading: ' + fanSrc(0));
-    F.cpu = 52; await fanEmit(); FAN.draft = null; updateFans();
-    const b = $('#fs-src button');
-    ok(fanSrc(0) === 'cpu' && b.dataset.v === 'cpu' && b.classList.contains('on') && b.textContent.includes('52'), 'the CPU: ' + b.textContent);
+    F.cpuok = 1; await fanEmit(); FAN.draft = null; updateFans();
+    ok(fanSrc(0) === 'gpu' && $('#fs-src [data-v="cpu"]'), 'the CPU offered, the GPU kept: ' + fanSrc(0));
+    setCfg('fans', 'fan1_src', 'cpu'); F.cpu = 52; await fanEmit(); FAN.draft = null; updateFans();
+    const b = $('#fs-src [data-v="cpu"]');
+    ok(fanSrc(0) === 'cpu' && b.classList.contains('on') && b.textContent.includes('52'), 'the CPU: ' + b.textContent);
     ok(fanCurveRaw(0) === fanScale('cpu').def && fanTemp('cpu') === 52, 'its own default curve: ' + fanCurveRaw(0));
     F.q = 0; await fanEmit(); updateFans();
     ok($('#fans-back').textContent === t('fans.back.all.b') && $('#fans-note').textContent === t('fans.note.b'), 'the board wording: ' + $('#fans-back').textContent);
-    F.q = 1; delete F.cpu; await fanEmit(); updateFans();
+    F.q = 1; delete F.cpu; delete F.cpuok; setCfg('fans', 'fan1_src', ''); await fanEmit(); updateFans();
     ok($('#fans-back').textContent === t('fans.back.all'), 'the QUADRO wording back: ' + $('#fans-back').textContent);
     await fanReset();
   });
