@@ -67,27 +67,39 @@ static int rd(WINUSB_INTERFACE_HANDLE w, BYTE *b, int n, ULONG ms) {
     return GetLastError() == ERROR_SEM_TIMEOUT ? 0 : -1;
 }
 
+// the first replies of a run go to the log as they came, for receivers whose firmware answers otherwise
+static int dumps = 6, fail_e;
+static const char *fail_at = "";
+static void dump(const BYTE *r, int len, int pages, int n) {
+    char h[96 * 3 + 1] = ""; int k = len < 96 ? len : 96;
+    for (int i = 0; i < k; i++) sprintf(h + i * 3, "%02x ", r[i]);
+    logf_("lianli: asked %d page(s), %d bytes back, %d device(s) read: %s", pages, len, n, h);
+}
+
 // one poll: drop what is stale, ask, gather the reply until it pauses; the device count read decides the next page count
 static int poll(WINUSB_INTERFACE_HANDLE w, int *pages) {
     static BYTE r[26 * 512]; BYTE q[64] = { 0x10, (BYTE)*pages }, junk[512];
-    for (int i = 0; i < 64 && rd(w, junk, sizeof(junk), 5) > 0; i++) {}
+    int stale = 0;
+    for (int i = 0, g; i < 64 && (g = rd(w, junk, sizeof(junk), 5)) > 0; i++) stale += g;
     ULONG put = 0; timeout_(w, 0x01, 1000);
-    if (!WinUsb_WritePipe(w, 0x01, q, sizeof(q), &put, NULL) || put != sizeof(q)) return -1;
+    if (!WinUsb_WritePipe(w, 0x01, q, sizeof(q), &put, NULL) || put != sizeof(q)) { fail_e = GetLastError(); fail_at = "writing the request"; return -1; }
     int len = 0, cap = *pages * 512, got;
     for (ULONG ms = 100; len < cap && (got = rd(w, r + len, cap - len < 64 ? cap - len : 64, ms)) > 0; ms = 10) len += got;
-    if (got < 0) return -1;
+    if (got < 0) { fail_e = GetLastError(); fail_at = "reading the reply"; return -1; }
     ll_dev d[LL_GROUPS]; BYTE m[6] = { 0 }; int rep = 0, n = ll_parse(r, len, *pages, d, LL_GROUPS, m, &rep);
+    if (dumps > 0) { dumps--; if (stale) logf_("lianli: %d stale bytes dropped first", stale); dump(r, len, *pages, n); }
     if (n < 0) return 0;
     *pages = rep > 10 ? (rep + 9) / 10 > 26 ? 26 : (rep + 9) / 10 : 1;
     EnterCriticalSection(&cs);
+    if (strcmp(S.st, "ok") || S.n != n) logf_("lianli: %d group(s) heard, %d record(s) reported", n, rep);
     S.st = "ok"; S.err = 0; S.reported = rep; S.n = n; memcpy(S.master, m, 6); memcpy(S.d, d, sizeof(ll_dev) * n);
     LeaveCriticalSection(&cs);
     return 1;
 }
 
-static void set_state(const char *st, int err) {
+static void set_state(const char *st, int err, const char *at) {
     EnterCriticalSection(&cs);
-    if (strcmp(S.st, st) || S.err != err) logf_("lianli: %s (%d)", st, err);
+    if (strcmp(S.st, st) || S.err != err) logf_("lianli: %s (%d)%s%s", st, err, *at ? " " : "", at);
     S.st = st; S.err = err; S.n = 0;
     LeaveCriticalSection(&cs);
 }
@@ -96,22 +108,28 @@ static unsigned __stdcall ll_thread(void *arg) {
     (void)arg;
     do {
         wchar_t path[512];
-        if (!rx_path(path, 512)) { set_state("none", 0); continue; }
+        if (!rx_path(path, 512)) { set_state("none", 0, ""); continue; }
         HANDLE f = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
         WINUSB_INTERFACE_HANDLE w = NULL;
         if (f == INVALID_HANDLE_VALUE || !WinUsb_Initialize(f, &w)) {
-            int e = GetLastError();
+            int e = GetLastError(); const char *at = f == INVALID_HANDLE_VALUE ? "opening the device" : "starting WinUSB";
             if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
-            set_state(e == ERROR_ACCESS_DENIED || e == ERROR_SHARING_VIOLATION ? "busy" : "err", e);
+            set_state(e == ERROR_ACCESS_DENIED || e == ERROR_SHARING_VIOLATION ? "busy" : "err", e, at);
             continue;
         }
         UCHAR on = 1; WinUsb_SetPipePolicy(w, 0x81, AUTO_CLEAR_STALL, 1, &on); WinUsb_SetPipePolicy(w, 0x81, ALLOW_PARTIAL_READS, 1, &on);
-        logf_("lianli: receiver open");
+        USB_INTERFACE_DESCRIPTOR id = { 0 }; WinUsb_QueryInterfaceSettings(w, 0, &id);
+        char pp[160] = ""; int pn = 0;
+        for (UCHAR i = 0; i < id.bNumEndpoints && i < 8; i++) {
+            WINUSB_PIPE_INFORMATION pi;
+            if (WinUsb_QueryPipe(w, 0, i, &pi)) pn += snprintf(pp + pn, sizeof(pp) - pn, " %02x:%s/%d", pi.PipeId, pi.PipeType == UsbdPipeTypeBulk ? "bulk" : pi.PipeType == UsbdPipeTypeInterrupt ? "int" : "other", pi.MaximumPacketSize);
+        }
+        logf_("lianli: receiver open, pipes%s", pn ? pp : " none");
         int pages = 1, silent = 0, r;
         do {
             r = poll(w, &pages);
             if (r > 0) silent = 0;
-            else if (r < 0 || ++silent >= 5) { set_state("err", r < 0 ? (int)GetLastError() : 0); break; }   // gone, or no answer for 5 s: open again
+            else if (r < 0 || ++silent >= 5) { set_state("err", r < 0 ? fail_e : 0, r < 0 ? fail_at : "no reply read in 5 s"); break; }   // gone, or no answer for 5 s: open again
         } while (WaitForSingleObject(stop_ev, 1000) == WAIT_TIMEOUT);
         WinUsb_Free(w); CloseHandle(f);
     } while (WaitForSingleObject(stop_ev, 5000) == WAIT_TIMEOUT);

@@ -175,7 +175,7 @@ static void add_usb(hw_buf *b) {
 // other lighting programs running: one holding a controller (Armoury Crate's LightingService on ASUS) keeps OpenRGB and haku off it
 static void add_rgb_apps(hw_buf *b) {
     static const wchar_t *const A[] = { L"armoury", L"lightingservice", L"aura", L"icue", L"corsair.service", L"signalrgb", L"openrgb",
-        L"mysticlight", L"msi.centralserver", L"rgbfusion", L"gcc.", L"nzxt", L"kanali", L"tryx", L"polychrome", L"openlinkhub" };
+        L"mysticlight", L"msi.centralserver", L"rgbfusion", L"gcc.", L"nzxt", L"kanali", L"tryx", L"polychrome", L"openlinkhub", L"l-connect", L"lconnect", L"lianli" };
     PROCESSENTRY32W pe = { sizeof(pe) };
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     put(b, "RGB programs running:");
