@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.37',
+    en: ['Lian Li wireless fans: groups are no longer marked as bound to another receiver when the receiver does not name itself in its reply.', 'When a wireless fan’s speed reads 0 or comes back, the receiver’s whole reply goes to the log, to find why some groups show 0 rpm while they spin.'],
+    ru: ['Беспроводные вентиляторы Lian Li: группы больше не помечаются как привязанные к другому приёмнику, если приёмник не называет себя в ответе.', 'Когда обороты беспроводного вентилятора становятся 0 или возвращаются, весь ответ приёмника пишется в журнал: так найдём, почему у некоторых групп 0 об/мин, хотя они крутятся.'],
+    fr: ['Ventilateurs sans fil Lian Li : les groupes ne sont plus marqués comme liés à un autre récepteur quand le récepteur ne se nomme pas dans sa réponse.', 'Quand la vitesse d’un ventilateur sans fil passe à 0 ou revient, toute la réponse du récepteur va au journal, pour trouver pourquoi certains groupes affichent 0 tr/min alors qu’ils tournent.'] },
   { v: '0.4.36',
     en: ['Lian Li wireless fans: when haku cannot read the receiver, the log now says why: the step that failed, the receiver’s first replies as they came, and its error codes. Send the diagnostics if your fans do not show up.', 'The diagnostics list L-Connect among the lighting programs running.'],
     ru: ['Беспроводные вентиляторы Lian Li: если haku не может прочитать приёмник, в журнале теперь видно почему: шаг, на котором не получилось, первые ответы приёмника как есть и коды ошибок. Если вентиляторы не появились, пришлите диагностику.', 'Диагностика показывает L-Connect среди запущенных программ подсветки.'],
