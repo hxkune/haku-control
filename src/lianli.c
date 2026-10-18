@@ -67,11 +67,13 @@ static int rd(WINUSB_INTERFACE_HANDLE w, BYTE *b, int n, ULONG ms) {
     return GetLastError() == ERROR_SEM_TIMEOUT ? 0 : -1;
 }
 
-// the first replies of a run go to the log as they came, for receivers whose firmware answers otherwise
-static int dumps = 6, fail_e;
+// the first replies of a run go to the log as they came, for receivers whose firmware answers otherwise, and then
+// (up to 40 more) each reply where a fan's rpm turns 0 or comes back
+static int dumps = 6, changes = 40, fail_e;
+static unsigned long long zero_was;
 static const char *fail_at = "";
 static void dump(const BYTE *r, int len, int pages, int n) {
-    char h[96 * 3 + 1] = ""; int k = len < 96 ? len : 96;
+    static char h[(4 + 10 * REC) * 3 + 1]; int k = len < 4 + 10 * REC ? len : 4 + 10 * REC;
     for (int i = 0; i < k; i++) sprintf(h + i * 3, "%02x ", r[i]);
     logf_("lianli: asked %d page(s), %d bytes back, %d device(s) read: %s", pages, len, n, h);
 }
@@ -87,7 +89,14 @@ static int poll(WINUSB_INTERFACE_HANDLE w, int *pages) {
     for (ULONG ms = 100; len < cap && (got = rd(w, r + len, cap - len < 64 ? cap - len : 64, ms)) > 0; ms = 10) len += got;
     if (got < 0) { fail_e = GetLastError(); fail_at = "reading the reply"; return -1; }
     ll_dev d[LL_GROUPS]; BYTE m[6] = { 0 }; int rep = 0, n = ll_parse(r, len, *pages, d, LL_GROUPS, m, &rep);
-    if (dumps > 0) { dumps--; if (stale) logf_("lianli: %d stale bytes dropped first", stale); dump(r, len, *pages, n); }
+    unsigned long long z = 0;   // one bit per fan reading 0 rpm
+    for (int i = 0; i < n; i++) for (int f = 0; f < d[i].n; f++) if (!d[i].rpm[f]) z |= 1ull << (i * 4 + f);
+    if (dumps > 0 || (n >= 0 && z != zero_was && changes > 0)) {
+        if (dumps > 0) dumps--; else changes--;
+        if (stale) logf_("lianli: %d stale bytes dropped first", stale);
+        dump(r, len, *pages, n);
+    }
+    if (n >= 0) zero_was = z;
     if (n < 0) return 0;
     *pages = rep > 10 ? (rep + 9) / 10 > 26 ? 26 : (rep + 9) / 10 : 1;
     EnterCriticalSection(&cs);
@@ -148,7 +157,7 @@ void ll_stop(void) {
 }
 
 static int mac_s(char *o, const BYTE *m) { return sprintf(o, "%02x:%02x:%02x:%02x:%02x:%02x", m[0], m[1], m[2], m[3], m[4], m[5]); }
-// {"st":..,"err":..,"rep":..,"g":[{"mac","own":bound to this dongle,"ch","type","n","rpm":[],"pct":[]}]}
+// {"st":..,"err":..,"rep":..,"g":[{"mac","own":bound to this dongle (or the reply named no dongle: TL receivers leave it out),"ch","type","n","rpm":[],"pct":[]}]}
 int ll_json(char *out, int cap) {
     if (!th) return snprintf(out, cap, "{\"st\":\"none\"}");
     EnterCriticalSection(&cs);
@@ -156,7 +165,7 @@ int ll_json(char *out, int cap) {
     for (int i = 0; i < S.n && n < cap - 200; i++) {
         const ll_dev *v = &S.d[i]; char a[18];
         mac_s(a, v->mac);
-        n += snprintf(out + n, cap - n, "%s{\"mac\":\"%s\",\"own\":%d,\"ch\":%d,\"type\":%d,\"n\":%d,\"rpm\":[", i ? "," : "", a, !memcmp(v->master, S.master, 6), v->ch, v->type, v->n);
+        n += snprintf(out + n, cap - n, "%s{\"mac\":\"%s\",\"own\":%d,\"ch\":%d,\"type\":%d,\"n\":%d,\"rpm\":[", i ? "," : "", a, !memcmp(S.master, (BYTE[6]){ 0 }, 6) || !memcmp(v->master, S.master, 6), v->ch, v->type, v->n);
         for (int f = 0; f < v->n; f++) n += snprintf(out + n, cap - n, "%s%d", f ? "," : "", v->rpm[f]);
         n += snprintf(out + n, cap - n, "],\"pct\":[");
         for (int f = 0; f < v->n; f++) n += snprintf(out + n, cap - n, "%s%d", f ? "," : "", (v->duty[f] * 100 + 127) / 255);
