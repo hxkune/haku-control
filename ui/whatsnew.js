@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.34',
+    en: ['Fans on a fixed speed stay put again: the CPU temperature is now read only while a curve follows it.', 'A fan whose source was never chosen follows the GPU again, as before 0.4.33. The CPU stays one click away in the fan’s settings.'],
+    ru: ['Вентиляторы на фиксированной скорости снова держат её: температура процессора теперь читается, только пока за ней следует кривая.', 'Вентилятор, у которого источник не выбирали, снова следует за видеокартой, как до 0.4.33. Процессор по-прежнему можно выбрать в настройках вентилятора.'],
+    fr: ['Les ventilateurs à vitesse fixe s’y tiennent de nouveau : la température du processeur n’est lue que pendant qu’une courbe la suit.', 'Un ventilateur dont la source n’a jamais été choisie suit de nouveau la carte graphique, comme avant 0.4.33. Le processeur reste à un clic dans ses réglages.'] },
   { v: '0.4.33',
     en: ['Fan curves can follow the CPU temperature (AMD Ryzen and Intel Core, through PawnIO). A fan whose source was never chosen now follows the CPU where it reads, else the GPU.', 'GPU temperature on AMD and Intel cards too, read from Windows (as Task Manager shows it): no more “no sensor” on them.', 'Without a QUADRO, the Fans page speaks only of the board’s headers.'],
     ru: ['Кривые вентиляторов могут следовать за температурой процессора (AMD Ryzen и Intel Core, через PawnIO). Вентилятор, у которого источник не выбирали, теперь следует за процессором, если он читается, иначе за видеокартой.', 'Температура видеокарты теперь и на картах AMD и Intel, берётся из Windows (как в Диспетчере задач): больше никакого «нет датчика» на них.', 'Без QUADRO страница «Вентиляторы» говорит только о разъёмах платы.'],
