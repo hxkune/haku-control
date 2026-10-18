@@ -504,11 +504,16 @@ int ext_json(char *out, int cap) {
         disc_t *f = &found[i];
         char nm[140], inf[200], host[140];
         json_escape_to(nm, sizeof(nm), f->name); json_escape_to(inf, sizeof(inf), f->info); json_escape_to(host, sizeof(host), f->host);
-        int added = 0;
+        int added = 0, clash = 0;
         for (int k = 0; k < nslots; k++) if (!strcmp(slots[k].kind, f->kind) && !strcmp(slots[k].host, f->host) && slots[k].sub == f->sub) added = 1;
+        // an OpenRGB controller lit whole and by its connectors at once: two streams fight on it and its LEDs flash,
+        // so one that is added hides the other (sub = controller + 1000 x (connector + 1), PART_STEP in drv_openrgb.c)
+        for (int k = 0; k < nslots && !strcmp(f->kind, "openrgb"); k++)
+            if (!strcmp(slots[k].kind, f->kind) && !strcmp(slots[k].host, f->host) && slots[k].sub >= 0 &&
+                slots[k].sub % 1000 == f->sub % 1000 && (slots[k].sub >= 1000) != (f->sub >= 1000)) clash = 1;
         const ext_driver *drv = ext_driver_by_kind(f->kind);
-        n += snprintf(out + n, cap - n, "%s{\"kind\":\"%s\",\"title\":\"%s\",\"host\":\"%s\",\"sub\":%d,\"name\":\"%s\",\"leds\":%d,\"info\":\"%s\",\"added\":%d}",
-                      i ? "," : "", f->kind, drv ? drv->title : f->kind, host, f->sub, nm, f->nleds, inf, added);
+        n += snprintf(out + n, cap - n, "%s{\"kind\":\"%s\",\"title\":\"%s\",\"host\":\"%s\",\"sub\":%d,\"name\":\"%s\",\"leds\":%d,\"info\":\"%s\",\"added\":%d,\"clash\":%d}",
+                      i ? "," : "", f->kind, drv ? drv->title : f->kind, host, f->sub, nm, f->nleds, inf, added, clash);
     }
     ReleaseSRWLockShared(&lk);
     n += snprintf(out + n, cap - n, "],\"scanning\":%d,\"kinds\":[", (int)scanning);

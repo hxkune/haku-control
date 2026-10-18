@@ -44,7 +44,7 @@ if (Test-Path "$old\rgbfx.exe") { Remove-Item $old -Recurse -Force; "removed $ol
 
 # ---- program files
 New-Item -ItemType Directory -Force $dest | Out-Null
-Copy-Item "$bin\haku-control.exe", "$bin\haku-control-hotspot.exe", "$bin\SmbusPIIX4.bin" $dest -Force
+Copy-Item "$bin\haku-control.exe", "$bin\haku-control-hotspot.exe", "$bin\SmbusPIIX4.bin", "$bin\LpcIO.bin" $dest -Force
 if (Test-Path "$dest\ui") { Remove-Item "$dest\ui" -Recurse -Force }
 Copy-Item "$bin\ui" "$dest\ui" -Recurse -Force
 Copy-Item (Join-Path $PSScriptRoot 'stop.ps1'), (Join-Path $PSScriptRoot 'aidot-setup.ps1') $dest -Force

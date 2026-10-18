@@ -4,6 +4,10 @@
 
 **Microsoft WebView2 SDK** (`third_party/webview2`): the static loader library and headers, from the
 `Microsoft.Web.WebView2` NuGet package. BSD-style license, see `third_party/webview2/LICENSE.txt`.
+**WebView2 Runtime bootstrapper** (`third_party/webview2/MicrosoftEdgeWebview2Setup.exe`, carried inside
+`haku-control-setup.exe`): Microsoft's signed Evergreen bootstrapper 1.3.295.9, unmodified
+(SHA-256 `90ae8eb0d9d22d6e51fccde49e4d25d266ff9343ad0cc931faa6f482569cea62`), redistributed as Microsoft allows for
+WebView2 apps. haku's setup runs it silently when the runtime is missing; it downloads the runtime from Microsoft.
 
 **PawnIO SMBus module** (`third_party/pawnio/SmbusPIIX4.bin`): from
 [namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) release 0.2.11, unmodified.
@@ -13,6 +17,22 @@ signed setup of the PawnIO driver, [namazso/PawnIO.Setup](https://github.com/nam
 unmodified (SHA-256 `1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032`). haku's setup runs it
 silently when PawnIO is missing (the PC page can install it too, from that same release). PawnIO is licensed under
 the GNU GPL 2.0; its source code is at [namazso/PawnIO](https://github.com/namazso/PawnIO). See https://pawnio.eu.
+
+**Board fan controls** (`src/sio.c`): the Nuvoton NCT67xx Super I/O chip ids, register layout and the way manual
+control is taken and given back are ported from [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+(`LpcIO.cs`, `Nct677X.cs`). Mozilla Public License 2.0: that file stays under the MPL 2.0, see its header.
+**PawnIO LPC module** (`third_party/pawnio/LpcIO.bin`), through which `src/sio.c` reaches the chip: from
+[namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) release 0.2.11, unmodified
+(SHA-256 `b3896a1cab0d808fca31fe2ebcae045d59dac690da87b17c858bb8da357eb45e`). GNU LGPL 2.1, see
+`third_party/pawnio/COPYING`. The source code is available from that repository.
+
+## Downloaded on request
+
+**OpenRGB** 1.0: not bundled. When the PC page finds lighting only OpenRGB can reach (or when asked to there), haku downloads the official Windows build
+(`OpenRGB_1.0_Windows_64_81bbe18.zip`, SHA-256 `182a52a3c97c4c4ae52c80286b4260c9666c51c3447dbc416ee8945f66192e90`)
+from [OpenRGB's releases](https://codeberg.org/OpenRGB/OpenRGB/releases/tag/release_1.0), unmodified, and runs it as a
+separate program, talking to it only through its network SDK protocol. OpenRGB is licensed under the GNU GPL 2.0; its
+source code is at [codeberg.org/OpenRGB/OpenRGB](https://codeberg.org/OpenRGB/OpenRGB).
 
 ## Effects
 

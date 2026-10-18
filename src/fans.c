@@ -9,6 +9,8 @@
 //        fanN_min = the channel's floor (never under 20), fanN_fail = its speed while the curve's temperature is
 //        missing or stale or the curve does not read (100 by default)
 //        fanN_down = how many % a curve may slow per 2 s (1..100, 3 by default); it speeds up and goes to emergency at once
+// The board's Super I/O fan controls (sio.c) are channels 5..11 (fan5..fan11), on a thread of their own with the same
+// rules: the mode and duty found first are kept in fans-state.ini [board-<chip>] until they are back.
 #include "common.h"
 #include <setupapi.h>
 #include <hidsdi.h>
@@ -18,6 +20,8 @@
 #include <stdarg.h>
 
 #define FANS 4
+#define BF 7                // the board's fan controls at most (sio.c), channels FANS+1..FANS+BF
+#define NCH (FANS + BF)
 #define MIN_PCT 20        // haku's floor for every channel: a channel may be set higher (fanN_min), never lower
 #define STALE_MS 5000     // a temperature older than this is not used
 #define GRACE_MS 5000     // after the GPU is first asked for, before its absence counts
@@ -47,13 +51,18 @@ static int sim_get(BYTE *r, int n); static int sim_set(const BYTE *r, int n);
 // cs: the readings, the channels' state for the page and the problem log; io: the control handle and what was taken
 static CRITICAL_SECTION cs, io;
 static struct { int on, link, ser1, ser2, fw, temp[4], flow; DWORD seen; struct { int duty, cv, ma, cw, rpm; } f[FANS]; } st;
-static struct { int want, out, ok, em, own, er; } ch[FANS];   // asked (centi-%, -1 as is, -2 waiting), sent, read back (1/0/-1)
+static struct { int want, out, ok, em, own, er; } ch[NCH];   // asked (centi-%, -1 as is, -2 waiting), sent, read back (1/0/-1)
 static int rfail;                                           // channels whose own setting could not be given back
 static struct { char t[9], m[100]; int n; } lg[8]; static int lgn;   // recent problems, oldest first
 static HANDLE th, stop_ev, hc = INVALID_HANDLE_VALUE;      // hc: control (feature reports), synchronous
 static int flen, paused, bound, bad_crc;
 static BYTE orig[FANS][3]; static int taken[FANS], chk[FANS], sent[FANS] = { -1, -1, -1, -1 }, cer[FANS];
 static wchar_t sec[16];                                     // the serial taken/orig belong to
+// the board (io): its mode and duty found first while haku holds a channel, the section they are saved under
+static int bn, btaken[BF], borig[BF][2], bchk[BF], bsent[BF] = { -1, -1, -1, -1, -1, -1, -1 }, ber[BF], brfail;
+static wchar_t bsec[24];
+static HANDLE bth;
+static struct { int n, rpm[BF], pct[BF]; char chip[16]; } bd;   // cs: the board's readings
 static volatile LONG need_gpu, gpu_c = -1000, gpu_at, need_since;   // gpu_c: whole degrees, fed by the render loop
 
 static int be16(const BYTE *p) { return p[0] << 8 | p[1]; }
@@ -206,7 +215,7 @@ typedef struct { int want, em, smooth; } tgt_t;   // want: centi-percent, -1 as 
 static int pct_key(int f, const char *k, int d) { char b[24]; snprintf(b, sizeof(b), "fan%d_%s", f + 1, k); return cfg_geti("fans", b, d); }
 static void targets(tgt_t *t) {
     DWORD now = GetTickCount(); int ng = 0;
-    for (int f = 0; f < FANS; f++) {
+    for (int f = 0; f < NCH; f++) {
         char k[24]; t[f].want = -1; t[f].em = EM_NONE; t[f].smooth = 0;
         snprintf(k, sizeof(k), "fan%d", f + 1);
         const char *m = cfg_get("fans", k, "");
@@ -243,17 +252,19 @@ static void targets(tgt_t *t) {
     InterlockedExchange(&need_gpu, ng != 0);
 }
 
+// a curve slows by at most fanN_down per round from what was last sent; anything else as asked
+static int eased(int f, const tgt_t *t, int sent_) {
+    int dn = pct_key(f, "down", DOWN_PCT); dn = (dn < 1 ? 1 : dn > 100 ? 100 : dn) * 100;
+    return t->want >= 0 && t->smooth && sent_ >= 0 && t->want < sent_ - dn ? sent_ - dn : t->want;
+}
+
 // one control round: targets, a curve eased down, written and read back; the page's view of each channel
 static void control(void) {
-    tgt_t t[FANS]; targets(t);
+    tgt_t t[NCH]; targets(t);
     int want[FANS], res[FANS], fail = 0;
     EnterCriticalSection(&io);
     if (paused || !bound) { LeaveCriticalSection(&io); return; }
-    for (int f = 0; f < FANS; f++) {
-        int dn = pct_key(f, "down", DOWN_PCT); dn = (dn < 1 ? 1 : dn > 100 ? 100 : dn) * 100;
-        want[f] = t[f].want;
-        if (want[f] >= 0 && t[f].smooth && sent[f] >= 0 && want[f] < sent[f] - dn) want[f] = sent[f] - dn;
-    }
+    for (int f = 0; f < FANS; f++) want[f] = eased(f, &t[f], sent[f]);
     ctl_write(want, res);
     for (int f = 0; f < FANS; f++) {
         if (want[f] >= 0 && res[f] >= 0) sent[f] = want[f];
@@ -323,6 +334,113 @@ static void parse(const BYTE *r) {
     LeaveCriticalSection(&cs);
 }
 
+// ---- the board's fan controls (sio.c): channel FANS+b+1 is control b. Callers hold io.
+// fans-state.ini [board-<chip>] fanN = its mode and duty ("MMCC") while haku holds it
+static int bstate_put(int b, int m, int c) {
+    wchar_t p[MAX_PATH], k[8], v[8]; state_path(p); swprintf(k, 8, L"fan%d", FANS + b + 1);
+    if (m >= 0) swprintf(v, 8, L"%02X%02X", m, c);
+    if (WritePrivateProfileStringW(bsec, k, m >= 0 ? v : NULL, p)) return 1;
+    if (m >= 0) flog("could not save the board's own setting of channel %d to disk (error %lu); not taking it", FANS + b + 1, GetLastError());
+    return 0;
+}
+static void bstate_load(void) {
+    wchar_t p[MAX_PATH], k[8], v[8]; state_path(p);
+    for (int b = 0; b < bn; b++) {
+        unsigned m, c; swprintf(k, 8, L"fan%d", FANS + b + 1);
+        GetPrivateProfileStringW(bsec, k, L"", v, 8, p);
+        btaken[b] = wcslen(v) == 4 && swscanf_s(v, L"%2x%2x", &m, &c) == 2;
+        if (btaken[b]) { borig[b][0] = m; borig[b][1] = c; }
+        bchk[b] = btaken[b]; bsent[b] = -1;
+    }
+}
+
+// want: -2 leave, -1 its own setting back (if taken), else centi-percent in manual mode.
+// 1 read back as sent (or already so), 0 sent but not read back so, -1 not sent, 2 not touched; ber[b]: why not.
+static int board_write(int b, int want) {
+    int m, c, v = (want * 255 + 5000) / 10000;
+    ber[b] = ER_NONE;
+    if (want == -2 || (want == -1 && !btaken[b])) return 2;
+    if (!sio_get(b, &m, &c)) { ber[b] = ER_READ; return -1; }
+    if (bchk[b]) {   // first look after starting or waking: is what was kept still what to give back?
+        bchk[b] = 0;
+        if (m == borig[b][0] && c == borig[b][1]) { btaken[b] = 0; bstate_put(b, -1, 0); }
+        else if (m != 0) {   // not manual: the BIOS or another program set it meanwhile, that is its setting now
+            btaken[b] = 0; bstate_put(b, -1, 0);
+            flog("channel %d was changed outside haku; its old saved setting is dropped", FANS + b + 1);
+        }
+        if (want == -1 && !btaken[b]) return 2;
+    }
+    if (want == -1) {
+        if ((m != borig[b][0] || c != borig[b][1]) && (!sio_put(b, borig[b][0], borig[b][1]) || !sio_get(b, &m, &c))) { ber[b] = ER_WRITE; return -1; }
+        if (m != borig[b][0] || c != borig[b][1]) { ber[b] = ER_KEPT; flog("the board did not take back the setting of channel %d", FANS + b + 1); return 0; }
+        btaken[b] = 0; bstate_put(b, -1, 0);
+        return 1;
+    }
+    if (!btaken[b]) {   // its own setting on disk before haku touches it; if that fails it is left alone, tried again next round
+        if (!bstate_put(b, m, c)) { ber[b] = ER_SAVE; return -1; }
+        borig[b][0] = m; borig[b][1] = c; btaken[b] = 1;
+    }
+    if ((m != 0 || c != v) && (!sio_put(b, 0, v) || !sio_get(b, &m, &c))) { ber[b] = ER_WRITE; return -1; }
+    if (m != 0 || c != v) { ber[b] = ER_KEPT; flog("the board did not keep the setting of channel %d", FANS + b + 1); return 0; }
+    return 1;
+}
+
+// every taken control its own setting back; how many could not be
+static int board_restore(void) {
+    int left = 0;
+    for (int b = 0; b < bn; b++) left += btaken[b];
+    for (int k = 0; left && k < 2; k++) {
+        if (k) PAUSE(500);
+        left = 0;
+        for (int b = 0; b < bn; b++) if (btaken[b]) { board_write(b, -1); left += btaken[b]; }
+    }
+    for (int b = 0; b < bn; b++) if (!btaken[b]) bsent[b] = -1;
+    if (left) flog("%d channel(s) could not be given back to the board; haku gives them back when it next starts", left);
+    EnterCriticalSection(&cs); brfail = left; for (int b = 0; b < bn; b++) ch[FANS + b].own = btaken[b]; LeaveCriticalSection(&cs);
+    return left;
+}
+
+// one round on the board: its readings, then the same targets and easing as the QUADRO's
+static void board_round(void) {
+    int rpm[BF], pct[BF], res[BF], fail = 0, ok = sio_read(rpm, pct);
+    tgt_t t[NCH]; targets(t);
+    EnterCriticalSection(&cs);
+    for (int b = 0; b < bn; b++) { bd.rpm[b] = ok ? rpm[b] : -1; bd.pct[b] = ok ? pct[b] : -1; }
+    LeaveCriticalSection(&cs);
+    EnterCriticalSection(&io);
+    if (paused) { LeaveCriticalSection(&io); return; }
+    for (int b = 0; b < bn; b++) {
+        int f = FANS + b, want = eased(f, &t[f], bsent[b]);
+        res[b] = board_write(b, want);
+        if (want >= 0 && res[b] >= 0) bsent[b] = want;
+        if (!btaken[b]) bsent[b] = -1;
+        fail += want == -1 && btaken[b];
+    }
+    EnterCriticalSection(&cs);
+    brfail = fail;
+    for (int b = 0; b < bn; b++) {
+        int f = FANS + b;
+        ch[f].want = t[f].want; ch[f].out = bsent[b]; ch[f].em = t[f].em; ch[f].own = btaken[b]; ch[f].er = ber[b];
+        ch[f].ok = res[b] == 2 ? 1 : res[b];
+    }
+    LeaveCriticalSection(&cs);
+    LeaveCriticalSection(&io);
+}
+
+static unsigned __stdcall board_thread(void *arg) {
+    (void)arg;
+    char chip[16] = ""; int n = sio_open(chip, sizeof(chip));
+    if (!n) return 0;
+    EnterCriticalSection(&io);
+    swprintf(bsec, 24, L"board-%hs", chip); bn = n < BF ? n : BF; bstate_load();
+    LeaveCriticalSection(&io);
+    EnterCriticalSection(&cs); strcpy_s(bd.chip, sizeof(bd.chip), chip); bd.n = bn; LeaveCriticalSection(&cs);
+    do board_round(); while (WaitForSingleObject(stop_ev, 2000) == WAIT_TIMEOUT);
+    EnterCriticalSection(&io); board_restore(); LeaveCriticalSection(&io);
+    sio_close();
+    return 0;
+}
+
 static unsigned __stdcall fans_thread(void *arg) {
     (void)arg;
     HANDLE rd = INVALID_HANDLE_VALUE, ev = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -375,6 +493,7 @@ void fans_start(void) {
     InitializeCriticalSection(&cs); InitializeCriticalSection(&io);
     stop_ev = CreateEventW(NULL, TRUE, FALSE, NULL);
     th = (HANDLE)_beginthreadex(NULL, 0, fans_thread, NULL, 0, NULL);
+    bth = (HANDLE)_beginthreadex(NULL, 0, board_thread, NULL, 0, NULL);
 }
 
 void fans_stop(void) {
@@ -382,15 +501,19 @@ void fans_stop(void) {
     SetEvent(stop_ev);
     WaitForSingleObject(th, 3000);
     CloseHandle(th); th = NULL;
+    if (bth) { WaitForSingleObject(bth, 3000); CloseHandle(bth); bth = NULL; }
 }
 
-// sleep: the QUADRO's own settings back now (the machine may not wake with haku); after waking, taken again
+// sleep: the QUADRO's and the board's own settings back now (the machine may not wake with haku); after waking, taken again
 void fans_suspend(int on) {
     if (!th) return;
     EnterCriticalSection(&io);
     paused = on;
-    if (on) restore_all();
-    else for (int f = 0; f < FANS; f++) chk[f] = taken[f];   // one that could not go back: look again before writing
+    if (on) { restore_all(); board_restore(); }
+    else {   // one that could not go back: look again before writing
+        for (int f = 0; f < FANS; f++) chk[f] = taken[f];
+        for (int b = 0; b < bn; b++) bchk[b] = btaken[b];
+    }
     LeaveCriticalSection(&io);
 }
 
@@ -412,20 +535,31 @@ int fans_json(char *out, int cap) {
     if (!th) return snprintf(out, cap, "{\"on\":0}");
     DWORD now = GetTickCount(), at = (DWORD)gpu_at; LONG g = gpu_c;
     EnterCriticalSection(&cs);
-    int n = snprintf(out, cap, "{\"on\":%d", st.on);
-    if (st.on) {
-        n += snprintf(out + n, cap - n, ",\"link\":%d,\"age\":%lu,\"paused\":%d,\"rfail\":%d,\"serial\":\"%05d-%05d\",\"fw\":%d,\"flow\":%.1f,\"t\":[",
-                      st.link, now - st.seen, paused, rfail, st.ser1, st.ser2, st.fw, st.flow / 10.0);
-        for (int t = 0; t < 4; t++) {
-            if (st.temp[t] == 0x7FFF) n += snprintf(out + n, cap - n, "%snull", t ? "," : "");
-            else n += snprintf(out + n, cap - n, "%s%.1f", t ? "," : "", (short)st.temp[t] / 100.0);
+    // f[i] is channel i+1: the QUADRO's four (null without one), then the board's (b:1)
+    int n = snprintf(out, cap, "{\"on\":%d", st.on || bd.n);
+    if (st.on || bd.n) {
+        n += snprintf(out + n, cap - n, ",\"q\":%d,\"paused\":%d,\"rfail\":%d", st.on, paused, rfail + brfail);
+        if (bd.n) n += snprintf(out + n, cap - n, ",\"chip\":\"%s\"", bd.chip);
+        if (st.on) {
+            n += snprintf(out + n, cap - n, ",\"link\":%d,\"age\":%lu,\"serial\":\"%05d-%05d\",\"fw\":%d,\"flow\":%.1f,\"t\":[",
+                          st.link, now - st.seen, st.ser1, st.ser2, st.fw, st.flow / 10.0);
+            for (int t = 0; t < 4; t++) {
+                if (st.temp[t] == 0x7FFF) n += snprintf(out + n, cap - n, "%snull", t ? "," : "");
+                else n += snprintf(out + n, cap - n, "%s%.1f", t ? "," : "", (short)st.temp[t] / 100.0);
+            }
+            n += snprintf(out + n, cap - n, "]");
         }
-        if (g > -1000 && at) n += snprintf(out + n, cap - n, "],\"gpu\":%ld,\"gage\":%lu,\"f\":[", g, now - at);
-        else n += snprintf(out + n, cap - n, "],\"gpu\":null,\"f\":[");
-        for (int f = 0; f < FANS; f++)
-            n += snprintf(out + n, cap - n, "%s{\"rpm\":%d,\"pct\":%.1f,\"v\":%.2f,\"w\":%.2f,\"own\":%d,\"want\":%d,\"out\":%d,\"ok\":%d,\"em\":\"%s\",\"err\":\"%s\"}", f ? "," : "",
-                          st.f[f].rpm, st.f[f].duty / 100.0, st.f[f].cv / 100.0, st.f[f].cw / 100.0, ch[f].own,
-                          ch[f].want < 0 ? ch[f].want : ch[f].want / 100, ch[f].out < 0 ? -1 : ch[f].out / 100, ch[f].ok, em_name[ch[f].em], er_name[ch[f].er]);
+        if (g > -1000 && at) n += snprintf(out + n, cap - n, ",\"gpu\":%ld,\"gage\":%lu,\"f\":[", g, now - at);
+        else n += snprintf(out + n, cap - n, ",\"gpu\":null,\"f\":[");
+        for (int f = 0; f < FANS + bd.n; f++) {
+            const char *c = f ? "," : "";
+            if (f < FANS && !st.on) { n += snprintf(out + n, cap - n, "%snull", c); continue; }
+            if (f < FANS) n += snprintf(out + n, cap - n, "%s{\"rpm\":%d,\"pct\":%.1f,\"v\":%.2f,\"w\":%.2f", c, st.f[f].rpm, st.f[f].duty / 100.0, st.f[f].cv / 100.0, st.f[f].cw / 100.0);
+            else if (bd.pct[f - FANS] < 0) n += snprintf(out + n, cap - n, "%s{\"b\":1,\"rpm\":-1,\"pct\":null", c);
+            else n += snprintf(out + n, cap - n, "%s{\"b\":1,\"rpm\":%d,\"pct\":%d", c, bd.rpm[f - FANS], bd.pct[f - FANS]);
+            n += snprintf(out + n, cap - n, ",\"own\":%d,\"want\":%d,\"out\":%d,\"ok\":%d,\"em\":\"%s\",\"err\":\"%s\"}",
+                          ch[f].own, ch[f].want < 0 ? ch[f].want : ch[f].want / 100, ch[f].out < 0 ? -1 : ch[f].out / 100, ch[f].ok, em_name[ch[f].em], er_name[ch[f].er]);
+        }
         n += snprintf(out + n, cap - n, "],\"log\":[");
         for (int i = 0; i < lgn; i++) n += snprintf(out + n, cap - n, "%s{\"t\":\"%s\",\"m\":\"%s\",\"n\":%d}", i ? "," : "", lg[i].t, lg[i].m, lg[i].n);
         n += snprintf(out + n, cap - n, "]");
@@ -459,6 +593,15 @@ static int dev_is(int f, int pct) { BYTE *p = dev + ctl_fan[f]; return p[0] == 0
 static int saved(int f) { wchar_t p[MAX_PATH], v[8], k[8]; state_path(p); swprintf(k, 8, L"fan%d", f + 1); GetPrivateProfileStringW(sec, k, L"", v, 8, p); return v[0] != 0; }
 static void plug(int ser) { st.on = st.link = 1; st.seen = GetTickCount(); st.ser1 = 4976; st.ser2 = ser; hc = (HANDLE)1; bind_serial(); }
 static void unlink_(void) { st.link = 0; hc = INVALID_HANDLE_VALUE; bound = 0; }
+// the simulated board: its controls' mode and duty
+static int smode[BF], scmd[BF], sget_fail, sput_fail, sdrop = -1;   // sdrop: the control the chip does not keep
+int sio_open(char *chip, int cap) { (void)chip; (void)cap; return 0; }
+void sio_close(void) {}
+int sio_read(int *rpm, int *pct) { for (int b = 0; b < bn; b++) { rpm[b] = 900; pct[b] = scmd[b] * 100 / 255; } return 1; }
+int sio_get(int i, int *m, int *c) { if (sget_fail) return 0; *m = smode[i]; *c = scmd[i]; return 1; }
+int sio_put(int i, int m, int c) { if (sput_fail) return 0; if (i != sdrop) { smode[i] = m; scmd[i] = c; } return 1; }
+static int bsaved(int b) { wchar_t p[MAX_PATH], v[8], k[8]; state_path(p); swprintf(k, 8, L"fan%d", FANS + b + 1); GetPrivateProfileStringW(bsec, k, L"", v, 8, p); return v[0] != 0; }
+static int bis(int b, int m, int c) { return smode[b] == m && scmd[b] == c; }
 int main(void) {
     InitializeCriticalSection(&cs); InitializeCriticalSection(&io);
     wchar_t ini[MAX_PATH]; state_path(ini); DeleteFileW(ini);
@@ -472,7 +615,7 @@ int main(void) {
     assert(curve_at("30:20,60:50,", 50) == -1 && curve_at("30:20,60:50x", 50) == -1 && curve_at(" 30:20,60:50", 50) == -1);
     assert(curve_at("10:20,20:30,30:40,40:50,50:60,60:70,70:80,80:90", 85) == 90 && curve_at("10:20,20:30,30:40,40:50,50:60,60:70,70:80,80:90,90:100", 85) == -1);
     // targets: a GPU curve without a fresh GPU reading runs at the channel's emergency speed, not at the curve's last point
-    tgt_t t[FANS]; DWORD now = GetTickCount();
+    tgt_t t[NCH]; DWORD now = GetTickCount();
     set("fan1", "curve"); set("fan1_curve", "30:20,90:20");
     fans_feed(NAN, 0); targets(t); assert(t[0].want == -2);                    // NVML still loading: left alone for a moment
     need_since = (LONG)(now - 10000);
@@ -550,9 +693,38 @@ int main(void) {
     set("fan1_down", "100"); st.temp[0] = 2000; control(); assert(dev_is(0, 20));
     set("fan1_down", "0"); st.temp[0] = 4000; control(); st.temp[0] = 2000; control(); assert(dev_is(0, 99));   // under 1: 1
     set("fan1", ""); set("fan1_down", NULL); control(); assert(!memcmp(dev + ctl_fan[0], O1, 3) && !taken[0]);
+    // the board: taken in manual mode with its own mode and duty on disk first, the other control left alone
+    wcscpy_s(bsec, 24, L"board-TEST"); bn = 2; smode[0] = smode[1] = 5; scmd[0] = 0x80; scmd[1] = 0x40;
+    set("fan5", "fix"); set("fan5_pct", "40"); board_round();
+    assert(bis(0, 0, 102) && btaken[0] && bsaved(0) && ch[4].own && ch[4].ok == 1 && bis(1, 5, 0x40) && !btaken[1] && bd.rpm[0] == 900);
+    set("fan5", ""); board_round(); assert(bis(0, 5, 0x80) && !btaken[0] && !bsaved(0) && !ch[4].own);
+    // a crash: the saved setting goes back at the next start
+    set("fan5", "fix"); board_round(); memset(btaken, 0, sizeof(btaken)); memset(borig, 0, sizeof(borig));
+    bstate_load(); assert(btaken[0] && bchk[0] && borig[0][0] == 5 && borig[0][1] == 0x80);
+    set("fan5", ""); board_round(); assert(bis(0, 5, 0x80) && !btaken[0] && !bsaved(0));
+    // changed by the BIOS or another program meanwhile: dropped, not written over
+    set("fan5", "fix"); board_round(); smode[0] = 3; bstate_load();
+    set("fan5", ""); board_round(); assert(smode[0] == 3 && !btaken[0] && !bsaved(0));
+    // still haku's manual duty after a crash: taken on, given back when asked
+    smode[0] = 5; scmd[0] = 0x80; set("fan5", "fix"); board_round(); bstate_load();
+    board_round(); assert(btaken[0] && bis(0, 0, 102) && !bchk[0]);
+    set("fan5", ""); board_round(); assert(bis(0, 5, 0x80) && !btaken[0]);
+    // not readable, not saved, not kept: not touched or not confirmed, and the page is told why
+    set("fan5", "fix"); sget_fail = 1; board_round(); assert(!btaken[0] && ch[4].ok == -1 && ch[4].er == ER_READ); sget_fail = 0;
+    DeleteFileW(ini); assert(CreateDirectoryW(ini, NULL));
+    board_round(); assert(bis(0, 5, 0x80) && !btaken[0] && ch[4].er == ER_SAVE); RemoveDirectoryW(ini);
+    sdrop = 0; board_round(); assert(btaken[0] && ch[4].ok == 0 && ch[4].er == ER_KEPT && bis(0, 5, 0x80)); sdrop = -1;
+    board_round(); assert(bis(0, 0, 102) && ch[4].ok == 1 && !ch[4].er);
+    // giving back fails: reported, kept on disk; then it goes back
+    sput_fail = 1; assert(board_restore() == 1 && brfail == 1 && btaken[0] && bsaved(0)); sput_fail = 0;
+    assert(!board_restore() && !brfail && bis(0, 5, 0x80) && !bsaved(0));
+    set("fan5_pct", NULL);
     // the page's view
-    static char js[8192]; th = (HANDLE)1; fans_json(js, sizeof(js)); th = NULL;
+    static char js[8192]; th = (HANDLE)1; strcpy_s(bd.chip, sizeof(bd.chip), "TEST"); bd.n = 2; fans_json(js, sizeof(js));
     assert(strstr(js, "\"link\":1") && strstr(js, "\"log\":[") && strstr(js, "\"em\":\"\"") && strstr(js, "\"err\":\"\""));
+    assert(strstr(js, "\"q\":1") && strstr(js, "\"chip\":\"TEST\"") && strstr(js, "{\"b\":1,\"rpm\":900"));
+    st.on = 0; fans_json(js, sizeof(js)); th = NULL;
+    assert(strstr(js, "\"on\":1,\"q\":0") && strstr(js, "\"f\":[null,null,null,null,{\"b\":1") && !strstr(js, "\"link\""));
     DeleteFileW(ini);
     puts("fans: ok");
     return 0;

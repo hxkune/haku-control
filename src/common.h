@@ -221,6 +221,12 @@ void fans_feed(float gpu_temp, DWORD at); // the render loop's GPU reading and w
 int  fans_need_gpu(void);
 float fans_water(void);                 // the first connected temperature sensor, NAN when none
 int  fans_json(char *out, int cap);
+// ---- sio.c: the board's Super I/O fan controls (Nuvoton NCT67xx) over PawnIO; one thread only (fans.c)
+int  sio_open(char *chip, int cap);      // how many fan controls, 0: none, or no PawnIO or LpcIO.bin
+void sio_close(void);
+int  sio_read(int *rpm, int *pct);       // rpm -1 when it does not read; 0 when the chip could not be read
+int  sio_get(int i, int *mode, int *cmd);
+int  sio_put(int i, int mode, int cmd);  // mode 0 is manual at cmd 0..255; HAKU_DEV: refused
 
 // ---- link.c: Corsair iCUE LINK hub and the PSU on it, read only (own thread, [link] on=1)
 void link_start(void);

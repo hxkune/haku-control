@@ -1,11 +1,12 @@
 // haku-control-setup.exe: icon, version info, the packed program (obj\payload.bin from scripts\pack.ps1) and
-// PawnIO's official setup (installed with haku when missing, see src\setup.c).
+// the official setups of PawnIO and of Microsoft's WebView2 Runtime (installed with haku when missing, see src\setup.c).
 #include <windows.h>
 #include "version.h"
 
 1 ICON "app.ico"
 PAYLOAD RCDATA "..\\obj\\payload.bin"
 PAWNIO RCDATA "..\\third_party\\pawnio\\PawnIO_setup.exe"
+WEBVIEW2 RCDATA "..\\third_party\\webview2\\MicrosoftEdgeWebview2Setup.exe"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION HAKU_VER_NUM

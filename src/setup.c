@@ -130,18 +130,22 @@ static int pawnio_there(void) {
     return exists(p);
 }
 
-static int pawnio_install(void) {
-    if (pawnio_there()) return 1;
-    HRSRC r = FindResourceW(NULL, L"PAWNIO", MAKEINTRESOURCEW(10) /* RT_RCDATA */);
-    if (!r) return 0;
-    wchar_t f[MAX_PATH]; GetTempPathW(MAX_PATH, f); wcscat_s(f, MAX_PATH, L"PawnIO_setup.exe");
+// a setup carried in this exe (RCDATA res): written to %TEMP% as name, run with args, deleted
+static void run_res(const wchar_t *res, const wchar_t *name, const wchar_t *args, DWORD ms) {
+    HRSRC r = FindResourceW(NULL, res, MAKEINTRESOURCEW(10) /* RT_RCDATA */);
+    if (!r) return;
+    wchar_t f[MAX_PATH]; GetTempPathW(MAX_PATH, f); wcscat_s(f, MAX_PATH, name);
     HANDLE h = CreateFileW(f, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) return 0;
+    if (h == INVALID_HANDLE_VALUE) return;
     DWORD size = SizeofResource(NULL, r), w = 0;
     BOOL ok = WriteFile(h, LockResource(LoadResource(NULL, r)), size, &w, NULL) && w == size;
     CloseHandle(h);
-    if (ok) run_wait(f, L"-install -silent", 120000);
+    if (ok) run_wait(f, args, ms);
     DeleteFileW(f);
+}
+
+static int pawnio_install(void) {
+    if (!pawnio_there()) run_res(L"PAWNIO", L"PawnIO_setup.exe", L"-install -silent", 120000);
     return pawnio_there();
 }
 
@@ -255,6 +259,12 @@ static int webview2_installed(void) {
     return 0;
 }
 
+// The settings window's runtime. Microsoft's small signed bootstrapper travels in this exe ("WEBVIEW2"); it downloads
+// the Evergreen runtime and installs it silently for every user. Offline it fails, and the "done" message says so.
+static void webview2_install(void) {
+    if (!webview2_installed()) run_res(L"WEBVIEW2", L"MicrosoftEdgeWebview2Setup.exe", L"/silent /install", 300000);
+}
+
 // ---------------------------------------------------------------- dialogs
 static HRESULT CALLBACK td_cb(HWND h, UINT n, WPARAM w, LPARAM l, LONG_PTR ref) {
     (void)h; (void)w; (void)ref;
@@ -300,6 +310,9 @@ static int install(int quiet, int quiet_autostart) {
     if (!pawnio_there())
         wcscpy_s(footer, 512, TR(L"Also installs <a href=\"https://pawnio.eu\">PawnIO</a>, the free driver memory (RAM) lighting needs.",
                                  L"Также установится <a href=\"https://pawnio.eu\">PawnIO</a> — бесплатный драйвер, нужный для подсветки памяти."));
+    if (!webview2_installed())
+        wcscat_s(footer, 512, TR(L" Microsoft's WebView2 Runtime for the settings window is downloaded and installed too.",
+                                 L" Также скачается и установится WebView2 Runtime от Microsoft для окна настроек."));
     if (!quiet && !ask(update ? TR(L"Update haku control", L"Обновить haku control") : TR(L"Install haku control", L"Установить haku control"),
              TR(L"One lighting scene for your PC and your room.\n\nInstalls to Program Files and starts at sign-in with administrator rights "
                 L"(needed for the motherboard and memory lighting). Your settings stay in %APPDATA%\\haku-control.",
@@ -327,9 +340,10 @@ static int install(int quiet, int quiet_autostart) {
     GetModuleFileNameW(NULL, self, MAX_PATH);
     swprintf(copy, MAX_PATH, L"%s\\haku-control-setup.exe", dest);
     if (_wcsicmp(self, copy)) CopyFileW(self, copy, FALSE);
-    // before the app starts, so it finds the memory; not on an update the app started itself, which shows no
-    // footer saying so (a driver is not put in unasked: there the PC page offers it)
-    if (!quiet) pawnio_install();
+    // before the app starts, so it finds the memory and opens its window; on an update the app started itself too,
+    // so nothing has to be installed by hand
+    pawnio_install();
+    webview2_install();
     int task = register_task(autostart);
     make_shortcut();
     firewall_rule(1);

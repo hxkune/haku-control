@@ -205,6 +205,18 @@
     S.hw = was; S.orgb = o; updateHw();
   });
 
+  test('OpenRGB is fetched unasked, once, when something here lights only through it', async () => {
+    await fresh();
+    const was = S.hw, o = S.orgb, n = () => sent.filter(x => x.cmd === 'orgb_setup').length, n0 = n();
+    S.hw = { busy: 0, done: 1, items: [{ cat: 'usb', maker: 'Corsair', name: 'Hub', id: '1B1C0C3F' }] };
+    S.orgb = { state: 4, ctls: [], auto: 0, exe: 0, setup: 0 }; updateHw();
+    ok(n() === n0, 'not with Auto start off');
+    S.orgb = { state: 4, ctls: [], auto: 1, exe: 0, setup: 0 }; updateHw();
+    S.orgb = Object.assign({}, S.orgb, { setup: 0 }); updateHw();
+    ok(n() === n0 + 1, 'once: ' + (n() - n0));
+    S.hw = was; S.orgb = o; orgbFetched = false; updateHw();
+  });
+
   test('OpenRGB: two sticks of one kit share a name, the second is not taken as added with the first', async () => {
     await fresh();
     const o = S.orgb, devs = S.ext.devs, N = 'Corsair Vengeance RGB DDR5';
@@ -484,6 +496,23 @@
     ok(tile.scrollWidth <= tile.clientWidth + 1 && (nm.scrollWidth <= nm.clientWidth || getComputedStyle(nm).textOverflow === 'ellipsis') && nm.title === 'A really long name for the pump', 'the name spills out of the tile');
     STATE.fans.log = [{ t: '12:00:01', m: 'fan 1: read-back "differs"', n: 3 }]; await fanEmit();
     ok(!$('#fans-log-d').classList.contains('hidden') && $('#fans-log').textContent.includes(String.fromCharCode(215) + '3'), 'the error log');
+    await fanReset();
+  });
+
+  test('fans: the board\'s channels follow the QUADRO\'s, and stay on their own without one', async () => {
+    await fresh(); await fanReset();
+    const F = STATE.fans, q = F.f.slice();
+    const b = () => ({ b: 1, rpm: 900, pct: 40, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' });
+    F.chip = 'NCT6799D'; F.f.push(b(), Object.assign(b(), { rpm: -1, pct: null })); await fanEmit(); updateFans();
+    ok($$('#fan-panel [data-live-f]').length === 6, 'tiles: ' + $$('#fan-panel [data-live-f]').length);
+    const tile = $('#fan-panel [data-f="4"]').textContent, dead = $('#fan-panel [data-live-f="5"]').textContent;
+    ok(tile.includes(t('fans.bch') + ' 1') && tile.includes(t('fans.asis.b')), 'the board tile: ' + tile);
+    ok(dead.includes('—'), 'an unread board fan: ' + dead);
+    ok($('#fans-h').textContent === 'QUADRO · NCT6799D', 'heading: ' + $('#fans-h').textContent);
+    F.q = 0; delete F.link; F.f.splice(0, 4, null, null, null, null); await fanEmit(); updateFans();
+    ok($$('#fan-panel [data-live-f]').length === 2 && !$('#fan-panel').classList.contains('stale'), 'without a QUADRO: ' + $$('#fan-panel [data-live-f]').length);
+    ok($('#fans-h').textContent === 'NCT6799D', 'heading: ' + $('#fans-h').textContent);
+    F.f.splice(0, F.f.length, ...q); F.q = 1; delete F.chip;
     await fanReset();
   });
 

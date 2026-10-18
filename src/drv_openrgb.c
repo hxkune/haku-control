@@ -273,9 +273,16 @@ static int orgb_open(ext_dev *d) {
     // shortcut: the search takes the first controller of that name, so if the numbers of two same-named sticks move,
     // both devices can land on one stick; upgrade to rank-by-name (as openrgb_app.c adds them) if that is reported
     if (c && want[0] && (idx < 0 || strcmp(c->name, want))) {
-        idx = -1;
-        for (unsigned i = 0; i < count && i < 64 && idx < 0; i++) if (read_ctrl(s, i, c) && !strcmp(c->name, want)) idx = (int)i;
+        idx = -1; int same = 0;
+        for (unsigned i = 0; i < count && i < 64; i++) if (read_ctrl(s, i, c) && !strcmp(c->name, want) && !same++) idx = (int)i;
         if (idx >= 0) logf_("dev.%d (openrgb): '%s' is now number %d", d->id, want, idx);
+        // the new number kept, so the scan shows it added and it is not added a second time (two streams flash it);
+        // not for same-named controllers (sticks of a kit), whose pick is a guess
+        if (idx >= 0 && same == 1) {
+            char v[16]; snprintf(v, sizeof(v), "%d", idx + (part >= 0 ? (part + 1) * PART_STEP : 0));
+            cfg_set(sec, "sub", v); cfg_save_if_dirty(); ext_reload();   // reopened once under the new number
+        }
+        if (idx >= 0 && !read_ctrl(s, (unsigned)idx, c)) idx = -1;
     }
     if (idx < 0) { free(c); closesocket(s); return 0; }
     if (!want[0]) { cfg_set(sec, "match", c->name); cfg_save_if_dirty(); }
