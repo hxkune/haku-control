@@ -4,7 +4,7 @@ param([string]$Bin = (Join-Path (Split-Path $PSScriptRoot) 'bin'), [string]$Out 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $files = [ordered]@{}
-foreach ($f in 'haku-control.exe', 'haku-control-hotspot.exe', 'haku-control-open.exe', 'SmbusPIIX4.bin', 'LpcIO.bin') { $files[$f] = Join-Path $Bin $f }
+foreach ($f in 'haku-control.exe', 'haku-control-hotspot.exe', 'haku-control-open.exe', 'SmbusPIIX4.bin', 'LpcIO.bin', 'AMDFamily17.bin', 'IntelMSR.bin') { $files[$f] = Join-Path $Bin $f }
 Get-ChildItem (Join-Path $Bin 'ui') -Recurse -File | ForEach-Object { $files['ui\' + $_.FullName.Substring((Join-Path $Bin 'ui').Length + 1)] = $_.FullName }
 $files['stop.ps1'] = Join-Path $root 'scripts\stop.ps1'
 $files['aidot-setup.ps1'] = Join-Path $root 'scripts\aidot-setup.ps1'
@@ -12,6 +12,8 @@ $files['LICENSE.txt'] = Join-Path $root 'LICENSE'
 $files['THIRD_PARTY_NOTICES.md'] = Join-Path $root 'THIRD_PARTY_NOTICES.md'
 $files['SmbusPIIX4.COPYING.txt'] = Join-Path $root 'third_party\pawnio\COPYING'
 $files['LpcIO.COPYING.txt'] = Join-Path $root 'third_party\pawnio\COPYING'
+$files['AMDFamily17.COPYING.txt'] = Join-Path $root 'third_party\pawnio\COPYING'
+$files['IntelMSR.COPYING.txt'] = Join-Path $root 'third_party\pawnio\COPYING'
 
 $ms = New-Object IO.MemoryStream
 $w = New-Object IO.BinaryWriter($ms)

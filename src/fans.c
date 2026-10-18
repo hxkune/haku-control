@@ -224,9 +224,11 @@ static void targets(tgt_t *t) {
         if (!_stricmp(m, "fix")) pct = pct_key(f, "pct", 50);
         else if (!_stricmp(m, "curve")) {
             snprintf(k, sizeof(k), "fan%d_src", f + 1);
-            const char *src = cfg_get("fans", k, "gpu");
-            float v = NAN; int em = EM_NONE, gpu = !_stricmp(src, "gpu");
-            if (gpu) {
+            // unset: the CPU where it reads, else the GPU
+            const char *src = cfg_get("fans", k, isnan(cpu_temp()) ? "gpu" : "cpu");
+            float v = NAN; int em = EM_NONE, gpu = !_stricmp(src, "gpu"), cpu = !_stricmp(src, "cpu");
+            if (cpu) { if (isnan(v = cpu_temp())) em = EM_NOSENSOR; }
+            else if (gpu) {
                 if (!ng++ && !need_gpu) InterlockedExchange(&need_since, (LONG)now);   // the grace starts now
                 LONG g = gpu_c; DWORD at = (DWORD)gpu_at;
                 if (!at || now - at > STALE_MS) em = at ? EM_STALE : EM_NOSENSOR;
@@ -242,7 +244,7 @@ static void targets(tgt_t *t) {
                 else v = (short)s / 100.0f;
             } else em = EM_CURVE;
             snprintf(k, sizeof(k), "fan%d_curve", f + 1);
-            if (!em && (pct = curve_at(cfg_get("fans", k, gpu ? "30:30,50:45,70:75,85:100" : "25:30,30:40,35:70,40:100"), v)) < 0) em = EM_CURVE;
+            if (!em && (pct = curve_at(cfg_get("fans", k, cpu ? "40:30,60:45,75:75,90:100" : gpu ? "30:30,50:45,70:75,85:100" : "25:30,30:40,35:70,40:100"), v)) < 0) em = EM_CURVE;
             if (em) { pct = pct_key(f, "fail", 100); t[f].em = em; }
             else t[f].smooth = 1;
         } else continue;
@@ -533,7 +535,7 @@ float fans_water(void) {
 
 int fans_json(char *out, int cap) {
     if (!th) return snprintf(out, cap, "{\"on\":0}");
-    DWORD now = GetTickCount(), at = (DWORD)gpu_at; LONG g = gpu_c;
+    DWORD now = GetTickCount(), at = (DWORD)gpu_at; LONG g = gpu_c; float cpu = cpu_temp();
     EnterCriticalSection(&cs);
     // f[i] is channel i+1: the QUADRO's four (null without one), then the board's (b:1)
     int n = snprintf(out, cap, "{\"on\":%d", st.on || bd.n);
@@ -549,6 +551,8 @@ int fans_json(char *out, int cap) {
             }
             n += snprintf(out + n, cap - n, "]");
         }
+        if (isnan(cpu)) n += snprintf(out + n, cap - n, ",\"cpu\":null");
+        else n += snprintf(out + n, cap - n, ",\"cpu\":%.0f", cpu);
         if (g > -1000 && at) n += snprintf(out + n, cap - n, ",\"gpu\":%ld,\"gage\":%lu,\"f\":[", g, now - at);
         else n += snprintf(out + n, cap - n, ",\"gpu\":null,\"f\":[");
         for (int f = 0; f < FANS + bd.n; f++) {
@@ -597,6 +601,7 @@ static void unlink_(void) { st.link = 0; hc = INVALID_HANDLE_VALUE; bound = 0; }
 static int smode[BF], scmd[BF], sget_fail, sput_fail, sdrop = -1;   // sdrop: the control the chip does not keep
 int sio_open(char *chip, int cap) { (void)chip; (void)cap; return 0; }
 void sio_close(void) {}
+static float scpu = NAN; float cpu_temp(void) { return scpu; }
 int sio_read(int *rpm, int *pct) { for (int b = 0; b < bn; b++) { rpm[b] = 900; pct[b] = scmd[b] * 100 / 255; } return 1; }
 int sio_get(int i, int *m, int *c) { if (sget_fail) return 0; *m = smode[i]; *c = scmd[i]; return 1; }
 int sio_put(int i, int m, int c) { if (sput_fail) return 0; if (i != sdrop) { smode[i] = m; scmd[i] = c; } return 1; }
@@ -625,6 +630,12 @@ int main(void) {
     fans_feed(50, GetTickCount()); targets(t); assert(t[0].want == 2000 && !t[0].em && t[0].smooth);
     set("fan1_fail", "70"); set("fan1_curve", "30:20,20:90"); targets(t); assert(t[0].want == 7000 && t[0].em == EM_CURVE);
     set("fan1_src", "t9"); set("fan1_curve", "30:20,90:20"); targets(t); assert(t[0].em == EM_CURVE);
+    // the CPU: followed when unset and it reads; asked for and not reading is no sensor
+    set("fan1_src", NULL); set("fan1_curve", "30:20,90:80"); fans_feed(NAN, GetTickCount());
+    scpu = 60; targets(t); assert(!t[0].em && t[0].want == 5000);
+    set("fan1_curve", NULL); targets(t); assert(t[0].want == 4500);           // its own default curve
+    set("fan1_src", "cpu"); scpu = NAN; targets(t); assert(t[0].em == EM_NOSENSOR && t[0].want == 7000);
+    set("fan1_src", NULL); set("fan1_curve", "30:20,90:20"); targets(t); assert(t[0].want == -2);   // unset falls back to the GPU: its grace starts
     // a QUADRO sensor: missing, stale, lost link, fresh; the channel's floor
     set("fan1_src", "t2"); st.temp[1] = 0x7FFF; st.link = 1; st.seen = GetTickCount();
     targets(t); assert(t[0].em == EM_NOSENSOR && t[0].want == 7000);

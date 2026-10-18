@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Sensors. GPU temperature comes from NVML (nvml.dll ships with the NVIDIA driver).
+// Sensors. GPU temperature comes from NVML (nvml.dll ships with the NVIDIA driver), else from WDDM (AMD, Intel).
 // NVML is loaded only while an effect needs it and unloaded 30 s after the last use,
 // because the library alone costs more memory than the rest of the program.
 // Audio level comes from audio.cpp, started the same lazy way. Water temperature / flow (Aqua Computer QUADRO) is still to come.
@@ -45,6 +45,37 @@ static int nvml_load(void) {
     return 1;
 }
 
+// WDDM's own reading of the card, the one Task Manager shows: AMD and Intel cards, and NVIDIA without NVML. Windows 10
+// 2004+ and a driver that reports it; integrated GPUs mostly say 0, so the hottest adapter that says more counts.
+// The d3dkmthk.h structures, declared here: that header wants the driver kit's NTSTATUS and a WDDM 2.7 target.
+typedef struct { UINT h; LUID luid; ULONG sources; BOOL moves; } kmt_adapter;   // D3DKMT_ADAPTERINFO
+typedef struct { ULONG n; kmt_adapter *a; } kmt_enum;                             // D3DKMT_ENUMADAPTERS2
+typedef struct { UINT h; int type; void *data; UINT size; } kmt_query;            // D3DKMT_QUERYADAPTERINFO
+typedef struct { UINT32 index; ULONGLONG mem_f, mem_max, mem_oc, mem_bw, pcie_bw; ULONG rpm, power, temp; UCHAR ovr; } kmt_perf;   // D3DKMT_ADAPTER_PERFDATA, temp in 0.1 °C
+#define KMT_PERFDATA 62   // KMTQAITYPE_ADAPTERPERFDATA
+typedef LONG (APIENTRY *pfn_kmt)(void *);
+static pfn_kmt kmt_enum2, kmt_query_, kmt_close;
+
+static float kmt_temp(void) {
+    static int tried, said;
+    if (!tried) {
+        tried = 1;
+        HMODULE g = LoadLibraryW(L"gdi32.dll");
+        kmt_enum2 = (pfn_kmt)GetProcAddress(g, "D3DKMTEnumAdapters2");
+        kmt_query_ = (pfn_kmt)GetProcAddress(g, "D3DKMTQueryAdapterInfo");
+        kmt_close = (pfn_kmt)GetProcAddress(g, "D3DKMTCloseAdapter");
+    }
+    kmt_adapter a[16]; kmt_enum e = { 16, a }; float best = NAN;
+    if (!kmt_enum2 || !kmt_query_ || !kmt_close || kmt_enum2(&e)) return NAN;
+    for (ULONG i = 0; i < e.n && i < 16; i++) {
+        kmt_perf p = { 0 }; kmt_query q = { a[i].h, KMT_PERFDATA, &p, sizeof(p) };
+        if (!kmt_query_(&q) && p.temp && (isnan(best) || p.temp / 10.0f > best)) best = p.temp / 10.0f;
+        UINT c = a[i].h; kmt_close(&c);
+    }
+    if (!isnan(best) && !said) { said = 1; logf_("sensors: GPU temperature from WDDM"); }
+    return best;
+}
+
 void sensors_init(void) {}
 
 void sensors_poll(sensors_t *s, int need_gpu, int need_audio) {
@@ -67,7 +98,7 @@ void sensors_poll(sensors_t *s, int need_gpu, int need_audio) {
     if (now - last_poll >= 1000) {
         last_poll = now;
         unsigned int t;
-        cache.gpu_temp = (gpu && nvml_temp(gpu, 0, &t) == 0) ? (float)t : NAN;
+        cache.gpu_temp = gpu ? (nvml_temp(gpu, 0, &t) == 0 ? (float)t : NAN) : last_need && now - last_need <= 30000 ? kmt_temp() : NAN;
         cache.gpu_at = now;
     }
     *s = cache;

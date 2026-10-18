@@ -26,6 +26,15 @@ control is taken and given back are ported from [LibreHardwareMonitor](https://g
 (SHA-256 `b3896a1cab0d808fca31fe2ebcae045d59dac690da87b17c858bb8da357eb45e`). GNU LGPL 2.1, see
 `third_party/pawnio/COPYING`. The source code is available from that repository.
 
+**CPU temperature** (`src/cputemp.c`): the AMD Zen Tctl and Intel digital thermal sensor registers and formulas are
+ported from [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) (`Amd17Cpu.cs`,
+`IntelCpu.cs`). Mozilla Public License 2.0: that file stays under the MPL 2.0, see its header.
+**PawnIO CPU modules** (`third_party/pawnio/AMDFamily17.bin`, `third_party/pawnio/IntelMSR.bin`), through which
+`src/cputemp.c` reads the CPU: from [namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) release 0.2.11,
+unmodified (SHA-256 `dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d427a91` and
+`d6ed85d65ab17a22f813ef98207d6d537155ee2ded5976a21cb48413c9b92e5f`). GNU LGPL 2.1, see `third_party/pawnio/COPYING`.
+The source code is available from that repository.
+
 ## Downloaded on request
 
 **OpenRGB** 1.0: not bundled. When the PC page finds lighting only OpenRGB can reach (or when asked to there), haku downloads the official Windows build
