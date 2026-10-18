@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.35',
+    en: ['Lian Li wireless fans (UNI FAN TL/SL Wireless) on the Fans page: the speed and duty of each fan, as their USB receiver hears them. Read only for now: control comes next.', 'While L-Connect holds the receiver, the page says so: quit L-Connect and stop its service to read the fans in haku.'],
+    ru: ['Беспроводные вентиляторы Lian Li (UNI FAN TL/SL Wireless) на странице «Вентиляторы»: обороты и заполнение каждого, как их слышит USB-приёмник. Пока только чтение: управление будет следующим.', 'Пока приёмник занят L-Connect, страница так и пишет: закройте L-Connect и остановите его службу, чтобы читать вентиляторы в haku.'],
+    fr: ['Les ventilateurs sans fil Lian Li (UNI FAN TL/SL Wireless) sur la page Ventilateurs : vitesse et rapport cyclique de chacun, tels que leur récepteur USB les entend. Lecture seule pour l’instant : le pilotage viendra ensuite.', 'Tant que L-Connect tient le récepteur, la page le dit : quittez L-Connect et arrêtez son service pour lire les ventilateurs dans haku.'] },
   { v: '0.4.34',
     en: ['Fans on a fixed speed stay put again: the CPU temperature is now read only while a curve follows it.', 'A fan whose source was never chosen follows the GPU again, as before 0.4.33. The CPU stays one click away in the fan’s settings.'],
     ru: ['Вентиляторы на фиксированной скорости снова держат её: температура процессора теперь читается, только пока за ней следует кривая.', 'Вентилятор, у которого источник не выбирали, снова следует за видеокартой, как до 0.4.33. Процессор по-прежнему можно выбрать в настройках вентилятора.'],
