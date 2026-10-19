@@ -3302,7 +3302,8 @@ function updateLink() {
   const val = d => [d.rpm != null && t('link.rpm', d.rpm), d.t != null && d.t.toFixed(1) + ' °C'].filter(Boolean).join(' · ');
   const rows = !on || K.st !== 'ok' ? [] : (K.dev || []).map(d => {
     const psu = d.type === 11 && v.length, sub = psu ? v.map((x, i) => x.toFixed(2) + ' V ' + a[i].toFixed(2) + ' A').join(' · ') : t('link.ch', d.ch);
-    return `<div class="found-row"><span class="kind">${t('link.k.' + linkKind(d.type))}</span>
+    const fan = linkKind(d.type) === 'fan';   // QX and LX: lit ring and hub; RX RGB (MAX): the hub; RX (MAX): none
+    return `<div class="found-row"><span class="kind${fan ? ' kind-ic' : ''}">${fan ? fanIcon({ 1: 'qx', 2: 'qx', 3: 'hub', 15: 'hub' }[d.type] || '') : ''}${t('link.k.' + linkKind(d.type))}</span>
       <div class="what"><b>${esc(linkName(d))}</b><small>${esc(sub)}</small></div>
       <span class="added">${esc([psu && t('link.w', Math.round(w)), val(d)].filter(Boolean).join(' · '))}</span></div>`;
   });
@@ -3320,7 +3321,8 @@ function updateLL() {
   const sel = d => { const cur = cv('fans', 'll_' + d.mac.replace(/:/g, ''), '');
     return `<select class="select" data-mac="${esc(d.mac)}" aria-label="${esc(t('ll.speed'))}"><option value="">${t('ll.own')}</option>${[30, 40, 50, 60, 70, 80, 90, 100].map(p =>
       `<option value="${p}"${String(p) === cur ? ' selected' : ''}>${p} %</option>`).join('')}</select>`; };
-  const html = g.map(d => `<div class="found-row"><span class="kind">${t(d.type ? 'link.k.dev' : 'link.k.fan')}</span>
+  // shortcut: every fan group drawn as UNI FAN SL (lit edges); the receiver does not tell SL from TL, a per-group pick if TL owners ask
+  const html = g.map(d => `<div class="found-row"><span class="kind${d.type ? '' : ' kind-ic'}">${d.type ? '' : fanIcon('sl')}${t(d.type ? 'link.k.dev' : 'link.k.fan')}</span>
     <div class="what"><b>${esc(t('ll.n', d.n))}</b><small>${esc(d.mac + (d.own ? '' : ' · ' + t('ll.other')))}</small></div>
     <span class="added">${esc((d.rpm || []).map((r, i) => t('link.rpm', r) + ' ' + (d.pct || [])[i] + ' %').join(' · '))}</span>${d.own && !d.type && d.n ? sel(d) : ''}</div>`).join('');
   const list = $('#ll-list');
@@ -4049,6 +4051,22 @@ const fanSrcName = s => s === 'cpu' ? t('fans.cpu') : s === 'gpu' ? t('fans.gpu'
 const fanMode = i => { const m = cv('fans', fanKey(i), '');
   return m === 'fix' ? `${t('fans.fix')} · ${cv('fans', fanKey(i, 'pct'), '50')}%` : m === 'curve' ? `${t('fans.curve')} · ${fanSrcName(fanSrc(i))}` : t(i >= FAN_Q ? 'fans.asis.b' : 'fans.asis'); };
 const fanCh = i => ((S.fans || {}).f || [])[i] || {};
+// what a fan looks like on its card (fans/fan<N>_look, picked by hand: a header only reports rpm): an outline in the
+// page's ink, the parts its lighting sits on brighter. Corsair iCUE LINK and Lian Li wireless groups get theirs on their own
+const FAN_LOOKS = ['', 'ring', 'hub', 'qx', 'sl', 'inf'];
+const FAN_BLADES = Array.from({ length: 7 }, (_, k) => `<path transform="rotate(${(k * 360 / 7).toFixed(1)})" d="M-1.5-4.8C-2-10 1-15 6-16.8C9-15.8 11-14.3 12.3-12.3C8.5-9.5 5.5-6.5 3.8-3.3Z"/>`).join('');
+// sl: Lian Li SL has its LEDs down the sides
+function fanIcon(look, pump) {
+  const ring = (r, o) => `<circle r="${r}"${o ? ` opacity="${o}"` : ''}/>`, hub = '<circle class="f" r="5"/>', bar = y => `<rect class="f" x="-14" y="${y}" width="28" height="2.4" rx="1.2"/>`;
+  const lit = pump ? ring(11) : { ring: ring(19), hub, qx: ring(18.5) + hub, sl: `<g transform="rotate(90)">${bar(-19.6) + bar(17.2)}</g>`, inf: ring(19) + ring(16.4, .55) + ring(13.8, .3) }[look] || '';
+  const body = pump ? '<circle class="fi-fr" r="20"/><circle class="fi-hub" r="5"/>'
+    : `<rect class="fi-fr" x="-21" y="-21" width="42" height="42" rx="7"/><g class="fi-bl"${look === 'inf' ? ' transform="scale(.78)"' : ''}>${FAN_BLADES}</g><circle class="fi-hub" r="5"/>`;
+  return `<svg class="fanic" viewBox="-24 -24 48 48" aria-hidden="true">${body}${lit && `<g class="fi-glow">${lit}</g><g class="fi-lit">${lit}</g>`}</svg>`;
+}
+const fanLook = i => cv('fans', fanKey(i, 'look'), '');
+const fanPump = i => cv('fans', fanKey(i, 'kind'), '') === 'pump';
+// a tile's: the fan's, or what every fan of the group shares (plain when they differ)
+const fanTileIcon = m => !m.length ? '' : fanIcon(new Set(m.map(fanLook)).size === 1 ? fanLook(m[0]) : '', m.every(fanPump));
 const fanDKey = o => !o ? '' : o.i != null ? 'f' + o.i : 'g' + o.g;
 const fanValid = o => !!o && (o.g ? fanGroups().some(g => g.n === o.g && (o.i == null || g.m.includes(o.i))) : !fanHidden(o.i));
 // who drives the channel, and only what the QUADRO read back counts as done: [text, '' | 'warn' | 'bad']
@@ -4231,10 +4249,10 @@ function renderFanPanel() {
   const gs = fanGroups(), inG = new Set(gs.flatMap(g => g.m)), solo = fanAll().filter(i => !fanHidden(i) && !inG.has(i));
   const o = FAN_WIDE.matches && FAN.open || {}, on = x => x ? ' on' : '';
   const grp = g => { const fold = !!FAN.fold[g.n];
-    return `<div class="card fan-tile${on(o.g === g.n && o.i == null)}" data-g="${g.n}"><div class="fan-gh"><button type="button" class="fan-hd"><b title="${esc(g.name)}">${esc(g.name)}</b><small>${esc(g.m.length ? fanMode(g.m[0]) : t('fans.empty'))}</small></button>` +
+    return `<div class="card fan-tile${on(o.g === g.n && o.i == null)}" data-g="${g.n}"><div class="fan-gh"><button type="button" class="fan-hd">${fanTileIcon(g.m)}<b title="${esc(g.name)}">${esc(g.name)}</b><small>${esc(g.m.length ? fanMode(g.m[0]) : t('fans.empty'))}</small></button>` +
       (g.m.length ? `<button type="button" class="fan-fold" data-fold="${g.n}" aria-expanded="${!fold}" title="${esc(t(fold ? 'fans.unfold' : 'fans.fold'))}" aria-label="${esc(t(fold ? 'fans.unfold' : 'fans.fold'))}">${fold ? '▸' : '▾'}</button>` : '') + '</div>' +
       (fold ? '' : g.m.map(i => `<button type="button" class="fan-row fan-mem${on(o.g === g.n && o.i === i)}" data-gm="${i}" data-live-f="${i}"></button>`).join('')) + '</div>'; };
-  const html = gs.map(grp).join('') + solo.map(i => `<div class="card fan-tile${on(!o.g && o.i === i)}" data-f="${i}"><button type="button" class="fan-hd"><b title="${esc(fanName(i))}">${esc(fanName(i))}</b><small>${esc(fanMode(i))}</small><span class="fan-row" data-live-f="${i}"></span></button></div>`).join('');
+  const html = gs.map(grp).join('') + solo.map(i => `<div class="card fan-tile${on(!o.g && o.i === i)}" data-f="${i}"><button type="button" class="fan-hd">${fanTileIcon([i])}<b title="${esc(fanName(i))}">${esc(fanName(i))}</b><small>${esc(fanMode(i))}</small><span class="fan-row" data-live-f="${i}"></span></button></div>`).join('');
   const sig = html + LANG;
   if (FAN.sig !== sig) {   // rebuilt only when something on it changes, so a status keeps focus where it is
     const a = document.activeElement, fk = a && $('#fan-panel').contains(a) && (a.dataset.gm != null ? `[data-gm="${a.dataset.gm}"]` : a.dataset.fold ? `[data-fold="${a.dataset.fold}"]` : a.closest('[data-g]') ? `[data-g="${a.closest('[data-g]').dataset.g}"] .fan-hd` : a.closest('[data-f]') ? `[data-f="${a.closest('[data-f]').dataset.f}"] .fan-hd` : '');
@@ -4306,6 +4324,15 @@ function fanSheet() {
   if (!g || mem) {   // a fan's own: kind, limits, how gently it slows, its history
     const kind = cv('fans', fanKey(i, 'kind'), '');
     $$('#fs-kind button').forEach(b => { b.classList.toggle('on', b.dataset.v === kind); b.setAttribute('aria-pressed', b.dataset.v === kind); });
+    const lk = $('#fs-look'), look = fanLook(i), lsig = LANG + look;
+    $('#fs-look-f').classList.toggle('hidden', kind === 'pump');
+    if (lk.dataset.sig !== lsig) {
+      const fl = document.activeElement && lk.contains(document.activeElement) && document.activeElement.dataset.v;
+      lk.dataset.sig = lsig;
+      lk.innerHTML = FAN_LOOKS.map(v => { const n = t('fans.look.' + (v || 'plain'));
+        return `<button type="button" data-v="${v}" class="${v === look ? 'on' : ''}" aria-pressed="${v === look}" title="${esc(n)}">${fanIcon(v)}<small>${esc(n.split(' (')[0])}</small></button>`; }).join('');
+      if (fl != null) { const b = lk.querySelector(`[data-v="${fl}"]`); if (b) b.focus(); }
+    }
     ['min', 'fail', 'down'].forEach(k => { const el = $('#fs-' + k); if (document.activeElement !== el) el.value = cv('fans', fanKey(i, k), ''); });
     $('#fs-notach').checked = cv('fans', fanKey(i, 'notach'), '') === '1';
     drawFanHist(i);
@@ -4416,7 +4443,7 @@ $('#fans-log-copy').addEventListener('click', async e => {
 const fanMembers = (n, m) => setCfg('fans', `g${n}`, [...new Set(m)].sort((a, b) => a - b).map(i => i + 1).join(','));
 $('#fan-set').addEventListener('click', e => {
   const o = FAN.open; if (!o) return;
-  const b = e.target.closest('#fs-mode button, #fs-src button, #fs-kind button, #fs-members button, #fs-live [data-gm], #fs-up, #fs-shared button, #fs-del, #fs-apply, #fs-cancel, #fs-pt-add, #fs-pt-del, #fs-reset');
+  const b = e.target.closest('#fs-mode button, #fs-src button, #fs-kind button, #fs-look button, #fs-members button, #fs-live [data-gm], #fs-up, #fs-shared button, #fs-del, #fs-apply, #fs-cancel, #fs-pt-add, #fs-pt-del, #fs-reset');
   if (!b) return;
   const D = FAN.draft;
   if (b.id === 'fs-apply') { fanApply(); return; }
@@ -4443,6 +4470,7 @@ $('#fan-set').addEventListener('click', e => {
       fanMembers(g.n, [...g.m, j]);
     }
   } else if (b.closest('#fs-kind')) setCfg('fans', fanKey(o.i, 'kind'), b.dataset.v);
+  else if (b.closest('#fs-look')) setCfg('fans', fanKey(o.i, 'look'), b.dataset.v);
   else if (b.closest('#fs-mode')) { fanSetAll('', b.dataset.v); FAN.back = 0; }
   else {   // another source, in the draft: this one's curve is kept for it, the other's comes back (or its default the first time)
     const P = fanDraft(), i = fanTargets()[0], s = b.dataset.v; if (!P || P.src === s) return;

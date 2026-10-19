@@ -314,6 +314,25 @@
   };
   const fanSheetOf = async i => { $(`#fan-panel [data-f="${i}"]`).click(); await wait(120); };
 
+  test('fans: a card looks like its fan: picked in its settings, shared by a group, a pump round; iCUE LINK and Lian Li on their own', async () => {
+    await fresh(); await fanReset();
+    const ic = i => $(`#fan-panel [data-f="${i}"] .fanic`), lit = el => el.querySelectorAll('.fi-lit > *').length;
+    ok(ic(0) && !lit(ic(0)), 'a plain fan by default');
+    await fanSheetOf(0);
+    ok($$('#fs-look button').length === 6 && $('#fs-look [data-v=""]').classList.contains('on'), 'the picker');
+    $('#fs-look [data-v="inf"]').click(); await wait(60);
+    ok(STATE.cfg.fans.fan1_look === 'inf' && lit(ic(0)) === 3 && $('#fs-look [data-v="inf"]').getAttribute('aria-pressed') === 'true', 'picked: ' + STATE.cfg.fans.fan1_look);
+    $('#fs-kind [data-v="pump"]').click(); await wait(60);
+    ok($('#fs-look-f').classList.contains('hidden') && ic(0).querySelector('circle.fi-fr'), 'a pump: round, no picker');
+    setCfg('fans', 'fan1_kind', ''); setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,2'); setCfg('fans', 'fan2_look', 'inf'); FAN.sig = ''; updateFans();
+    ok(lit($('#fan-panel [data-g="1"] .fanic')) === 3, 'a group of the same look shows it');
+    setCfg('fans', 'fan2_look', 'sl'); FAN.sig = ''; updateFans();
+    ok(!lit($('#fan-panel [data-g="1"] .fanic')), 'a mixed group shows a plain one');
+    updateLL(); const ll = $$('#ll-list .found-row');
+    ok(ll.length === 2 && ll.every(r => r.querySelectorAll('.fi-lit rect').length === 2), 'Lian Li groups: lit edges');
+    await fanReset();
+  });
+
   test('fans: a lost link keeps the page and says so; the readings show as old', async () => {
     await fresh(); await fanReset();
     STATE.fans.link = 0; STATE.fans.age = 12000; await fanEmit();

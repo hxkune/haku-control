@@ -456,7 +456,23 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .fan-tile:hover { --lc: var(--line3); border-color: var(--line3); }
 .fan-tile.on { --lc: var(--strong); border-color: var(--strong); }
 .fan-gh { display: flex; align-items: stretch; min-width: 0; }
-.fan-hd { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; flex: 1; width: 100%; min-width: 0; padding: 13px 16px; background: none; border: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.fan-hd { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; flex: 1; width: 100%; min-width: 0; padding: 13px 16px; background: none; border: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; position: relative; }
+.fan-hd > .fanic { position: absolute; top: 11px; right: 12px; width: 40px; height: 40px; }
+.fan-hd > .fanic ~ b, .fan-hd > .fanic ~ small { max-width: calc(100% - 46px); }
+.fanic { display: block; flex: none; overflow: visible; }
+.fanic .fi-fr { fill: none; stroke: var(--line3); stroke-width: 1.4; }
+.fanic .fi-bl { fill: var(--faint); opacity: .5; }
+.fanic .fi-hub { fill: var(--faint); }
+.fanic .fi-lit, .fanic .fi-glow { fill: none; stroke: var(--text); stroke-width: 1.6; }
+.fanic .fi-glow { stroke-width: 5; opacity: .13; }
+.fanic .f { fill: var(--text); }
+.fan-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-top: 9px; }
+.fan-looks button { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; padding: 8px 4px 6px; background: none; border: 1px solid var(--line); border-radius: 10px; font: inherit; color: var(--muted); cursor: pointer; }
+.fan-looks button:hover { border-color: var(--line3); color: var(--text); }
+.fan-looks button.on { border-color: var(--strong); color: var(--text); }
+.fan-looks button:focus-visible { outline: 2px solid var(--line3); outline-offset: 1px; }
+.fan-looks .fanic { width: 34px; height: 34px; }
+.fan-looks small { max-width: 100%; font-size: 11px; line-height: 1.2; text-align: center; overflow-wrap: break-word; }
 .fan-fold { flex: none; padding: 0 14px; background: none; border: 0; color: var(--muted); font-size: 13px; cursor: pointer; }
 .fan-fold:hover { color: var(--text); }
 .fan-hd:focus-visible, .fan-fold:focus-visible, .fan-mem:focus-visible { outline: 2px solid var(--line3); outline-offset: -2px; }
@@ -758,6 +774,8 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .found { display: flex; flex-direction: column; }
 .found-row { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 14px; padding: 11px 0; border-top: 1px solid var(--line); }
 .found-row .kind { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+.found-row .kind-ic { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.found-row .kind-ic .fanic { width: 30px; height: 30px; }
 .found-row .what b { display: block; font-weight: 600; }
 .found-row .what small { color: var(--muted); font-size: 12px; }
 .found-row .added { color: var(--muted); font-size: 12px; }
