@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.40',
+    en: ['TRYX PANORAMA: a screen builder. Under the cooler on the PC page, Make one… takes a picture, GIF or video, lets you choose what shows on the screen and put texts and pictures over it, and sends it to the screen.', 'Lian Li wireless fans can be lit by haku: Find devices adds each group as a light, and it follows the effects like the rest.'],
+    ru: ['TRYX PANORAMA: конструктор экрана. В карточке кулера на странице ПК кнопка «Собрать…» берёт картинку, GIF или видео, даёт выбрать, что будет видно на экране, добавить текст и картинки поверх и отправить на экран.', 'Беспроводные вентиляторы Lian Li теперь подсвечивает haku: «Найти устройства» добавляет каждую группу как светильник, и она следует эффектам, как остальные.'],
+    fr: ['TRYX PANORAMA : un créateur d’écran. Sur la carte du refroidisseur, page PC, Créer… prend une image, un GIF ou une vidéo, permet de choisir ce qui s’affiche, d’y ajouter textes et images, et l’envoie à l’écran.', 'Les ventilateurs Lian Li sans fil peuvent être éclairés par haku : Trouver les appareils ajoute chaque groupe comme une lumière, qui suit les effets comme les autres.'] },
   { v: '0.4.39',
     en: ['Fan cards now look like the fans they stand for: pick how a fan looks in its settings, under Name and limits (plain, lit ring, lit hub, ring and hub, lit edges, infinity). A pump is drawn round.', 'Corsair iCUE LINK fans and Lian Li wireless groups get their look on their own.'],
     ru: ['Карточки вентиляторов теперь похожи на сами вентиляторы: выберите, как выглядит вентилятор, в его настройках, в разделе «Название и ограничения» (простой, кольцо, центр, кольцо и центр, края, бесконечность). Помпа рисуется круглой.', 'Вентиляторы Corsair iCUE LINK и группы Lian Li Wireless получают свой вид сами.'],
