@@ -323,13 +323,13 @@
               </div>
             </div>
             <p class="fs-key" id="fs-key"><i class="k-out"></i><span data-i18n="fans.key.out">what the fan gets</span><i class="k-raw"></i><span data-i18n="fans.key.raw">the curve as set</span><i class="k-min"></i><span data-i18n="fans.key.min">under the floor</span></p>
-            <div class="fs-saved"><select class="select" id="fs-sv"></select><button class="btn small ghost" type="button" id="fs-sv-del" data-i18n="fans.sv.del">Delete</button><input type="text" id="fs-sv-name" maxlength="24" spellcheck="false"><button class="btn small ghost" type="button" id="fs-sv-save" data-i18n="fans.sv.save">Save the curve</button></div>
+            <div class="fs-saved"><select class="select" id="fs-sv"></select><select class="select hidden" id="fs-sv-k"></select><button class="btn small ghost" type="button" id="fs-sv-del" data-i18n="fans.sv.del">Delete</button><input type="text" id="fs-sv-name" maxlength="24" spellcheck="false"><button class="btn small ghost" type="button" id="fs-sv-save" data-i18n="fans.sv.save">Save the curve</button></div>
             <p class="pair-msg" id="fs-sv-msg" role="status"></p>
             <p class="fs-now hidden" id="fs-now" role="status"></p>
-            <div class="fs-draft hidden" id="fs-draft"><span id="fs-draft-msg"></span><span class="grow"></span><button class="btn small ghost" type="button" id="fs-cancel" data-i18n="fans.cancel">Cancel</button><button class="btn small primary" type="button" id="fs-apply" data-i18n="fans.apply">Apply</button></div>
-            <p class="pair-msg" id="fs-applied" role="status"></p>
             <p class="hint" data-i18n="fans.curve.note"></p>
           </div>
+          <div class="fs-draft hidden" id="fs-draft"><span id="fs-draft-msg"></span><span class="grow"></span><button class="btn small ghost" type="button" id="fs-cancel" data-i18n="fans.cancel">Cancel</button><button class="btn small primary" type="button" id="fs-apply" data-i18n="fans.apply">Apply</button></div>
+          <p class="pair-msg" id="fs-applied" role="status"></p>
         </div>
         <div class="field" id="fs-hist-f">
           <div class="lbl"><span data-i18n="fans.hist">Last 5 minutes</span><b id="fs-legend"></b></div>
@@ -360,7 +360,7 @@
       </div>
       </div>
     </div>
-    <!-- Lian Li wireless fans through their USB receiver, read only (lianli.c): shown once the receiver is there -->
+    <!-- Lian Li wireless fans through their USB dongles (lianli.c): shown once the receiver is there -->
     <div class="card hidden" id="ll-card">
       <div class="card-head"><div><h3>Lian Li Wireless <span class="beta" data-i18n="fans.beta" data-i18n-title="ll.beta.t">beta</span></h3><p class="muted" id="ll-status" role="status"></p></div></div>
       <p class="note" data-i18n="ll.note"></p>

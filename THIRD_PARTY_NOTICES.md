@@ -36,11 +36,14 @@ unmodified (SHA-256 `dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d4
 The source code is available from that repository.
 
 **Lian Li wireless fans** (`src/lianli.c`): the receiver's discovery request and reply layout (device records, fan
-count, rpm and duty fields) are ported from [MarcusSanchez/FanControl.LianLiWireless](https://github.com/MarcusSanchez/FanControl.LianLiWireless)
-and [Yoinky3000/LL-Connect-Wireless](https://github.com/Yoinky3000/LL-Connect-Wireless), both under the MIT License:
+count, rpm and duty fields), and the transmitter's connect, clock broadcast and speed command frames, are ported from
+[MarcusSanchez/FanControl.LianLiWireless](https://github.com/MarcusSanchez/FanControl.LianLiWireless),
+[Yoinky3000/LL-Connect-Wireless](https://github.com/Yoinky3000/LL-Connect-Wireless) and
+[sgtaziz/lian-li-linux](https://github.com/sgtaziz/lian-li-linux), all under the MIT License:
 
 > Copyright (c) 2026 Marcus Sanchez
 > Copyright (c) 2026 Yoinky3000
+> Copyright (c) 2026 sgtaziz
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 > documentation files (the "Software"), to deal in the Software without restriction, including without limitation the

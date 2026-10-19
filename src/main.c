@@ -1202,6 +1202,13 @@ void app_set(const char *s, const char *k, const char *v) {
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
 }
 
+// the fan panel's curve, its source and the other sources' curves, as one change (fans.c reads them together)
+void app_set_fans(const char *const *kv, int n) {
+    cfg_set_many("fans", kv, n);
+    SetTimer(hwnd, SAVE_TIMER, 500, NULL);
+    app_config_changed(0);
+}
+
 int app_lang(void) { const char *l = cfg_get("general", "lang", "en"); return !_stricmp(l, "ru") ? 1 : !_stricmp(l, "fr") ? 2 : 0; }
 int app_ru(void) { return app_lang() == 1; }
 

@@ -24,6 +24,7 @@ window.chrome = { webview: {
     // profiles: kept in the fake settings only (the core keeps the setups)
     const C = STATE.cfg, G = C.general;
     if (o.cmd === 'set') (C[o.s] = C[o.s] || {})[o.k] = o.v;
+    if (o.cmd === 'fans_set') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); (C.fans = C.fans || {})[l.slice(0, e)] = l.slice(e + 1); });
     if (o.cmd === 'tryx_media') { Object.assign(C['dev.' + o.id] = C['dev.' + o.id] || {}, { media: 'C:\\Pictures\\cat.gif', theme: '-1' }); setTimeout(() => emit(STATE), 60); }
     // fans.c, roughly: a mode takes the channel and the QUADRO confirms it; '' gives it back
     if (o.cmd === 'set' && o.s === 'fans' && /^fan\d+$/.test(o.k) && STATE.fans.f[+o.k.slice(3) - 1]) { const f = STATE.fans.f[+o.k.slice(3) - 1], m = o.v, w = m === 'fix' ? +(C.fans[o.k + '_pct'] || 50) : m ? 45 : -1;

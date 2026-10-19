@@ -172,6 +172,17 @@ static void on_message(const std::string &js) {
     else if (cmd == "effect") { app_set_effect(effect_index(field(js, "id").c_str())); post_status(); }
     else if (cmd == "brightness") { app_set_brightness(atoi(field(js, "v").c_str()) / 100.0f, 0); app_save_soon(); }
     else if (cmd == "set") app_set(field(js, "s").c_str(), field(js, "k").c_str(), field(js, "v").c_str());
+    else if (cmd == "fans_set") {   // "key=value" lines, all written as one change; not in remote_allowed: the fans stay with this PC
+        std::string kv = field(js, "kv"); std::vector<std::string> part; std::vector<const char *> p; bool ok = true;
+        for (size_t a = 0, b; a < kv.size() && ok; a = b + 1) {
+            b = kv.find('\n', a); if (b == std::string::npos) b = kv.size();
+            std::string l = kv.substr(a, b - a); size_t eq = l.find('=');
+            ok = eq != std::string::npos && eq > 0 && part.size() < 256;   // a group of every channel with every source's curve fits
+            for (size_t i = 0; ok && i < eq; i++) ok = isalnum((unsigned char)l[i]) || l[i] == '_';
+            if (ok) { part.push_back(l.substr(0, eq)); part.push_back(l.substr(eq + 1)); }
+        }
+        if (ok && !part.empty()) { for (const std::string &x : part) p.push_back(x.c_str()); app_set_fans(p.data(), (int)p.size() / 2); }
+    }
     else if (cmd == "toggle") { app_toggle_device(field(js, "k").c_str()); post_status(); }
     else if (cmd == "power") { app_power(); post_status(); }
     else if (cmd == "timed_off") { app_timed_off(atoi(field(js, "min").c_str())); post_status(); }

@@ -52,6 +52,8 @@ const char *cfg_get(const char *section, const char *key, const char *def);
 float       cfg_getf(const char *section, const char *key, float def);
 int         cfg_geti(const char *section, const char *key, int def);
 void        cfg_set(const char *section, const char *key, const char *value);
+void        cfg_set_many(const char *section, const char *const *kv, int n);   // n pairs, one change
+void        cfg_get_many(const char *section, const char *const *keys, int n, char (*vals)[256]);   // read together; "" when not there
 int         cfg_save_if_dirty(void);   // 0: the file could not be written (the old one is left as it was)
 void        cfg_set_and_save(const char *section, const char *key, const char *value);
 int         cfg_palette(const char *section, rgbf *out, int max);
@@ -264,6 +266,7 @@ void  app_profile_delete(int id);
 int   app_profile_dup(int src, const char *name);   // a copy of profile src; returns its number (0: none made)
 void  ui_refresh_state(void);   // the open window gets the whole state (settings included) again
 void  app_set_brightness(float b, int save_now);
+void  app_set_fans(const char *const *kv, int n);   // key, value pairs written as one change
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
 void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled
 void  app_pc_own(int own);                         // the PC's lighting given back to its own programs (1) / taken by haku (0)

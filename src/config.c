@@ -92,6 +92,14 @@ const char *cfg_get(const char *section, const char *key, const char *def) {
     return ok ? out : def;
 }
 
+// Several keys of one section read together: a change written with cfg_set_many is seen whole or not at all.
+// vals[i] is "" for a key that is not there (unset, as cfg_get).
+void cfg_get_many(const char *section, const char *const *keys, int n, char (*vals)[LINE_LEN]) {
+    AcquireSRWLockShared(&lock);
+    for (int i = 0; i < n; i++) if (find(section, keys[i], vals[i], NULL) < 0) vals[i][0] = 0;
+    ReleaseSRWLockShared(&lock);
+}
+
 float cfg_getf(const char *section, const char *key, float def) {
     const char *v = cfg_get(section, key, NULL);
     return v ? (float)atof(v) : def;
@@ -135,13 +143,11 @@ static int save(void) {
 
 static int dirty;
 
-// Changes the value in memory only; cfg_save_if_dirty() writes the file.
-void cfg_set(const char *section, const char *key, const char *value) {
+static void set_locked(const char *section, const char *key, const char *value) {
     // one line per key: a line break in a value (a name typed on a phone) would add lines of its own to the file
     char clean[LINE_LEN]; strncpy_s(clean, LINE_LEN, value, _TRUNCATE);
     for (char *p = clean; *p; p++) if ((unsigned char)*p < 0x20) *p = ' ';
     value = clean;
-    AcquireSRWLockExclusive(&lock);
     int end;
     int i = find(section, key, NULL, &end);
     if (i >= 0) {
@@ -161,6 +167,19 @@ void cfg_set(const char *section, const char *key, const char *value) {
         nlines++;
     }
     dirty = 1;
+}
+
+// Changes the value in memory only; cfg_save_if_dirty() writes the file.
+void cfg_set(const char *section, const char *key, const char *value) {
+    AcquireSRWLockExclusive(&lock);
+    set_locked(section, key, value);
+    ReleaseSRWLockExclusive(&lock);
+}
+
+// kv: key, value, key, value...; all of them land under one lock, so cfg_get_many never sees part of them
+void cfg_set_many(const char *section, const char *const *kv, int n) {
+    AcquireSRWLockExclusive(&lock);
+    for (int i = 0; i + 1 < n * 2; i += 2) set_locked(section, kv[i], kv[i + 1]);
     ReleaseSRWLockExclusive(&lock);
 }
 
@@ -290,3 +309,33 @@ int cfg_json(char *out, int cap) {
     out[n] = 0;
     return n;
 }
+
+#ifdef CFG_TEST   // cl /DCFG_TEST src\config.c: a source and its curve written together are never read half changed
+#include <assert.h>
+void logf_(const char *fmt, ...) { (void)fmt; }
+static volatile LONG stop;
+static DWORD WINAPI writer(void *p) {
+    (void)p;
+    static const char *const a[] = { "fan1_curve", "40:30,90:100", "fan1_src", "cpu" }, *const b[] = { "fan1_curve", "25:30,40:100", "fan1_src", "t1" };
+    for (int i = 0; !stop; i++) cfg_set_many("fans", i & 1 ? b : a, 2);
+    return 0;
+}
+int main(void) {
+    cfg_set("fans", "fan1", "curve"); cfg_set("other", "x", "1");
+    const char *const k[] = { "fan1_src", "fan1_curve", "fan1_none" }; char v[3][LINE_LEN];
+    cfg_get_many("fans", k, 3, v); assert(!v[0][0] && !v[2][0]);
+    HANDLE w = CreateThread(NULL, 0, writer, NULL, 0, NULL);
+    int mixed = 0, seen[2] = { 0 };
+    for (int i = 0; i < 200000; i++) {
+        cfg_get_many("fans", k, 3, v);
+        if (!v[0][0]) continue;
+        int cpu = !strcmp(v[0], "cpu");
+        mixed += cpu ? strcmp(v[1], "40:30,90:100") != 0 : strcmp(v[1], "25:30,40:100") != 0;
+        seen[cpu]++;
+    }
+    stop = 1; WaitForSingleObject(w, INFINITE);
+    assert(!mixed && seen[0] && seen[1] && !v[2][0]);
+    puts("config: ok");
+    return 0;
+}
+#endif

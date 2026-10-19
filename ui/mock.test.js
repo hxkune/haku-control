@@ -534,6 +534,116 @@
     await fanReset();
   });
 
+  test('fans: Apply sends a group\'s curves and sources as one change, and Undo takes it back as one', async () => {
+    await fresh(); await fanReset();
+    setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,2'); ['1', '2'].forEach(n => setCfg('fans', 'fan' + n, 'curve')); await fanEmit();
+    $('#fan-panel [data-g="1"] .fan-hd').click(); await wait(120);
+    $('#fs-src [data-v="t1"]').click(); const n = sent.length; $('#fs-apply').click(); await wait(60);
+    const out = sent.slice(n), fs = out.filter(o => o.cmd === 'fans_set');
+    ok(fs.length === 1 && ['fan1_curve=', 'fan1_src=t1', 'fan2_curve=', 'fan2_src=t1', 'fan1_curve_gpu=', 'fan2_curve_gpu='].every(x => fs[0].kv.includes(x)), 'one change: ' + JSON.stringify(fs));
+    ok(!out.some(o => o.cmd === 'set' && o.s === 'fans' && /_(curve|src)/.test(o.k)), 'a curve or a source went alone');
+    ok(cv('fans', 'fan2_src', '') === 't1' && STATE.cfg.fans.fan2_src === 't1' && STATE.cfg.fans.fan1_curve === fanScale('t1').def, 'the core: ' + STATE.cfg.fans.fan1_curve);
+    const m = sent.length; undo(); await wait(60);
+    const b = sent.slice(m).filter(o => o.cmd === 'fans_set');
+    ok(b.length === 1 && b[0].kv.split('\n').includes('fan1_src=') && cv('fans', 'fan2_src', 'gpu') === 'gpu' && STATE.cfg.fans.fan2_src === '', 'undo: ' + JSON.stringify(b));
+    await fanReset();
+  });
+
+  test('fans: the tab is there for any fan controller, a Lian Li receiver alone too, and never on a phone', async () => {
+    await fresh(); await fanReset();
+    const F = STATE.fans, L = STATE.ll, keep = { on: F.on, q: F.q, st: L.st }, vis = s => !$(s).classList.contains('hidden') && !!$(s).offsetParent;
+    // [the QUADRO or the board found, the QUADRO, the board chip, Lian Li state] -> tab
+    for (const [on, q, chip, st, want] of [[0, 0, '', 'none', 0], [0, 0, '', 'ok', 1], [0, 0, '', 'err', 1], [0, 0, '', 'busy', 1], [1, 1, '', 'none', 1], [1, 0, 'NCT6799D', 'none', 1], [1, 1, 'NCT6799D', 'ok', 1]]) {
+      Object.assign(F, { on, q }); if (chip) F.chip = chip; else delete F.chip; L.st = st; await fanEmit();
+      const c = JSON.stringify([on, q, chip, st]);
+      ok(NAV_NEED.fans() === !!want, 'the tab: ' + c);
+      if (want) { showTab('fans'); await wait(30);
+        ok(vis('#ll-card') === (st !== 'none') && vis('#fan-main') === !!on && vis('#tab-fans .fans-top') === !!on, 'the page: ' + c);
+        if (!on) ok($('#ll-status').textContent === (st === 'ok' ? t('ll.st.ok', L.g.length) : t('ll.st.' + st, L.err || 0)), 'the receiver: ' + $('#ll-status').textContent);
+      }
+    }
+    document.documentElement.classList.add('remote');
+    ok(!NAV_NEED.fans(), 'a phone got the fans'); document.documentElement.classList.remove('remote');
+    Object.assign(F, keep); delete F.chip; L.st = keep.st; await fanReset();
+  });
+
+  test('fans: a curve edit left for Fixed keeps Apply / Cancel in sight when another fan is picked; nothing goes out by itself', async () => {
+    for (const grp of [0, 1]) {
+      await fresh(); await fanReset();
+      if (grp) { setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,2'); }
+      ['1', '2'].forEach(n => setCfg('fans', 'fan' + n, 'curve')); await fanEmit();
+      if (grp) { $('#fan-panel [data-g="1"] .fan-hd').click(); await wait(120); } else await fanSheetOf(0);
+      const c = $('#fs-cv'), was = cv('fans', 'fan1_curve', ''); c.focus(); key(c, 'ArrowUp'); const d = fanSer(FAN.draft.pts);
+      $('#fs-mode [data-v="fix"]').click(); await wait(60);
+      const n = sent.length, o = JSON.stringify(FAN.open);
+      $('#fan-panel [data-f="2"]').click(); await wait(120);
+      const w = grp ? 'group: ' : 'fan: ';
+      ok(JSON.stringify(FAN.open) === o && FAN.draft && fanSer(FAN.draft.pts) === d && fanDirty(FAN.draft), w + 'the draft or the open fan changed');
+      ok(!$('#fs-draft').classList.contains('hidden') && !!$('#fs-draft').offsetParent && document.activeElement === $('#fs-apply'), w + 'Apply is not in sight');
+      ok(!sent.slice(n).some(x => /curve|src/.test(x.k || x.kv || '')) && cv('fans', 'fan1_curve', '') === was && cv('fans', 'fan1', '') === 'fix', w + 'something went out');
+      $('#fs-cancel').click(); await wait(60);
+      ok(!fanDirty(FAN.draft) && $('#fs-draft').classList.contains('hidden') && cv('fans', 'fan1_curve', '') === was, w + 'Cancel');
+      $('#fan-panel [data-f="2"]').click(); await wait(120);
+      ok(FAN.open && FAN.open.i === 2, w + 'the other fan did not open after Cancel');
+    }
+    await fanReset();
+  });
+
+  test('fans: a reading that is not there stays a gap in the history, rpm and the read-back each on its own', async () => {
+    await fresh(); await fanReset(); await fanSheetOf(0);
+    const F = STATE.fans, f = F.f[0], keep = { rpm: f.rpm, pct: f.pct }, h = () => FAN.hist[0], older = () => h().forEach(p => { p.at -= 3000; });
+    FAN.hist[0] = [];
+    for (const [rpm, pct] of [[-1, null], [800, null], [0, 35], [900, 40]]) { older(); Object.assign(f, { rpm, pct }); fanSample({ ...F }); }
+    ok(JSON.stringify(h().map(p => p.r)) === '[null,800,0,900]' && JSON.stringify(h().map(p => p.p)) === '[null,null,35,40]', 'the samples: ' + JSON.stringify(h()));
+    const s = fanHistText(h()[0], 0, 'gpu');
+    ok(s.includes('— ' + t('fans.rpmu')) && s.includes(t('fans.hist.p', '—')) && fanHistText(h()[2], 0, 'gpu').includes('0 ' + t('fans.rpmu')), 'the legend: ' + s);
+    drawFanHist(0);
+    Object.assign(f, keep); FAN.hist[0] = []; await fanReset();
+  });
+
+  test('fans: saved curves keep to their kind, one name in each; old ones without a kind are offered apart and get it by hand', async () => {
+    await fresh(); await fanReset();
+    const F = STATE.fans, sv = $('#fs-sv'), k = $('#fs-sv-k'), nm = $('#fs-sv-name'), pick = (e, v) => { e.value = v; e.dispatchEvent(new Event('change')); };
+    [['40:30,70:100', 't', 'Old'], ['30:30,60:100', '', 'NoKind'], ['30:40,80:100', 'gpu', 'Gpu one']].forEach(([c, kk, n], j) => { setCfg('fans', `c${j + 1}`, c); setCfg('fans', `c${j + 1}_k`, kk); setCfg('fans', `c${j + 1}_name`, n); });
+    F.cpuok = 1; F.cpu = 50; setCfg('fans', 'fan1', 'curve'); setCfg('fans', 'fan1_src', 'cpu'); await fanEmit(); await fanSheetOf(0);
+    const names = () => [...sv.options].slice(1).map(o => o.parentNode.label + ': ' + o.textContent);
+    ok(JSON.stringify(names()) === JSON.stringify([t('fans.sv.k.none') + ': Old', t('fans.sv.k.none') + ': NoKind']), 'on the CPU: ' + names());
+    nm.value = 'Same'; $('#fs-sv-save').click();
+    $('#fs-src [data-v="t1"]').click(); nm.value = 'Same'; $('#fs-sv-save').click();
+    ok(cv('fans', 'c4_name', '') === 'Same' && cv('fans', 'c4_k', '') === 'cpu' && cv('fans', 'c5_name', '') === 'Same' && cv('fans', 'c5_k', '') === 'liq' && cv('fans', 'c4', '') !== cv('fans', 'c5', ''), 'one overwrote the other: ' + cv('fans', 'c5_k', ''));
+    ok(names()[0] === t('fans.sv.k.liq') + ': Same' && names().length === 3, 'on the water: ' + names());
+    pick(sv, '1');
+    ok(!k.classList.contains('hidden') && fanSer(FAN.draft.pts) === '40:30,70:100', 'an old one: no category choice, or not taken');
+    pick(k, 'liq');
+    ok(cv('fans', 'c1_k', '') === 'liq' && k.classList.contains('hidden') && sv.value === '1' && $('#fs-sv-msg').textContent === t('fans.sv.k.done', 'Old', t('fans.sv.k.liq')), 'set: ' + cv('fans', 'c1_k', ''));
+    setCfg('fans', 'c6', '35:30,50:100'); setCfg('fans', 'c6_name', 'Same'); fanSavedList(FAN.draft); pick(sv, '6'); pick(k, 'cpu');
+    ok(cv('fans', 'c6_k', '') === '' && $('#fs-sv-msg').textContent === t('fans.sv.k.taken', 'Same', t('fans.sv.k.cpu')), 'two of one name in one kind: ' + cv('fans', 'c6_k', ''));
+    $('#fs-src [data-v="gpu"]').click();
+    ok(names()[0] === t('fans.sv.k.gpu') + ': Gpu one' && !names().some(x => /Same|Old/.test(x) && !x.startsWith(t('fans.sv.k.none'))), 'on the GPU: ' + names());
+    delete F.cpuok; delete F.cpu; await fanReset();
+  });
+
+  test('fans: the chart runs as fans.c does past its range; a point out there is kept, picked by keys, never by the edge', async () => {
+    await fresh(); await fanReset();
+    const p = fanParse('25:30,35:70,110:100'), sc = fanScale('t1');
+    ok(fanAt(p, 55) === 78 && fanOut(p, 20, 50) === 50 && fanOut(p, 55, 50) === 78 &&JSON.stringify(fanVis(p, sc)) === '[[15,30],[25,30],[35,70],[55,78]]', 'fanVis: ' + JSON.stringify(fanVis(p, sc)));
+    ok(JSON.stringify(fanVis(fanParse('0:40,110:100'), fanScale('cpu'))) === '[[20,51],[100,95]]' && JSON.stringify(fanVis(fanParse('20:20,100:100'), fanScale('cpu'))) === '[[20,20],[100,100]]', 'the ends');
+    setCfg('fans', 'fan1', 'curve'); setCfg('fans', 'fan1_src', 't1'); setCfg('fans', 'fan1_curve', '25:30,35:70,110:100'); setCfg('fans', 'fan1_min', '50'); await fanEmit(); await fanSheetOf(0);
+    const c = $('#fs-cv'), g = fanGeo(c, sc), r = c.getBoundingClientRect(), ev = (n, x, y) => c.dispatchEvent(new PointerEvent(n, { clientX: r.left + g.px(x), clientY: r.top + g.py(y), pointerId: 1, bubbles: true }));
+    c.setPointerCapture = () => {};
+    ev('pointerdown', 55, 100);
+    ok(!FAN.drag, 'the point at 110 was picked at the edge');
+    ev('pointerdown', 35, 70); ev('pointermove', 40, 80); ev('pointerup', 40, 80);
+    ok(fanSer(FAN.draft.pts) === '25:30,40:80,110:100', 'a drag moved another point: ' + fanSer(FAN.draft.pts));
+    key(c, 'ArrowRight'); key(c, 'ArrowDown');
+    ok(FAN.sel === 2 && fanSer(FAN.draft.pts) === '25:30,40:80,110:95' && $('#fs-pt-x').value === '110', 'the keys: ' + fanSer(FAN.draft.pts));
+    $('#fs-src [data-v="gpu"]').click(); $('#fs-src [data-v="t1"]').click();
+    ok(fanSer(FAN.draft.pts) === '25:30,40:80,110:95', 'a source switch changed it: ' + fanSer(FAN.draft.pts));
+    $('#fs-apply').click(); await wait(60);
+    ok(STATE.cfg.fans.fan1_curve === '25:30,40:80,110:95', 'applied: ' + STATE.cfg.fans.fan1_curve);
+    delete c.setPointerCapture; await fanReset();
+  });
+
   test('a group: Colour and its swatch keep the group window open, the colour goes to every member', async () => {
     await fresh();
     const n = groupNew(); groupDialog(n, true);

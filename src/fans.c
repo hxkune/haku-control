@@ -213,18 +213,24 @@ static int curve_at(const char *s, float t) {   // percent at t, flat outside th
 
 typedef struct { int want, em, smooth; } tgt_t;   // want: centi-percent, -1 as is, -2 wait (leave untouched)
 static int pct_key(int f, const char *k, int d) { char b[24]; snprintf(b, sizeof(b), "fan%d_%s", f + 1, k); return cfg_geti("fans", b, d); }
+enum { K_MODE, K_PCT, K_MIN, K_SRC, K_CURVE, K_FAIL, NK };
 static void targets(tgt_t *t) {
     DWORD now = GetTickCount(); int ng = 0;
+    // every channel's settings in one read: a curve and its source changed together are never seen half changed
+    static const char *const sfx[NK] = { "", "_pct", "_min", "_src", "_curve", "_fail" };
+    char kn[NCH * NK][24], kv[NCH * NK][256]; const char *ks[NCH * NK];
+    for (int i = 0; i < NCH * NK; i++) { snprintf(kn[i], 24, "fan%d%s", i / NK + 1, sfx[i % NK]); ks[i] = kn[i]; }
+    cfg_get_many("fans", ks, NCH * NK, kv);
+#define V(k, d) (kv[f * NK + (k)][0] ? kv[f * NK + (k)] : (d))
+#define VI(k, d) (kv[f * NK + (k)][0] ? atoi(kv[f * NK + (k)]) : (d))
     for (int f = 0; f < NCH; f++) {
-        char k[24]; t[f].want = -1; t[f].em = EM_NONE; t[f].smooth = 0;
-        snprintf(k, sizeof(k), "fan%d", f + 1);
-        const char *m = cfg_get("fans", k, "");
-        int lo = pct_key(f, "min", MIN_PCT), pct;
+        t[f].want = -1; t[f].em = EM_NONE; t[f].smooth = 0;
+        const char *m = V(K_MODE, "");
+        int lo = VI(K_MIN, MIN_PCT), pct;
         lo = lo < MIN_PCT ? MIN_PCT : lo > 100 ? 100 : lo;
-        if (!_stricmp(m, "fix")) pct = pct_key(f, "pct", 50);
+        if (!_stricmp(m, "fix")) pct = VI(K_PCT, 50);
         else if (!_stricmp(m, "curve")) {
-            snprintf(k, sizeof(k), "fan%d_src", f + 1);
-            const char *src = cfg_get("fans", k, "gpu");
+            const char *src = V(K_SRC, "gpu");
             float v = NAN; int em = EM_NONE, gpu = !_stricmp(src, "gpu"), cpu = !_stricmp(src, "cpu");
             if (cpu) { if (isnan(v = cpu_temp())) em = EM_NOSENSOR; }
             else if (gpu) {
@@ -242,14 +248,15 @@ static void targets(tgt_t *t) {
                 else if (s == 0x7FFF) em = EM_NOSENSOR;
                 else v = (short)s / 100.0f;
             } else em = EM_CURVE;
-            snprintf(k, sizeof(k), "fan%d_curve", f + 1);
-            if (!em && (pct = curve_at(cfg_get("fans", k, cpu ? "40:30,60:45,75:75,90:100" : gpu ? "30:30,50:45,70:75,85:100" : "25:30,30:40,35:70,40:100"), v)) < 0) em = EM_CURVE;
-            if (em) { pct = pct_key(f, "fail", 100); t[f].em = em; }
+            if (!em && (pct = curve_at(V(K_CURVE, cpu ? "40:30,60:45,75:75,90:100" : gpu ? "30:30,50:45,70:75,85:100" : "25:30,30:40,35:70,40:100"), v)) < 0) em = EM_CURVE;
+            if (em) { pct = VI(K_FAIL, 100); t[f].em = em; }
             else t[f].smooth = 1;
         } else continue;
         pct = pct < lo ? lo : pct > 100 ? 100 : pct;
         t[f].want = pct * 100;
     }
+#undef V
+#undef VI
     InterlockedExchange(&need_gpu, ng != 0);
 }
 
@@ -591,6 +598,8 @@ static void set(const char *k, const char *v) { for (int i = 0; i < nk; i++) if 
 void logf_(const char *fmt, ...) { (void)fmt; }
 const char *cfg_get(const char *s, const char *k, const char *d) { (void)s; for (int i = 0; i < nk; i++) if (!strcmp(K[i][0], k)) return K[i][1] && *K[i][1] ? K[i][1] : d; return d; }   // empty is unset, as in config.c
 int cfg_geti(const char *s, const char *k, int d) { const char *v = cfg_get(s, k, NULL); return v ? atoi(v) : d; }
+static int reads;   // targets() reads the settings once a round
+void cfg_get_many(const char *s, const char *const *k, int n, char (*v)[256]) { reads++; for (int i = 0; i < n; i++) strcpy_s(v[i], 256, cfg_get(s, k[i], "")); }
 void app_data_path(const wchar_t *name, wchar_t *out) { wchar_t t[MAX_PATH]; GetTempPathW(MAX_PATH, t); swprintf(out, MAX_PATH, L"%shaku-test-%s", t, name); }
 static const BYTE O1[3] = { 2, 0x11, 0x22 }, O2[3] = { 1, 0x33, 0x44 };   // the channels' own settings: curve / fixed modes
 static int dev_is(int f, int pct) { BYTE *p = dev + ctl_fan[f]; return p[0] == 0 && be16(p + 1) == pct * 100; }
@@ -627,7 +636,7 @@ int main(void) {
     targets(t); assert(t[0].want == 10000 && t[0].em == EM_NOSENSOR);         // never read
     fans_feed(NAN, GetTickCount()); targets(t); assert(t[0].em == EM_NOSENSOR); // read, nothing there
     fans_feed(50, GetTickCount() - 6000); targets(t); assert(t[0].want == 10000 && t[0].em == EM_STALE);
-    fans_feed(50, GetTickCount()); targets(t); assert(t[0].want == 2000 && !t[0].em && t[0].smooth);
+    fans_feed(50, GetTickCount()); reads = 0; targets(t); assert(t[0].want == 2000 && !t[0].em && t[0].smooth && reads == 1);
     set("fan1_fail", "70"); set("fan1_curve", "30:20,20:90"); targets(t); assert(t[0].want == 7000 && t[0].em == EM_CURVE);
     set("fan1_src", "t9"); set("fan1_curve", "30:20,90:20"); targets(t); assert(t[0].em == EM_CURVE);
     // the CPU: only when asked for (unset is the GPU even where it reads); asked for and not reading is no sensor
