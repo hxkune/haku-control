@@ -25,6 +25,7 @@ window.chrome = { webview: {
     const C = STATE.cfg, G = C.general;
     if (o.cmd === 'set') (C[o.s] = C[o.s] || {})[o.k] = o.v;
     if (o.cmd === 'fans_set') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); (C.fans = C.fans || {})[l.slice(0, e)] = l.slice(e + 1); });
+    if (o.cmd === 'tryx_build') { Object.assign(C['dev.' + o.id] = C['dev.' + o.id] || {}, { media: 'C:\\Users\\me\\AppData\\Roaming\\haku-control\\tryx-' + o.id + '.' + o.ext, theme: '-1' }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'tryx_media') { Object.assign(C['dev.' + o.id] = C['dev.' + o.id] || {}, { media: 'C:\\Pictures\\cat.gif', theme: '-1' }); setTimeout(() => emit(STATE), 60); }
     // fans.c, roughly: a mode takes the channel and the QUADRO confirms it; '' gives it back
     if (o.cmd === 'set' && o.s === 'fans' && /^fan\d+$/.test(o.k) && STATE.fans.f[+o.k.slice(3) - 1]) { const f = STATE.fans.f[+o.k.slice(3) - 1], m = o.v, w = m === 'fix' ? +(C.fans[o.k + '_pct'] || 50) : m ? 45 : -1;
@@ -33,7 +34,7 @@ window.chrome = { webview: {
     if (o.cmd === 'brightness') STATE.brightness = +o.v;
     if (o.cmd === 'get') setTimeout(() => emit(STATE), 30);
     if (o.cmd === 'report') setTimeout(() => { STATE.diag = { busy: 0, ok: -1, file: '', report: { busy: 0, ok: o.text.includes('fail') ? 0 : 1, id: '3fa2c9d01e', err: o.text.includes('fail') ? 'offline' : '' } }; emit(STATE); }, 900);
-    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
+    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'dev_check') { STATE.netchk = { id: +o.id, busy: 1, res: '' }; emit(STATE); setTimeout(() => { STATE.netchk = { id: +o.id, busy: 0, res: o.id % 2 ? 'silent' : 'answers', ms: 0 }; emit(STATE); }, 1500); }
     if (o.cmd === 'profile') { G.profile = o.id; STATE.prof_why = 1; setTimeout(() => emit(STATE), 120); }
     if (o.cmd === 'profile_dup') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; setTimeout(() => emit(STATE), 60); }

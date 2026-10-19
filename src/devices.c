@@ -11,7 +11,7 @@ static const ext_driver *drivers[] = {
 #ifdef HAKU_PRO   // the lights on the network (pro\)
     &drv_wled, &drv_govee, &drv_lifx, &drv_yeelight, &drv_hue, &drv_wiz, &drv_tuya, &drv_goveecloud, &drv_elgato, &drv_divoom,
 #endif
-    &drv_openrgb, &drv_nlusb, &drv_wooting, &drv_razer, &drv_steelseries, &drv_logitech, &drv_tryx, &drv_aura };
+    &drv_openrgb, &drv_nlusb, &drv_wooting, &drv_razer, &drv_steelseries, &drv_logitech, &drv_tryx, &drv_aura, &drv_lianli };
 #define NDRV (int)(sizeof(drivers) / sizeof(drivers[0]))
 
 const ext_driver *ext_driver_by_kind(const char *kind) {
@@ -41,7 +41,7 @@ static volatile LONG scanning;
 
 // The kinds that run without Pro: the PC's own hardware, USB devices and the makers' apps on this PC
 int pro_kind(const char *kind) {
-    static const char *const FREE[] = { "openrgb", "wooting", "nlusb", "razer", "steelseries", "logitech", "tryx", "aura" };
+    static const char *const FREE[] = { "openrgb", "wooting", "nlusb", "razer", "steelseries", "logitech", "tryx", "aura", "lianli" };
     for (int i = 0; i < (int)(sizeof(FREE) / sizeof(FREE[0])); i++) if (!_stricmp(kind, FREE[i])) return 0;
     return 1;
 }

@@ -379,6 +379,19 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .pdlg .check .pdlg-bri-val { margin-left: auto; font-weight: 600; }
 .pdlg .check { display: flex; }
 .pdlg-zones-note { margin: 6px 0 0 !important; }
+.card.pdlg.txb { width: min(680px, 100%); }
+.txb-bar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; justify-content: space-between; }
+.txb-bar .num { min-width: 140px; }
+.txb-stage { display: block; width: 100%; height: auto; background: #000; cursor: grab; touch-action: none; outline-offset: 2px; }
+.txb-stage:active { cursor: grabbing; }
+.txb-layers { display: flex; flex-direction: column; gap: 6px; }
+.txb-layers:empty { display: none; }
+.txb-layer { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line2); }
+.txb-layer.on { border-color: var(--sel); }
+.txb-layer .txb-text { flex: 1 1 120px; min-width: 0; width: auto; }
+.txb-layer .txb-name { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.txb-layer .range { width: 110px; flex: 0 1 110px; }
+.txb-color { width: 34px; height: 30px; padding: 0; border: 1px solid var(--line2); background: none; cursor: pointer; }
 .gdlg-devs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .gdlg-devs button { display: inline-flex; align-items: center; gap: 7px; }
 .gdlg-devs button i { width: 9px; height: 9px; border: 1px solid currentColor; flex: none; }

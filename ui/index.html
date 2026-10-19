@@ -770,6 +770,31 @@
   </div>
 </div>
 <button class="btn small undo hidden" type="button" id="undo" data-i18n-title="undo.title"><span data-i18n="undo">Undo</span></button>
+<!-- the TRYX screen builder: a picture, GIF or video cut to the screen's shape, with texts and pictures over it -->
+<div class="sheet-wrap pdlg-wrap hidden" id="txb">
+  <div class="card pdlg txb" role="dialog" aria-modal="true" aria-labelledby="txb-title">
+    <div class="pdlg-head"><h3 id="txb-title"></h3><button class="sheet-x" type="button" id="txb-x" data-i18n-title="close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="txb-bar">
+      <button class="btn small" type="button" id="txb-src"><span data-i18n="txb.src">Picture, GIF or video…</span></button>
+      <label class="num"><span data-i18n="txb.shape">Screen shape</span><select class="select" id="txb-shape"><option>16:9</option><option>4:3</option><option>3:2</option><option>1:1</option></select></label>
+    </div>
+    <canvas class="txb-stage" id="txb-stage" tabindex="0" width="640" height="360"></canvas>
+    <div class="field"><div class="lbl"><span data-i18n="txb.zoom">Zoom</span></div><input type="range" class="range" id="txb-zoom" min="100" max="400" value="100" data-i18n-title="txb.zoom"></div>
+    <p class="hint" data-i18n="txb.note"></p>
+    <div class="txb-layers" id="txb-layers"></div>
+    <div class="btn-row">
+      <button class="btn small ghost" type="button" id="txb-text"><span data-i18n="txb.add.text">Add text</span></button>
+      <button class="btn small ghost" type="button" id="txb-pic"><span data-i18n="txb.add.pic">Add a picture</span></button>
+    </div>
+    <p class="hint" id="txb-msg" role="status"></p>
+    <div class="btn-row">
+      <button class="btn primary" type="button" id="txb-go"><span data-i18n="txb.go">Send to the screen</span></button>
+      <button class="btn ghost" type="button" id="txb-cancel"><span data-i18n="cancel">Cancel</span></button>
+    </div>
+    <input type="file" id="txb-file" accept="image/*,video/mp4,video/webm" hidden>
+    <input type="file" id="txb-file2" accept="image/*" hidden>
+  </div>
+</div>
 <!-- the calibration guide for a LAN device: where its LEDs end, which way effects run, its white against the rest -->
 <div class="sheet-wrap pdlg-wrap hidden" id="cal">
   <div class="card pdlg wn" role="dialog" aria-modal="true" aria-labelledby="cal-title">

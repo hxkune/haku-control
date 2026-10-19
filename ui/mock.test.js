@@ -692,6 +692,32 @@
     STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
   });
 
+  test('TRYX: the screen builder makes a JPEG from a still with a text over it and hands it to the core', async () => {
+    await fresh();
+    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D04', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'strip', info: 'TRYX PANORAMA · COM5 · USB' });
+    STATE.cfg['dev.14'] = { kind: 'tryx' }; await fanEmit();
+    const card = () => $('#dev-st-14').closest('.card');
+    card().querySelector('.dev-build').click();
+    ok(!$('#txb').classList.contains('hidden') && document.activeElement === $('#txb-src'), 'the builder did not open');
+    const c = document.createElement('canvas'); c.width = 400; c.height = 400; c.getContext('2d').fillStyle = '#c33'; c.getContext('2d').fillRect(0, 0, 400, 400);
+    await txbLoad(new File([await new Promise(r => c.toBlob(r, 'image/png'))], 'red.png', { type: 'image/png' }));
+    ok(TXB.src && !TXB.src.dur && $('#txb-msg').textContent === '', 'the still: ' + $('#txb-msg').textContent);
+    txbMove(.5, 0); ok(TXB.cx === .5, 'a square in 16:9 moved sideways: ' + TXB.cx);
+    txbMove(0, .5); ok(TXB.cy < .5 && TXB.cy > .2, 'it did not move up within its edge: ' + TXB.cy);
+    $('#txb-text').click(); const ti = $('#txb-layers .txb-text');
+    ok(TXB.layers.length === 1 && document.activeElement === ti, 'no text row');
+    ti.value = 'CPU'; ti.dispatchEvent(new Event('input', { bubbles: true }));
+    ok(TXB.layers[0].text === 'CPU' && TXB.sel === 0, 'the text: ' + TXB.layers[0].text);
+    txbMove(.1, 0); ok(Math.abs(TXB.layers[0].x - .6) < 1e-9, 'the chosen text did not move');
+    sent.length = 0; await txbMake();
+    const o = sent.find(x => x.cmd === 'tryx_build');
+    ok(o && o.id === '14' && o.ext === 'jpg' && o.data.startsWith('/9j/'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }));
+    ok($('#txb').classList.contains('hidden') && !TXB, 'the builder stayed open');
+    await wait(150); await fanEmit();
+    ok(card().querySelector('.dev-media-name').textContent === 'tryx-14.jpg', 'the file: ' + card().querySelector('.dev-media-name').textContent);
+    STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+  });
+
   test('OpenRGB: a board whose connectors have 0 LEDs says it needs setup, even switched off, and opens its LED counts', async () => {
     await fresh();
     STATE.ext.devs.push({ id: 15, kind: 'openrgb', title: 'OpenRGB', name: 'X870E', host: '127.0.0.1', sub: 5, leds: 0, per_led: 1, online: 0, enabled: 0, type: 'board', info: 'OpenRGB · set the LEDs on its connectors', zones: 'Addressable RGB Header 1:0:0:120|Addressable RGB Header 2:0:0:120' });

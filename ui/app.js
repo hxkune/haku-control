@@ -2947,7 +2947,7 @@ const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).tit
 // TRYX PANORAMA's built-in themes, in the order the cooler numbers them (drv_tryx.c); 0: as TRYX KANALI left it
 const TRYX_THEMES = ['', 'Cooling delivery', 'Migration', 'Quantum time capsule', 'Exo-Ecologies', 'Racing', 'Shuttle', 'Gift of TRYX',
   'Sweet Cool Acrylic', 'Catch Me If You Can', 'The Battle of Ice and Fire', 'Oasis', 'Cyber Bunker', 'Edge Of Dream', 'Thermal Energy Prohibited'];
-const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura'].includes(d.kind);
+const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli'].includes(d.kind);
 // the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max}]
 const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max, at] = z.split(':'); return { name, count: +count, min: +min, max: +max, at: +at || 0 }; });
 // OpenRGB starts a board's ARGB connectors at 0 LEDs: nothing to light (not offline) until their counts are set
@@ -3021,7 +3021,7 @@ function buildDevices() {
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('dv.follow')}</em></label>`}` : ''}
         ${d.kind === 'tryx' ? `<label class="num"><span>${t('tx.theme')}</span><select class="select dev-theme">${TRYX_THEMES.map((n, v) =>
             `<option value="${v}"${+cv(sec, 'theme', 0) === v ? ' selected' : ''}>${v ? v + '. ' + n : t('tx.keep')}</option>`).join('')}<option value="-1"${+cv(sec, 'theme', 0) === -1 ? ' selected' : ''}>${t('tx.own')}</option></select></label>
-          <div class="pc-only" style="display:flex;gap:10px;align-items:center;margin:4px 0"><button class="btn small ghost dev-media" type="button"><span>${t('tx.pick')}</span></button><span class="muted dev-media-name">${esc(cv(sec, 'media', '').split(/[\\/]/).pop())}</span></div>
+          <div class="pc-only" style="display:flex;gap:10px;align-items:center;margin:4px 0;flex-wrap:wrap"><button class="btn small ghost dev-media" type="button"><span>${t('tx.pick')}</span></button><button class="btn small ghost dev-build" type="button"><span>${t('tx.build')}</span></button><span class="muted dev-media-name">${esc(cv(sec, 'media', '').split(/[\\/]/).pop())}</span></div>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('tx.follow')}</em></label>
           <p class="hint">${t('tx.note')}</p>` : ''}
         <details class="trouble dev-adv"${DEV_ADV.has(d.id) || devStatus(d) === t('zones.need') ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
@@ -3080,6 +3080,7 @@ function buildDevices() {
     // the own picture: picked in the PC's file window (the core sets media and theme=-1), never typed in
     el.querySelector('.dev-theme')?.addEventListener('change', e => e.target.value === '-1' && !cv(sec, 'media', '') ? send({ cmd: 'tryx_media', id: String(d.id) }) : setCfg(sec, 'theme', e.target.value));
     el.querySelector('.dev-media')?.addEventListener('click', () => send({ cmd: 'tryx_media', id: String(d.id) }));
+    el.querySelector('.dev-build')?.addEventListener('click', e => txbOpen(d, e.currentTarget));
     el.querySelector('.dev-screen')?.addEventListener('change', e => {
       setCfg(sec, 'screen', e.target.value);
       el.querySelector('.dev-dial-box').classList.toggle('hidden', e.target.value !== 'dial');
@@ -3234,6 +3235,189 @@ $('#cal-x').addEventListener('click', calClose);
 $('#cal-back').addEventListener('click', () => { CAL.i--; calShow(); $('#cal-next').focus(); });
 $('#cal').addEventListener('pointerdown', e => { if (e.target.id === 'cal') calClose(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && CAL) calClose(); });
+// ---- the TRYX screen builder: a picture, GIF or video cut to the screen's shape, with texts and pictures over it.
+// Made here (a JPEG, or an mp4 recorded from a canvas as it plays) and handed to the core (tryx_build), which keeps it
+// as the device's own file and sends it like a picked one.
+// shortcut: what is over the picture is baked into the file; live figures need the cooler's own layout (sysinfoDisplay), not known yet
+const TXB_SHAPES = { '16:9': [1280, 720], '4:3': [1024, 768], '3:2': [1080, 720], '1:1': [720, 720] };
+const TXB_MAX = 30;   // seconds of video at most: ~8 MB at 2 Mbit/s
+let TXB = null;
+function txbOpen(d, from) {
+  TXB = { d, from, shape: '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now() };
+  $('#txb-title').textContent = t('txb.title', cv('dev.' + d.id, 'name', d.name));
+  $('#txb-stage').setAttribute('aria-label', t('txb.stage'));
+  $('#txb-shape').value = TXB.shape; $('#txb-msg').textContent = '';
+  $('#txb').classList.remove('hidden'); txbSize(); txbZoom(1); txbLayers(); txbLoop(); $('#txb-src').focus();
+}
+const txbFreeSrc = s => { if (!s) return; if (s.el) { s.el.pause(); URL.revokeObjectURL(s.el.src); } (s.frames || []).forEach(f => f.bmp.close()); s.bmp?.close(); };
+function txbClose() {
+  if (!TXB || TXB.busy) return;
+  txbFreeSrc(TXB.src); TXB.layers.forEach(l => l.bmp?.close());
+  $('#txb').classList.add('hidden');
+  const from = TXB.from; TXB = null; from?.focus();
+}
+// a picture, an animation (GIF, WebP, APNG: every frame decoded once) or a video
+async function txbLoad(file) {
+  const B = TXB; let s = null;
+  try {
+    if (/^video\//.test(file.type)) {
+      const v = document.createElement('video'); v.muted = true; v.loop = true; v.playsInline = true; v.src = URL.createObjectURL(file);
+      s = { el: v };
+      await new Promise((ok, no) => { v.onloadeddata = ok; v.onerror = no; });
+      Object.assign(s, { w: v.videoWidth, h: v.videoHeight, dur: Math.min(v.duration || 0, TXB_MAX) });
+      v.play().catch(() => {});
+    } else {
+      const frames = [];
+      if ('ImageDecoder' in window && await ImageDecoder.isTypeSupported(file.type)) {
+        const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: file.type }); await dec.tracks.ready;
+        const n = Math.min(dec.tracks.selectedTrack?.frameCount || 1, 900);
+        for (let i = 0, at = 0; i < n && at < TXB_MAX; i++) {
+          const { image } = await dec.decode({ frameIndex: i }), d = (image.duration || 0) / 1e6;   // µs
+          frames.push({ bmp: await createImageBitmap(image), at, dur: d < .02 ? .1 : d }); image.close();   // as browsers show a GIF's 0 delay
+          at += frames.at(-1).dur;
+        }
+        dec.close();
+      } else frames.push({ bmp: await createImageBitmap(file), at: 0, dur: 0 });
+      const f = frames[0].bmp, end = frames.at(-1);
+      s = frames.length > 1 ? { frames, w: f.width, h: f.height, dur: end.at + end.dur } : { bmp: f, w: f.width, h: f.height, dur: 0 };
+    }
+  } catch { txbFreeSrc(s); s = null; }
+  if (TXB !== B) return txbFreeSrc(s);   // closed meanwhile
+  if (!s || !s.w) { txbFreeSrc(s); $('#txb-msg').textContent = t('txb.bad'); return; }
+  txbFreeSrc(B.src); B.src = s; B.cx = B.cy = .5; txbZoom(1);
+  $('#txb-msg').textContent = s.dur ? t('txb.anim', Math.round(s.dur * 10) / 10) : '';
+}
+function txbFrame(s, t) {
+  const tt = t % s.dur; let i = 0;
+  while (i < s.frames.length - 1 && s.frames[i + 1].at <= tt) i++;
+  return s.frames[i].bmp;
+}
+const txbCover = (s, W, H) => Math.max(W / s.w, H / s.h) * TXB.z;
+// one frame of the result at t seconds; sel: outline the chosen layer (the preview only)
+function txbDraw(c, t, sel) {
+  const B = TXB, x = c.getContext('2d'), W = c.width, H = c.height, s = B.src, font = getComputedStyle(document.body).fontFamily;
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
+  if (s) { const k = txbCover(s, W, H); x.drawImage(s.el || (s.frames ? txbFrame(s, t) : s.bmp), W / 2 - B.cx * s.w * k, H / 2 - B.cy * s.h * k, s.w * k, s.h * k); }
+  B.layers.forEach((l, i) => {
+    let w, h;
+    if (l.text != null) {
+      h = l.size / 100 * H;
+      x.font = `700 ${h}px ${font}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = H * .015; x.fillStyle = l.color;
+      x.fillText(l.text, l.x * W, l.y * H); x.shadowBlur = 0;
+      w = x.measureText(l.text).width;
+    } else { w = l.size / 100 * W; h = w * l.bmp.height / l.bmp.width; x.drawImage(l.bmp, l.x * W - w / 2, l.y * H - h / 2, w, h); }
+    l.box = [l.x - w / 2 / W, l.y - h / 2 / H, w / W, h / H];
+    if (sel && i === B.sel) { x.setLineDash([6, 4]); x.strokeStyle = '#fff'; x.lineWidth = 1.5; x.strokeRect(l.x * W - w / 2 - 4, l.y * H - h / 2 - 4, w + 8, h + 8); x.setLineDash([]); }
+  });
+}
+function txbLoop() { if (!TXB || TXB.busy) return; txbDraw($('#txb-stage'), (performance.now() - TXB.t0) / 1000, 1); requestAnimationFrame(txbLoop); }
+function txbSize() { const [w, h] = TXB_SHAPES[TXB.shape], c = $('#txb-stage'); c.width = 640; c.height = Math.round(640 * h / w); txbClamp(); }
+// the picture always covers the frame: its centre stays where no edge shows
+function txbClamp() {
+  const B = TXB, s = B.src, c = $('#txb-stage'); if (!s) return;
+  const k = txbCover(s, c.width, c.height), hx = c.width / 2 / (s.w * k), hy = c.height / 2 / (s.h * k);
+  B.cx = Math.min(1 - hx, Math.max(hx, B.cx)); B.cy = Math.min(1 - hy, Math.max(hy, B.cy));
+}
+function txbZoom(z) { const r = $('#txb-zoom'); TXB.z = Math.max(1, Math.min(4, z)); r.value = Math.round(TXB.z * 100); fill(r); txbClamp(); }
+// du, dv: fractions of the frame; the chosen layer moves, else the picture under the frame
+function txbMove(du, dv) {
+  const B = TXB, l = B.layers[B.sel], s = B.src, c = $('#txb-stage');
+  if (l) { l.x = Math.min(1, Math.max(0, l.x + du)); l.y = Math.min(1, Math.max(0, l.y + dv)); return; }
+  if (!s) return;
+  const k = txbCover(s, c.width, c.height);
+  B.cx -= du * c.width / (s.w * k); B.cy -= dv * c.height / (s.h * k); txbClamp();
+}
+function txbLayers() {
+  const B = TXB, X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  $('#txb-layers').innerHTML = B.layers.map((l, i) => `<div class="txb-layer${i === B.sel ? ' on' : ''}" data-i="${i}">
+    ${l.text != null ? `<input type="text" class="txb-text" maxlength="60" spellcheck="false" value="${esc(l.text)}" aria-label="${esc(t('txb.text'))}"><input type="color" class="txb-color" value="${l.color}" aria-label="${esc(t('txb.color'))}">`
+      : `<span class="muted txb-name">${esc(l.name)}</span>`}
+    <input type="range" class="range txb-size" min="${l.text != null ? 3 : 5}" max="${l.text != null ? 40 : 100}" value="${l.size}" aria-label="${esc(t('txb.size'))}">
+    <button class="sheet-x txb-del" type="button" title="${esc(t('txb.del'))}" aria-label="${esc(t('txb.del'))}">${X}</button></div>`).join('');
+  $('#txb-layers').querySelectorAll('.range').forEach(fill);
+  $('#txb-text').disabled = $('#txb-pic').disabled = B.layers.length >= 8;
+}
+const txbSel = i => { TXB.sel = i; $('#txb-layers').querySelectorAll('.txb-layer').forEach(r => r.classList.toggle('on', +r.dataset.i === i)); };
+async function txbMake() {
+  const B = TXB, s = B.src, [w0, h0] = TXB_SHAPES[B.shape], vid = !!(s && s.dur), msg = $('#txb-msg');
+  const c = document.createElement('canvas'); c.width = vid ? w0 : w0 * 1.5; c.height = vid ? h0 : h0 * 1.5;   // a still: the SE's 1920x1080 at 16:9
+  const busy = on => { B.busy = on; $('#txb').querySelectorAll('button, input, select').forEach(e => { e.disabled = on; }); };
+  busy(1);
+  try {
+    let blob;
+    if (!vid) { txbDraw(c, 0); blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .9)); }
+    else {
+      const mime = ['video/mp4;codecs=avc1.42E01F', 'video/mp4;codecs=avc1', 'video/mp4'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+      if (!mime) throw t('txb.novideo');
+      if (s.el) { s.el.loop = false; s.el.pause(); s.el.currentTime = 0; await new Promise(r => { s.el.onseeked = r; }); }
+      txbDraw(c, 0);
+      const rec = new MediaRecorder(c.captureStream(30), { mimeType: mime, videoBitsPerSecond: 2e6 }), parts = [];
+      rec.ondataavailable = e => e.data.size && parts.push(e.data);
+      const stopped = new Promise(r => { rec.onstop = r; });
+      rec.start(); if (s.el) await s.el.play();
+      const t0 = performance.now();
+      // in real time: the recorder takes the canvas as it changes (a hidden window slows the frames down)
+      await new Promise(r => { const step = () => {
+        const tt = s.el ? s.el.currentTime : (performance.now() - t0) / 1000;
+        if (tt >= s.dur || s.el?.ended) return r();
+        txbDraw(c, tt); msg.textContent = t('txb.rec', Math.round(tt / s.dur * 100)); requestAnimationFrame(step);
+      }; step(); });
+      rec.stop(); await stopped;
+      if (s.el) { s.el.loop = true; s.el.play().catch(() => {}); }
+      blob = new Blob(parts, { type: 'video/mp4' });
+    }
+    if (blob.size > 16 << 20) throw t('txb.big');
+    const data = await new Promise((r, no) => { const f = new FileReader(); f.onload = () => r(f.result.slice(f.result.indexOf(',') + 1)); f.onerror = no; f.readAsDataURL(blob); });
+    send({ cmd: 'tryx_build', id: String(B.d.id), ext: vid ? 'mp4' : 'jpg', data });
+    busy(0); txbClose();
+  } catch (e) { busy(0); txbLayers(); msg.textContent = typeof e === 'string' ? e : t('txb.fail', e?.message || e); txbLoop(); }
+}
+$('#txb-src').addEventListener('click', () => $('#txb-file').click());
+$('#txb-file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) txbLoad(f); });
+$('#txb-pic').addEventListener('click', () => $('#txb-file2').click());
+$('#txb-file2').addEventListener('change', async e => {
+  const f = e.target.files[0], B = TXB; e.target.value = ''; if (!f) return;
+  try { const bmp = await createImageBitmap(f); if (TXB !== B) return bmp.close(); B.layers.push({ bmp, name: f.name, size: 30, x: .5, y: .5 }); B.sel = B.layers.length - 1; txbLayers(); }
+  catch { $('#txb-msg').textContent = t('txb.bad'); }
+});
+$('#txb-text').addEventListener('click', () => {
+  TXB.layers.push({ text: t('txb.text.new'), color: '#ffffff', size: 12, x: .5, y: .5 }); TXB.sel = TXB.layers.length - 1;
+  txbLayers(); const i = $('#txb-layers .txb-layer:last-child .txb-text'); i.focus(); i.select();
+});
+$('#txb-shape').addEventListener('change', e => { TXB.shape = e.target.value; txbSize(); });
+$('#txb-zoom').addEventListener('input', e => txbZoom(e.target.value / 100));
+$('#txb-layers').addEventListener('input', e => {
+  const l = TXB.layers[+e.target.closest('.txb-layer').dataset.i];
+  if (e.target.classList.contains('txb-text')) l.text = e.target.value;
+  if (e.target.classList.contains('txb-color')) l.color = e.target.value;
+  if (e.target.classList.contains('txb-size')) { l.size = +e.target.value; fill(e.target); }
+});
+$('#txb-layers').addEventListener('focusin', e => txbSel(+e.target.closest('.txb-layer').dataset.i));
+$('#txb-layers').addEventListener('click', e => {
+  const row = e.target.closest('.txb-layer'); if (!row) return;
+  if (e.target.closest('.txb-del')) { const i = +row.dataset.i; TXB.layers.splice(i, 1)[0].bmp?.close(); TXB.sel = -1; txbLayers(); $('#txb-stage').focus(); }
+  else txbSel(+row.dataset.i);
+});
+{ const st = $('#txb-stage'); let drag = null;
+  st.addEventListener('pointerdown', e => {
+    if (TXB.busy) return;
+    const r = st.getBoundingClientRect(), u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+    txbSel(TXB.layers.findLastIndex(l => l.box && u >= l.box[0] && u <= l.box[0] + l.box[2] && v >= l.box[1] && v <= l.box[1] + l.box[3]));
+    drag = { x: e.clientX, y: e.clientY, w: r.width, h: r.height }; st.setPointerCapture(e.pointerId);
+  });
+  st.addEventListener('pointermove', e => { if (!drag || TXB.busy) return; txbMove((e.clientX - drag.x) / drag.w, (e.clientY - drag.y) / drag.h); drag.x = e.clientX; drag.y = e.clientY; });
+  ['pointerup', 'pointercancel'].forEach(n => st.addEventListener(n, () => { drag = null; }));
+  st.addEventListener('wheel', e => { e.preventDefault(); if (!TXB.busy) txbZoom(TXB.z * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }, { passive: false });
+  st.addEventListener('keydown', e => {
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (d && !TXB.busy) { e.preventDefault(); txbMove(d[0] * .01, d[1] * .01); }
+  });
+}
+$('#txb-go').addEventListener('click', txbMake);
+['#txb-x', '#txb-cancel'].forEach(s => $(s).addEventListener('click', txbClose));
+$('#txb').addEventListener('pointerdown', e => { if (e.target.id === 'txb') txbClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && TXB) txbClose(); });
 // ---- other PC hardware: what OpenRGB on this PC offers (S.orgb: state 0 not looked, 1 looking, 2 answers, 3 none).
 // Hardware haku drives itself (the MSI board, ENE memory) is shown but not offered, so two programs never fight.
 const ORGB_TYPES = { 0: 'board', 1: 'ram', 2: 'gpu', 3: 'fan', 4: 'strip', 5: 'keyboard', 6: 'mouse', 18: 'keyboard' };

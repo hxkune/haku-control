@@ -36,7 +36,7 @@ unmodified (SHA-256 `dae74615761b78bdf064dfb3e136252ddcc6fc727d88f14738d0e5800d4
 The source code is available from that repository.
 
 **Lian Li wireless fans** (`src/lianli.c`): the receiver's discovery request and reply layout (device records, fan
-count, rpm and duty fields), and the transmitter's connect, clock broadcast and speed command frames, are ported from
+count, rpm and duty fields), and the transmitter's connect, clock broadcast, speed, colour upload and ARGB sync frames, are ported from
 [MarcusSanchez/FanControl.LianLiWireless](https://github.com/MarcusSanchez/FanControl.LianLiWireless),
 [Yoinky3000/LL-Connect-Wireless](https://github.com/Yoinky3000/LL-Connect-Wireless) and
 [sgtaziz/lian-li-linux](https://github.com/sgtaziz/lian-li-linux), all under the MIT License:
@@ -44,6 +44,25 @@ count, rpm and duty fields), and the transmitter's connect, clock broadcast and 
 > Copyright (c) 2026 Marcus Sanchez
 > Copyright (c) 2026 Yoinky3000
 > Copyright (c) 2026 sgtaziz
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+> documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+> rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+> persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+> Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+> WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+> COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+> OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+**tinyuz** (`src/lianli.c`): the colour uploads to Lian Li wireless fans are packed in the stream format of
+[sisong/tinyuz](https://github.com/sisong/tinyuz), which the fans' firmware unpacks; the encoder follows its
+`tuz_enc` code, and the self-test carries a port of its `tuz_decompress_mem`. MIT License:
+
+> Copyright (c) 2012-2022 housisong
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 > documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
