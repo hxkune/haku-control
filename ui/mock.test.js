@@ -739,6 +739,26 @@
     STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
   });
 
+  test('TRYX: the builder makes an mp4 of an animation that the browser itself plays, at the screen size', async () => {
+    await fresh();
+    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D04', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'screen', info: 'TRYX PANORAMA · COM5 · USB' });
+    STATE.cfg['dev.14'] = { kind: 'tryx' }; await fanEmit();
+    $('#dev-st-14').closest('.card').querySelector('.dev-build').click();
+    const frames = [];
+    for (const [i, col] of ['#c33', '#3c3', '#33c'].entries()) {
+      const c = document.createElement('canvas'); c.width = 200; c.height = 100; const x = c.getContext('2d'); x.fillStyle = col; x.fillRect(0, 0, 200, 100);
+      frames.push({ bmp: await createImageBitmap(c), at: i * .2, dur: .2 });
+    }
+    TXB.src = { frames, w: 200, h: 100, dur: .6 };
+    sent.length = 0; await txbMake();
+    const o = sent.find(x => x.cmd === 'tryx_build');
+    ok(o && o.ext === 'mp4' && $('#txb').classList.contains('hidden'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }) + ' / ' + $('#txb-msg').textContent);
+    const v = document.createElement('video'); v.muted = true; v.src = 'data:video/mp4;base64,' + o.data;
+    const err = await new Promise(r => { v.onloadeddata = () => r(''); v.onerror = () => r('error ' + v.error?.message); });
+    ok(!err && v.videoWidth === 1440 && v.videoHeight === 720 && Math.abs(v.duration - .6) < .15, `the mp4: ${err} ${v.videoWidth}x${v.videoHeight} ${v.duration} s`);
+    STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+  });
+
   test('OpenRGB: a board whose connectors have 0 LEDs says it needs setup, even switched off, and opens its LED counts', async () => {
     await fresh();
     STATE.ext.devs.push({ id: 15, kind: 'openrgb', title: 'OpenRGB', name: 'X870E', host: '127.0.0.1', sub: 5, leds: 0, per_led: 1, online: 0, enabled: 0, type: 'board', info: 'OpenRGB · set the LEDs on its connectors', zones: 'Addressable RGB Header 1:0:0:120|Addressable RGB Header 2:0:0:120' });

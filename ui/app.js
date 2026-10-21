@@ -3353,6 +3353,36 @@ function txbLayers() {
   $('#txb-text').disabled = $('#txb-pic').disabled = B.layers.length >= 8;
 }
 const txbSel = i => { TXB.sel = i; $('#txb-layers').querySelectorAll('.txb-layer').forEach(r => r.classList.toggle('on', +r.dataset.i === i)); };
+// the smallest mp4 a player takes: one H.264 track (WebCodecs chunks in avc form, avcc = its avcC), moov first, one chunk in mdat
+function txbMp4(w, h, avcc, chunks) {
+  const T = 90000, u32 = v => [v >>> 24 & 255, v >>> 16 & 255, v >>> 8 & 255, v & 255], u16 = v => [v >>> 8 & 255, v & 255];
+  const box = (type, ...p) => { const b = p.flat(Infinity); return [...u32(b.length + 8), ...[...type].map(ch => ch.charCodeAt(0)), ...b]; };
+  const z = k => new Array(k).fill(0), matrix = [u32(0x10000), z(12), u32(0x10000), z(12), u32(0x40000000)];
+  const at = chunks.map(c => Math.round(c.t * T / 1e6)), d = at.map((v, i) => i + 1 < at.length ? Math.max(1, at[i + 1] - v) : T / 30);
+  const D = d.reduce((a, v) => a + v, 0), size = chunks.reduce((a, c) => a + c.b.length, 0);
+  const ftyp = box('ftyp', [...'isom'].map(ch => ch.charCodeAt(0)), u32(512), [...'isomiso2avc1mp41'].map(ch => ch.charCodeAt(0)));
+  const moov = off => box('moov',
+    box('mvhd', z(12), u32(T), u32(D), u32(0x10000), u16(0x100), z(10), matrix, z(24), u32(2)),
+    box('trak',
+      box('tkhd', u32(3), z(8), u32(1), z(4), u32(D), z(16), matrix, u32(w * 65536), u32(h * 65536)),
+      box('mdia',
+        box('mdhd', z(12), u32(T), u32(D), u16(0x55c4), z(2)),
+        box('hdlr', z(8), [...'vide'].map(ch => ch.charCodeAt(0)), z(12), [...'VideoHandler'].map(ch => ch.charCodeAt(0)), 0),
+        box('minf',
+          box('vmhd', u32(1), z(8)),
+          box('dinf', box('dref', z(4), u32(1), box('url ', u32(1)))),
+          box('stbl',
+            box('stsd', z(4), u32(1), box('avc1', z(6), u16(1), z(16), u16(w), u16(h), u32(0x480000), u32(0x480000), z(4), u16(1), z(32), u16(24), u16(0xffff), box('avcC', [...avcc]))),
+            box('stts', z(4), u32(d.length), d.map(v => [u32(1), u32(v)])),
+            box('stss', z(4), u32(chunks.filter(c => c.key).length), chunks.map((c, i) => c.key ? u32(i + 1) : [])),
+            box('stsc', z(4), u32(1), u32(1), u32(chunks.length), u32(1)),
+            box('stsz', z(4), z(4), u32(chunks.length), chunks.map(c => u32(c.b.length))),
+            box('stco', z(4), u32(1), u32(off)))))));
+  const head = ftyp.concat(moov(ftyp.length + moov(0).length + 8), u32(size + 8), [...'mdat'].map(ch => ch.charCodeAt(0)));
+  const out = new Uint8Array(head.length + size); out.set(head); let p = head.length;
+  for (const c of chunks) { out.set(c.b, p); p += c.b.length; }
+  return out;
+}
 async function txbMake() {
   const B = TXB, s = B.src, [w0, h0] = TXB_SHAPES[B.shape], vid = !!(s && s.dur), msg = $('#txb-msg');
   const c = document.createElement('canvas'); c.width = vid ? w0 : w0 * 1.5; c.height = vid ? h0 : h0 * 1.5;
@@ -3362,24 +3392,35 @@ async function txbMake() {
     let blob;
     if (!vid) { txbDraw(c, 0); blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .9)); }
     else {
-      const mime = ['video/mp4;codecs=avc1.42E01F', 'video/mp4;codecs=avc1', 'video/mp4'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
-      if (!mime) throw t('txb.novideo');
-      if (s.el) { s.el.loop = false; s.el.pause(); s.el.currentTime = 0; await new Promise(r => { s.el.onseeked = r; }); }
-      txbDraw(c, 0);
-      const rec = new MediaRecorder(c.captureStream(30), { mimeType: mime, videoBitsPerSecond: 2e6 }), parts = [];
-      rec.ondataavailable = e => e.data.size && parts.push(e.data);
-      const stopped = new Promise(r => { rec.onstop = r; });
-      rec.start(); if (s.el) await s.el.play();
-      const t0 = performance.now();
-      // in real time: the recorder takes the canvas as it changes (a hidden window slows the frames down)
+      // WebCodecs, the software encoder first: MediaRecorder's mp4 came out empty on some PCs (its hardware encoder failing quietly)
+      const base = { width: c.width, height: c.height, bitrate: 2e6, framerate: 30, avc: { format: 'avc' } };
+      let cfg = null;
+      for (const o of [{ codec: 'avc1.42E028', hardwareAcceleration: 'prefer-software' }, { codec: 'avc1.42E028' }, { codec: 'avc1.42E01F' }])
+        if (!cfg && window.VideoEncoder && (await VideoEncoder.isConfigSupported({ ...base, ...o }).catch(() => ({}))).supported) cfg = { ...base, ...o };
+      if (!cfg) throw t('txb.novideo');
+      const chunks = []; let desc = null, err = null;
+      const enc = new VideoEncoder({ error: e => { err = e; }, output: (ch, meta) => {
+        const d = meta?.decoderConfig?.description; if (d) desc = new Uint8Array(ArrayBuffer.isView(d) ? d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength) : d.slice(0));
+        const b = new Uint8Array(ch.byteLength); ch.copyTo(b); chunks.push({ b, t: ch.timestamp, key: ch.type === 'key' });
+      } });
+      enc.configure(cfg);
+      if (s.el) { s.el.loop = false; s.el.pause(); s.el.currentTime = 0; await new Promise(r => { s.el.onseeked = r; }); await s.el.play(); }
+      const t0 = performance.now(); let last = -1, n = 0;
+      // in real time, at most 30 frames a second (a hidden window slows the frames down)
       await new Promise(r => { const step = () => {
         const tt = s.el ? s.el.currentTime : (performance.now() - t0) / 1000;
-        if (tt >= s.dur || s.el?.ended) return r();
-        txbDraw(c, tt); msg.textContent = t('txb.rec', Math.round(tt / s.dur * 100)); requestAnimationFrame(step);
+        if (tt >= s.dur || s.el?.ended || err) return r();
+        if (tt - last >= 1 / 32 && enc.encodeQueueSize < 8) {
+          txbDraw(c, tt); last = tt;
+          const f = new VideoFrame(c, { timestamp: Math.round(tt * 1e6) }); enc.encode(f, { keyFrame: n++ % 60 === 0 }); f.close();
+        }
+        msg.textContent = t('txb.rec', Math.round(tt / s.dur * 100)); requestAnimationFrame(step);
       }; step(); });
-      rec.stop(); await stopped;
+      if (!err) await enc.flush().catch(e => { err = e; });
+      if (enc.state !== 'closed') enc.close();
       if (s.el) { s.el.loop = true; s.el.play().catch(() => {}); }
-      blob = new Blob(parts, { type: 'video/mp4' });
+      if (err || !desc || !chunks.length) throw t('txb.fail', err?.message || 'no video frames');
+      blob = new Blob([txbMp4(c.width, c.height, desc, chunks)], { type: 'video/mp4' });
     }
     if (blob.size > 16 << 20) throw t('txb.big');
     const data = await new Promise((r, no) => { const f = new FileReader(); f.onload = () => r(f.result.slice(f.result.indexOf(',') + 1)); f.onerror = no; f.readAsDataURL(blob); });
