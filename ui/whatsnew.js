@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.44',
+    en: ['A new Home page: the panel with all your devices now lives there, and the Effects page keeps only effects and presets.', 'Fans and pumps can be added to the Home panel as tiles (the menu on the panel, Fans); a click on one opens its settings right there.', 'A new picture for the TRYX screen and for pumps; the pump impeller turns as it runs.'],
+    ru: ['Новая Главная страница: панель со всеми устройствами теперь на ней, а на странице эффектов остались только эффекты и пресеты.', 'Вентиляторы и помпы можно добавить на панель Главной плиткой (меню панели, «Вентиляторы»); клик по плитке сразу открывает её настройки.', 'Новая картинка для экрана TRYX и для помп; крыльчатка помпы крутится, пока она работает.'],
+    fr: ['Une nouvelle page Accueil : le panneau avec tous vos appareils y est désormais, et la page Effets ne garde que les effets et les préréglages.', 'Les ventilateurs et les pompes peuvent être ajoutés au panneau de l’Accueil en tuiles (le menu du panneau, Ventilateurs) ; un clic sur une tuile ouvre ses réglages sur place.', 'Une nouvelle image pour l’écran TRYX et pour les pompes ; la turbine de la pompe tourne pendant qu’elle marche.'] },
   { v: '0.4.43',
     en: ['TRYX PANORAMA: videos made in the builder are no longer empty on some PCs; if a video still cannot be made, the builder stays open and says why.'],
     ru: ['TRYX PANORAMA: видео из конструктора больше не получаются пустыми на некоторых ПК; если видео всё же не сделать, конструктор остаётся открытым и объясняет почему.'],
