@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.43',
+    en: ['TRYX PANORAMA: videos made in the builder are no longer empty on some PCs; if a video still cannot be made, the builder stays open and says why.'],
+    ru: ['TRYX PANORAMA: видео из конструктора больше не получаются пустыми на некоторых ПК; если видео всё же не сделать, конструктор остаётся открытым и объясняет почему.'],
+    fr: ['TRYX PANORAMA : les vidéos faites dans l’éditeur ne sont plus vides sur certains PC ; si une vidéo ne peut toujours pas être faite, l’éditeur reste ouvert et dit pourquoi.'] },
   { v: '0.4.42',
     en: ['TRYX PANORAMA: choosing a file for the screen opens the builder right away, to crop it; a video is made small enough for the screen (up to 16 MB and 30 seconds). The SE gets its 2:1 shape.', 'TRYX PANORAMA: when adb is on the PC (winget install Google.PlatformTools), the file is copied to the screen with it, which is how the screen takes it best; without adb it still goes over the USB port.', 'The TRYX cooler is drawn as a screen on the Effects page, not as a fan.'],
     ru: ['TRYX PANORAMA: выбор файла для экрана сразу открывает конструктор, чтобы его обрезать; видео ужимается под экран (до 16 МБ и 30 секунд). У SE своя форма 2:1.', 'TRYX PANORAMA: если на ПК есть adb (winget install Google.PlatformTools), файл копируется на экран через него, так экран принимает его лучше всего; без adb он, как раньше, идёт через USB-порт.', 'Кулер TRYX на странице эффектов нарисован экраном, а не вентилятором.'],
