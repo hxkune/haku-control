@@ -233,6 +233,12 @@
         <!-- once haku lights something here the rest folds away; what needs a step stays in the list above -->
         <details class="trouble hidden" id="hw-more"><summary></summary><div class="found hw-list" id="hw-rest"></div></details>
       </div>
+      <!-- other lighting programs holding controllers (conflicts.c): close one now or each time it starts, rather than remove it -->
+      <div class="card pc-more hidden" id="cf-card">
+        <div class="card-head"><div><h3 data-i18n="cf.title">Programs in the way</h3><p class="muted" id="cf-status" role="status"></p></div></div>
+        <p class="note" data-i18n="cf.note"></p>
+        <div class="found" id="cf-list"></div>
+      </div>
       <!-- graphics cards, other boards, RAM, coolers: through OpenRGB on this PC -->
       <div class="card pc-more">
         <div class="card-head">

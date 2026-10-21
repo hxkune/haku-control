@@ -3517,6 +3517,31 @@ $('#ll-list').addEventListener('change', e => {
   setCfg('fans', 'll_' + s.dataset.mac.replace(/:/g, ''), s.value); s.blur();
 });
 $('#link-on').addEventListener('change', e => { setCfg('link', 'on', e.target.checked ? '1' : '0'); updateLink(); });
+// ---- other lighting programs holding controllers (conflicts.c): close one now, each time it starts ([conflicts] stop),
+// or remove it in Windows' Installed apps
+const cfStop = () => cv('conflicts', 'stop', '').split(/[, ]+/).filter(Boolean);
+function updateConflicts() {
+  const C = S.cf || {}, a = C.a || [], stop = cfStop(), n = a.filter(x => x.run).length;
+  $('#cf-card').classList.toggle('hidden', !a.length);
+  $('#cf-status').textContent = n ? t('cf.st.run', n) : t('cf.st.idle');
+  const html = a.map(x => `<div class="found-row" data-id="${esc(x.id)}"><span class="kind">${t('cf.w.' + x.w)}</span>
+    <div class="what"><b>${esc(x.name)}</b><small>${t(C.busy === x.id ? 'cf.busy' : x.fail ? 'cf.fail' : x.run ? 'cf.run' : 'cf.inst')}</small></div>
+    <span class="added cf-act pc-only">${x.run && !C.busy ? `<button class="btn small" type="button" data-act="close"><span>${t('cf.close')}</span></button>` : ''}
+      <label class="check" title="${esc(t('cf.auto.t'))}"><input type="checkbox" data-act="auto"${stop.includes(x.id) ? ' checked' : ''}><span></span><em>${t('cf.auto')}</em></label>
+      ${x.inst ? `<button class="btn small ghost" type="button" data-act="del" title="${esc(t('cf.del.t'))}"><span>${t('cf.del')}</span></button>` : ''}</span></div>`).join('');
+  const list = $('#cf-list');
+  if (list.dataset.html !== html) { list.dataset.html = html; list.innerHTML = html; }
+}
+$('#cf-list').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  if (b.dataset.act === 'close') send({ cmd: 'cf_close', id: b.closest('[data-id]').dataset.id });
+  else send({ cmd: 'open', what: 'apps' });
+});
+$('#cf-list').addEventListener('change', e => {
+  const c = e.target.closest('input[data-act="auto"]'); if (!c) return;
+  const id = c.closest('[data-id]').dataset.id, s = cfStop().filter(x => x !== id);
+  setCfg('conflicts', 'stop', (c.checked ? s.concat(id) : s).join(',')); updateConflicts();
+});
 // ---- lighting in this PC: what haku found (hw, from hwinfo.c) and which way each is lit: by haku itself, through
 // OpenRGB (found there, added or not), OpenRGB still to set up, PawnIO missing, or nothing known
 const HW_KEYS = {   // USB maker -> words its OpenRGB controllers carry in their names
@@ -4172,6 +4197,7 @@ function updateChips() {
   }
   updateOrgb();
   updateLink();
+  updateConflicts();
   updateLL();
   updateHw();
   if (S.effect === 'screen') updateScreen();

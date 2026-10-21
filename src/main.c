@@ -1110,6 +1110,8 @@ static int status_body(char *out, int cap) {
     n += ll_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"link\":");
     n += link_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"cf\":");
+    n += conflicts_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"mqtt\":");
     n += mqtt_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"remote\":");
@@ -1253,7 +1255,10 @@ void app_open(const char *what) {
     else if (!strcmp(what, "openrgb")) ShellExecuteW(NULL, L"open", L"https://openrgb.org", NULL, NULL, SW_SHOWNORMAL);
     else if (!strcmp(what, "pawnio")) pawnio_setup();
     else if (!strcmp(what, "pro")) pro_buy();
+    else if (!strcmp(what, "apps")) ShellExecuteW(NULL, L"open", L"ms-settings:appsfeatures", NULL, NULL, SW_SHOWNORMAL);   // Installed apps
 }
+
+void app_reopen_devices(void) { InterlockedExchange(&need_reinit, 1); }
 
 int app_remote_cmd(const char *json) {
     DWORD_PTR r = 0;
@@ -1411,7 +1416,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER:
         if (wp == SAVE_TIMER) { KillTimer(h, SAVE_TIMER); cfg_save_if_dirty(); }
-        if (wp == AUTO_TIMER) { if (!auto_paused()) auto_tick(); sched_tick(); }
+        if (wp == AUTO_TIMER) { if (!auto_paused()) auto_tick(); sched_tick(); conflicts_tick(); }
         return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: swap the tray icon

@@ -211,6 +211,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "scan") { ext_scan(); orgb_check_start(); post_status(); }
     else if (cmd == "orgb_check") { orgb_check_start(); post_status(); }
     else if (cmd == "hw_scan") { hw_scan_start(); orgb_check_start(); post_status(); }
+    else if (cmd == "cf_close") { conflicts_close(field(js, "id").c_str()); post_status(); }   // not in remote_allowed: ends programs on this PC
     else if (cmd == "ai_setup") { ollama_setup(); post_status(); }
     else if (cmd == "theme") title_bar(field(js, "v").c_str());
     else if (cmd == "orgb_setup") { orgbapp_setup(); post_status(); }
@@ -472,7 +473,7 @@ static bool remote_allowed(const std::string &js) {
     std::string s = field(js, "s"), k = field(js, "k");
     // plain names only: a space, "=" or "]" would write a different ini line than the one checked
     for (char c : s + k) if (!isalnum((unsigned char)c) && c != '.' && c != '_' && c != '-') return false;
-    return !s.empty() && !k.empty() && _stricmp(s.c_str(), "remote") && _stricmp(s.c_str(), "mqtt") && _stricmp(s.c_str(), "fans") && _stricmp(s.c_str(), "link") &&
+    return !s.empty() && !k.empty() && _stricmp(s.c_str(), "remote") && _stricmp(s.c_str(), "mqtt") && _stricmp(s.c_str(), "fans") && _stricmp(s.c_str(), "link") && _stricmp(s.c_str(), "conflicts") &&
            !(!_stricmp(s.c_str(), "openrgb") && !_stricmp(k.c_str(), "path")) && !(!_stricmp(s.c_str(), "mood") && !_stricmp(k.c_str(), "ollama_path")) &&
            !(!_strnicmp(s.c_str(), "dev.", 4) && !_strnicmp(k.c_str(), "media", 5));   // a file on this PC for the TRYX screen
 }

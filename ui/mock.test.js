@@ -247,6 +247,25 @@
     setCfg('link', 'on', '0'); S.link = K; updateLink();
   });
 
+  test('programs in the way: Close while it runs, Each time into [conflicts] stop, Remove opens Installed apps', async () => {
+    await fresh();
+    const rows = () => [...$('#cf-list').children], btn = (r, a) => r.querySelector(`[data-act="${a}"]`);
+    ok(!$('#cf-card').classList.contains('hidden') && rows().length === 2 && $('#cf-status').textContent === t('cf.st.run', 1), 'card, rows or status');
+    ok(btn(rows()[0], 'close') && !btn(rows()[1], 'close') && btn(rows()[1], 'del'), 'Close only on the running one, Remove on the installed one');
+    btn(rows()[1], 'auto').click(); await wait(20);
+    ok(cv('conflicts', 'stop', '') === 'icue' && btn(rows()[1], 'auto').checked, 'Each time did not reach the settings');
+    btn(rows()[0], 'auto').click(); btn(rows()[1], 'auto').click(); await wait(20);
+    ok(cv('conflicts', 'stop', '') === 'armoury', 'the list kept the wrong ones: ' + cv('conflicts', 'stop', ''));
+    btn(rows()[0], 'close').click(); await wait(60);
+    ok(rows()[0].textContent.includes(t('cf.busy')) && !btn(rows()[0], 'close'), 'no Closing state');
+    await wait(700);
+    ok(rows()[0].textContent.includes(t('cf.inst')) && $('#cf-status').textContent === t('cf.st.idle'), 'not closed after the core said so');
+    setCfg('conflicts', 'stop', '');
+    const a = S.cf; S.cf = { busy: '', a: [] }; updateConflicts();
+    ok($('#cf-card').classList.contains('hidden'), 'shown with nothing in the way');
+    S.cf = a; updateConflicts();
+  });
+
   test('the offline list: the chip is a button, each name opens its device card, Esc goes back to the chip', async () => {
     await fresh();
     showTab('effects'); updateChips();

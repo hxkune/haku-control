@@ -792,6 +792,7 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .found-row .what b { display: block; font-weight: 600; }
 .found-row .what small { color: var(--muted); font-size: 12px; }
 .found-row .added { color: var(--muted); font-size: 12px; }
+.found-row .cf-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
 .manual { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
 .manual summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; }
 .manual summary::before { content: '+'; display: inline-block; width: 16px; }

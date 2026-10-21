@@ -288,6 +288,11 @@ int   orgb_json(char *out, int cap);
 int   hw_inventory(char *out, int cap);  // the PC hardware as text lines, for the diagnostics (hwinfo.c)
 void  hw_scan_start(void);              // the PC's lighting hardware, as a list for the window (in the background)
 int   hw_scan_json(char *out, int cap);  // "hw":{...}
+// other lighting programs holding controllers (conflicts.c): listed for the PC page, closed on a click or by [conflicts] stop
+void  conflicts_tick(void);             // every 3 s on the window thread
+void  conflicts_close(const char *id);  // in the background; the PC window only
+int   conflicts_json(char *out, int cap);
+void  app_reopen_devices(void);         // the PC's own controllers are opened again (main.c), as after sleep
 // haku Pro (pro/license.c in the paid build, src/pro_free.c in the open one): the lights on Wi-Fi / the network
 // and phone control run with a key or during the trial; the PC's own hardware and USB devices always do.
 void  pro_start(void);
