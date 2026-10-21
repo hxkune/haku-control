@@ -168,9 +168,21 @@
     ok(S.ext.devs.every(d => names.includes(d.name)), 'device switches not named after them: ' + names);
   });
 
+  test('a fan added on Home is a tile there: it opens the fan in the sheet, and the groups never list it', async () => {
+    await fresh();
+    showTab('home');
+    const f = fanWidgets()[0];
+    ok(f && !heroItems().some(it => it.k === 'fan'), 'a fan is on Home before it was added');
+    setCfg('ui', 'hero_fans', f.key); setCfg('ui', 'hero_order', f.key); drawHero();   // first: the compact preview shows one row
+    ok(heroItems().some(it => it.key === f.key) && !heroItems(true).some(it => it.k === 'fan'), 'the fan tile is missing, or the groups list it');
+    [...$$('#hero-keys button')].find(b => b.getAttribute('aria-label') === f.name).click(); await wait(60);
+    ok(SHEET.kind === 'fan' && $('#sheet #fan-set') && tab === 'home', 'the fan did not open in the sheet on Home');
+    closeSheet(); setCfg('ui', 'hero_fans', ''); setCfg('ui', 'hero_order', '');
+  });
+
   test('the pencil opens the profile in its own panel: the menu closes, Enter keeps a new name, Esc keeps the old one', async () => {
     await fresh();
-    showTab('effects');   // the profile button lives here: focus comes back to it
+    showTab('home');   // the profile button lives here: focus comes back to it
     const name = cv('profile.2', 'name', '');
     profMenu(true); $('#prof-list .prof-row[data-id="2"] .prof-ren').click(); await wait(40);
     ok($('#prof-menu').classList.contains('hidden'), 'the menu stayed open');
@@ -268,7 +280,7 @@
 
   test('the offline list: the chip is a button, each name opens its device card, Esc goes back to the chip', async () => {
     await fresh();
-    showTab('effects'); updateChips();
+    showTab('home'); updateChips();
     const c = $('#chips .chip.has-off');
     ok(c && c.tagName === 'BUTTON', 'no offline chip, or not a button');
     c.focus(); c.click(); await wait(20);
@@ -333,7 +345,7 @@
   };
   const fanSheetOf = async i => { $(`#fan-panel [data-f="${i}"]`).click(); await wait(120); };
 
-  test('fans: a card looks like its fan: picked in its settings, shared by a group, a pump round; iCUE LINK and Lian Li on their own', async () => {
+  test('fans: a card looks like its fan: picked in its settings, shared by a group, a pump its own; iCUE LINK and Lian Li on their own', async () => {
     await fresh(); await fanReset();
     const ic = i => $(`#fan-panel [data-f="${i}"] .fanic`), lit = el => el.querySelectorAll('.fi-lit > *').length;
     ok(ic(0) && !lit(ic(0)), 'a plain fan by default');
@@ -342,7 +354,7 @@
     $('#fs-look [data-v="inf"]').click(); await wait(60);
     ok(STATE.cfg.fans.fan1_look === 'inf' && lit(ic(0)) === 3 && $('#fs-look [data-v="inf"]').getAttribute('aria-pressed') === 'true', 'picked: ' + STATE.cfg.fans.fan1_look);
     $('#fs-kind [data-v="pump"]').click(); await wait(60);
-    ok($('#fs-look-f').classList.contains('hidden') && ic(0).querySelector('circle.fi-fr'), 'a pump: round, no picker');
+    ok($('#fs-look-f').classList.contains('hidden') && ic(0).innerHTML.includes(PUMP_BLADE) && !ic(0).querySelector('.fi-bl'), 'a pump: its block and impeller, no picker');
     setCfg('fans', 'fan1_kind', ''); setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,2'); setCfg('fans', 'fan2_look', 'inf'); FAN.sig = ''; updateFans();
     ok(lit($('#fan-panel [data-g="1"] .fanic')) === 3, 'a group of the same look shows it');
     setCfg('fans', 'fan2_look', 'sl'); FAN.sig = ''; updateFans();

@@ -13,7 +13,7 @@ const send = o => wv && wv.postMessage(JSON.stringify(o));
 const fxName = id => t('fx.' + id);
 // the ARGB header zone can be given its own name (e.g. "Water block")
 const stripName = () => cv('layout', 'strip_name', '') || t('pc.block');
-const TABS = ['effects', 'pc', 'nano', 'bulbs', 'devices', 'settings'];
+const TABS = ['home', 'effects', 'pc', 'nano', 'bulbs', 'devices', 'settings'];
 const HOTKEYS = ['next', 'prev', 'off', 'brighter', 'dimmer', 'profile'];
 const PRESETS = ['#FF0000', '#FF5A00', '#FFA000', '#FFE000', '#9DFF00', '#00FF6A', '#00FFD5', '#00C8FF',
   '#0068FF', '#2B2BFF', '#7A3CFF', '#B400FF', '#FF00D4', '#FF2D95', '#FFB070', '#FFFFFF'];
@@ -34,7 +34,7 @@ const nanoSec = slot => slot > 1 ? 'nanoleaf' + slot : 'nanoleaf';
 const nanoZone = slot => 'zone.' + nanoSec(slot);
 const nanoKey = slot => nanoSec(slot) + '_enabled';
 const nanoName = c => (c && c.name) || 'Nanoleaf';
-let tab = 'effects';
+let tab = 'home';
 const SHEET = { kind: null, moved: [], page: '' };   // the open device sheet (see openSheet)
 let dragging = false;
 
@@ -1980,6 +1980,9 @@ function drawMouse(c, cols, glow, px) {   // px: one device pixel in this space
 }
 
 // One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
+// the TRYX screen is a picture: tryx.svg when on, tryx-off.svg when off
+const TRYX_IMG = Object.fromEntries([['on', 'tryx.svg'], ['off', 'tryx-off.svg']].map(([k, src]) =>
+  [k, Object.assign(new Image(), { src, onload: () => { if (typeof tab !== 'undefined' && tab === 'home') drawHero(); } })]));
 function drawFixture(c, X, Y, W, H, type, cols, on) {
   const dp = devicePixelRatio, n = cols.length, cx = X + W / 2, cy = Y + H / 2;
   const col = i => (on && cols[i]) || OFF, glow = on ? avgColor(cols) : null;
@@ -2063,14 +2066,9 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
     c.restore();
     for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; line([[cx + Math.cos(a) * r * 0.26, cy + Math.sin(a) * r * 0.26], [cx + Math.cos(a + .55) * r * 0.78, cy + Math.sin(a + .55) * r * 0.78]], .1); }
     c.beginPath(); c.arc(cx, cy, r * 0.24, 0, 7); c.fillStyle = BODY; c.fill(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
-  } else if (type === 'screen') {   // a display in its bezel (the TRYX cooler's 2:1 panel), lit by the colours
-    const sw = Math.min(W * 0.86, H * 0.78 * 2), sh = sw / 2, x = cx - sw / 2, y = cy - sh / 2, b = Math.max(2 * dp, sh * 0.06);
-    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; } box(x, y, sw, sh, DEEP); c.restore();
-    box(x, y, sw, sh, DEEP);
-    const g = c.createLinearGradient(x, 0, x + sw, 0), ks = all();
-    ks.forEach((k, i) => g.addColorStop(i / (ks.length - 1), k));
-    c.globalAlpha = on ? .85 : 1; c.fillStyle = on ? g : OFF; c.fillRect(x + b, y + b, sw - 2 * b, sh - 2 * b); c.globalAlpha = 1;
-    line([[x + b + sw * .08, y + b + sh * .12], [x + b + sw * .3, y + b + sh * .12]], .18);
+  } else if (type === 'screen') {   // the TRYX cooler: its screen picture
+    const im = on ? TRYX_IMG.on : TRYX_IMG.off, r = im.naturalWidth / im.naturalHeight || 200 / 175, w = Math.min(W, H * r), h = w / r;
+    if (im.complete && im.naturalWidth) c.drawImage(im, cx - w / 2, cy - h / 2, w, h);
   } else if (type === 'keyboard') {   // a keyboard: rows of keys at their real widths, lit by their LEDs
     const w = Math.min(W * 0.95, H * 2.9), h = w * 0.36, x = cx - w / 2, y = cy - h / 2, p = w * 0.025;
     c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; } box(x, y, w, h, DEEP); c.restore();
@@ -2180,7 +2178,7 @@ function heroAnim(key, target) {
 // controller, each bulb, each LAN device), laid out in rows; a row that is full wraps to the next one. Full rows
 // stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
 // animates the height) and tiles glide to their new places when something is added or removed.
-const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1, gate: 1.2, frame: 1.4, screen: 1.6 };
+const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1, gate: 1.2, frame: 1.4, screen: 1.2 };
 function heroItems(all) {
   const hide = all ? [] : heroHidden(), items = [];
   if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
@@ -2199,6 +2197,10 @@ function heroItems(all) {
     items.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, zone: 'zone.dev' + dv.id, name: dv.name,
       w: HERO_EXT_W[ty] || Math.min(2.4, .55 + .35 * Math.max(1, dv.leds || 1)), draw: (c, x, y, w, h) => drawExt(c, x, y, w, h, k) });
   });
+  // fans only when added from the menu; all === 'any' (the drag order) takes them in too, the groups' lists do not
+  const fans = heroFans();
+  if (!all || all === 'any') fanWidgets().forEach(f => (all || fans.includes(f.key)) && items.push({ key: f.key, k: 'fan', fan: f, w: 1, name: f.name,
+    draw: (c, x, y, w, h) => drawFanTile(c, x, y, w, h, f) }));
   // the order the user chose by dragging ([ui] hero_order); devices not in it keep their places after those that are
   const ord = cv('ui', 'hero_order', '').split(',').filter(Boolean);
   if (ord.length) {
@@ -2209,7 +2211,7 @@ function heroItems(all) {
 }
 // two devices swap their places in the preview
 function heroMove(key, toKey) {
-  const keys = heroItems(true).map(it => it.key), from = keys.indexOf(key), to = keys.indexOf(toKey);
+  const keys = heroItems('any').map(it => it.key), from = keys.indexOf(key), to = keys.indexOf(toKey);
   if (from < 0 || to < 0 || from === to) return;
   [keys[from], keys[to]] = [keys[to], keys[from]];
   setCfg('ui', 'hero_order', keys.join(','));
@@ -2280,7 +2282,7 @@ function heroLayout(W) {
   return { tiles, frames, height: rows.length ? y : (phone ? 150 : 180), first: rows.length ? P + rowH[0] + G : 0, rows: rows.length };
 }
 function heroHeight() {
-  const el = $('#tab-effects .hero'), bar = $('#arrange-bar');
+  const el = $('#tab-home .hero'), bar = $('#arrange-bar');
   bar.classList.toggle('hidden', !HERO.arrange);
   const L = heroLayout($('#hero').clientWidth || el.clientWidth), more = $('#hero-more');
   // compact: only the first row, unless asked for all of it (or being arranged)
@@ -2376,7 +2378,7 @@ function drawHero() {
     }
     const cut = tileLabel(c, it.name, x + 8 * d, y + h - 12 * d, w - 16 * d, hot);
     c.restore();
-    hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, zone: it.zone, name: it.name, cut, group: T.group || 0, x, y, w, h });
+    hits.push({ key: it.key, k: it.k, i: it.i, id: it.id, slot: it.slot, zone: it.zone, fan: it.fan, name: it.name, cut, group: T.group || 0, x, y, w, h });
   }
   hits.push(...ghits);   // a device in a group is found before its group
   for (const k of Object.keys(HERO.pos)) if (!seen.has(k)) { delete HERO.pos[k]; delete HERO.anim['a:' + k]; }
@@ -2399,12 +2401,12 @@ function drawHero() {
     c.fillStyle = THEME.hi; c.fillText(s, px + 10 * d, py + 1 * d);
     c.restore();
   }
-  if (HERO.moving && !HERO.raf) HERO.raf = requestAnimationFrame(() => { HERO.raf = 0; if (tab === 'effects') drawHero(); });
+  if (HERO.moving && !HERO.raf) HERO.raf = requestAnimationFrame(() => { HERO.raf = 0; if (tab === 'home') drawHero(); });
 }
 // the preview's devices as real buttons over the canvas, so Tab and a screen reader reach them (the mouse stays on the canvas)
 function heroKeys(hits) {
   const box = $('#hero-keys'), cvs = $('#hero'), ox = cvs.offsetLeft, oy = cvs.offsetTop, d = devicePixelRatio, id = b => b.dataset.i + (b.hasAttribute('data-pw') ? 'p' : '');
-  const vis = +$('#tab-effects .hero').dataset.h || 1e9, shown = h => oy + h.y / d < vis - 2;   // a folded preview: the rows below the fold are not there for Tab either
+  const vis = +$('#tab-home .hero').dataset.h || 1e9, shown = h => oy + h.y / d < vis - 2;   // a folded preview: the rows below the fold are not there for Tab either
   const sig = HERO.arrange ? '' : ox + ',' + oy + ',' + vis + ';' + hits.map(h => [h.key, h.x, h.y, h.w, h.h, h.pw && h.pw.on].join()).join(';');
   if (box.dataset.sig === sig) return;
   const f = box.contains(document.activeElement) ? id(document.activeElement) : null;
@@ -2419,7 +2421,7 @@ $('#hero-keys').addEventListener('click', e => {
   const b = e.target.closest('button'), h = b && HERO.hits[+b.dataset.i]; if (!h) return;
   if (b.hasAttribute('data-pw')) { togglePower(h); drawHero(); return; }
   const r = b.getBoundingClientRect();
-  if (h.k === 'group') groupDialog(h.g); else openSheet(h, r.left + r.width / 2, r.top + r.height / 2);
+  heroOpen(h, r.left + r.width / 2, r.top + r.height / 2);
   const s = $('#sheet:not(.hidden)'), x = s && s.querySelector('button, input, select'); if (x) x.focus();
 });
 $('#hero-keys').addEventListener('focusin', e => { const h = HERO.hits[+e.target.dataset.i]; if (h) { HERO.hover = h.key; drawHero(); } });
@@ -2430,7 +2432,7 @@ new ResizeObserver(() => {
   if (!w || !h || (cvs.height === Math.round(h * devicePixelRatio) && cvs.width === Math.round(w * devicePixelRatio))) return;
   cvs.style.height = h + 'px'; cvs.width = w * devicePixelRatio; cvs.height = h * devicePixelRatio;
   drawHero();
-}).observe($('#tab-effects .hero'));
+}).observe($('#tab-home .hero'));
 const heroXY = e => { const r = $('#hero').getBoundingClientRect(), d = devicePixelRatio; return [(e.clientX - r.left) * d, (e.clientY - r.top) * d]; };
 const heroHit = e => {
   const [px, py] = heroXY(e);
@@ -2442,8 +2444,8 @@ const heroOnPower = (h, e) => { if (!h || !h.pw) return false; const [px, py] = 
 // frame: out of the group.
 function heroDropTarget(e) {
   const [px, py] = heroXY(e), src = HERO.drag.src, inside = h => px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h;
-  const tile = HERO.hits.find(h => h.zone && h.key !== src.key && inside(h));
-  if (HERO.arrange) return tile ? { tile, key: tile.key, swap: true } : null;   // arranging: only swaps
+  const tile = HERO.hits.find(h => (h.zone || h.fan) && h.key !== src.key && inside(h));
+  if (HERO.arrange || src.fan || (tile && tile.fan)) return tile ? { tile, key: tile.key, swap: true } : null;   // arranging, or a fan: only swaps (a fan is in no group)
   if (tile) return tile.group ? (tile.group === src.group ? null : { group: tile.group, key: 'g' + tile.group }) : { tile, key: tile.key };
   const fr = HERO.hits.find(h => h.k === 'group' && inside(h));
   if (fr) return fr.g === src.group ? null : { group: fr.g, key: fr.key };
@@ -2464,7 +2466,7 @@ function heroDrop(d) {
 $('#hero').addEventListener('pointerdown', e => {
   if (e.button !== 0 || e.pointerType === 'touch') return;
   const h = heroHit(e);
-  HERO.press = h && h.zone && !heroOnPower(h, e) ? { h, x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+  HERO.press = h && (h.zone || h.fan) && !heroOnPower(h, e) ? { h, x: e.clientX, y: e.clientY, id: e.pointerId } : null;
 });
 $('#hero').addEventListener('pointermove', e => {
   const P = HERO.press;
@@ -2501,9 +2503,14 @@ $('#hero').addEventListener('click', e => {
   const h = heroHit(e);
   if (!h) return;
   if (heroOnPower(h, e)) { togglePower(h); drawHero(); }
-  else if (h.k === 'group') groupDialog(h.g);
-  else openSheet(h, e.clientX, e.clientY);
+  else heroOpen(h, e.clientX, e.clientY);
 });
+// a tile opens its settings in the sheet: a group its window, a fan (or fan group) its curve and limits
+function heroOpen(h, cx, cy) {
+  if (h.k === 'group') return groupDialog(h.g);
+  if (h.k !== 'fan') return openSheet(h, cx, cy);
+  fanOpen(h.fan.g ? { g: h.fan.g } : { i: h.fan.i }, { getBoundingClientRect: () => new DOMRect(cx, cy, 0, 0) });
+}
 
 // ---- one power button per device in the preview: memory, the ARGB strip, each Nanoleaf controller, each bulb,
 // each LAN device. The same switches as on their own pages ([layout] ..._enabled, [dev.N] enabled).
@@ -2567,7 +2574,7 @@ function sheetCards(h) {
   if (h.k === 'ext') { const d = S.ext.devs.find(x => x.id === h.id); return [[$(`#dev-st-${h.id}`)?.closest('.card')], d ? brandTab(d) : 'devices']; }
   if (h.k === 'add') return [[], 'devices'];
   if (h.k === 'fx') return [[$('.fx-side')], 'effects'];
-  if (h.k === 'prof') return [[$('#prof-panel')], 'effects'];
+  if (h.k === 'prof') return [[$('#prof-panel')], 'home'];
   if (h.k === 'fan') return [[$('#fan-set')], 'fans'];
   return [[], ''];
 }
@@ -2649,9 +2656,11 @@ function heroMenuEntries() {
   return out;
 }
 function buildHeroMenu() {
-  const hide = heroHidden(), entries = heroMenuEntries();
+  const hide = heroHidden(), entries = heroMenuEntries(), fw = fanWidgets(), on = heroFans();
   $('#hero-menu').innerHTML = `<div class="lbl"><span>${t('hero.show')}</span></div><div class="hero-checks">` +
     entries.map(e => `<label class="check"><input type="checkbox" data-hg="${e.k}" ${hide.includes(e.k) || hide.includes(e.group) ? '' : 'checked'}><span></span><em>${esc(e.name)}</em></label>`).join('') + '</div>' +
+    (fw.length ? `<div class="lbl"><span>${t('nav.fans')}</span></div><div class="hero-checks">` +
+      fw.map(f => `<label class="check"><input type="checkbox" data-hf="${f.key}" ${on.includes(f.key) ? 'checked' : ''}><span></span><em>${esc(f.name)}</em></label>`).join('') + '</div>' : '') +
     `<div class="btn-row"><button class="btn small ghost" id="hero-add"><span>+ ${t('hero.add')}</span></button>` +
     `<button class="btn small ghost" id="hero-group"><span>+ ${t('group.add')}</span></button>` +
     `<button class="btn small ghost" id="hero-arrange"><span>${t('hero.arrange')}</span></button></div><p class="hint">${t('hero.hint')}</p>`;
@@ -2664,6 +2673,10 @@ function buildHeroMenu() {
     if (entries.every(x => h.has(x.k) || h.has(x.group))) { i.checked = true; return; }   // keep at least one
     setCfg('ui', 'hero_hide', [...h].join(','));
     drawHero();
+  }));
+  $$('[data-hf]').forEach(i => i.addEventListener('change', () => {
+    const s = new Set(heroFans()); i.checked ? s.add(i.dataset.hf) : s.delete(i.dataset.hf);
+    setCfg('ui', 'hero_fans', [...s].join(',')); drawHero();
   }));
   $('#hero-add').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); showTab('devices'); send({ cmd: 'scan' }); });
   $('#hero-arrange').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); heroArrange(true); });
@@ -2747,7 +2760,7 @@ function drawCanvas(id, fn) {
 
 function drawAll() {
   const sh = SHEET.kind;   // the device sheet shows live canvases from other tabs
-  if (tab === 'effects') drawHero();
+  if (tab === 'home') drawHero();
   if (tab === 'pc' || sh === 'ram' || sh === 'gpu') { drawCanvas('#live-ram', drawRam); drawCanvas('#live-gpu', drawGpu); }
   if (tab === 'nano' || sh === 'nano') drawCanvas('#live-nano', (c, x, y, w, h) => drawNano(c, x, y, w, h, curNano() || {}));
   if (tab === 'devices' || tab.startsWith('brand-') || sh === 'ext') S.ext.devs.forEach((d, k) => { if (sh === 'ext' || brandTab(d) === tab) drawCanvas('#dev-live-' + d.id, (c, x, y, w, h) => drawExt(c, x, y, w, h, k)); });
@@ -4231,8 +4244,8 @@ function updateChips() {
   if (nL.length) h.push(chipSet('Nanoleaf', nL, OFF_ROW.nano));
   if (S.bulbs.length) h.push(chipSet(t('chip.lamps'), S.bulbs, OFF_ROW.bulb));
   if (ed.length) h.push(chipSet(t('chip.devs'), ed, OFF_ROW.ext));
-  // the full row only above the effects; elsewhere one chip sums it up
-  if (tab !== 'effects' && h.length > 1) {
+  // the full row only on Home; elsewhere one chip sums it up
+  if (tab !== 'home' && h.length > 1) {
     const off = [...offs(nL, OFF_ROW.nano), ...offs(S.bulbs, OFF_ROW.bulb), ...offs(ed, OFF_ROW.ext)];
     const tip = h.map(x => x.replace(/<[^>]+>/g, '')).join('\n');
     $('#chips').innerHTML = chip(off.length ? 'warn' : 'on', `${t(tab === 'fans' ? 'chip.light' : 'chip.ok')} <b>${off.length ? t('chip.off', off.length) : t('chip.allok')}</b>`, off).replace('class="chip', `title="${esc(tip)}" class="chip`);
@@ -4319,12 +4332,21 @@ const fanCh = i => ((S.fans || {}).f || [])[i] || {};
 // what a fan looks like on its card (fans/fan<N>_look, picked by hand: a header only reports rpm): an outline in the
 // page's ink, the parts its lighting sits on brighter. Corsair iCUE LINK and Lian Li wireless groups get theirs on their own
 const FAN_LOOKS = ['', 'ring', 'hub', 'qx', 'sl', 'inf'];
+// the pump: a block with its fittings, the chamber and the impeller (it turns on Home: drawPump)
+const PUMP_BLADE = 'M50 53Q56 39 67 41A19 19 0 0 1 69 50Q58 48 50 53Z';
+const PUMP_SVG = '<rect x="8" y="8" width="84" height="84" rx="18" fill="#141414" stroke="#757575" stroke-width="2.5"/>' +
+  '<rect x="31" y="14" width="12" height="8" rx="2" fill="#6e6e6e"/><rect x="57" y="14" width="12" height="8" rx="2" fill="#6e6e6e"/>' +
+  '<circle cx="50" cy="53" r="31" fill="#1a1a1a" stroke="#666" stroke-width="2"/>' +
+  '<path d="M24 53A26 26 0 0 1 45 27.5M76 53A26 26 0 0 1 55 78.5" stroke="#8c8c8c" stroke-width="2" stroke-linecap="round"/>' +
+  '<circle cx="50" cy="53" r="21" fill="#242424" stroke="#8c8c8c" stroke-width="1.8"/><g fill="#8c8c8c">' +
+  [0, 60, 120, 180, 240, 300].map(a => `<path d="${PUMP_BLADE}" transform="rotate(${a} 50 53)"/>`).join('') +
+  '</g><circle cx="50" cy="53" r="9.5" fill="#b5b5b5" stroke="#d4d4d4" stroke-width="1.8"/>';
 const FAN_BLADES = Array.from({ length: 7 }, (_, k) => `<path transform="rotate(${(k * 360 / 7).toFixed(1)})" d="M-1.5-4.8C-2-10 1-15 6-16.8C9-15.8 11-14.3 12.3-12.3C8.5-9.5 5.5-6.5 3.8-3.3Z"/>`).join('');
 // sl: Lian Li SL has its LEDs down the sides
 function fanIcon(look, pump) {
   const ring = (r, o) => `<circle r="${r}"${o ? ` opacity="${o}"` : ''}/>`, hub = '<circle class="f" r="5"/>', bar = y => `<rect class="f" x="-14" y="${y}" width="28" height="2.4" rx="1.2"/>`;
-  const lit = pump ? ring(11) : { ring: ring(19), hub, qx: ring(18.5) + hub, sl: `<g transform="rotate(90)">${bar(-19.6) + bar(17.2)}</g>`, inf: ring(19) + ring(16.4, .55) + ring(13.8, .3) }[look] || '';
-  const body = pump ? '<circle class="fi-fr" r="20"/><circle class="fi-hub" r="5"/>'
+  const lit = pump ? '' : { ring: ring(19), hub, qx: ring(18.5) + hub, sl: `<g transform="rotate(90)">${bar(-19.6) + bar(17.2)}</g>`, inf: ring(19) + ring(16.4, .55) + ring(13.8, .3) }[look] || '';
+  const body = pump ? `<g transform="translate(-25 -25) scale(.5)">${PUMP_SVG}</g>`
     : `<rect class="fi-fr" x="-21" y="-21" width="42" height="42" rx="7"/><g class="fi-bl"${look === 'inf' ? ' transform="scale(.78)"' : ''}>${FAN_BLADES}</g><circle class="fi-hub" r="5"/>`;
   return `<svg class="fanic" viewBox="-24 -24 48 48" aria-hidden="true">${body}${lit && `<g class="fi-glow">${lit}</g><g class="fi-lit">${lit}</g>`}</svg>`;
 }
@@ -4333,6 +4355,51 @@ const fanPump = i => cv('fans', fanKey(i, 'kind'), '') === 'pump';
 // a tile's: the fan's, or what every fan of the group shares (plain when they differ)
 const fanTileIcon = m => !m.length ? '' : fanIcon(new Set(m.map(fanLook)).size === 1 ? fanLook(m[0]) : '', m.every(fanPump));
 const fanDKey = o => !o ? '' : o.i != null ? 'f' + o.i : 'g' + o.g;
+// fans as widgets on Home: a group, or a fan in none ([ui] hero_fans lists the ones added: fang<n>, fan<i>)
+const heroFans = () => cv('ui', 'hero_fans', '').split(',').filter(Boolean);
+function fanWidgets() {
+  if (!(S.fans || {}).on || document.documentElement.classList.contains('remote')) return [];
+  const gs = fanGroups(), inG = new Set(gs.flatMap(g => g.m));
+  return [...gs.map(g => ({ key: 'fang' + g.n, g: g.n, m: g.m, name: g.name })),
+    ...fanAll().filter(i => !fanHidden(i) && !inG.has(i)).map(i => ({ key: 'fan' + i, i, m: [i], name: fanName(i) }))];
+}
+// the fan turning with its rpm, and rpm · % under it (a group: its first fan's)
+const FAN_BLADE = new Path2D('M-1.5-4.8C-2-10 1-15 6-16.8C9-15.8 11-14.3 12.3-12.3C8.5-9.5 5.5-6.5 3.8-3.3Z'), FAN_SPIN = {};
+const PUMP_BL = new Path2D(PUMP_BLADE), PUMP_FLOW = new Path2D('M24 53A26 26 0 0 1 45 27.5M76 53A26 26 0 0 1 55 78.5');
+// the pump on the canvas, the impeller at angle a
+function drawPump(c, a) {
+  const disc = (r, fill, stroke, lw) => { c.beginPath(); c.arc(50, 53, r, 0, 7); c.fillStyle = fill; c.fill(); c.strokeStyle = stroke; c.lineWidth = lw; c.stroke(); };
+  c.save(); c.scale(.5, .5); c.translate(-50, -50);   // its frame (84) as wide as the fan's (42)
+  rr(c, 8, 8, 84, 84, 18); c.fillStyle = '#141414'; c.fill(); c.strokeStyle = '#757575'; c.lineWidth = 2.5; c.stroke();
+  c.fillStyle = '#6e6e6e'; rr(c, 31, 14, 12, 8, 2); c.fill(); rr(c, 57, 14, 12, 8, 2); c.fill();
+  disc(31, '#1a1a1a', '#666', 2);
+  c.strokeStyle = '#8c8c8c'; c.lineCap = 'round'; c.stroke(PUMP_FLOW);
+  c.translate(50, 53); c.rotate(a); c.translate(-50, -53);
+  disc(21, '#242424', '#8c8c8c', 1.8);
+  c.fillStyle = '#8c8c8c';
+  for (let b = 0; b < 6; b++) { c.fill(PUMP_BL); c.translate(50, 53); c.rotate(Math.PI / 3); c.translate(-50, -53); }
+  disc(9.5, '#b5b5b5', '#d4d4d4', 1.8);
+  c.restore();
+}
+function drawFanTile(c, x, y, w, h, fw) {
+  const d = devicePixelRatio, i = fw.m[0], f = i == null ? {} : fanCh(i), pump = fw.m.length > 0 && fw.m.every(fanPump), rpm = f.rpm > 0 ? f.rpm : 0;
+  const now = performance.now(), sp = FAN_SPIN[fw.key] = FAN_SPIN[fw.key] || { a: 0, t: now }, calm = document.body.classList.contains('calm');
+  if (rpm && !calm) { sp.a += Math.min(100, now - sp.t) / 1000 * rpm / 1500 * Math.PI * 2; HERO.moving = !document.body.classList.contains('idle') || HERO.moving; }
+  sp.t = now;
+  const R = Math.max(8 * d, Math.min(w, h - 18 * d) * .4), cx = x + w / 2, cy = y + (h - 18 * d) / 2, k = R / 21;
+  c.save(); c.translate(cx, cy); c.scale(k, k); c.lineWidth = 1.3 * d / k; c.strokeStyle = inkA(.32);
+  if (pump) drawPump(c, sp.a);
+  else {
+    rr(c, -21, -21, 42, 42, 7); c.stroke();
+    c.save(); c.rotate(sp.a); c.fillStyle = inkA(rpm ? .55 : .25);
+    for (let b = 0; b < 7; b++) { c.rotate(Math.PI * 2 / 7); c.fill(FAN_BLADE); }
+    c.restore();
+    c.beginPath(); c.arc(0, 0, 5, 0, 7); c.fillStyle = inkA(.7); c.fill();
+  }
+  c.restore();
+  c.font = `${10 * d}px ${WIDE}`; c.textAlign = 'center'; c.fillStyle = THEME.hi;
+  c.fillText(i == null ? t('fans.empty') : `${f.rpm < 0 ? '—' : f.rpm ?? 0} ${t('fans.rpmu')} · ${f.pct == null ? '—' : Math.round(f.pct) + '%'}`, cx, y + h - 2 * d);
+}
 const fanValid = o => !!o && (o.g ? fanGroups().some(g => g.n === o.g && (o.i == null || g.m.includes(o.i))) : !fanHidden(o.i));
 // who drives the channel, and only what the QUADRO read back counts as done: [text, '' | 'warn' | 'bad']
 function fanState(i) {
@@ -4657,6 +4724,7 @@ function updateFans() {
   renderFanPanel();
   $('#fan-set').classList.toggle('hidden', !FAN.open);
   if (SHEET.kind === 'fan' || FAN_WIDE.matches) fanSheet();
+  if (tab === 'home' && heroFans().length) drawHero();   // the fan widgets' numbers
 }
 const fanLogText = () => ((S.fans || {}).log || []).map(l => `${l.t} ${l.m}${l.n > 1 ? ' ×' + l.n : ''}`).join('\n');
 // open a fan or group; with curve changes not applied, back to them first: switching never drops them
@@ -4669,12 +4737,12 @@ function fanOpen(o, el) {
   return true;
 }
 function fanShow(el) {
-  if (FAN_WIDE.matches) { if (SHEET.kind === 'fan') closeSheet(); }
+  if (FAN_WIDE.matches && tab === 'fans') { if (SHEET.kind === 'fan') closeSheet(); }   // beside the panel; from Home always the sheet
   else if (SHEET.kind !== 'fan') { const r = (el || $('#fan-panel')).getBoundingClientRect(); openSheet({ k: 'fan' }, r.left + r.width / 2, r.top + r.height / 2); }
   FAN.sig = ''; updateFans();
   requestAnimationFrame(() => { drawFanCurve(); const tg = fanTargets(); if (tg.length === 1) drawFanHist(tg[0]); });
 }
-FAN_WIDE.addEventListener('change', () => { if (FAN_WIDE.matches && SHEET.kind === 'fan') closeSheet(); FAN.sig = ''; updateFans(); requestAnimationFrame(drawFanCurve); });
+FAN_WIDE.addEventListener('change', () => { if (FAN_WIDE.matches && SHEET.kind === 'fan' && tab === 'fans') closeSheet(); FAN.sig = ''; updateFans(); requestAnimationFrame(drawFanCurve); });
 const fanOpenAt = (el, from) => {
   if (el.dataset.gm != null) return fanOpen({ g: +(from.dataset.g || FAN.open.g), i: +el.dataset.gm }, el);
   if (el.dataset.fold) { FAN.fold[el.dataset.fold] = !FAN.fold[el.dataset.fold]; FAN.sig = ''; updateFans(); return; }
@@ -4953,6 +5021,6 @@ $('#side-toggle').addEventListener('click', () => setSide(!document.body.classLi
 try { if (localStorage.getItem('side') === '1') { document.body.classList.add('no-anim'); setSide(true); requestAnimationFrame(() => document.body.classList.remove('no-anim')); } } catch (e) { }
 
 applyI18n();
-try { const tb = localStorage.getItem('tab') || ''; if (tb.startsWith('brand-')) wantTab = tb; showTab(TABS.includes(tb) ? tb : 'effects'); } catch (e) { showTab('effects'); }
+try { const tb = localStorage.getItem('tab') || ''; if (tb.startsWith('brand-')) wantTab = tb; showTab(TABS.includes(tb) ? tb : 'home'); } catch (e) { showTab('home'); }
 $$('.range').forEach(fill);
 send({ cmd: 'hello' });

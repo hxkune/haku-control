@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="200" height="175" fill="none">
+  <defs>
+    <linearGradient id="argb-grad-solo" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff3385" />
+      <stop offset="50%" stop-color="#a83279" />
+      <stop offset="100%" stop-color="#ffaa33" />
+    </linearGradient>
+
+    <linearGradient id="screen-body-solo" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#242426" />
+      <stop offset="50%" stop-color="#121214" />
+      <stop offset="100%" stop-color="#242426" />
+    </linearGradient>
+
+    <filter id="soft-glow-solo" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <g id="tryx-screen-only">
+    <!-- glow behind -->
+    <path d="M 75,48 L 128,64 Q 145,69 162,64 L 218,48 L 218,148 L 162,166 Q 145,172 128,166 L 75,148 Z" fill="url(#argb-grad-solo)" opacity="0.28" filter="url(#soft-glow-solo)" />
+
+    <!-- top cover of the body -->
+    <path d="M 75,48 L 87,43 L 136,57 Q 145,60 154,57 L 206,43 L 218,48 L 162,64 Q 145,69 128,64 Z" fill="#222225" stroke="#383840" stroke-width="1.2" stroke-linejoin="round" />
+
+    <!-- L-display body -->
+    <path d="M 75,48 L 128,64 Q 145,69 162,64 L 218,48 A 4,4 0 0 1 222,52 L 222,146 A 5,5 0 0 1 218,150 L 162,168 Q 145,174 128,168 L 75,150 A 5,5 0 0 1 71,146 L 71,52 A 4,4 0 0 1 75,48 Z" fill="url(#screen-body-solo)" stroke="url(#argb-grad-solo)" stroke-width="2" />
+
+    <!-- AMOLED screen -->
+    <path d="M 79,56 L 128,71 Q 145,76 162,71 L 214,56 L 214,143 L 162,160 Q 145,165 128,160 L 79,143 Z" fill="#09080c" stroke="#242429" stroke-width="1" />
+
+    <!-- gradient accent on the fold -->
+    <path d="M 132,72 Q 145,76 158,72 L 158,160 Q 145,164 132,160 Z" fill="url(#argb-grad-solo)" opacity="0.14" />
+
+    <!-- left half of the UI -->
+    <g id="screen-left-ui">
+      <line x1="86" y1="68" x2="122" y2="79" stroke="#ffaa33" stroke-width="2.5" stroke-linecap="round" />
+      <text x="86" y="93" fill="#ff5599" font-family="monospace, sans-serif" font-size="11" font-weight="bold" transform="skewY(16)">38.6°C</text>
+      <line x1="86" y1="92" x2="120" y2="102" stroke="#262629" stroke-width="1" />
+      <text x="86" y="114" fill="#ffaa33" font-family="monospace, sans-serif" font-size="10" font-weight="bold" transform="skewY(16)">4533</text>
+      <path d="M 86,126 Q 94,122 102,130 T 122,135" stroke="#ff3385" stroke-width="2" fill="none" stroke-linecap="round" />
+      <line x1="86" y1="136" x2="122" y2="147" stroke="#ff3385" stroke-width="1" stroke-opacity="0.4" />
+    </g>
+
+    <!-- right half of the UI -->
+    <g id="screen-right-ui">
+      <line x1="168" y1="78" x2="195" y2="70" stroke="#ffaa33" stroke-width="2.5" stroke-linecap="round" />
+      <g transform="translate(188, 108) skewY(-16)">
+        <circle r="17" stroke="#2a1a2e" stroke-width="3.5" fill="none" />
+        <circle r="17" stroke="url(#argb-grad-solo)" stroke-width="3.5" stroke-dasharray="75 110" stroke-linecap="round" fill="none" transform="rotate(-135)" />
+        <text x="0" y="4" fill="#ffffff" font-family="monospace, sans-serif" font-size="10" font-weight="bold" text-anchor="middle">120</text>
+      </g>
+      <path d="M 166,148 L 206,135" stroke="#2a1a2e" stroke-width="3" stroke-linecap="round" />
+      <path d="M 166,148 L 192,139.5" stroke="#ff3385" stroke-width="3" stroke-linecap="round" />
+    </g>
+  </g>
+</svg>

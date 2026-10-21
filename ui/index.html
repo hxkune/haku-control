@@ -26,7 +26,10 @@
 <aside class="side">
   <div class="brand"><div class="logo"></div><div class="word">control</div></div>
   <nav id="nav">
-    <button data-tab="effects" class="active">
+    <button data-tab="home" class="active">
+      <svg viewBox="0 0 24 24"><path d="M3 4h8v7H3z"/><path d="M13 4h8v4h-8z"/><path d="M13 10h8v10h-8z"/><path class="f" d="M3 13h8v7H3z"/></svg>
+      <span data-i18n="nav.home">Home</span></button>
+    <button data-tab="effects">
       <svg viewBox="0 0 24 24"><path d="M11 3l1.6 6.4L19 11l-6.4 1.6L11 19l-1.6-6.4L3 11l6.4-1.6z"/><path class="f" d="M18.5 15.5l2 2-2 2-2-2z"/></svg>
       <span data-i18n="nav.effects">Effects</span></button>
     <button data-tab="pc">
@@ -68,15 +71,15 @@
 <main>
   <header>
     <div>
-      <h1 id="title">Effects</h1>
+      <h1 id="title">Home</h1>
       <p class="sub" id="subtitle"></p>
     </div>
     <div class="chips" id="chips"></div><div class="chip-pop hidden" id="chip-pop"></div>
   </header>
   <div class="dev-jump" id="dev-jump"></div>
 
-  <!-- ============ EFFECTS ============ -->
-  <section class="tab active" id="tab-effects">
+  <!-- ============ HOME: the widget panel ============ -->
+  <section class="tab active" id="tab-home">
     <div class="prof" id="prof">
       <button class="prof-btn" id="prof-btn" type="button" aria-haspopup="true" aria-expanded="false">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
@@ -103,6 +106,10 @@
       <div class="arrange-bar hidden" id="arrange-bar"><span data-i18n="hero.arrange.hint"></span><button class="btn small primary" id="arrange-done"><span data-i18n="group.done">Done</span></button></div>
     </div>
     <button class="hero-more hidden" id="hero-more"><span></span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+  </section>
+
+  <!-- ============ EFFECTS ============ -->
+  <section class="tab" id="tab-effects">
     <div class="card mood" id="mood">
       <form class="mood-row" id="mood-form" autocomplete="off">
         <span class="mood-ic"></span>
