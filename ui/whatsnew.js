@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.41',
+    en: ['Programs in the way: on the PC page haku lists the lighting programs that take its controllers (Armoury Crate, iCUE, SignalRGB, MSI Center, L-Connect and others). Close one for now, or tick Each time and haku closes it whenever it starts, so there is no need to remove it.'],
+    ru: ['Мешающие программы: на странице ПК haku показывает программы подсветки, которые занимают его контроллеры (Armoury Crate, iCUE, SignalRGB, MSI Center, L-Connect и другие). Закройте программу на время или отметьте «Каждый раз», и haku будет закрывать её при каждом запуске, так что удалять её не нужно.'],
+    fr: ['Programmes qui gênent : sur la page PC, haku liste les programmes d’éclairage qui prennent ses contrôleurs (Armoury Crate, iCUE, SignalRGB, MSI Center, L-Connect et d’autres). Fermez-en un pour l’instant, ou cochez À chaque fois et haku le fermera dès qu’il démarre : inutile de le désinstaller.'] },
   { v: '0.4.40',
     en: ['TRYX PANORAMA: a screen builder. Under the cooler on the PC page, Make one… takes a picture, GIF or video, lets you choose what shows on the screen and put texts and pictures over it, and sends it to the screen.', 'Lian Li wireless fans can be lit by haku: Find devices adds each group as a light, and it follows the effects like the rest.'],
     ru: ['TRYX PANORAMA: конструктор экрана. В карточке кулера на странице ПК кнопка «Собрать…» берёт картинку, GIF или видео, даёт выбрать, что будет видно на экране, добавить текст и картинки поверх и отправить на экран.', 'Беспроводные вентиляторы Lian Li теперь подсвечивает haku: «Найти устройства» добавляет каждую группу как светильник, и она следует эффектам, как остальные.'],
