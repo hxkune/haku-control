@@ -11,10 +11,12 @@
 // What it does here: the screen follows the lights ([dev.N] screen_follow, default on: off when the effect is
 // Off, brightness with the app's brightness) and [dev.N] theme=1..14 picks one of the PANORAMA's built-in themes
 // (0: leave the screen as TRYX KANALI set it). The haku device itself is one light that shows nothing: the cooler's
-// own LEDs are on the motherboard's ARGB header. theme=-1 shows [dev.N] media, a picture / GIF / mp4 on this PC, sent
-// over the same port the way tryxctl does it: transport {fileName, fileSize, type "media"}, the raw bytes unframed,
-// then transported {fileName, md5}; the device keeps it in sdcard/pcMedia and waterBlockScreenId "Customization"
-// shows it. The name on the device is the md5 + the extension, so the same file is not sent twice ([dev.N] media_sent).
+// own LEDs are on the motherboard's ARGB header. theme=-1 shows [dev.N] media, a picture / GIF / mp4 on this PC. The
+// block is an Android board (model cm01_se on a PANORAMA SE) whose USB also has an adb interface, and TRYX KANALI and
+// the community tools copy the file to /sdcard/pcMedia with adb push: so does haku, with an adb.exe already on this
+// PC (winget's Google.PlatformTools). Without one it goes over the port the way tryxctl falls back to: transport
+// {fileName, fileSize, type "media"}, the raw bytes unframed, then transported {fileName, md5} (bytes went missing
+// this way on a PANORAMA SE). waterBlockScreenId "Customization" then shows it. The name on the device is the md5 + the extension, so the same file is not sent twice ([dev.N] media_sent).
 // Untested on hardware: every answer that is not 200 is logged.
 #include "devices.h"
 #include "tryx_frame.h"
@@ -42,6 +44,22 @@ static int media_name(const char *path, const char *md5, char *out, int cap) {
     return 0;
 }
 
+// The cooler's serial in `adb devices -l` ("<serial>   device product:cm01_se model:cm01_se ..."); 0: not listed, or
+// listed but not ready (unauthorized, offline). The serial goes on adb's command line, so only these characters.
+static int adb_serial(const char *list, char *ser, int cap) {
+    for (const char *l = list; *l; ) {
+        const char *e = strchr(l, '\n'); int len = e ? (int)(e - l) : (int)strlen(l);
+        char line[512]; snprintf(line, sizeof(line), "%.*s", len, l);
+        l += len + (e != NULL);
+        int n = (int)strspn(line, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:-");
+        const char *p = line + n + strspn(line + n, " \t");
+        if (n && n < cap && p > line + n && !strncmp(p, "device", 6) && (p[6] == ' ' || p[6] == '\t') && strstr(p, " model:cm01")) {
+            memcpy(ser, line, n); ser[n] = 0; return 1;
+        }
+    }
+    return 0;
+}
+
 #ifndef TRYX_TEST
 typedef struct {
     HANDLE h;
@@ -49,7 +67,7 @@ typedef struct {
     DWORD last_state;
     int rn; unsigned char rx[4096];
     // own media: its thread has the port while it runs, tryx_send leaves it alone
-    HANDLE up; volatile LONG stop, pct; int id, force, failed; USHORT pid;
+    HANDLE up; volatile LONG stop, pct; int id, force, failed, noadb; USHORT pid;
     char media[MAX_PATH * 3 + 16], base[96];   // [dev.N] media|media_at last tried; the info line
 } tryx_t;
 
@@ -189,12 +207,77 @@ static int answer(tryx_t *u, int ms) {
     return r == 1;
 }
 
+// adb.exe where canalis looks for it: winget's links, its Google.PlatformTools package, then PATH
+static int adb_find(wchar_t *exe) {
+    wchar_t la[MAX_PATH], pat[MAX_PATH];
+    if (GetEnvironmentVariableW(L"LOCALAPPDATA", la, MAX_PATH)) {
+        swprintf(exe, MAX_PATH, L"%s\\Microsoft\\WinGet\\Links\\adb.exe", la);
+        if (GetFileAttributesW(exe) != INVALID_FILE_ATTRIBUTES) return 1;
+        swprintf(pat, MAX_PATH, L"%s\\Microsoft\\WinGet\\Packages\\Google.PlatformTools*", la);
+        WIN32_FIND_DATAW fd; HANDLE fh = FindFirstFileW(pat, &fd); int ok = 0;
+        if (fh != INVALID_HANDLE_VALUE) {
+            do {
+                swprintf(exe, MAX_PATH, L"%s\\Microsoft\\WinGet\\Packages\\%s\\platform-tools\\adb.exe", la, fd.cFileName);
+                ok = GetFileAttributesW(exe) != INVALID_FILE_ATTRIBUTES;
+            } while (!ok && FindNextFileW(fh, &fd));
+            FindClose(fh);
+            if (ok) return 1;
+        }
+    }
+    return SearchPathW(NULL, L"adb.exe", NULL, MAX_PATH, exe, NULL) > 0;
+}
+
+// Runs adb, its output (both streams) in out: the exit code, -1 when it did not start or ran over ms
+static int adb_run(const wchar_t *exe, const wchar_t *args, char *out, int cap, DWORD ms) {
+    SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
+    HANDLE rd, wr; out[0] = 0;
+    if (!CreatePipe(&rd, &wr, &sa, 0)) return -1;
+    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOW si = { sizeof(si) }; si.dwFlags = STARTF_USESTDHANDLES; si.hStdOutput = si.hStdError = wr;
+    PROCESS_INFORMATION pi; wchar_t cl[MAX_PATH * 3];
+    swprintf(cl, MAX_PATH * 3, L"\"%s\" %s", exe, args);
+    int ok = CreateProcessW(NULL, cl, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    CloseHandle(wr);
+    if (!ok) { CloseHandle(rd); return -1; }
+    // read while it runs, never to the pipe's end: the adb server it may start keeps the pipe open
+    DWORD code = (DWORD)-1, t0 = GetTickCount(); int n = 0;
+    for (int done = 0; !done; ) {
+        done = WaitForSingleObject(pi.hProcess, 50) == WAIT_OBJECT_0;
+        char tmp[1024]; DWORD av = 0, got;
+        while (PeekNamedPipe(rd, NULL, 0, NULL, &av, NULL) && av && ReadFile(rd, tmp, av < sizeof(tmp) ? av : sizeof(tmp), &got, NULL) && got) {
+            int k = (int)got < cap - 1 - n ? (int)got : cap - 1 - n;
+            memcpy(out + n, tmp, k); n += k;
+        }
+        if (done) GetExitCodeProcess(pi.hProcess, &code);
+        else if (GetTickCount() - t0 > ms) { TerminateProcess(pi.hProcess, 1); break; }
+    }
+    out[n] = 0;
+    CloseHandle(pi.hProcess); CloseHandle(pi.hThread); CloseHandle(rd);
+    return (int)code;
+}
+
+// Copies the file to the cooler with adb push: 1 when it is there
+static int adb_push(tryx_t *u, const wchar_t *path, const char *name) {
+    wchar_t exe[MAX_PATH], a[MAX_PATH * 2]; char out[2048], ser[64];
+    if (!adb_find(exe)) { u->noadb = 1; logf_("tryx: no adb.exe on this PC (winget install Google.PlatformTools): sending over the port"); return 0; }
+    int r = adb_run(exe, L"devices -l", out, sizeof(out), 30000);   // the first run starts adb's server
+    if (r || !adb_serial(out, ser, sizeof(ser))) { logf_("tryx: adb does not list the cooler (%d): %.300s", r, out); return 0; }
+    swprintf(a, MAX_PATH * 2, L"-s %hs shell mkdir -p /sdcard/pcMedia", ser);
+    adb_run(exe, a, out, sizeof(out), 20000);
+    swprintf(a, MAX_PATH * 2, L"-s %hs push \"%s\" /sdcard/pcMedia/%hs", ser, path, name);
+    u->pct = 50;   // shortcut: adb push tells no progress through a pipe; 16 MB takes seconds over USB
+    if ((r = adb_run(exe, a, out, sizeof(out), 180000))) { logf_("tryx: adb push failed (%d): %.300s", r, out); return 0; }
+    u->pct = 100;
+    return 1;
+}
+
 static int show_media(tryx_t *u, const char *name) {
-    // ratio: the firmware knows only "" (native), 1:1, 3:2, 4:3 and 16:9 (tryxctl); 16:9 is 2D04's 1920x1080
+    // ratio: tryxctl knows "" (native), 1:1, 3:2, 4:3 and 16:9; TRYX KANALI sends 2:1 to a PANORAMA SE (canalis), its
+    // panel's 2240x1080
     char b[512]; int vid = strstr(name, ".mp4") != NULL;
     snprintf(b, sizeof(b), "{\"Type\":\"%s\",\"id\":\"Customization\",\"screenMode\":\"Full Screen\",\"ratio\":\"%s\",\"playMode\":\"Single\","
              "\"media\":[\"%s\"],\"sysinfoDisplay\":[],\"settings\":{\"align\":\"Center\",\"color\":\"#FFFFFF\",\"badges\":[],"
-             "\"position\":\"Top\",\"filter\":{\"value\":\"\",\"opacity\":0}}}", vid ? "media" : "image", u->pid == 0x2D04 ? "16:9" : "", name);
+             "\"position\":\"Top\",\"filter\":{\"value\":\"\",\"opacity\":0}}}", vid ? "media" : "image", u->pid == 0x2D04 ? "2:1" : "", name);
     // twice, half a second apart: the device may keep the screen it had cached (reed-tpse)
     int ok = tx(u, "POST", "waterBlockScreenId", b) && answer(u, 1500);
     Sleep(500);
@@ -218,8 +301,10 @@ static DWORD WINAPI upload(void *arg) {
     if (!buf || BCryptHash(BCRYPT_MD5_ALG_HANDLE, NULL, 0, buf, (ULONG)size, h, 16)) { logf_("tryx: %s cannot be read or is over 16 MB", path); goto fail; }
     for (int i = 0; i < 16; i++) sprintf(md5 + i * 2, "%02x", h[i]);
     if (!media_name(path, md5, name, sizeof(name))) { logf_("tryx: %s is not a picture, GIF or mp4", path); goto fail; }
-    if (u->force || strcmp(cfg_get(sec, "media_sent", ""), name)) {
-        logf_("tryx: sending %s as %s (%ld bytes)", path, name, size);
+    if ((u->force || strcmp(cfg_get(sec, "media_sent", ""), name)) && adb_push(u, wp, name)) {
+        cfg_set_and_save(sec, "media_sent", name); logf_("tryx: %s copied with adb", name);
+    } else if (u->force || strcmp(cfg_get(sec, "media_sent", ""), name)) {
+        logf_("tryx: sending %s as %s (%ld bytes) over the port", path, name, size);
         COMMTIMEOUTS to = { MAXDWORD, 0, 0, 0, 5000 };   // a whole chunk may take ~0.4 s at 115200
         SetCommTimeouts(u->h, &to);
         snprintf(b, sizeof(b), "{\"fileName\":\"%s\",\"fileSize\":%ld,\"type\":\"media\"}", name, size);   // never "firmware"
@@ -260,7 +345,7 @@ static int tryx_send(ext_dev *d, const rgbf *c, int n) {
     if (u->up) {   // own media on its way: the port is the thread's
         if (WaitForSingleObject(u->up, 0) == WAIT_TIMEOUT) { snprintf(d->info, sizeof(d->info), "%s · upload %ld%%", u->base, u->pct); return 1; }
         CloseHandle(u->up); u->up = NULL; u->rn = 0;
-        snprintf(d->info, sizeof(d->info), "%s%s", u->base, u->failed ? " · upload failed" : "");
+        snprintf(d->info, sizeof(d->info), "%s%s", u->base, !u->failed ? "" : u->noadb ? " · upload failed · no adb" : " · upload failed");
     }
     if (!rx(u, NULL, NULL)) return 0;
     char sec[24], b[512], key[sizeof(u->media)]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
@@ -270,7 +355,7 @@ static int tryx_send(ext_dev *d, const rgbf *c, int n) {
     snprintf(key, sizeof(key), "%s|%s", cfg_get(sec, "media", ""), cfg_get(sec, "media_at", ""));
     if (theme == -1 && key[0] != '|' && (u->theme != -1 || strcmp(key, u->media))) {
         // a new pick sends the file again; else what the device already has is shown (media_sent)
-        u->force = u->media[0] && strcmp(key, u->media); u->id = d->id; u->pct = 0; u->failed = 0; u->stop = 0;
+        u->force = u->media[0] && strcmp(key, u->media); u->id = d->id; u->pct = 0; u->failed = u->noadb = 0; u->stop = 0;
         strcpy_s(u->media, sizeof(u->media), key); u->theme = -1;
         if (!(u->up = CreateThread(NULL, 0, upload, u, 0, NULL))) logf_("tryx: no upload thread");
     } else if (theme != u->theme && theme >= 1 && theme <= NTHEMES) {
@@ -343,6 +428,11 @@ int main(void) {
     assert(media_name("D:\\v\\clip.mp4", m, n, sizeof(n)) && !strcmp(n, "0123456789abcdef.mp4"));
     assert(media_name("a.jpeg", m, n, sizeof(n)) && !strcmp(n, "0123456789abcdef.jpeg"));
     assert(!media_name("clip.mov", m, n, sizeof(n)) && !media_name("C:\\x.y\\noext", m, n, sizeof(n)) && !media_name("a.firmware", m, n, sizeof(n)));
+    char s[64];
+    assert(adb_serial("List of devices attached\r\nBYZL24112900109808     device product:cm01_se model:cm01_se device:cm01_se transport_id:1\r\n\r\n", s, sizeof(s)) && !strcmp(s, "BYZL24112900109808"));
+    assert(adb_serial("List of devices attached\nemulator-5554\tdevice product:sdk model:Pixel_7 transport_id:2\nAB12\tdevice product:x model:cm01 transport_id:3\n", s, sizeof(s)) && !strcmp(s, "AB12"));
+    assert(!adb_serial("List of devices attached\nBYZL1  unauthorized usb:1-1 transport_id:1\n", s, sizeof(s)));
+    assert(!adb_serial("List of devices attached\nBY\"ZL device model:cm01_se\n", s, sizeof(s)) && !adb_serial("", s, sizeof(s)));
     puts("tryx ok");
     return 0;
 }

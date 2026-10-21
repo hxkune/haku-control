@@ -1919,7 +1919,7 @@ function drawNano(c, X, Y, W, H, N) {
 
 // What a light is, for its picture in the preview (and, for LAN devices, how effects lay out on it; see
 // device_type in devices.c). LAN devices get it from the core (chosen, or guessed from the model); bulbs: [zone.lightN] type.
-const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse', 'keylight', 'gate', 'frame'];
+const FIXTURES = ['strip', 'tv', 'bars', 'floor', 'lamp', 'panels', 'bulb', 'gpu', 'ram', 'board', 'fan', 'keyboard', 'mouse', 'keylight', 'gate', 'frame', 'screen'];
 const bulbType = i => { const v = cv('zone.light' + (i + 1), 'type', 'bulb'); return FIXTURES.includes(v) ? v : 'bulb'; };
 
 // the mouse traced off the reference picture, in its own 360 px space
@@ -2063,6 +2063,14 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
     c.restore();
     for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; line([[cx + Math.cos(a) * r * 0.26, cy + Math.sin(a) * r * 0.26], [cx + Math.cos(a + .55) * r * 0.78, cy + Math.sin(a + .55) * r * 0.78]], .1); }
     c.beginPath(); c.arc(cx, cy, r * 0.24, 0, 7); c.fillStyle = BODY; c.fill(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
+  } else if (type === 'screen') {   // a display in its bezel (the TRYX cooler's 2:1 panel), lit by the colours
+    const sw = Math.min(W * 0.86, H * 0.78 * 2), sh = sw / 2, x = cx - sw / 2, y = cy - sh / 2, b = Math.max(2 * dp, sh * 0.06);
+    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; } box(x, y, sw, sh, DEEP); c.restore();
+    box(x, y, sw, sh, DEEP);
+    const g = c.createLinearGradient(x, 0, x + sw, 0), ks = all();
+    ks.forEach((k, i) => g.addColorStop(i / (ks.length - 1), k));
+    c.globalAlpha = on ? .85 : 1; c.fillStyle = on ? g : OFF; c.fillRect(x + b, y + b, sw - 2 * b, sh - 2 * b); c.globalAlpha = 1;
+    line([[x + b + sw * .08, y + b + sh * .12], [x + b + sw * .3, y + b + sh * .12]], .18);
   } else if (type === 'keyboard') {   // a keyboard: rows of keys at their real widths, lit by their LEDs
     const w = Math.min(W * 0.95, H * 2.9), h = w * 0.36, x = cx - w / 2, y = cy - h / 2, p = w * 0.025;
     c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; } box(x, y, w, h, DEEP); c.restore();
@@ -2172,7 +2180,7 @@ function heroAnim(key, target) {
 // controller, each bulb, each LAN device), laid out in rows; a row that is full wraps to the next one. Full rows
 // stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
 // animates the height) and tiles glide to their new places when something is added or removed.
-const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1, gate: 1.2, frame: 1.4 };
+const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1, gate: 1.2, frame: 1.4, screen: 1.6 };
 function heroItems(all) {
   const hide = all ? [] : heroHidden(), items = [];
   if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
@@ -2959,7 +2967,7 @@ function devStatus(d) {
   if (d.pro && proLocked()) return t('dev.pro');
   if (!d.online && d.kind === 'tryx' && /KANALI/.test(d.info)) return t('tx.busy');
   if (d.online && d.kind === 'tryx' && / upload (\d+)%/.test(d.info)) return t('tx.up', RegExp.$1);
-  if (d.online && d.kind === 'tryx' && / upload failed/.test(d.info)) return t('tx.up.fail');
+  if (d.online && d.kind === 'tryx' && / upload failed/.test(d.info)) return t(/ no adb/.test(d.info) ? 'tx.up.noadb' : 'tx.up.fail');
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
 }
@@ -3078,8 +3086,13 @@ function buildDevices() {
     }));
     el.querySelector('.dev-fx')?.addEventListener('change', e => setCfg(sec, 'frame_fx', e.target.value));
     // the own picture: picked in the PC's file window (the core sets media and theme=-1), never typed in
-    el.querySelector('.dev-theme')?.addEventListener('change', e => e.target.value === '-1' && !cv(sec, 'media', '') ? send({ cmd: 'tryx_media', id: String(d.id) }) : setCfg(sec, 'theme', e.target.value));
-    el.querySelector('.dev-media')?.addEventListener('click', () => send({ cmd: 'tryx_media', id: String(d.id) }));
+    // a file is always cut to the screen's shape first: the builder opens on it (tryx_build sets media and theme=-1)
+    const pick = from => { txbOpen(d, from); $('#txb-file').click(); };
+    el.querySelector('.dev-theme')?.addEventListener('change', e => {
+      if (e.target.value !== '-1' || cv(sec, 'media', '')) return setCfg(sec, 'theme', e.target.value);
+      e.target.value = cv(sec, 'theme', '0'); pick(e.target);
+    });
+    el.querySelector('.dev-media')?.addEventListener('click', e => pick(e.currentTarget));
     el.querySelector('.dev-build')?.addEventListener('click', e => txbOpen(d, e.currentTarget));
     el.querySelector('.dev-screen')?.addEventListener('change', e => {
       setCfg(sec, 'screen', e.target.value);
@@ -3239,11 +3252,12 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && CAL) calCl
 // Made here (a JPEG, or an mp4 recorded from a canvas as it plays) and handed to the core (tryx_build), which keeps it
 // as the device's own file and sends it like a picked one.
 // shortcut: what is over the picture is baked into the file; live figures need the cooler's own layout (sysinfoDisplay), not known yet
-const TXB_SHAPES = { '16:9': [1280, 720], '4:3': [1024, 768], '3:2': [1080, 720], '1:1': [720, 720] };
+// a video at this size, a still at 1.5x (2:1: the PANORAMA SE's 2240x1080 panel, 2160x1080 for a still)
+const TXB_SHAPES = { '2:1': [1440, 720], '16:9': [1280, 720], '4:3': [1024, 768], '3:2': [1080, 720], '1:1': [720, 720] };
 const TXB_MAX = 30;   // seconds of video at most: ~8 MB at 2 Mbit/s
 let TXB = null;
 function txbOpen(d, from) {
-  TXB = { d, from, shape: '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now() };
+  TXB = { d, from, shape: /2D04$/i.test(d.host || '') ? '2:1' : '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now() };
   $('#txb-title').textContent = t('txb.title', cv('dev.' + d.id, 'name', d.name));
   $('#txb-stage').setAttribute('aria-label', t('txb.stage'));
   $('#txb-shape').value = TXB.shape; $('#txb-msg').textContent = '';
@@ -3341,7 +3355,7 @@ function txbLayers() {
 const txbSel = i => { TXB.sel = i; $('#txb-layers').querySelectorAll('.txb-layer').forEach(r => r.classList.toggle('on', +r.dataset.i === i)); };
 async function txbMake() {
   const B = TXB, s = B.src, [w0, h0] = TXB_SHAPES[B.shape], vid = !!(s && s.dur), msg = $('#txb-msg');
-  const c = document.createElement('canvas'); c.width = vid ? w0 : w0 * 1.5; c.height = vid ? h0 : h0 * 1.5;   // a still: the SE's 1920x1080 at 16:9
+  const c = document.createElement('canvas'); c.width = vid ? w0 : w0 * 1.5; c.height = vid ? h0 : h0 * 1.5;
   const busy = on => { B.busy = on; $('#txb').querySelectorAll('button, input, select').forEach(e => { e.disabled = on; }); };
   busy(1);
   try {

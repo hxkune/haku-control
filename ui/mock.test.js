@@ -695,33 +695,35 @@
     $('#gdlg-cancel').click();
   });
 
-  test('TRYX: your own picture is picked in the PC window, its sending shows in the status', async () => {
+  test('TRYX: your own picture opens the builder on the picked file, its sending shows in the status', async () => {
     await fresh();
-    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D03', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'strip', info: 'TRYX PANORAMA · COM5 · USB' });
+    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D03', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'screen', info: 'TRYX PANORAMA · COM5 · USB' });
     STATE.cfg['dev.14'] = { kind: 'tryx' }; await fanEmit();
     const card = () => $('#dev-st-14').closest('.card'), sel = card().querySelector('.dev-theme');
     ok([...sel.options].some(o => o.value === '-1'), 'no option for your own picture');
     sel.value = '-1'; sel.dispatchEvent(new Event('change', { bubbles: true }));
-    ok(sent.some(o => o.cmd === 'tryx_media' && o.id === '14') && !sets('dev.14', 'theme').length, 'picking "your own" without a file: ' + JSON.stringify(sent));
-    await wait(150); await fanEmit();
+    ok(!$('#txb').classList.contains('hidden') && TXB.shape === '16:9' && !sets('dev.14', 'theme').length && sel.value !== '-1', 'picking "your own" without a file: ' + JSON.stringify(sent));
+    txbClose(); Object.assign(STATE.cfg['dev.14'], { media: 'C:\\Pictures\\cat.gif', theme: '-1' }); await fanEmit();
     ok(card().querySelector('.dev-media-name').textContent === 'cat.gif' && card().querySelector('.dev-theme').value === '-1', 'the picked file: ' + card().querySelector('.dev-media-name').textContent);
     STATE.ext.devs[STATE.ext.devs.length - 1].info += ' · upload 42%'; await fanEmit();
     ok($('#dev-st-14').textContent === t('tx.up', 42), 'the status while sending: ' + $('#dev-st-14').textContent);
+    STATE.ext.devs[STATE.ext.devs.length - 1].info = 'TRYX PANORAMA · COM5 · USB · upload failed · no adb'; await fanEmit();
+    ok($('#dev-st-14').textContent === t('tx.up.noadb'), 'the status without adb: ' + $('#dev-st-14').textContent);
     ok(!card().querySelector('.live, .zone, .dev-type, .dev-cal, .dev-ident'), 'the screen card has no light settings');
     STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
   });
 
   test('TRYX: the screen builder makes a JPEG from a still with a text over it and hands it to the core', async () => {
     await fresh();
-    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D04', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'strip', info: 'TRYX PANORAMA · COM5 · USB' });
+    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D04', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'screen', info: 'TRYX PANORAMA · COM5 · USB' });
     STATE.cfg['dev.14'] = { kind: 'tryx' }; await fanEmit();
     const card = () => $('#dev-st-14').closest('.card');
     card().querySelector('.dev-build').click();
-    ok(!$('#txb').classList.contains('hidden') && document.activeElement === $('#txb-src'), 'the builder did not open');
+    ok(!$('#txb').classList.contains('hidden') && document.activeElement === $('#txb-src') && TXB.shape === '2:1' && $('#txb-shape').value === '2:1', 'the builder did not open in 2:1');
     const c = document.createElement('canvas'); c.width = 400; c.height = 400; c.getContext('2d').fillStyle = '#c33'; c.getContext('2d').fillRect(0, 0, 400, 400);
     await txbLoad(new File([await new Promise(r => c.toBlob(r, 'image/png'))], 'red.png', { type: 'image/png' }));
     ok(TXB.src && !TXB.src.dur && $('#txb-msg').textContent === '', 'the still: ' + $('#txb-msg').textContent);
-    txbMove(.5, 0); ok(TXB.cx === .5, 'a square in 16:9 moved sideways: ' + TXB.cx);
+    txbMove(.5, 0); ok(TXB.cx === .5, 'a square in 2:1 moved sideways: ' + TXB.cx);
     txbMove(0, .5); ok(TXB.cy < .5 && TXB.cy > .2, 'it did not move up within its edge: ' + TXB.cy);
     $('#txb-text').click(); const ti = $('#txb-layers .txb-text');
     ok(TXB.layers.length === 1 && document.activeElement === ti, 'no text row');
