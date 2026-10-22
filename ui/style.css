@@ -147,17 +147,17 @@ h3::before { content: none; margin-right: 9px; font-size: 10px; color: var(--mut
 .brand .logo::after {
   --dim: color-mix(in srgb, var(--bg) 22%, transparent); --dim2: color-mix(in srgb, var(--bg) 8%, transparent);
   background: linear-gradient(105deg, var(--dim) 34%, var(--dim2) 43%, transparent 50%, var(--dim2) 57%, var(--dim) 66%) 100% 0 / 300% 100%;
-  animation: logo-glint 9s cubic-bezier(.45, 0, .25, 1) infinite;
+  animation: logo-glint 4.5s cubic-bezier(.45, 0, .25, 1) infinite;
 }
 @keyframes logo-glint { 0%, 60% { background-position: 100% 0; } 95%, 100% { background-position: 0 0; } }
 .brand .logo::before {
   --shade: color-mix(in srgb, var(--bg) 30%, transparent); --shade2: color-mix(in srgb, var(--bg) 12%, transparent);
   background: linear-gradient(70deg, transparent 30%, var(--shade2) 40%, var(--shade) 50%, var(--shade2) 60%, transparent 70%) 0 0 / 250% 100%;
-  animation: logo-shade 13s ease-in-out infinite alternate;
+  animation: logo-shade 6.5s ease-in-out infinite alternate;
 }
 @keyframes logo-shade { to { background-position: 100% 0; } }
 /* and it drifts: a few pixels up and back with a slight tilt, out of step with the glint */
-.brand .logo { animation: logo-float 7s ease-in-out infinite; }
+.brand .logo { animation: logo-float 3.5s ease-in-out infinite; }
 @keyframes logo-float { 0%, 100% { translate: 0 0; rotate: 0deg; } 50% { translate: 0 -3px; rotate: -.8deg; } }
 html.intro .brand .logo::before, html.intro .brand .logo::after { opacity: 0; }
 .brand .word { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 4px; font: 600 11px var(--display); letter-spacing: .3em; color: var(--muted); }
@@ -1283,7 +1283,7 @@ body.calm nav button { transition: none; }
 :root[data-theme="bubblegum"] .seg button.on, :root[data-theme="bubblegum"] .btn.primary, :root[data-theme="bubblegum"] .brand .logo {
   background-size: 300% 100%; animation: bubblegum-rainbow 6s linear infinite;
 }
-:root[data-theme="bubblegum"] .brand .logo { background: var(--chrome); background-size: 300% 100%; animation: bubblegum-rainbow 6s linear infinite, logo-float 7s ease-in-out infinite; }
+:root[data-theme="bubblegum"] .brand .logo { background: var(--chrome); background-size: 300% 100%; animation: bubblegum-rainbow 6s linear infinite, logo-float 3.5s ease-in-out infinite; }
 :root[data-theme="bubblegum"] .brand .word { color: var(--strong); }
 :root[data-theme="bubblegum"] .watermark {
   -webkit-mask: none; mask: none; background: none; opacity: .07; width: auto; aspect-ratio: auto; right: -30px; bottom: -20px;
