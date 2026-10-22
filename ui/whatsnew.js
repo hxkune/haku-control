@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.49',
+    en: ['The haku logo in the menu is centred and comes alive: it drifts slightly, a soft glint and shadow pass across it. With Animations off it holds still.'],
+    ru: ['Логотип haku в меню стоит по центру и ожил: слегка покачивается, по нему проходят мягкий блик и тень. При выключенных анимациях он неподвижен.'],
+    fr: ['Le logo haku du menu est centré et prend vie : il flotte légèrement, un reflet doux et une ombre le traversent. Avec les animations coupées, il reste immobile.'] },
   { v: '0.4.48',
     en: ['Home: if nothing is found yet, it says where to start; a device that is not lit is listed with the reason and what to do; the fans show their speed as they run.', 'Settings: a new Help and diagnostics section answers the common questions, and Help buttons open the right one.', 'Diagnostics file: saving it sends nothing; Open to check shows it in Notepad before you give it to anyone. Keys, tokens, passwords, PINs and e-mail addresses are left out.', 'OpenRGB: each card says what the controller takes (effects, experimental, steady colour only) or why it is not lit; a connector of a board that is also added whole says the board lights it.'],
     ru: ['Главная: если ничего ещё не найдено, подсказывает, с чего начать; неработающее устройство показано с причиной и тем, что сделать; вентиляторы показывают текущие обороты.', 'Настройки: новый раздел «Помощь и диагностика» отвечает на частые вопросы, а кнопки «Помощь» открывают нужный ответ.', 'Файл диагностики: сохранение ничего не отправляет; «Открыть для проверки» показывает его в Блокноте, прежде чем вы кому-то его передадите. Ключи, токены, пароли, PIN-коды и адреса почты в него не попадают.', 'OpenRGB: на каждой карточке написано, что принимает контроллер (эффекты, экспериментально, только постоянный цвет) или почему он не светится; разъём платы, которая добавлена и целиком, сообщает, что его зажигает плата.'],
