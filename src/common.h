@@ -313,6 +313,8 @@ void  app_reload_all(void);           // settings replaced on disk (a restored b
 void  backup_save(void *owner);
 void  backup_load(void *owner);
 int   backup_json(char *out, int cap);
+enum { TS_OPEN = 1, TS_WRITE, TS_REPLACE };
+int   tryx_save(const wchar_t *path, const void *buf, DWORD n);   // the screen builder's file, replaced only once written (drv_tryx.c)
 float app_brightness_now(void);       // 0..1
 int   app_frame_json(char *out, int cap);    // live LED colours
 void  app_set(const char *section, const char *key, const char *value);

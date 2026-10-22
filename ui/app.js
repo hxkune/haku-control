@@ -2407,11 +2407,12 @@ function drawHero() {
 function heroKeys(hits) {
   const box = $('#hero-keys'), cvs = $('#hero'), ox = cvs.offsetLeft, oy = cvs.offsetTop, d = devicePixelRatio, id = b => b.dataset.i + (b.hasAttribute('data-pw') ? 'p' : '');
   const vis = +$('#tab-home .hero').dataset.h || 1e9, shown = h => oy + h.y / d < vis - 2;   // a folded preview: the rows below the fold are not there for Tab either
-  const sig = HERO.arrange ? '' : ox + ',' + oy + ',' + vis + ';' + hits.map(h => [h.key, h.x, h.y, h.w, h.h, h.pw && h.pw.on].join()).join(';');
+  const fst = h => h.k === 'fan' && h.fan ? fanTileSt(h.fan.m) : null;   // a fan tile's problem is part of its name
+  const sig = HERO.arrange ? '' : ox + ',' + oy + ',' + vis + ';' + hits.map(h => [h.key, h.x, h.y, h.w, h.h, h.pw && h.pw.on, (fst(h) || [])[1]].join()).join(';');
   if (box.dataset.sig === sig) return;
   const f = box.contains(document.activeElement) ? id(document.activeElement) : null;
   const at = (x, y, w, h) => `style="left:${ox + x / d}px;top:${oy + y / d}px;width:${w / d}px;height:${h / d}px"`;
-  const name = h => h.k === 'group' ? groupTitle(groups().find(g => g.n === h.g) || { n: h.g }) : h.k === 'add' ? t('hero.empty') : h.name;
+  const name = h => h.k === 'group' ? groupTitle(groups().find(g => g.n === h.g) || { n: h.g }) : h.k === 'add' ? t('hero.empty') : h.name + (fst(h) ? ', ' + fst(h)[1] : '');
   box.dataset.sig = sig;
   box.innerHTML = HERO.arrange ? '' : hits.map((h, i) => !shown(h) ? '' : `<button type="button" data-i="${i}" ${at(h.x, h.y, h.w, h.h)} aria-label="${esc(name(h))}"></button>` + (!h.pw ? '' :
     `<button type="button" data-i="${i}" data-pw ${at(h.pw.x - h.pw.r, h.pw.y - h.pw.r, 2 * h.pw.r, 2 * h.pw.r)} aria-label="${esc(name(h))}: ${t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on'))}"></button>`)).join('');
@@ -3273,7 +3274,7 @@ function txbOpen(d, from) {
   TXB = { d, from, shape: /2D04$/i.test(d.host || '') ? '2:1' : '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now() };
   $('#txb-title').textContent = t('txb.title', cv('dev.' + d.id, 'name', d.name));
   $('#txb-stage').setAttribute('aria-label', t('txb.stage'));
-  $('#txb-shape').value = TXB.shape; $('#txb-msg').textContent = '';
+  $('#txb-shape').value = TXB.shape; $('#txb-msg').textContent = ''; $('#txb-msg').classList.remove('warn'); $('#txb-go').disabled = false;   // a load the last close overtook left it off
   $('#txb').classList.remove('hidden'); txbSize(); txbZoom(1); txbLayers(); txbLoop(); $('#txb-src').focus();
 }
 const txbFreeSrc = s => { if (!s) return; if (s.el) { s.el.pause(); URL.revokeObjectURL(s.el.src); } (s.frames || []).forEach(f => f.bmp.close()); s.bmp?.close(); };
@@ -3283,36 +3284,53 @@ function txbClose() {
   $('#txb').classList.add('hidden');
   const from = TXB.from; TXB = null; from?.focus();
 }
-// a picture, an animation (GIF, WebP, APNG: every frame decoded once) or a video
+// an animation's frames no bigger than the largest video needs at zoom 1 (a still keeps its size, for zooming in)
+const txbFit = (w, h) => { const k = Math.max(...Object.values(TXB_SHAPES).map(([W, H]) => Math.max(W / w, H / h)));
+  return k < 1 ? { resizeWidth: Math.max(1, Math.round(w * k)), resizeHeight: Math.max(1, Math.round(h * k)), resizeQuality: 'high' } : {}; };
+const TXB_MEM = 256 << 20;   // decoded animation frames at most, 4 bytes a pixel: past it the animation is cut short
+let TXB_LOAD = 0;
+// a picture, an animation (GIF, WebP, APNG: every frame decoded once) or a video. Each pick is its own load: one a newer
+// pick or closing the builder overtook frees what it made and touches nothing; meanwhile nothing can be sent.
 async function txbLoad(file) {
-  const B = TXB; let s = null;
+  const B = TXB, id = B.load = ++TXB_LOAD, now = () => TXB === B && B.load === id, msg = $('#txb-msg');
+  let s = null, cut = 0;
+  B.ld = 1; $('#txb-go').disabled = true; msg.textContent = t('txb.loading'); msg.classList.remove('warn');
   try {
     if (/^video\//.test(file.type)) {
       const v = document.createElement('video'); v.muted = true; v.loop = true; v.playsInline = true; v.src = URL.createObjectURL(file);
       s = { el: v };
       await new Promise((ok, no) => { v.onloadeddata = ok; v.onerror = no; });
       Object.assign(s, { w: v.videoWidth, h: v.videoHeight, dur: Math.min(v.duration || 0, TXB_MAX) });
-      v.play().catch(() => {});
+      if (now()) v.play().catch(() => {});
     } else {
-      const frames = [];
+      s = { frames: [] };   // before the first frame: a failure halfway frees what was decoded
       if ('ImageDecoder' in window && await ImageDecoder.isTypeSupported(file.type)) {
-        const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: file.type }); await dec.tracks.ready;
-        const n = Math.min(dec.tracks.selectedTrack?.frameCount || 1, 900);
-        for (let i = 0, at = 0; i < n && at < TXB_MAX; i++) {
-          const { image } = await dec.decode({ frameIndex: i }), d = (image.duration || 0) / 1e6;   // µs
-          frames.push({ bmp: await createImageBitmap(image), at, dur: d < .02 ? .1 : d }); image.close();   // as browsers show a GIF's 0 delay
-          at += frames.at(-1).dur;
-        }
-        dec.close();
-      } else frames.push({ bmp: await createImageBitmap(file), at: 0, dur: 0 });
-      const f = frames[0].bmp, end = frames.at(-1);
-      s = frames.length > 1 ? { frames, w: f.width, h: f.height, dur: end.at + end.dur } : { bmp: f, w: f.width, h: f.height, dur: 0 };
+        const data = await file.arrayBuffer();
+        if (!now()) throw 0;
+        const dec = new ImageDecoder({ data, type: file.type });
+        try {
+          await dec.tracks.ready;
+          const n = Math.min(dec.tracks.selectedTrack?.frameCount || 1, 900);
+          for (let i = 0, at = 0, mem = 0; i < n && at < TXB_MAX && now(); i++) {
+            const { image } = await dec.decode({ frameIndex: i }), d = (image.duration || 0) / 1e6;   // µs
+            let bmp = null;
+            try { if (now()) bmp = await createImageBitmap(image, n > 1 ? txbFit(image.displayWidth, image.displayHeight) : {}); } finally { image.close(); }
+            if (!bmp) break;
+            if ((mem += bmp.width * bmp.height * 4) > TXB_MEM && s.frames.length) { bmp.close(); cut = 1; break; }
+            s.frames.push({ bmp, at, dur: d < .02 ? .1 : d });   // as browsers show a GIF's 0 delay
+            at += s.frames.at(-1).dur;
+          }
+        } finally { dec.close(); }
+      } else s.frames.push({ bmp: await createImageBitmap(file), at: 0, dur: 0 });
+      const fr = s.frames, f = fr[0].bmp, end = fr.at(-1);
+      s = fr.length > 1 ? { frames: fr, w: f.width, h: f.height, dur: end.at + end.dur } : { bmp: f, w: f.width, h: f.height, dur: 0 };
     }
   } catch { txbFreeSrc(s); s = null; }
-  if (TXB !== B) return txbFreeSrc(s);   // closed meanwhile
-  if (!s || !s.w) { txbFreeSrc(s); $('#txb-msg').textContent = t('txb.bad'); return; }
+  if (!now()) return txbFreeSrc(s);   // a newer pick, or the builder closed meanwhile
+  B.ld = 0; $('#txb-go').disabled = false;
+  if (!s || !s.w) { txbFreeSrc(s); msg.textContent = t('txb.bad'); msg.classList.add('warn'); return; }   // what was there before stays
   txbFreeSrc(B.src); B.src = s; B.cx = B.cy = .5; txbZoom(1);
-  $('#txb-msg').textContent = s.dur ? t('txb.anim', Math.round(s.dur * 10) / 10) : '';
+  msg.textContent = s.dur ? t(cut ? 'txb.cut' : 'txb.anim', Math.round(s.dur * 10) / 10) : ''; msg.classList.toggle('warn', !!cut);
 }
 function txbFrame(s, t) {
   const tt = t % s.dur; let i = 0;
@@ -3397,10 +3415,11 @@ function txbMp4(w, h, avcc, chunks) {
   return out;
 }
 async function txbMake() {
+  if (!TXB || TXB.busy || TXB.ld) return;   // a save already on its way, or a picture still loading
   const B = TXB, s = B.src, [w0, h0] = TXB_SHAPES[B.shape], vid = !!(s && s.dur), msg = $('#txb-msg');
   const c = document.createElement('canvas'); c.width = vid ? w0 : w0 * 1.5; c.height = vid ? h0 : h0 * 1.5;
   const busy = on => { B.busy = on; $('#txb').querySelectorAll('button, input, select').forEach(e => { e.disabled = on; }); };
-  busy(1);
+  busy(1); msg.classList.remove('warn');
   try {
     let blob;
     if (!vid) { txbDraw(c, 0); blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .9)); }
@@ -3437,10 +3456,20 @@ async function txbMake() {
     }
     if (blob.size > 16 << 20) throw t('txb.big');
     const data = await new Promise((r, no) => { const f = new FileReader(); f.onload = () => r(f.result.slice(f.result.indexOf(',') + 1)); f.onerror = no; f.readAsDataURL(blob); });
-    send({ cmd: 'tryx_build', id: String(B.d.id), ext: vid ? 'mp4' : 'jpg', data });
-    busy(0); txbClose();
-  } catch (e) { busy(0); txbLayers(); msg.textContent = typeof e === 'string' ? e : t('txb.fail', e?.message || e); txbLoop(); }
+    // the core answers this request (tryx_built): until it says saved, the builder keeps everything for another try
+    const req = String(++TXB_REQ); msg.textContent = t('txb.saving');
+    const r = await new Promise(done => {
+      const tm = setTimeout(() => done({ ok: 0, err: 'wait' }), 20000);
+      B.wait = { req, done: m => { clearTimeout(tm); done(m); } };
+      send({ cmd: 'tryx_build', id: String(B.d.id), ext: vid ? 'mp4' : 'jpg', data, req });
+    });
+    B.wait = null;
+    if (!r.ok) throw t('txb.nosave', t('txb.e.' + (['open', 'write', 'replace', 'wait'].includes(r.err) ? r.err : 'bad')));
+    msg.textContent = t('txb.saved');   // on this PC; the cable upload to the screen shows on the device card
+  } catch (e) { msg.textContent = typeof e === 'string' ? e : t('txb.fail', e?.message || e); msg.classList.add('warn'); }
+  busy(0); txbLayers(); txbLoop();
 }
+let TXB_REQ = 0;
 $('#txb-src').addEventListener('click', () => $('#txb-file').click());
 $('#txb-file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) txbLoad(f); });
 $('#txb-pic').addEventListener('click', () => $('#txb-file2').click());
@@ -4324,7 +4353,7 @@ const fanGroups = () => Array.from({ length: FAN_GROUPS }, (_, k) => k + 1).filt
   .map(n => ({ n, name: cv('fans', `g${n}_name`, ''), m: cv('fans', `g${n}`, '').split(',').map(x => +x - 1).filter(i => fanAll().includes(i) && !fanHidden(i)) }));
 // what the open settings change: the one fan (alone or opened inside its group), or every fan of the group
 const fanTargets = () => { const o = FAN.open; if (!o) return []; if (o.i != null) return [o.i]; return (fanGroups().find(g => g.n === o.g) || { m: [] }).m; };
-const fanSetAll = (k, v, soon) => fanTargets().forEach(i => (soon ? setCfgSoon : setCfg)('fans', fanKey(i, k), v));
+const fanSetAll = (k, v, soon) => soon ? fanTargets().forEach(i => setCfgSoon('fans', fanKey(i, k), v)) : setFans(fanTargets().map(i => [fanKey(i, k), v]));
 const fanSrcName = s => s === 'cpu' ? t('fans.cpu') : s === 'gpu' ? t('fans.gpu') : cv('fans', s + '_name', '') || t('fans.t', s.slice(1));
 const fanMode = i => { const m = cv('fans', fanKey(i), '');
   return m === 'fix' ? `${t('fans.fix')} · ${cv('fans', fanKey(i, 'pct'), '50')}%` : m === 'curve' ? `${t('fans.curve')} · ${fanSrcName(fanSrc(i))}` : t(i >= FAN_Q ? 'fans.asis.b' : 'fans.asis'); };
@@ -4363,7 +4392,20 @@ function fanWidgets() {
   return [...gs.map(g => ({ key: 'fang' + g.n, g: g.n, m: g.m, name: g.name })),
     ...fanAll().filter(i => !fanHidden(i) && !inG.has(i)).map(i => ({ key: 'fan' + i, i, m: [i], name: fanName(i) }))];
 }
-// the fan turning with its rpm, and rpm · % under it (a group: its first fan's)
+// the fan turning with its rpm, and rpm · % under it (a group: its first fan's); a problem on any of its fans says so instead
+const FAN_STALE = 5000;   // as fans.c STALE_MS: older QUADRO readings are not current
+// the QUADRO's readings are not now: the link is down, or its last report is older than fans.c trusts (the board reads on its own)
+const fanOld = i => { const F = S.fans || {}; return !fanCh(i).b && (F.link === 0 || (F.age || 0) > FAN_STALE); };
+// a Home tile's status from all its fans, the worst first: [short text for the tile, full text for a screen reader] or null
+const FAN_TILE = ['fans.tile.nolink', 'fans.tile.old', 'fans.tile.em', 'fans.tile.err'];
+function fanTileSt(m) {
+  let w = null;
+  for (const i of m) {
+    const [st, c] = fanState(i), k = fanOld(i) ? ((S.fans || {}).link === 0 ? 0 : 1) : fanCh(i).em ? 2 : c === 'bad' ? 3 : -1;
+    if (k >= 0 && (!w || k < w.k)) w = { k, i, st };
+  }
+  return w && [t(FAN_TILE[w.k]), (m.length > 1 ? fanName(w.i) + ': ' : '') + w.st];
+}
 const FAN_BLADE = new Path2D('M-1.5-4.8C-2-10 1-15 6-16.8C9-15.8 11-14.3 12.3-12.3C8.5-9.5 5.5-6.5 3.8-3.3Z'), FAN_SPIN = {};
 const PUMP_BL = new Path2D(PUMP_BLADE), PUMP_FLOW = new Path2D('M24 53A26 26 0 0 1 45 27.5M76 53A26 26 0 0 1 55 78.5');
 // the pump on the canvas, the impeller at angle a
@@ -4382,11 +4424,17 @@ function drawPump(c, a) {
   c.restore();
 }
 function drawFanTile(c, x, y, w, h, fw) {
-  const d = devicePixelRatio, i = fw.m[0], f = i == null ? {} : fanCh(i), pump = fw.m.length > 0 && fw.m.every(fanPump), rpm = f.rpm > 0 ? f.rpm : 0;
+  const d = devicePixelRatio, i = fw.m[0], f = i == null ? {} : fanCh(i), pump = fw.m.length > 0 && fw.m.every(fanPump), st = fanTileSt(fw.m);
+  const rpm = i != null && !fanOld(i) && f.rpm > 0 ? f.rpm : 0;   // old readings never turn it
   const now = performance.now(), sp = FAN_SPIN[fw.key] = FAN_SPIN[fw.key] || { a: 0, t: now }, calm = document.body.classList.contains('calm');
   if (rpm && !calm) { sp.a += Math.min(100, now - sp.t) / 1000 * rpm / 1500 * Math.PI * 2; HERO.moving = !document.body.classList.contains('idle') || HERO.moving; }
   sp.t = now;
-  const R = Math.max(8 * d, Math.min(w, h - 18 * d) * .4), cx = x + w / 2, cy = y + (h - 18 * d) / 2, k = R / 21;
+  // the line under it: rpm · %, or what is wrong, on two lines when one is too narrow for it
+  c.font = `${(st ? 9 : 10) * d}px ${WIDE}`;
+  const fit = s => { while (s.length > 1 && c.measureText(s).width > w + 12 * d) s = s.slice(0, -2) + '…'; return s; };
+  const s = i == null ? t('fans.empty') : st ? st[0] : `${f.rpm == null || f.rpm < 0 ? '—' : f.rpm} ${t('fans.rpmu')} · ${f.pct == null ? '—' : Math.round(f.pct) + '%'}`;
+  const sp2 = s.indexOf(' '), ls = (st && sp2 > 0 && c.measureText(s).width > w + 12 * d ? [s.slice(0, sp2), s.slice(sp2 + 1)] : [s]).map(fit);
+  const lh = 8 * d + ls.length * 10 * d, R = Math.max(8 * d, Math.min(w, h - lh) * .4), cx = x + w / 2, cy = y + (h - lh) / 2, k = R / 21;
   c.save(); c.translate(cx, cy); c.scale(k, k); c.lineWidth = 1.3 * d / k; c.strokeStyle = inkA(.32);
   if (pump) drawPump(c, sp.a);
   else {
@@ -4397,14 +4445,14 @@ function drawFanTile(c, x, y, w, h, fw) {
     c.beginPath(); c.arc(0, 0, 5, 0, 7); c.fillStyle = inkA(.7); c.fill();
   }
   c.restore();
-  c.font = `${10 * d}px ${WIDE}`; c.textAlign = 'center'; c.fillStyle = THEME.hi;
-  c.fillText(i == null ? t('fans.empty') : `${f.rpm < 0 ? '—' : f.rpm ?? 0} ${t('fans.rpmu')} · ${f.pct == null ? '—' : Math.round(f.pct) + '%'}`, cx, y + h - 2 * d);
+  c.textAlign = 'center'; c.fillStyle = st ? '#d0605a' : THEME.hi;
+  ls.forEach((l, n) => c.fillText(l, cx, y + h - 2 * d - (ls.length - 1 - n) * 10 * d));
 }
 const fanValid = o => !!o && (o.g ? fanGroups().some(g => g.n === o.g && (o.i == null || g.m.includes(o.i))) : !fanHidden(o.i));
 // who drives the channel, and only what the QUADRO read back counts as done: [text, '' | 'warn' | 'bad']
 function fanState(i) {
   const F = S.fans || {}, f = fanCh(i), m = cv('fans', fanKey(i), ''), why = f.err ? ' · ' + t('fans.err.' + f.err) : '';
-  if (F.link === 0 && !f.b) return [t('fans.st.stale'), 'bad'];
+  if (fanOld(i)) return [t(F.link === 0 ? 'fans.st.stale' : 'fans.st.old'), 'bad'];
   // an emergency: why it was needed, then the speed asked and whether the QUADRO took it
   if (f.em) { const ep = f.want >= 0 ? f.want : Math.max(fanMin(i), Math.min(100, +cv('fans', fanKey(i, 'fail'), '') || 100));
     return [t('fans.em.' + f.em) + '. ' + t(f.ok === -1 ? 'fans.em.fail' : !f.own || f.want == null || f.want < 0 ? 'fans.em.wait' : f.ok === 0 ? 'fans.em.unconf' : 'fans.em.ok', ep) + why, 'bad']; }
@@ -4427,7 +4475,7 @@ function fanRow(i, named) {
 // the chosen fan now: the curve's value at the temperature, what the limits make of it, and the speed while it slows down
 function fanNow(i) {
   const f = fanCh(i), T = fanTemp(fanSrc(i));
-  if (cv('fans', fanKey(i), '') !== 'curve' || ((S.fans || {}).link === 0 && !f.b) || f.em || T == null || f.want == null || f.want < 0) return '';
+  if (cv('fans', fanKey(i), '') !== 'curve' || fanOld(i) || f.em || T == null || f.want == null || f.want < 0) return '';
   const raw = fanAt(fanCurve(i), T), r = [t('fans.now', fanDeg(T), raw)];
   if (f.want !== raw) r.push(t('fans.now.lim', f.want));
   if (f.out >= 0 && f.out > f.want) r.push(t('fans.now.slow', f.out, fanDown(i)));
@@ -4706,7 +4754,7 @@ function updateFans() {
   fanI18n('#fans-back', 'fans.back.all' + qb); fanI18n('#fans-note', 'fans.note' + qb);
   $('#fans-status').textContent = F.link === 0 ? t('fans.nolink', age) : F.paused ? t('fans.paused' + qb) : t('fans.on') + (age > 3 ? ' · ' + t('fans.age', age) : '');
   $('#fans-status').classList.toggle('bad', F.link === 0);
-  $('#fan-panel').classList.toggle('stale', F.link === 0 && !F.chip);   // the board's tiles still read
+  $('#fan-panel').classList.toggle('stale', (F.link === 0 || (F.age || 0) > FAN_STALE) && !F.chip);   // the board's tiles still read
   const ts = (F.t || []).map((v, k) => v == null ? '' : `${fanSrcName('t' + (k + 1))}: ${fanDeg(v)}`).filter(Boolean);
   $('#fans-sensors').textContent = !F.q ? '' : (ts.length ? t('fans.sensors', ts.join(', ')) : t('fans.nosensors')) + (F.flow > 0 ? ' · ' + t('fans.flow', F.flow) : '');
   $('#fans-dev-t').textContent = [F.q ? 'QUADRO · ' + t('fans.dev.t', F.serial, F.fw) : '', F.chip ? t('fans.dev.b', F.chip) : ''].filter(Boolean).join(' · ');
@@ -4765,7 +4813,7 @@ $('#fan-removed').addEventListener('click', e => {
 });
 // every channel back to the QUADRO's own setting; the result is what the core then reports
 $('#fans-back').addEventListener('click', () => {
-  fanAll().forEach(i => { if (cv('fans', fanKey(i), '')) setCfg('fans', fanKey(i), ''); });
+  setFans(fanAll().filter(i => cv('fans', fanKey(i), '')).map(i => [fanKey(i), '']));
   FAN.back = Date.now(); updateFans();
 });
 $('#fans-log-copy').addEventListener('click', async e => {
@@ -4773,7 +4821,8 @@ $('#fans-log-copy').addEventListener('click', async e => {
   let ok = false; try { await navigator.clipboard.writeText(txt); ok = true; } catch (x) { }
   b.textContent = ok ? '✓' : t('share.copyhand'); setTimeout(() => { b.textContent = t('share.copy'); }, 1500);
 });
-const fanMembers = (n, m) => setCfg('fans', `g${n}`, [...new Set(m)].sort((a, b) => a - b).map(i => i + 1).join(','));
+const fanMemKV = (n, m) => [`g${n}`, [...new Set(m)].sort((a, b) => a - b).map(i => i + 1).join(',')];
+const fanMembers = (n, m) => setFans([fanMemKV(n, m)]);
 $('#fan-set').addEventListener('click', e => {
   const o = FAN.open; if (!o) return;
   const b = e.target.closest('#fs-mode button, #fs-src button, #fs-kind button, #fs-look button, #fs-members button, #fs-live [data-gm], #fs-up, #fs-shared button, #fs-del, #fs-apply, #fs-cancel, #fs-pt-add, #fs-pt-del, #fs-reset');
@@ -4788,8 +4837,7 @@ $('#fan-set').addEventListener('click', e => {
   if (b.id === 'fs-del') {
     if (o.i == null) { setCfg('fans', `g${o.g}`, ''); setCfg('fans', `g${o.g}_name`, ''); }
     else {   // off the panel: back to the QUADRO's own setting (the button says so) and out of its group
-      setCfg('fans', fanKey(o.i), ''); setCfg('fans', fanKey(o.i, 'hide'), '1');
-      fanGroups().filter(g => g.m.includes(o.i)).forEach(g => fanMembers(g.n, g.m.filter(j => j !== o.i)));
+      setFans([[fanKey(o.i), ''], [fanKey(o.i, 'hide'), '1'], ...fanGroups().filter(g => g.m.includes(o.i)).map(g => fanMemKV(g.n, g.m.filter(j => j !== o.i)))]);
     }
     if (D && D.key === fanDKey(o)) FAN.draft = null;
     FAN.open = null; if (SHEET.kind === 'fan') closeSheet(); FAN.sig = ''; updateFans(); return;
@@ -4797,10 +4845,10 @@ $('#fan-set').addEventListener('click', e => {
   if (b.dataset.m != null) {
     const j = +b.dataset.m, gs = fanGroups(), g = gs.find(x => x.n === o.g); if (!g) return;
     if (g.m.includes(j)) fanMembers(g.n, g.m.filter(x => x !== j));
-    else {   // a fan joins: out of any other group, and it takes the group's mode, speed and curve; its kind and limits stay its own
-      gs.filter(x => x.n !== g.n && x.m.includes(j)).forEach(x => fanMembers(x.n, x.m.filter(y => y !== j)));
-      if (g.m.length) ['', 'pct', 'src', 'curve'].forEach(k => setCfg('fans', fanKey(j, k), cv('fans', fanKey(g.m[0], k), '')));
-      fanMembers(g.n, [...g.m, j]);
+    else {   // a fan joins: out of any other group, and it takes the group's mode, speed and curve; its kind and limits stay its own.
+      // One change (setFans): fans.c never runs it in the group's mode with its old source or curve
+      setFans([...gs.filter(x => x.n !== g.n && x.m.includes(j)).map(x => fanMemKV(x.n, x.m.filter(y => y !== j))),
+        ...(g.m.length ? ['src', 'curve', 'pct', ''].map(k => [fanKey(j, k), cv('fans', fanKey(g.m[0], k), '')]) : []), fanMemKV(g.n, [...g.m, j])]);
     }
   } else if (b.closest('#fs-kind')) setCfg('fans', fanKey(o.i, 'kind'), b.dataset.v);
   else if (b.closest('#fs-look')) setCfg('fans', fanKey(o.i, 'look'), b.dataset.v);
@@ -4977,6 +5025,7 @@ if (wv) wv.addEventListener('message', e => {
   if (m.type === 'frame') onFrame(m.l);
   else if (m.type === 'focus') document.body.classList.toggle('idle', !m.on);   // behind other windows: endless animations pause
   else if (m.type === 'status') applyStatus(m);
+  else if (m.type === 'tryx_built') { if (TXB?.wait?.req === m.req) TXB.wait.done(m); }
   else if (m.type === 'state') {
     const prof = cv('general', 'profile', '');
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;

@@ -243,8 +243,10 @@ static void on_message(const std::string &js) {
         post_state();
     }
     else if (cmd == "tryx_build") {   // the screen builder's result: a jpg or mp4 made on the page, kept as %APPDATA%\haku-control\tryx-<N>.<ext>
-        std::string id = field(js, "id"), ext = field(js, "ext"), sec = "dev." + id, data = field(js, "data");
-        DWORD n = 0; std::vector<BYTE> buf; FILE *f = NULL; bool ok = false;
+        std::string id = field(js, "id"), ext = field(js, "ext"), sec = "dev." + id, data = field(js, "data"), req = field(js, "req");
+        DWORD n = 0; std::vector<BYTE> buf; int err = TS_OPEN; const char *why = "bad";
+        req.erase(std::remove_if(req.begin(), req.end(), [](char c) { return !isalnum((unsigned char)c); }), req.end());
+        if (req.size() > 16) req.resize(16);
         if (!id.empty() && id.size() < 6 && id.find_first_not_of("0123456789") == std::string::npos && (ext == "jpg" || ext == "mp4") &&
             !_stricmp(cfg_get(sec.c_str(), "kind", ""), "tryx") && data.size() <= (16u << 20) / 3 * 4 + 4 &&
             CryptStringToBinaryA(data.c_str(), (DWORD)data.size(), CRYPT_STRING_BASE64, NULL, &n, NULL, NULL) && n >= 12 && n <= 16u << 20) {
@@ -253,18 +255,20 @@ static void on_message(const std::string &js) {
             ExpandEnvironmentStringsW((L"%APPDATA%\\" APP_ID L"\\tryx-" + widen(id.c_str()) + L"." + widen(ext.c_str())).c_str(), path, MAX_PATH);
             // what it says it is: a JPEG starts FF D8 FF, an mp4 has "ftyp" at 4
             if (CryptStringToBinaryA(data.c_str(), (DWORD)data.size(), CRYPT_STRING_BASE64, buf.data(), &n, NULL, NULL) &&
-                (ext == "jpg" ? buf[0] == 0xFF && buf[1] == 0xD8 && buf[2] == 0xFF : !memcmp(buf.data() + 4, "ftyp", 4)) && !_wfopen_s(&f, path, L"wb") && f) {
-                ok = fwrite(buf.data(), 1, n, f) == n;
-                ok = !fclose(f) && ok;
+                (ext == "jpg" ? buf[0] == 0xFF && buf[1] == 0xD8 && buf[2] == 0xFF : !memcmp(buf.data() + 4, "ftyp", 4))) {
+                err = tryx_save(path, buf.data(), n);   // a failed save keeps the old file, and the settings still point at it
+                why = err == TS_OPEN ? "open" : err == TS_WRITE ? "write" : "replace";
             }
-            if (ok) {
+            if (!err) {
                 cfg_set(sec.c_str(), "media", narrow(path).c_str());
                 cfg_set(sec.c_str(), "media_at", std::to_string(GetTickCount()).c_str());
                 app_set(sec.c_str(), "theme", "-1");
             }
         }
-        if (!ok) logf_("tryx: the builder's file was not saved (%s, %u bytes)", ext.c_str(), (unsigned)n);
+        if (err) logf_("tryx: the builder's file was not saved (%s, %s, %u bytes)", why, ext.c_str(), (unsigned)n);
         post_state();
+        // the answer to this one request: saved on this PC (the screen's upload then shows on the device card), or why not
+        post(("{\"type\":\"tryx_built\",\"req\":\"" + req + "\",\"ok\":" + (err ? "0" : "1") + ",\"err\":\"" + (err ? why : "") + "\"}").c_str());
     }
     else if (cmd == "ai_on_demand") { ollama_set_on_demand(field(js, "v") == "1"); post_state(); }
     else if (cmd == "dev_add") {

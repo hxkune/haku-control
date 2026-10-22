@@ -599,6 +599,56 @@
     await fanReset();
   });
 
+  test('fans: a fan joins a group in one change: its mode, source, curve and the membership together, its own limits and kind kept; Undo takes it all back', async () => {
+    await fresh(); await fanReset();
+    const cur = '30:30,60:70,80:100';
+    setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1'); setCfg('fans', 'g2_name', 'Back'); setCfg('fans', 'g2', '3,2');
+    [['fan1', 'curve'], ['fan1_src', 't1'], ['fan1_curve', cur], ['fan2', 'fix'], ['fan2_pct', '40'], ['fan2_src', 'gpu'], ['fan2_min', '35'], ['fan2_kind', 'pump'], ['fan2_name', 'Rear']].forEach(([k, v]) => setCfg('fans', k, v));
+    await fanEmit(); FAN.sig = ''; updateFans(); await wait(0); undoReset();
+    $('#fan-panel [data-g="1"] .fan-hd').click(); await wait(120);
+    const n = sent.length; $('#fs-members [data-m="1"]').click(); await wait(60);
+    const out = sent.slice(n), fs = out.filter(o => o.cmd === 'fans_set'), kv = fs.length === 1 ? fs[0].kv.split('\n') : [];
+    ok(fs.length === 1 && ['fan2=curve', 'fan2_src=t1', 'fan2_curve=' + cur, 'g1=1,2', 'g2=3'].every(x => kv.includes(x)), 'not one change: ' + JSON.stringify(fs));
+    ok(!kv.some(x => /^fan2_(min|kind|name)=/.test(x)) && !out.some(o => o.cmd === 'set' && o.s === 'fans'), 'a key went alone, or its own ones were sent: ' + JSON.stringify(out));
+    ok(STATE.cfg.fans.fan2 === 'curve' && STATE.cfg.fans.fan2_src === 't1' && STATE.cfg.fans.g1 === '1,2' && cv('fans', 'fan2_min', '') === '35' && cv('fans', 'fan2_kind', '') === 'pump', 'the core: ' + JSON.stringify(STATE.cfg.fans));
+    const m = sent.length; undo(); await wait(60);
+    const b = sent.slice(m).filter(o => o.cmd === 'fans_set'), bk = b.length === 1 ? b[0].kv.split('\n') : [];
+    ok(b.length === 1 && ['fan2=fix', 'fan2_src=gpu', 'fan2_curve=', 'g1=1', 'g2=3,2'].every(x => bk.includes(x)), 'undo not one change: ' + JSON.stringify(b));
+    ok(STATE.cfg.fans.fan2 === 'fix' && STATE.cfg.fans.fan2_src === 'gpu' && STATE.cfg.fans.g1 === '1' && STATE.cfg.fans.g2 === '3,2', 'undo left a mix: ' + JSON.stringify(STATE.cfg.fans));
+    await fanReset();
+  });
+
+  test('fans: a Home tile says when its readings are old or a fan of its group is in trouble, and never turns on old readings', async () => {
+    await fresh(); await fanReset();
+    const F = STATE.fans, P = CanvasRenderingContext2D.prototype, fill = P.fillText;
+    const drawn = () => { const out = []; P.fillText = function (s, ...a) { out.push(String(s)); return fill.call(this, s, ...a); }; try { drawHero(); } finally { P.fillText = fill; } out.includes = s => out.join(' ').includes(s); return out; };
+    const label = k => { const h = HERO.hits.findIndex(h => h.key === k), b = $(`#hero-keys button[data-i="${h}"]:not([data-pw])`); return b ? b.getAttribute('aria-label') : null; };
+    const spun = async k => { drawHero(); const a = (FAN_SPIN[k] || {}).a; await wait(60); drawHero(); return FAN_SPIN[k].a !== a; };
+    const rpm = `${F.f[0].rpm} ${t('fans.rpmu')}`;
+    setCfg('ui', 'hero_fans', 'fan0'); setCfg('ui', 'hero_order', 'fan0'); showTab('home'); await wait(30);
+    ok(!fanTileSt([0]) && drawn().some(s => s.startsWith(rpm)) && label('fan0') === fanName(0) && await spun('fan0'), 'fresh: ' + label('fan0'));
+    F.link = 0; await fanEmit();
+    ok(drawn().includes(t('fans.tile.nolink')) && !drawn().some(s => s.startsWith(rpm)) && label('fan0') === fanName(0) + ', ' + t('fans.st.stale'), 'the link lost: ' + label('fan0'));
+    ok(!await spun('fan0'), 'it turns on readings from before the link went');
+    F.link = 1; F.age = 30000; await fanEmit();
+    ok(drawn().includes(t('fans.tile.old')) && label('fan0').includes(t('fans.st.old')) && !await spun('fan0') && fanState(0)[1] === 'bad', 'old readings: ' + label('fan0'));
+    F.age = 400; await fanEmit();
+    ok(!fanTileSt([0]) && drawn().some(s => s.startsWith(rpm)) && label('fan0') === fanName(0) && await spun('fan0'), 'not back once the readings are: ' + label('fan0'));
+    F.f[0].rpm = -1; await fanEmit();
+    ok(drawn().some(s => s.startsWith('— ' + t('fans.rpmu'))), 'an unread rpm shown as a number');
+    F.f[0].rpm = 1180;
+    // a group: its second fan in trouble, the first one fine
+    setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,2'); setCfg('fans', 'fan2', 'fix');
+    Object.assign(F.f[1], { own: 1, want: 50, ok: -1 }); await fanEmit();
+    setCfg('ui', 'hero_fans', 'fang1'); setCfg('ui', 'hero_order', 'fang1'); drawHero();
+    ok(fanState(0)[1] === '' && drawn().includes(t('fans.tile.err')) && label('fang1').includes(fanName(1) + ': ' + t('fans.st.fail')), 'the error on the second fan: ' + label('fang1'));
+    F.f[1].em = 'stale'; await fanEmit();
+    ok(drawn().includes(t('fans.tile.em')) && label('fang1').includes(fanName(1) + ': ' + t('fans.em.stale')), 'its emergency: ' + label('fang1'));
+    F.link = 0; await fanEmit();
+    ok(drawn().includes(t('fans.tile.nolink')), 'no connection comes first');
+    setCfg('ui', 'hero_fans', ''); setCfg('ui', 'hero_order', ''); await fanReset();
+  });
+
   test('fans: the tab is there for any fan controller, a Lian Li receiver alone too, and never on a phone', async () => {
     await fresh(); await fanReset();
     const F = STATE.fans, L = STATE.ll, keep = { on: F.on, q: F.q, st: L.st }, vis = s => !$(s).classList.contains('hidden') && !!$(s).offsetParent;
@@ -745,8 +795,9 @@
     sent.length = 0; await txbMake();
     const o = sent.find(x => x.cmd === 'tryx_build');
     ok(o && o.id === '14' && o.ext === 'jpg' && o.data.startsWith('/9j/'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }));
-    ok($('#txb').classList.contains('hidden') && !TXB, 'the builder stayed open');
-    await wait(150); await fanEmit();
+    ok(!$('#txb').classList.contains('hidden') && TXB?.src && TXB.layers.length === 1 && $('#txb-msg').textContent === t('txb.saved') && !$('#txb-go').disabled,
+      'after the save the builder says saved on this PC and keeps the work: ' + $('#txb-msg').textContent);
+    txbClose(); await fanEmit();
     ok(card().querySelector('.dev-media-name').textContent === 'tryx-14.jpg', 'the file: ' + card().querySelector('.dev-media-name').textContent);
     STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
   });
@@ -764,11 +815,129 @@
     TXB.src = { frames, w: 200, h: 100, dur: .6 };
     sent.length = 0; await txbMake();
     const o = sent.find(x => x.cmd === 'tryx_build');
-    ok(o && o.ext === 'mp4' && $('#txb').classList.contains('hidden'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }) + ' / ' + $('#txb-msg').textContent);
+    ok(o && o.ext === 'mp4' && $('#txb-msg').textContent === t('txb.saved'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }) + ' / ' + $('#txb-msg').textContent);
     const v = document.createElement('video'); v.muted = true; v.src = 'data:video/mp4;base64,' + o.data;
     const err = await new Promise(r => { v.onloadeddata = () => r(''); v.onerror = () => r('error ' + v.error?.message); });
     ok(!err && v.videoWidth === 1440 && v.videoHeight === 720 && Math.abs(v.duration - .6) < .15, `the mp4: ${err} ${v.videoWidth}x${v.videoHeight} ${v.duration} s`);
-    STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+    txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+  });
+
+  // the builder open on a TRYX, and a stand-in ImageDecoder: a file's text names its plan { n, w, h, fail, hold }, frame i
+  // waiting for hold[i]; it counts the decoders and frames it made and closed, and keeps every bitmap made meanwhile
+  const txbOn = async () => {
+    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D04', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'screen', info: 'TRYX PANORAMA · COM5 · USB' });
+    STATE.cfg['dev.14'] = { kind: 'tryx', media: 'old.jpg' }; await fanEmit();
+    $('#dev-st-14').closest('.card').querySelector('.dev-build').click();
+  };
+  const txbOff = async () => { if (TXB) { TXB.busy = 0; txbClose(); } STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit(); };
+  const fakeDecoder = plans => {
+    const real = { D: window.ImageDecoder, cib: window.createImageBitmap }, log = { dec: 0, decClosed: 0, imgs: 0, imgClosed: 0, bmps: [] };
+    window.ImageDecoder = class {
+      static isTypeSupported() { return Promise.resolve(true); }
+      constructor({ data }) { this.p = plans[new TextDecoder().decode(data)]; log.dec++; this.tracks = { ready: Promise.resolve(), selectedTrack: { frameCount: this.p.n } }; }
+      async decode({ frameIndex: i }) {
+        await this.p.hold?.[i];
+        if (i === this.p.fail) throw new Error('a broken frame');
+        const c = document.createElement('canvas'); c.width = this.p.w; c.height = this.p.h; log.imgs++;
+        return { image: Object.assign(c, { duration: 1e5, displayWidth: c.width, displayHeight: c.height, close() { log.imgClosed++; } }) };
+      }
+      close() { log.decClosed++; }
+    };
+    window.createImageBitmap = async (...a) => { const b = await real.cib.call(window, ...a); log.bmps.push(b); return b; };
+    log.restore = () => { window.ImageDecoder = real.D; window.createImageBitmap = real.cib; };
+    log.tidy = () => log.dec === log.decClosed && log.imgs === log.imgClosed;
+    return log;
+  };
+  const gif = k => new File([k], k + '.gif', { type: 'image/gif' });
+  const gate = () => { let go; const p = new Promise(r => { go = r; }); p.go = go; return p; };
+  const shut = b => b.width === 0;   // a closed ImageBitmap has no size
+
+  test('TRYX: a failed save on the PC keeps the old file, the settings and the work, and the same work saves on a retry', async () => {
+    await fresh(); await txbOn();
+    try {
+      $('#txb-text').click();
+      const c = document.createElement('canvas'); c.width = 300; c.height = 150;
+      await txbLoad(new File([await new Promise(r => c.toBlob(r, 'image/png'))], 'a.png', { type: 'image/png' }));
+      const src = TXB.src;
+      for (const x of ['open', 'write', 'replace']) {
+        window.mockTryxFail = x; sent.length = 0;
+        const p = txbMake(); await wait(20); emit({ type: 'tryx_built', req: 'not-this-one', ok: 1, err: '' }); await p;
+        ok(sent.some(o => o.cmd === 'tryx_build' && o.req), 'no request id: ' + JSON.stringify(sent.map(o => o.cmd)));
+        ok($('#txb-msg').textContent === t('txb.nosave', t('txb.e.' + x)) && $('#txb-msg').classList.contains('warn'), x + ': ' + $('#txb-msg').textContent);
+        ok(!$('#txb').classList.contains('hidden') && TXB.src === src && !shut(src.bmp) && TXB.layers.length === 1 && !$('#txb-go').disabled, x + ': the work was lost');
+        ok(STATE.cfg['dev.14'].media === 'old.jpg' && STATE.cfg['dev.14'].theme === undefined, x + ': the settings changed: ' + JSON.stringify(STATE.cfg['dev.14']));
+      }
+      window.mockTryxFail = null; await txbMake();
+      ok($('#txb-msg').textContent === t('txb.saved') && !$('#txb-msg').classList.contains('warn') && /tryx-14\.jpg$/.test(STATE.cfg['dev.14'].media) && TXB.src === src, 'the retry: ' + $('#txb-msg').textContent + ' ' + STATE.cfg['dev.14'].media);
+    } finally { window.mockTryxFail = null; await txbOff(); }
+  });
+
+  test('TRYX: of two picks the newer one wins whichever ends first, the other frees what it made, and nothing saves meanwhile', async () => {
+    await fresh(); await txbOn();
+    const A = { n: 3, w: 200, h: 100, hold: { 1: gate() } }, B = { n: 2, w: 120, h: 60 }, log = fakeDecoder({ A, B });
+    try {
+      const a = txbLoad(gif('A')); await wait(30);
+      ok($('#txb-go').disabled && $('#txb-msg').textContent === t('txb.loading'), 'no loading state');
+      sent.length = 0; await txbMake(); ok(!sent.some(o => o.cmd === 'tryx_build'), 'it saved while loading');
+      await txbLoad(gif('B')); const bBmps = TXB.src.frames.map(f => f.bmp);
+      ok(TXB.src.w === 120 && TXB.src.frames.length === 2 && !$('#txb-go').disabled && $('#txb-msg').textContent === t('txb.anim', .2), 'B: ' + $('#txb-msg').textContent);
+      A.hold[1].go(); await a;
+      ok(TXB.src.w === 120 && bBmps.every(b => !shut(b)) && $('#txb-msg').textContent === t('txb.anim', .2), 'A, ending last, took over: ' + $('#txb-msg').textContent);
+      ok(log.bmps.length >= 3 && log.bmps.filter(b => !bBmps.includes(b)).every(shut) && log.tidy(), 'A left something open: ' + JSON.stringify(log));
+      ok(!$('#txb-go').disabled, 'saving stayed off');
+    } finally { log.restore(); await txbOff(); }
+  });
+
+  test('TRYX: a pick that breaks after a newer one loaded leaves the newer one as it is', async () => {
+    await fresh(); await txbOn();
+    const A = { n: 4, w: 200, h: 100, fail: 2, hold: { 1: gate() } }, B = { n: 2, w: 120, h: 60 }, log = fakeDecoder({ A, B });
+    try {
+      const a = txbLoad(gif('A')); await wait(30);
+      await txbLoad(gif('B')); const src = TXB.src;
+      A.hold[1].go(); await a;
+      ok(TXB.src === src && src.frames.every(f => !shut(f.bmp)) && $('#txb-msg').textContent === t('txb.anim', .2) && !$('#txb-go').disabled, 'B was touched: ' + $('#txb-msg').textContent);
+      ok(log.bmps.filter(b => !src.frames.some(f => f.bmp === b)).every(shut) && log.tidy(), 'A left something open: ' + JSON.stringify(log));
+    } finally { log.restore(); await txbOff(); }
+  });
+
+  test('TRYX: closing the builder after the first frame stops the decoding, frees it all, and the builder opens again ready', async () => {
+    await fresh(); await txbOn();
+    const A = { n: 5, w: 200, h: 100, hold: { 1: gate() } }, log = fakeDecoder({ A });
+    try {
+      const a = txbLoad(gif('A')); await wait(30);
+      ok(log.bmps.length === 1, 'the first frame: ' + log.bmps.length);
+      txbClose(); ok(!TXB && $('#txb').classList.contains('hidden'), 'it did not close while loading');
+      A.hold[1].go(); await a;
+      ok(log.imgs <= 2 && log.bmps.every(shut) && log.tidy() && !TXB, 'after closing: ' + JSON.stringify(log));
+      $('#dev-st-14').closest('.card').querySelector('.dev-build').click();
+      ok(TXB && !TXB.src && !$('#txb-go').disabled && $('#txb-msg').textContent === '', 'reopened: ' + $('#txb-msg').textContent);
+    } finally { log.restore(); await txbOff(); }
+  });
+
+  test('TRYX: a frame breaking halfway frees the frames made, closes the decoder and keeps the picture there before', async () => {
+    await fresh(); await txbOn();
+    const S = { n: 1, w: 300, h: 150 }, E = { n: 5, w: 200, h: 100, fail: 2 }, log = fakeDecoder({ S, E });
+    try {
+      await txbLoad(gif('S')); const src = TXB.src;
+      ok(src.bmp && src.w === 300 && !src.dur, 'the still: ' + JSON.stringify(src));
+      await txbLoad(gif('E'));
+      ok(TXB.src === src && !shut(src.bmp) && $('#txb-msg').textContent === t('txb.bad') && $('#txb-msg').classList.contains('warn') && !$('#txb-go').disabled, 'after the broken one: ' + $('#txb-msg').textContent);
+      const made = log.bmps.filter(b => b !== src.bmp);
+      ok(made.length === 2 && made.every(shut) && log.tidy(), 'left open: ' + JSON.stringify(log));
+    } finally { log.restore(); await txbOff(); }
+  });
+
+  test('TRYX: big animation frames come down to the screen size and past the memory cap the animation is cut short, saying so', async () => {
+    await fresh(); await txbOn();
+    const L = { n: 40, w: 2880, h: 2880 }, log = fakeDecoder({ L });
+    try {
+      await txbLoad(gif('L')); const s = TXB.src;
+      ok(s.w === 1440 && s.h === 1440, 'not scaled down: ' + s.w + 'x' + s.h);
+      ok(s.frames.length === 32 && s.frames.length * 1440 * 1440 * 4 <= 256 << 20, 'frames kept: ' + s.frames.length);
+      ok($('#txb-msg').textContent === t('txb.cut', 3.2) && $('#txb-msg').classList.contains('warn') && !$('#txb-go').disabled, 'the message: ' + $('#txb-msg').textContent);
+      ok(log.bmps.length === 33 && shut(log.bmps[32]) && log.tidy(), 'the frame over the cap: ' + JSON.stringify({ n: log.bmps.length, dec: log.dec, decClosed: log.decClosed }));
+      txbClose(); ok(log.bmps.every(shut), 'closing left frames open');
+    } finally { log.restore(); await txbOff(); }
   });
 
   test('OpenRGB: a board whose connectors have 0 LEDs says it needs setup, even switched off, and opens its LED counts', async () => {
@@ -797,7 +966,9 @@
     STATE.ext.devs.pop(); delete STATE.cfg['dev.16']; await fanEmit();
   });
 
+  const only = decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it
   for (const [name, fn] of tests) {
+    if (only && !name.includes(only)) continue;
     try { await fn(); log.push('ok   ' + name); }
     catch (e) { R.failed++; log.push('FAIL ' + name + ': ' + e.message); }
   }

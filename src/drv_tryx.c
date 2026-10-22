@@ -60,6 +60,25 @@ static int adb_serial(const char *list, char *ser, int cap) {
     return 0;
 }
 
+#ifdef TRYX_TEST
+static DWORD t_short;   // the self-test's short write: this many bytes go missing
+#else
+#define t_short 0
+#endif
+// The screen builder's file: written whole to <path>.tmp beside it and only then put in the old one's place, so a
+// failed save leaves the old file as it was. 0: saved; TS_OPEN, TS_WRITE (short write, flush or close failed), TS_REPLACE.
+int tryx_save(const wchar_t *path, const void *buf, DWORD n) {
+    wchar_t tmp[MAX_PATH + 8]; DWORD w = 0;
+    if (swprintf(tmp, MAX_PATH + 8, L"%ls.tmp", path) < 0) return TS_OPEN;
+    HANDLE h = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return TS_OPEN;
+    int ok = WriteFile(h, buf, n - t_short, &w, NULL) && w == n && FlushFileBuffers(h);
+    ok = CloseHandle(h) && ok;
+    if (ok && MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return 0;
+    DeleteFileW(tmp);
+    return ok ? TS_REPLACE : TS_WRITE;
+}
+
 #ifndef TRYX_TEST
 typedef struct {
     HANDLE h;
@@ -433,6 +452,21 @@ int main(void) {
     assert(adb_serial("List of devices attached\nemulator-5554\tdevice product:sdk model:Pixel_7 transport_id:2\nAB12\tdevice product:x model:cm01 transport_id:3\n", s, sizeof(s)) && !strcmp(s, "AB12"));
     assert(!adb_serial("List of devices attached\nBYZL1  unauthorized usb:1-1 transport_id:1\n", s, sizeof(s)));
     assert(!adb_serial("List of devices attached\nBY\"ZL device model:cm01_se\n", s, sizeof(s)) && !adb_serial("", s, sizeof(s)));
+    // the builder's file: a failed save leaves the old file whole and no .tmp behind
+    wchar_t dir[MAX_PATH], p[MAX_PATH], tmp[MAX_PATH]; char got[16] = ""; FILE *f;
+    GetTempPathW(MAX_PATH, dir); wcscat_s(dir, MAX_PATH, L"haku-tryx-test"); CreateDirectoryW(dir, NULL);
+    swprintf(p, MAX_PATH, L"%ls\\tryx-1.jpg", dir); swprintf(tmp, MAX_PATH, L"%ls.tmp", p);
+    #define OLD() (f = _wfopen(p, L"rb"), got[fread(got, 1, 15, f)] = 0, fclose(f), got)
+    assert(tryx_save(p, "old", 3) == 0 && !strcmp(OLD(), "old"));
+    assert(tryx_save(p, "newer", 5) == 0 && !strcmp(OLD(), "newer"));
+    swprintf(tmp, MAX_PATH, L"%ls\\none\\tryx-1.jpg", dir); assert(tryx_save(tmp, "x", 1) == TS_OPEN);   // its folder is not there
+    swprintf(tmp, MAX_PATH, L"%ls.tmp", p);
+    t_short = 2; assert(tryx_save(p, "broken", 6) == TS_WRITE && !strcmp(OLD(), "newer")); t_short = 0;
+    assert(GetFileAttributesW(tmp) == INVALID_FILE_ATTRIBUTES);
+    HANDLE held = CreateFileW(p, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);   // being sent: no one may replace it
+    assert(held != INVALID_HANDLE_VALUE && tryx_save(p, "other", 5) == TS_REPLACE); CloseHandle(held);
+    assert(!strcmp(OLD(), "newer") && GetFileAttributesW(tmp) == INVALID_FILE_ATTRIBUTES);
+    DeleteFileW(p); RemoveDirectoryW(dir);
     puts("tryx ok");
     return 0;
 }

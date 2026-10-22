@@ -499,7 +499,7 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .fan-row i { flex-basis: 100%; font-style: normal; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fan-row em { font: 600 18px var(--display); font-style: normal; color: var(--text); font-variant-numeric: tabular-nums; }
 .fan-st { flex-basis: 100%; font-size: 11.5px; color: var(--faint); }
-.fan-st.warn, .pair-msg.warn { color: #f0b44a; }
+.fan-st.warn, .pair-msg.warn, #txb-msg.warn { color: #f0b44a; }
 .fan-st.bad, #fans-status.bad, .fs-bad, .pair-msg.bad { color: #ff8a8a; }
 .fan-panel.stale .fan-row em, .fs-live.stale .fan-row em { opacity: .4; }
 .fs-crumb { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px; color: var(--faint); }
