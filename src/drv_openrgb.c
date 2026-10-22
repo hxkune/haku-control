@@ -13,7 +13,7 @@
 #include <stdlib.h>
 
 #define ORGB_PORT 6742
-#define PART_STEP 1000
+#define PART_STEP ORGB_PART_STEP
 enum {
     PKT_REQUEST_CONTROLLER_COUNT = 0,
     PKT_REQUEST_CONTROLLER_DATA  = 1,
@@ -26,13 +26,46 @@ enum {
     PKT_UPDATEMODE               = 1101,
 };
 
-// orig / mode: the colours and the mode the controller had before haku took it, given back when it lets go;
-// how / use: the way haku lights it (DRIVE_*) and, for its Static mode, that mode's description
+// mode: the mode the controller had before haku took it, given back when the last of its devices lets go;
+// how / use: the way haku lights it (DRIVE_*) and the description of the mode it is lit in
 enum { DRIVE_DIRECT, DRIVE_STATIC, DRIVE_ONE, DRIVE_NONE };
 typedef struct {
-    unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; int part, mode_idx, mode_len; unsigned char mode[512];
-    int how, use_idx, use_len, use_cmin; unsigned char use[512];
+    int how, use_idx, use_len, use_cmin, mode_idx, mode_len; unsigned char use[512], mode[512];
+} setup_t;
+
+// One controller can be several devices (its ARGB connectors). The mode is the whole controller's: the first device
+// sets it, the others take that setup as it is (a second mode command would reset what the first lights), and only
+// the last one to let go gives the controller its own mode back. setup: held by an opener while it sets the mode.
+// shortcut: keyed by the host as written (127.0.0.1 and localhost are two), fine while haku adds them all as 127.0.0.1
+typedef struct { char host[64]; unsigned idx; int users, pending; SRWLOCK setup; setup_t st; } share_t;
+static SRWLOCK sh_lk = SRWLOCK_INIT;
+static share_t shares[16];
+
+// orig: the colours its LEDs had before, given back on restore; last / one: what was sent last, not sent again
+typedef struct {
+    unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; int part; setup_t st; share_t *sh;
+    unsigned last[EXT_MAX_LEDS]; int nlast; unsigned one, cand; DWORD cand_at; int sent_one;
 } orgb_t;
+
+static share_t *share_take(const char *host, unsigned idx) {
+    share_t *sh = NULL;
+    AcquireSRWLockExclusive(&sh_lk);
+    for (int i = 0; i < 16 && !sh; i++) if (shares[i].users + shares[i].pending && shares[i].idx == idx && !strcmp(shares[i].host, host)) sh = &shares[i];
+    for (int i = 0; i < 16 && !sh; i++) if (!(shares[i].users + shares[i].pending)) { sh = &shares[i]; strcpy_s(sh->host, sizeof(sh->host), host); sh->idx = idx; }
+    if (sh) sh->pending++;
+    ReleaseSRWLockExclusive(&sh_lk);
+    return sh;   // NULL: more than 16 controllers at once, this one set up on its own
+}
+static void share_done(share_t *sh, int joined, const setup_t *st) {
+    AcquireSRWLockExclusive(&sh_lk);
+    if (joined && !sh->users) sh->st = *st;
+    sh->pending--; sh->users += joined;
+    ReleaseSRWLockExclusive(&sh_lk);
+}
+static int share_users(share_t *sh) {
+    AcquireSRWLockShared(&sh_lk); int n = sh->users; ReleaseSRWLockShared(&sh_lk);
+    return n;
+}
 
 static int send_pkt(SOCKET s, unsigned dev, unsigned id, const void *data, unsigned len) {
     unsigned char h[16] = { 'O', 'R', 'G', 'B' };
@@ -77,7 +110,7 @@ typedef struct { char name[32]; int cm, cmin, off, len; } mode_t_;
 // zn: the zones (a motherboard's ARGB headers can be resized: leds min < max, and OpenRGB starts them at 0)
 typedef struct { char name[32]; int min, max, count; } zone_t_;
 typedef struct {
-    int type, nleds, ncolors, active, mode_len, nmodes, mraw_len, nzones; char name[64], vendor_desc[64], mode_name[32];
+    int type, nleds, ncolors, active, mode_len, nmodes, mraw_len, nzones; char name[64], vendor_desc[64], mode_name[32], location[128];
     unsigned colors[EXT_MAX_LEDS]; unsigned char mode[512]; mode_t_ md[64]; unsigned char mraw[8192]; zone_t_ zn[16];
 } ctrl_t;
 
@@ -90,7 +123,8 @@ static int parse_ctrl(const unsigned char *buf, int len, ctrl_t *c) {
     rdstr(&r, c->vendor_desc, sizeof(c->vendor_desc));   // description
     rdstr(&r, NULL, 0);                // version
     rdstr(&r, NULL, 0);                // serial
-    rdstr(&r, NULL, 0);                // location
+    rdstr(&r, c->location, sizeof(c->location));   // where it sits (a USB path, an I2C address): tells same-named sticks apart
+    for (char *q = c->location; *q; q++) if (*q == ';') *q = ',';   // kept in settings.ini, where ; starts a comment
     unsigned nmodes = rd16(&r);
     c->active = (int)rd32(&r);         // active mode
     for (unsigned m = 0; m < nmodes && !r.bad; m++) {
@@ -170,7 +204,7 @@ static int read_ctrl(SOCKET s, unsigned idx, ctrl_t *c) {
 // kept in [dev.N] orig_mode as "<index>:<hex of its description>" (when it fits a settings line).
 static int direct_mode(const char *name) { return !_stricmp(name, "Direct") || !_stricmp(name, "Custom"); }
 
-static void keep_mode(const char *sec, const ctrl_t *c, orgb_t *o) {
+static void keep_mode(const char *sec, const ctrl_t *c, setup_t *o) {
     char v[256];
     if (c->mode_len && !direct_mode(c->mode_name)) {
         o->mode_idx = c->active; o->mode_len = c->mode_len; memcpy(o->mode, c->mode, c->mode_len);
@@ -194,11 +228,16 @@ static void keep_mode(const char *sec, const ctrl_t *c, orgb_t *o) {
 // flash over it. So: Direct / Custom with colours per LED, frame by frame; else its Static mode, slower (many such
 // controllers fade or blink at every colour), per LED or one colour for all; else not at all.
 // only_static: chosen in the window for a controller whose Direct mode flickers (ASRock Polychrome USB on a B550M).
-static int pick_mode(const ctrl_t *c, orgb_t *o, int only_static, float *rate, const char **how) {
+// The mode is set once, as it is described (UPDATEMODE, by its index), and read back; frames never set it again.
+static int pick_mode(const ctrl_t *c, setup_t *o, int only_static, float *rate, const char **how) {
     static const char *const NAMES[] = { "Direct", "Custom" };
     for (int k = 0; k < 2 && !only_static; k++)
-        for (int m = 0; m < c->nmodes; m++)
-            if (!_stricmp(c->md[m].name, NAMES[k]) && c->md[m].cm == COLORS_PER_LED) { *how = c->md[m].name; return DRIVE_DIRECT; }
+        for (int m = 0; m < c->nmodes; m++) {
+            const mode_t_ *x = &c->md[m];
+            if (_stricmp(x->name, NAMES[k]) || x->cm != COLORS_PER_LED || x->len > (int)sizeof(o->use)) continue;
+            o->use_idx = m; o->use_len = x->len; o->use_cmin = x->cmin; memcpy(o->use, c->mraw + x->off, x->len);
+            *how = x->name; return DRIVE_DIRECT;
+        }
     for (int pass = 0; pass < 2; pass++)
         for (int m = 0; m < c->nmodes; m++) {
             const mode_t_ *x = &c->md[m];
@@ -211,6 +250,7 @@ static int pick_mode(const ctrl_t *c, orgb_t *o, int only_static, float *rate, c
     *how = "no mode haku can set";
     return DRIVE_NONE;
 }
+static const int DRIVE_CAP[] = { CAP_EFFECTS, CAP_EXPERIMENTAL, CAP_STEADY, CAP_UNSUPPORTED };
 
 // The resizable zones (ARGB headers): the sizes chosen in the window ([dev.N] zones "name=count|...") given to
 // OpenRGB (it starts them at 0 and keeps a size only until it restarts, so this is done at every connect), and the
@@ -247,17 +287,38 @@ static int apply_zones(SOCKET s, unsigned idx, const char *sec, const ctrl_t *c,
 }
 
 // a mode as it is described (index, then the description), made the active one
-static int send_mode(ext_dev *d, int idx, const unsigned char *desc, int len) {
+static int send_mode_to(SOCKET s, unsigned ctl, int idx, const unsigned char *desc, int len) {
     unsigned char buf[8 + 1024];
     if (len > 1024) return 0;
     unsigned size = 8 + len;
     memcpy(buf, &size, 4); memcpy(buf + 4, &idx, 4); memcpy(buf + 8, desc, len);
-    return send_pkt(d->sock, ((orgb_t *)d->priv)->idx, PKT_UPDATEMODE, buf, size);
+    return send_pkt(s, ctl, PKT_UPDATEMODE, buf, size);
+}
+static int send_mode(ext_dev *d, int idx, const unsigned char *desc, int len) { return send_mode_to(d->sock, ((orgb_t *)d->priv)->idx, idx, desc, len); }
+
+// The mode set and read back (the protocol answers no command: the controller's active mode is the proof).
+// 1 taken, 0 not taken, -1 the connection failed.
+static int set_mode(SOCKET s, unsigned ctl, const setup_t *st, ctrl_t *c) {
+    if (!send_mode_to(s, ctl, st->use_idx, st->use, st->use_len)) return -1;
+    for (int tries = 0; tries < 2; tries++) {
+        if (tries) Sleep(200);
+        if (!read_ctrl(s, ctl, c)) return -1;
+        if (c->active == st->use_idx) return 1;
+    }
+    return 0;
 }
 
 static int server_answers(void);
 
+// why a device is not lit: in its info, and in the log once (not at every retry)
+static void why_not(ext_dev *d, int cap, const char *msg) {
+    if (strcmp(d->info, msg)) logf_("dev.%d (openrgb): %s", d->id, msg);
+    snprintf(d->info, sizeof(d->info), "%s", msg);
+    d->cap = cap;
+}
+
 static int orgb_open(ext_dev *d) {
+    d->cap = CAP_NONE;
     unsigned count = 0;
     SOCKET s = orgb_connect(d->host, &count);
     // OpenRGB on this PC not running (e.g. closed here when all its devices were given back): started for this one
@@ -265,58 +326,97 @@ static int orgb_open(ext_dev *d) {
         s = orgb_connect(d->host, &count);
     if (s == INVALID_SOCKET) return 0;
     ctrl_t *c = malloc(sizeof(ctrl_t));
-    char sec[16], want[64]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
+    orgb_t *o = NULL;
+    char sec[16], want[64], wloc[128], msg[96];
+    snprintf(sec, sizeof(sec), "dev.%d", d->id);
     snprintf(want, sizeof(want), "%s", cfg_get(sec, "match", ""));
-    // the controller: number sub, unless it has another name than the one it was added with
+    snprintf(wloc, sizeof(wloc), "%s", cfg_get(sec, "loc", ""));
+    // the controller: number sub, unless it has another name (or place) than the one it was added with
     int ci = d->sub >= 0 ? d->sub % PART_STEP : -1, part = d->sub >= PART_STEP ? d->sub / PART_STEP - 1 : -1;
     int idx = ci >= 0 && (unsigned)ci < count && c && read_ctrl(s, (unsigned)ci, c) ? ci : -1;
-    // shortcut: the search takes the first controller of that name, so if the numbers of two same-named sticks move,
-    // both devices can land on one stick; upgrade to rank-by-name (as openrgb_app.c adds them) if that is reported
-    if (c && want[0] && (idx < 0 || strcmp(c->name, want))) {
-        idx = -1; int same = 0;
-        for (unsigned i = 0; i < count && i < 64; i++) if (read_ctrl(s, i, c) && !strcmp(c->name, want) && !same++) idx = (int)i;
-        if (idx >= 0) logf_("dev.%d (openrgb): '%s' is now number %d", d->id, want, idx);
-        // the new number kept, so the scan shows it added and it is not added a second time (two streams flash it);
-        // not for same-named controllers (sticks of a kit), whose pick is a guess
-        if (idx >= 0 && same == 1) {
+    if (c && want[0] && (idx < 0 || strcmp(c->name, want) || (wloc[0] && strcmp(c->location, wloc)))) {
+        int one = -1, at_loc = -1, same = 0;
+        for (unsigned i = 0; i < count && i < 64; i++)
+            if (read_ctrl(s, i, c) && !strcmp(c->name, want)) {
+                same++; if (one < 0) one = (int)i;
+                if (wloc[0] && !strcmp(c->location, wloc)) at_loc = (int)i;
+            }
+        idx = at_loc >= 0 ? at_loc : same == 1 ? one : -1;
+        if (same > 1 && idx < 0) {   // same-named sticks of a kit, none where this one was: not guessed
+            snprintf(msg, sizeof(msg), "OpenRGB · %d controllers named '%s', can't tell which", same, want);
+            why_not(d, CAP_AMBIGUOUS, msg); goto fail;
+        }
+        if (idx >= 0 && idx != ci) {
+            logf_("dev.%d (openrgb): '%s' is now number %d", d->id, want, idx);
+            // the new number kept, so the scan shows it added and it is not added a second time (two streams flash it)
             char v[16]; snprintf(v, sizeof(v), "%d", idx + (part >= 0 ? (part + 1) * PART_STEP : 0));
             cfg_set(sec, "sub", v); cfg_save_if_dirty(); ext_reload();   // reopened once under the new number
         }
         if (idx >= 0 && !read_ctrl(s, (unsigned)idx, c)) idx = -1;
     }
-    if (idx < 0) { free(c); closesocket(s); return 0; }
+    if (idx < 0) goto fail;
     if (!want[0]) { cfg_set(sec, "match", c->name); cfg_save_if_dirty(); }
+    if (c->location[0] && strcmp(wloc, c->location)) { cfg_set(sec, "loc", c->location); cfg_save_if_dirty(); }
     // ARGB headers sized as chosen in the window; then read again, with their LEDs
-    if (part >= c->nzones) { snprintf(d->info, sizeof(d->info), "OpenRGB · %s · no connector %d", c->name, part + 1); free(c); closesocket(s); return 0; }
-    if (apply_zones(s, (unsigned)idx, sec, c, part)) { Sleep(150); if (!read_ctrl(s, (unsigned)idx, c)) { free(c); closesocket(s); return 0; } }
+    if (part >= c->nzones) { snprintf(d->info, sizeof(d->info), "OpenRGB · %s · no connector %d", c->name, part + 1); goto fail; }
+    if (apply_zones(s, (unsigned)idx, sec, c, part)) { Sleep(150); if (!read_ctrl(s, (unsigned)idx, c)) goto fail; }
     int first = 0, nl = c->nleds;   // the LEDs this device lights: the controller's, or its connector's
     if (part >= 0) { for (int z = 0; z < part; z++) first += c->zn[z].count; nl = c->zn[part].count; }
     if (nl < 1) {   // only zones still at 0 LEDs: nothing to light until the window gives them some
         snprintf(d->info, sizeof(d->info), "OpenRGB · %s · set the LEDs on its connectors", c->name);
-        free(c); closesocket(s); return 0;
+        goto fail;
     }
     d->nleds = nl > EXT_MAX_LEDS ? EXT_MAX_LEDS : nl;
-    snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s", c->name, type_name(c->type));
-    orgb_t *o = calloc(1, sizeof(orgb_t));
-    if (!o) { free(c); closesocket(s); return 0; }
+    o = calloc(1, sizeof(orgb_t));
+    if (!o) goto fail;
     o->norig = c->ncolors - first < d->nleds ? c->ncolors - first : d->nleds;
     if (o->norig < 0) o->norig = 0;
     memcpy(o->orig, c->colors + first, sizeof(unsigned) * o->norig); o->idx = (unsigned)idx; o->part = part;
-    keep_mode(sec, c, o);
+    const char *where = part >= 0 ? c->zn[part].name : type_name(c->type);
+    char cname[64]; snprintf(cname, sizeof(cname), "%s", c->name);
+    keep_mode(sec, c, &o->st);
     const char *how = ""; float rate = 0;
-    o->how = pick_mode(c, o, d->cfg_static, &rate, &how);
-    d->rate = rate;
-    snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s · %s", c->name, part >= 0 ? c->zn[part].name : type_name(c->type), how);
-    if (o->how != DRIVE_DIRECT) {   // which modes it has, as names and colour modes, so a report shows why
+    o->st.how = pick_mode(c, &o->st, d->cfg_static, &rate, &how);
+    if (o->st.how != DRIVE_DIRECT) {   // which modes it has, as names and colour modes, so a report shows why
         char ml[400]; int k = 0;
         for (int m = 0; m < c->nmodes && k < (int)sizeof(ml) - 40; m++) k += snprintf(ml + k, sizeof(ml) - k, "%s%s/%d", m ? ", " : "", c->md[m].name, c->md[m].cm);
-        logf_("dev.%d (openrgb): '%s' %s: %s (modes: %s)", d->id, c->name, d->cfg_static ? "set to Static in the window" : "has no Direct mode", how, ml);
+        snprintf(msg, sizeof(msg), "OpenRGB · %s · %s · %s", cname, where, how);
+        if (strcmp(d->info, msg)) logf_("dev.%d (openrgb): '%s' %s: %s (modes: %s)", d->id, cname, d->cfg_static ? "set to Static in the window" : "has no Direct mode", how, ml);
     }
+    if (o->st.how == DRIVE_NONE) { snprintf(msg, sizeof(msg), "OpenRGB · %s · no mode haku can set", cname); why_not(d, CAP_UNSUPPORTED, msg); goto fail; }
+
+    // the mode: set by the controller's first device and read back; its other devices take that setup as it is
+    share_t *sh = share_take(d->host, o->idx);
+    if (sh) AcquireSRWLockExclusive(&sh->setup);
+    int users = sh ? share_users(sh) : 0, r = 1;
+    if (users) {
+        if (sh->st.how != o->st.how) logf_("dev.%d (openrgb): '%s' takes the setup its controller's other device made", d->id, cname);
+        o->st = sh->st;
+    }
+    if (part >= 0 && o->st.how == DRIVE_ONE) r = 2;   // one colour for the whole board: a connector cannot have its own
+    // the first sets it (again after a reconnect); one colour is set by its first frame, and the others only when
+    // OpenRGB restarted under them
+    else if (users ? c->active != o->st.use_idx : o->st.how != DRIVE_ONE || c->active != o->st.use_idx) r = set_mode(s, o->idx, &o->st, c);
+    if (sh) { share_done(sh, r == 1, &o->st); ReleaseSRWLockExclusive(&sh->setup); }
+    if (r != 1) {
+        if (r == 2) { snprintf(msg, sizeof(msg), "OpenRGB · %s · steady colour for the whole board only", cname); why_not(d, CAP_UNSUPPORTED, msg); }
+        else if (r == 0) { snprintf(msg, sizeof(msg), "OpenRGB · %s · did not switch to %s", cname, c->md[o->st.use_idx].name); why_not(d, CAP_FAILED, msg); }
+        goto fail;
+    }
+    o->sh = sh;
+    static const float DRIVE_RATE[] = { 0, 5, 4, 0 };
+    d->rate = DRIVE_RATE[o->st.how];
+    d->cap = DRIVE_CAP[o->st.how];
+    snprintf(d->info, sizeof(d->info), "OpenRGB · %s · %s · %s", cname, where, how);
+    logf_("dev.%d (openrgb): '%s' · %s, mode %s (%s), %s", d->id, cname, where, c->md[o->st.use_idx].name,
+          o->st.how == DRIVE_DIRECT ? "frames" : o->st.how == DRIVE_STATIC ? "frames in Static" : "one colour, on change",
+          users ? "taken from its controller's other device" : "set and read back");
     free(c);
     d->priv = o; d->sock = s;
-    if (o->how == DRIVE_DIRECT) send_pkt(s, o->idx, PKT_SETCUSTOMMODE, NULL, 0);   // Direct / Custom
-    else if (o->how == DRIVE_STATIC) send_mode(d, o->use_idx, o->use, o->use_len);
     return 1;
+fail:
+    free(o); free(c); closesocket(s);
+    return 0;
 }
 
 static int send_colors(ext_dev *d, const unsigned *col, int n) {
@@ -327,6 +427,11 @@ static int send_colors(ext_dev *d, const unsigned *col, int n) {
     unsigned short nn = (unsigned short)n;
     memcpy(buf, &size, 4); memcpy(buf + 4, &o->part, z); memcpy(buf + 4 + z, &nn, 2); memcpy(buf + 6 + z, col, n * 4);
     return send_pkt(d->sock, o->idx, z ? PKT_UPDATEZONELEDS : PKT_UPDATELEDS, buf, size);
+}
+
+static int near_rgb(unsigned a, unsigned b) {
+    for (int k = 0; k < 24; k += 8) if (abs((int)(a >> k & 255) - (int)(b >> k & 255)) > 6) return 0;
+    return 1;
 }
 
 static int orgb_send(ext_dev *d, const rgbf *c, int n) {
@@ -340,25 +445,42 @@ static int orgb_send(ext_dev *d, const rgbf *c, int n) {
         unsigned char tmp[512];
         while (len) { int k = len > sizeof(tmp) ? (int)sizeof(tmp) : (int)len; if (!tcp_recv_all(d->sock, tmp, k)) return 0; len -= k; }
     }
+    // OpenRGB gone: readable with nothing to read (unchanged frames are not sent, so a send would not tell)
+    if (!avail) {
+        fd_set rs; FD_ZERO(&rs); FD_SET(d->sock, &rs); struct timeval tv = { 0, 0 }; char b;
+        if (select(0, &rs, NULL, NULL, &tv) == 1 && recv(d->sock, &b, 1, MSG_PEEK) <= 0) return 0;
+    }
     orgb_t *o = d->priv;
-    if (o->how == DRIVE_NONE) return 1;   // nothing it takes: left as it is
-    if (o->how == DRIVE_ONE) {   // one colour for the whole controller: its Static mode, with the frame's average
+    if (o->st.how == DRIVE_ONE) {   // one colour for the whole controller: its Static mode, with the frame's average
         float r = 0, g = 0, b = 0;
         for (int i = 0; i < n; i++) { r += c[i].r; g += c[i].g; b += c[i].b; }
         if (n) { r /= n; g /= n; b /= n; }
         unsigned v = to8(r) | to8(g) << 8 | to8(b) << 16;
+        // a mode command can restart the controller's fade: sent only for a new colour that has held for a moment,
+        // so an animation is not played on it as a stream of mode changes
+        DWORD now = GetTickCount();
+        if (o->sent_one) {
+            if (near_rgb(v, o->one)) { o->cand_at = 0; return 1; }
+            if (!o->cand_at || !near_rgb(v, o->cand)) { o->cand = v; o->cand_at = now | 1; return 1; }
+            if (now - o->cand_at < 600) return 1;
+        }
         // the description up to its colour count, then that many colours (at least its minimum, at least one)
-        int head = 2 + (o->use[0] | o->use[1] << 8) + 36, nc = o->use_cmin > 0 ? o->use_cmin : 1;
+        int head = 2 + (o->st.use[0] | o->st.use[1] << 8) + 36, nc = o->st.use_cmin > 0 ? o->st.use_cmin : 1;
         unsigned char m[512];
-        if (head + 2 + nc * 4 > (int)sizeof(m) || head > o->use_len) return 1;
-        memcpy(m, o->use, head);
+        if (head + 2 + nc * 4 > (int)sizeof(m) || head > o->st.use_len) return 1;
+        memcpy(m, o->st.use, head);
         m[head] = (unsigned char)nc; m[head + 1] = (unsigned char)(nc >> 8);
         for (int i = 0; i < nc; i++) memcpy(m + head + 2 + i * 4, &v, 4);
-        return send_mode(d, o->use_idx, m, head + 2 + nc * 4);
+        if (!send_mode(d, o->st.use_idx, m, head + 2 + nc * 4)) return 0;
+        o->one = v; o->sent_one = 1; o->cand_at = 0;
+        return 1;
     }
     unsigned col[EXT_MAX_LEDS];
     for (int i = 0; i < n; i++) col[i] = to8(c[i].r) | to8(c[i].g) << 8 | to8(c[i].b) << 16;
-    return send_colors(d, col, n);
+    if (n == o->nlast && !memcmp(col, o->last, n * 4)) return 1;   // the same frame again: nothing to send
+    if (!send_colors(d, col, n)) return 0;
+    memcpy(o->last, col, n * 4); o->nlast = n;
+    return 1;
 }
 
 static void orgb_leave(ext_dev *d, int how) {
@@ -367,18 +489,15 @@ static void orgb_leave(ext_dev *d, int how) {
     if (how == LEAVE_OFF) send_colors(d, col, d->nleds);
     else if (how == LEAVE_RESTORE) {
         if (o->norig) send_colors(d, o->orig, o->norig < d->nleds ? o->norig : d->nleds);
-        // shortcut: a connector leaves the controller in Direct (the mode is the whole board's, and other connectors may
-        // still be lit by haku); give it back once the last one lets go if a board stays frozen after exit
-        if (o->mode_len && o->part < 0) {   // its own effect again: the mode it had, as it was described
-            unsigned char buf[8 + sizeof(o->mode)];
-            unsigned size = 8 + o->mode_len;
-            memcpy(buf, &size, 4); memcpy(buf + 4, &o->mode_idx, 4); memcpy(buf + 8, o->mode, o->mode_len);
-            send_pkt(d->sock, o->idx, PKT_UPDATEMODE, buf, size);
-        }
+        // its own effect again (the mode it had, as it was described), once the last of the controller's devices
+        // lets go: earlier it would reset what the others still light
+        if (o->st.mode_len && (!o->sh || share_users(o->sh) <= 1)) send_mode(d, o->st.mode_idx, o->st.mode, o->st.mode_len);
     }
 }
 
 static void orgb_close(ext_dev *d) {
+    orgb_t *o = d->priv;
+    if (o && o->sh) { AcquireSRWLockExclusive(&sh_lk); o->sh->users--; ReleaseSRWLockExclusive(&sh_lk); }
     if (d->sock != INVALID_SOCKET) closesocket(d->sock);
     d->sock = INVALID_SOCKET;
     free(d->priv); d->priv = NULL;
@@ -391,6 +510,7 @@ static void orgb_discover(int ms, void (*found)(const disc_t *)) {
     SOCKET s = orgb_connect("127.0.0.1", &count);
     if (s == INVALID_SOCKET) return;
     ctrl_t *c = malloc(sizeof(ctrl_t));
+    static setup_t st; const char *how; float rate;
     for (unsigned i = 0; c && i < count && i < 64; i++) {
         if (!read_ctrl(s, i, c)) continue;
         disc_t x = { "openrgb", "127.0.0.1" };
@@ -398,6 +518,8 @@ static void orgb_discover(int ms, void (*found)(const disc_t *)) {
         strcpy_s(x.name, sizeof(x.name), c->name);
         snprintf(x.info, sizeof(x.info), "OpenRGB · %s", type_name(c->type));
         found(&x);
+        int dm = pick_mode(c, &st, 0, &rate, &how);
+        if (dm == DRIVE_ONE || dm == DRIVE_NONE) continue;   // one colour for the whole board: no connectors of their own
         for (int z = 0; z < c->nzones; z++) {   // each ARGB connector on its own too
             if (c->zn[z].min >= c->zn[z].max) continue;
             x.sub = (int)i + PART_STEP * (z + 1); x.nleds = c->zn[z].count;

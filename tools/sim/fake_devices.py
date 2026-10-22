@@ -8,7 +8,8 @@ Every fake prints what it receives (frames per second, a sample colour), so a de
 (build.cmd dev) can be pointed at them. Addresses to add in the app:
     WLED     127.0.0.1:8080  (real WLED uses port 80; mDNS answers point there when port 80 is free)
     OpenRGB  127.0.0.1       (port 6742: keyboard, fan hub, graphics card, memory, board, then 60% / 75% / full-size
-                              keyboards; --orgb-shuffle reverses them, --orgb-port=6743 when a real OpenRGB holds 6742)
+                              keyboards; --orgb-shuffle reverses them, --orgb-port=6743 when a real OpenRGB holds 6742;
+                              --orgb-test adds the odd ones tools/sim/orgb_test.c checks)
     Govee    127.0.0.1       (scan answers on UDP 4002, commands on 4003)
     LIFX     127.0.0.1       (UDP 56700)
     WiZ      127.0.0.1       (UDP 38899)
@@ -115,30 +116,44 @@ def orgb_str(s):
     b = s.encode() + b'\0'
     return struct.pack('<H', len(b)) + b
 
-def orgb_controller(name, ctype, nleds, matrix):
-    body = struct.pack('<i', ctype) + orgb_str(name) + orgb_str('fake device') + orgb_str('1.0') + orgb_str('SN1') + orgb_str('HID: fake')
-    modes = [('Direct', 0, 0), ('Static', 1, 1), ('Breathing', 2, 2)]
-    body += struct.pack('<Hi', len(modes), 1)
-    for mname, val, ncol in modes:
-        body += orgb_str(mname) + struct.pack('<iIIIIIIII', val, 0, 0, 0, 0, ncol, 0, 0, 1) + struct.pack('<H', ncol) + b'\x11\x22\x33\x00' * ncol
-    zones = [('Main', nleds - 4, matrix), ('Logo', 4, None)]
-    body += struct.pack('<H', len(zones))
-    for zname, cnt, mtx in zones:
-        body += orgb_str(zname) + struct.pack('<iIII', 1, cnt, cnt, cnt)
-        if mtx:
-            h, w = mtx
-            body += struct.pack('<HII', 8 + 4 * h * w, h, w) + b''.join(struct.pack('<I', i) for i in range(h * w))
-        else:
-            body += struct.pack('<H', 0)
-    body += struct.pack('<H', nleds) + b''.join(orgb_str(f'Key {i}') + struct.pack('<I', i) for i in range(nleds))
-    body += struct.pack('<H', nleds) + b''.join(struct.pack('<I', 0x00FF8000) for _ in range(nleds))
-    return struct.pack('<I', 4 + len(body)) + body
+# modes: (name, colour mode: 1 per LED, 2 mode specific, 0 none; colours); zones: (name, LEDs, matrix, resizable)
+MODES = [('Direct', 1, 0), ('Static', 1, 1), ('Breathing', 1, 2)]
+class orgb_controller:
+    """A controller; its active mode follows UPDATEMODE (unless stuck), and the commands it gets are counted."""
+    def __init__(self, name, ctype, nleds, matrix, modes=MODES, active=1, loc='HID: fake', zones=None):
+        self.name, self.ctype, self.modes, self.active, self.loc = name, ctype, modes, active, loc
+        self.zones = zones or [('Main', nleds - 4, matrix, False), ('Logo', 4, None, False)]
+        self.stuck, self.counts = False, {}
+    def data(self):
+        body = struct.pack('<i', self.ctype) + orgb_str(self.name) + orgb_str('fake device') + orgb_str('1.0') + orgb_str('SN1') + orgb_str(self.loc)
+        body += struct.pack('<Hi', len(self.modes), self.active)
+        for val, (mname, cm, ncol) in enumerate(self.modes):
+            body += orgb_str(mname) + struct.pack('<iIIIIIIII', val, 0, 0, 0, min(ncol, 1), ncol, 0, 0, cm) + struct.pack('<H', ncol) + b'\x11\x22\x33\x00' * ncol
+        body += struct.pack('<H', len(self.zones))
+        for zname, cnt, mtx, resizable in self.zones:
+            body += orgb_str(zname) + struct.pack('<iIII', 1, 0 if resizable else cnt, 60 if resizable else cnt, cnt)
+            if mtx:
+                h, w = mtx
+                body += struct.pack('<HII', 8 + 4 * h * w, h, w) + b''.join(struct.pack('<I', i) for i in range(h * w))
+            else:
+                body += struct.pack('<H', 0)
+        nleds = sum(z[1] for z in self.zones)
+        body += struct.pack('<H', nleds) + b''.join(orgb_str(f'Key {i}') + struct.pack('<I', i) for i in range(nleds))
+        body += struct.pack('<H', nleds) + b''.join(struct.pack('<I', 0x00FF8000) for _ in range(nleds))
+        return struct.pack('<I', 4 + len(body)) + body
 
 ORGB_CTRL = [orgb_controller('Fake Keyboard', 5, 24, (4, 5)), orgb_controller('Fake Fan Hub', 3, 12, None),
              orgb_controller('ASUS TUF RTX 4070', 2, 8, None), orgb_controller('Corsair Vengeance RGB Pro', 1, 10, None),
              orgb_controller('ASUS ROG STRIX B550-F GAMING', 0, 12, None),
              orgb_controller('Fake 60% Keyboard', 5, 61, None), orgb_controller('Fake 75% Keyboard', 5, 84, None),
              orgb_controller('Fake Full Keyboard', 5, 104, None)]
+if '--orgb-test' in sys.argv:   # 8: one steady colour only, 9: no mode haku can set, 10/11: same-named sticks, 12: ARGB headers
+    ORGB_CTRL += [orgb_controller('Test Static Only', 0, 6, None, [('Static', 2, 1), ('Breathing', 2, 1)]),
+                  orgb_controller('Test No Mode', 1, 6, None, [('Rainbow', 0, 0)], active=0),
+                  orgb_controller('Test Stick', 1, 6, None, loc='I2C: PIIX4, address 0x58'),
+                  orgb_controller('Test Stick', 1, 6, None, loc='I2C: PIIX4, address 0x59'),
+                  orgb_controller('Test Board', 0, 0, None, zones=[('Header 1', 10, None, True), ('Header 2', 10, None, True)])]
+    sys.argv.remove('--orgb-test')
 ORGB_PORT = 6742
 for a in [a for a in sys.argv if a.startswith('--orgb-port=')]:
     ORGB_PORT = int(a.split('=')[1]); sys.argv.remove(a)
@@ -165,13 +180,29 @@ def orgb_client(c, addr):
                 c.sendall(b'ORGB' + struct.pack('<III', dev2, pid2, len(payload)) + payload)
             if pid == 50: log('openrgb', f'client name {data.rstrip(bytes(1)).decode()}')
             elif pid == 0: out(0, 0, struct.pack('<I', len(ORGB_CTRL)))
-            elif pid == 1: out(1, dev, ORGB_CTRL[dev])
-            elif pid == 1100: log('openrgb', f'controller {dev}: custom mode')
-            elif pid == 1050:
-                n = struct.unpack('<H', data[4:6])[0]
-                first = data[6:10]
-                rates.setdefault(dev, Rate(f'openrgb {dev}')).hit(f'{n} colours, first=#{first[:3].hex()}')
-            else: log('openrgb', f'packet {pid} ({size} bytes)')
+            elif pid == 1: out(1, dev, ORGB_CTRL[dev].data())
+            elif pid >= 9000:   # test only (orgb_test.c): 9000 the commands counted since the last ask,
+                x = ORGB_CTRL[dev]  # 9001 mode commands ignored or not, 9002 OpenRGB changed the mode itself,
+                if pid == 9000: out(9000, dev, struct.pack('<IIII', *(x.counts.get(i, 0) for i in (1100, 1101, 1050, 1051)))); x.counts = {}
+                elif pid == 9001: x.stuck = bool(data[0])
+                elif pid == 9002: x.active = data[0]
+                elif pid == 9003: c.close(); return   # 9003 the connection dropped
+            else:
+                x = ORGB_CTRL[dev] if dev < len(ORGB_CTRL) else None
+                if x: x.counts[pid] = x.counts.get(pid, 0) + 1
+                if pid == 1100:
+                    log('openrgb', f'controller {dev}: custom mode')
+                    if x and not x.stuck: x.active = next((i for i, m in enumerate(x.modes) if m[0] in ('Direct', 'Custom', 'Static')), x.active)
+                elif pid == 1101:
+                    i = struct.unpack('<I', data[4:8])[0]
+                    log('openrgb', f'controller {dev}: mode {i}' + (' ignored' if x and x.stuck else ''))
+                    if x and not x.stuck and i < len(x.modes): x.active = i
+                elif pid in (1050, 1051):
+                    z = 4 if pid == 1051 else 0
+                    n = struct.unpack('<H', data[4 + z:6 + z])[0]
+                    first = data[6 + z:10 + z]
+                    rates.setdefault((dev, pid), Rate(f'openrgb {dev}')).hit(f'{n} colours, first=#{first[:3].hex()}')
+                else: log('openrgb', f'packet {pid} ({size} bytes)')
     except (ConnectionError, OSError):
         log('openrgb', f'client {addr} gone')
 

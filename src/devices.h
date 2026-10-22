@@ -16,6 +16,14 @@ typedef struct ext_dev ext_dev;
 // What the device does when we let go of it ([general] on_exit, or the device switched off in the app).
 enum { LEAVE_OFF, LEAVE_KEEP, LEAVE_RESTORE };
 
+// What a device can show, set by its driver on open (shown on its card): not stated, effects frame by frame, its
+// effects through a mode that is not made for it (may fade at each colour), one steady colour only, no mode haku
+// can set, a mode that did not take, several controllers of its name with none to tell them apart
+enum { CAP_NONE, CAP_EFFECTS, CAP_EXPERIMENTAL, CAP_STEADY, CAP_UNSUPPORTED, CAP_FAILED, CAP_AMBIGUOUS };
+
+// OpenRGB: a board's ARGB connector as a device of its own, sub = controller + ORGB_PART_STEP x (zone + 1)
+#define ORGB_PART_STEP 1000
+
 typedef struct {
     char kind[16];            // driver id
     char host[64];
@@ -51,6 +59,8 @@ struct ext_dev {
     int   own;                // [dev.N] own=1: given back to its own lighting (its maker's app, the mode it had)
     int   same;               // the [dev.N] of the same hardware on the other path (an OpenRGB device's [dev.M] same=N: dev.N drives it directly)
     int   held;               // 1: that other path drives it ([dev.M] path=direct|openrgb), so this one is not opened
+    int   covered;            // an OpenRGB connector whose whole controller is a device too: that one's id (it lights it, this one is not opened)
+    int   cap;                // CAP_*, from the driver's last open
     float rate;               // frames/s this device takes (set by the driver on open; 0: the driver's rate)
     float gain[3];            // [dev.N] warmth as r/g/b gains
     float cfg_rate;           // [dev.N] rate: chosen in the window (0: auto)

@@ -301,8 +301,9 @@ static unsigned __stdcall worker(void *p) {
             if (n) memcpy(cur, frame[k], n * sizeof(rgbf));
             ReleaseSRWLockShared(&lk);
             if (!n) continue;
-            // frames/s: chosen in the window, else what the device takes (the driver may lower it on open), else the driver's
-            float fps = d->cfg_rate > 0 ? d->cfg_rate : d->rate > 0 ? d->rate : d->drv->rate > 0 ? d->drv->rate : 10;
+            // frames/s: chosen in the window, else the driver's; never past what the device takes (set by the driver on open)
+            float fps = d->cfg_rate > 0 ? d->cfg_rate : d->drv->rate > 0 ? d->drv->rate : 10;
+            if (d->rate > 0 && fps > d->rate) fps = d->rate;
             int interval = (int)(1000 / fps);
             if ((int)(now - last_send[k]) < interval - interval / 4) continue;   // frames come every ~33 ms: allow jitter
             BYTE q[EXT_MAX_LEDS * 3];
