@@ -279,6 +279,7 @@ int   app_status_json(char *out, int cap);   // devices only (polled)
 extern volatile LONG g_state_rev;           // goes up when the whole state changes ("rev" in the status: a phone reloads)
 void  update_install(void);                 // download, check and run the latest release's installer (update.c)
 void  diag_save(void);                      // diagnostics report to Downloads, in the background (diag.c)
+void  diag_open(void);                      // the last one in Notepad
 void  diag_report(const char *text, const char *contact, const char *install, int attach);   // a bug report sent to the developer
 void  diag_fixed_check(void);            // one of this PC's reports marked as done on the site? (update thread)
 void  diag_fixed_seen(const char *id);   // the window showed it

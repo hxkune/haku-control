@@ -25,7 +25,7 @@ static int     ndevs;
 
 // ---- shared (lock)
 static SRWLOCK lk = SRWLOCK_INIT;
-typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held; char name[64], host[64], info[96], kind[16], type[12]; int sub; } slot_t;
+typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held, covered, cap; char name[64], host[64], info[96], kind[16], type[12]; int sub; } slot_t;
 static slot_t  slots[EXT_MAX];
 static int     nslots;
 static rgbf    frame[EXT_MAX][EXT_MAX_LEDS];
@@ -89,6 +89,7 @@ static void publish_slots(void) {
         if (s->id != d->id || s->nleds != n || strcmp(s->type, ty)) InterlockedExchange(&layout_new, 1);
         strcpy_s(s->type, sizeof(s->type), ty);
         s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->fails = d->fails; s->enabled = d->enabled; s->own = d->own; s->same = d->same; s->held = d->held;
+        s->covered = d->covered; s->cap = d->cap;
         s->sub = d->sub;
         strcpy_s(s->name, sizeof(s->name), d->name); strcpy_s(s->host, sizeof(s->host), d->host);
         strcpy_s(s->info, sizeof(s->info), d->info); strcpy_s(s->kind, sizeof(s->kind), d->drv->kind);
@@ -176,6 +177,14 @@ static void load_config(void) {
                 if (nd[orgb ? i : j].enabled) nd[orgb ? j : i].held = 1;   // the chosen one switched off: the other may light it
             }
     }
+    // A board added whole and one of its connectors too: two streams to one controller flash it. The whole one lights
+    // it while it is on; the connector is not opened (covered: by which)
+    for (int i = 0; i < nn; i++) {
+        if (strcmp(nd[i].drv->kind, "openrgb") || nd[i].sub < ORGB_PART_STEP) continue;
+        for (int j = 0; j < nn; j++)
+            if (j != i && !strcmp(nd[j].drv->kind, "openrgb") && nd[j].enabled && !nd[j].own && nd[j].sub >= 0 && nd[j].sub < ORGB_PART_STEP &&
+                nd[j].sub == nd[i].sub % ORGB_PART_STEP && !strcmp(nd[j].host, nd[i].host)) { nd[i].covered = nd[j].id; break; }
+    }
     // keep connections of devices whose address (and key) did not change
     for (int i = 0; i < nn; i++) {
         for (int k = 0; k < ndevs; k++) {
@@ -184,7 +193,7 @@ static void load_config(void) {
                 !strcmp(o->key, nd[i].key) && !strcmp(o->zones, nd[i].zones) && o->cfg_static == nd[i].cfg_static) {
                 ext_dev keep = *o;
                 keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own; keep.cfg_rate = nd[i].cfg_rate;
-                keep.same = nd[i].same; keep.held = nd[i].held;
+                keep.same = nd[i].same; keep.held = nd[i].held; keep.covered = nd[i].covered;
                 memcpy(keep.gain, nd[i].gain, sizeof(keep.gain));
                 strcpy_s(keep.name, sizeof(keep.name), nd[i].name);
                 nd[i] = keep;
@@ -246,7 +255,8 @@ static unsigned __stdcall worker(void *p) {
             ext_dev *d = NULL;
             for (int k = 0; k < ndevs; k++)
                 if (devs[k].id == o->d.id && devs[k].drv == o->d.drv && !strcmp(devs[k].host, o->d.host) && devs[k].sub == o->d.sub && !devs[k].online) d = &devs[k];
-            if (o->ok && d && d->enabled && !d->own && !d->held) {
+            if (d) d->cap = o->d.cap;
+            if (o->ok && d && d->enabled && !d->own && !d->held && !d->covered) {
                 int k = (int)(d - devs);
                 d->sock = o->d.sock; d->priv = o->d.priv; d->nleds = o->d.nleds; d->rate = o->d.rate;
                 strcpy_s(d->info, sizeof(d->info), o->d.info); strcpy_s(d->key, sizeof(d->key), o->d.key);
@@ -284,7 +294,7 @@ static unsigned __stdcall worker(void *p) {
                 if (d->online) { let_go(d, leave_mode()); changed_state = 1; }
                 continue;
             }
-            if (d->held) {   // the same hardware on the other path drives it: stop here, as it was, for that one to take over
+            if (d->held || d->covered) {   // the same hardware on the other path, or its whole board, drives it: stop here, as it was
                 if (d->online) { let_go(d, LEAVE_KEEP); changed_state = 1; }
                 continue;
             }
@@ -533,8 +543,8 @@ int ext_json(char *out, int cap) {
         json_escape_to(zs, sizeof(zs), cfg_get(sec, "zones_found", ""));   // resizable zones (OpenRGB), "name:count:min:max|..."
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\"}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->type, inf, pro_kind(s->kind), zs);
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"covered\":%d,\"cap\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\"}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->covered, s->cap, s->type, inf, pro_kind(s->kind), zs);
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {

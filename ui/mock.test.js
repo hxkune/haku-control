@@ -365,6 +365,24 @@
     STATE.ext.devs.pop(); STATE.ext.kinds.pop(); delete STATE.cfg['dev.8']; emit(STATE); await wait(80);
   });
 
+  test('OpenRGB: the card says what a controller takes, or why it is not lit; a connector of a board added whole says the board lights it', async () => {
+    await fresh();
+    const d = devById(2), info = d.info, st = id => $('#dev-st-' + id).textContent;
+    d.cap = 1; updateDevices();
+    ok(st(2).includes(t('cap.1')), 'effects not said: ' + st(2));
+    d.cap = 3; updateDevices();
+    ok(st(2).includes(t('cap.3')), 'steady colour only not said: ' + st(2));
+    d.cap = 5; d.online = 0; updateDevices();
+    ok(st(2) === t('cap.5'), 'a mode that did not switch not said: ' + st(2));
+    d.cap = 4; d.info = 'OpenRGB · Keyboard · steady colour for the whole board only'; updateDevices();
+    ok(st(2) === t('cap.4b'), 'a connector of a steady-colour board not told to add the board: ' + st(2));
+    d.cap = 0; d.online = 1; d.info = info;
+    STATE.ext.devs.push({ id: 15, kind: 'openrgb', title: 'OpenRGB', name: 'B550-F header 2', host: '127.0.0.1', sub: 2004, leds: 10, per_led: 1, online: 0, enabled: 1, covered: 8, type: 'strip', info: '' });
+    emit(STATE); await wait(80);
+    ok(st(15) === t('orgb.covered', 'B550-F') && !devWaits(devById(15)), 'a covered connector shown as not reachable: ' + st(15));
+    STATE.ext.devs.pop(); emit(STATE); await wait(80);
+  });
+
   test('about: the components list credits OpenRGB as a separate program, with its licence and sources', async () => {
     await fresh(); showTab('settings');
     const c = $('#comp'); c.open = true; await wait(30);
@@ -1225,6 +1243,38 @@
     $('#cal-x').click();
     ok(cal().mode === 0, 'closing leaves the pattern on');
     STATE.ext.devs.pop(); delete STATE.cfg['dev.16']; await fanEmit();
+  });
+
+  test('home: what needs attention, each with its help; the fans as they run; where to start when nothing is found', async () => {
+    await fresh(); showTab('home');
+    const row = [...$$('#home-attn-list .found-row')].find(r => r.textContent.includes('Bedside'));
+    ok(!$('#home-attn').classList.contains('hidden') && row && row.textContent.includes(t('dev.offline')), 'the offline bulb not listed: ' + $('#home-attn-list').textContent);
+    row.querySelector('[data-help]').click(); await wait(30);
+    ok($('#tab-settings').classList.contains('active') && $('#help-offline').open, 'Help does not open its topic in Settings');
+    $('#help-offline').open = false; showTab('home');
+    ok(!$('#home-cool').classList.contains('hidden') && $('#home-cool').textContent.includes(STATE.fans.f[0].rpm + ' ' + t('home.rpm')), 'the fans not shown: ' + $('#home-cool').textContent);
+    $('#home-cool').click();
+    ok($('#tab-fans').classList.contains('active'), 'the fans card does not open Fans');
+    showTab('home');
+    ok($('#home-first').classList.contains('hidden'), 'where to start shown with devices found');
+    const none = JSON.parse(JSON.stringify(STATE));
+    Object.assign(none, { bulbs: [], nano: { ctls: [] }, sticks: 0, msi: null, fans: { on: 0 }, ll: null }); none.ext.devs = [];
+    emit(none); await wait(80);
+    ok(!$('#home-first').classList.contains('hidden') && $('#home-attn').classList.contains('hidden') && $('#home-cool').classList.contains('hidden'), 'nothing found: where to start not shown alone');
+    emit(STATE); await wait(80);
+    ok(['en', 'ru', 'fr'].every(l => ['home.first', 'home.attn', 'help.title', 'help.start.text', 'help.offline.text', 'help.orgb.text', 'help.conflict.text', 'help.fans.text', 'help.diag.text', 'help.diag.open'].every(k => STR[l][k])), 'a language misses the help texts');
+  });
+
+  test('help: the diagnostics file saved on a click, sends nothing else, then offered to open and check', async () => {
+    await fresh(); showTab('settings');
+    ok($('#help-diag-open').classList.contains('hidden'), 'Open to check shown before a file is saved');
+    $('#help-diag-save').click();
+    ok(sent.length === 1 && sent[0].cmd === 'diag', 'Save sent: ' + JSON.stringify(sent));
+    await wait(400);
+    ok(!$('#help-diag-open').classList.contains('hidden') && $('#help-diag-st').textContent.includes(STATE.diag.file), 'the saved file not shown: ' + $('#help-diag-st').textContent);
+    sent.length = 0; $('#help-diag-open').click();
+    ok(sent.length === 1 && sent[0].cmd === 'open' && sent[0].what === 'diag', 'Open to check sent: ' + JSON.stringify(sent));
+    delete STATE.diag; emit(STATE); await wait(80); showTab('home');
   });
 
   const only = decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it

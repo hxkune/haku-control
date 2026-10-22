@@ -1589,6 +1589,12 @@ button.chip { font: inherit; font-size: 12px; background: none; }
 .hero-more:hover { color: var(--strong); }
 .hero-more svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; transition: transform .2s; }
 .hero-more.open svg { transform: rotate(180deg); }
+/* Home below the hero: where to start, what needs attention, the fans */
+#tab-home > .home-first, #tab-home > .home-attn, #tab-home > .home-cool { margin-top: 14px; }
+.home-attn .found { margin-top: 10px; }
+.home-cool { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.home-fans { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; color: var(--muted); font-size: 12.5px; }
+.home-fans b { color: var(--text); font-weight: 600; }
 
 /* button hover: the other buttons fill from the left like a gauge and rise a hair; chrome ones keep their sweep */
 @media (hover: hover) {

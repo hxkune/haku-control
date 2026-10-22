@@ -21,6 +21,7 @@
 static volatile LONG busy;
 static SRWLOCK lk = SRWLOCK_INIT;
 static char last_file[MAX_PATH * 3];   // UTF-8 name of the last report, for the page
+static wchar_t last_path[MAX_PATH];     // and where it is, to open it before sending it anywhere
 static int  last_ok = -1;
 static volatile LONG rbusy;              // a bug report being sent
 static int  r_ok = -1;                   // its result: 1 sent (r_id), 0 not (r_err)
@@ -221,6 +222,7 @@ done:
     free(b.p);
     AcquireSRWLockExclusive(&lk);
     last_ok = ok;
+    wcscpy_s(last_path, MAX_PATH, ok ? path : L"");
     WideCharToMultiByte(CP_UTF8, 0, ok ? wcsrchr(path, L'\\') + 1 : L"", -1, last_file, sizeof(last_file), NULL, NULL);
     ReleaseSRWLockExclusive(&lk);
     logf_("diagnostics %s", ok ? "saved" : "could not be saved");
@@ -238,6 +240,13 @@ void diag_save(void) {
     AcquireSRWLockExclusive(&lk); last_ok = -1; last_file[0] = 0; ReleaseSRWLockExclusive(&lk);
     HANDLE h = (HANDLE)_beginthreadex(NULL, 0, run, NULL, 0, NULL);
     if (h) CloseHandle(h); else InterlockedExchange(&busy, 0);
+}
+
+// the last saved report in Notepad: what it holds, seen before it goes anywhere
+void diag_open(void) {
+    wchar_t p[MAX_PATH + 2];   // quoted: a user folder may have spaces
+    AcquireSRWLockShared(&lk); swprintf_s(p, MAX_PATH + 2, L"\"%s\"", last_path); ReleaseSRWLockShared(&lk);
+    if (p[1] != L'"') ShellExecuteW(NULL, L"open", L"notepad.exe", p, NULL, SW_SHOWNORMAL);
 }
 
 // {"busy":0,"ok":1,"file":"haku-diagnostics-20260930-1412.txt","report":{"busy":0,"ok":1,"id":"3fa2c9d01e","err":""}};

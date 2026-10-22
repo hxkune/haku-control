@@ -2379,7 +2379,7 @@ function drawHero() {
     const v = heroAnim('a:' + it.key, 1);
     const x = p.x * d, y = p.y * d, w = p.w * d, h = p.h * d, hot = HERO.hover === it.key || (to && to.key === it.key);
     // not reachable: the tile is dimmed and says so (a device switched off in haku is not offline, only dark)
-    const ext = it.k === 'ext' && S.ext.devs[it.i], setup = ext && zonesNeed(ext), off = ext ? (ext.enabled || setup) && !ext.online && !ext.held : it.k === 'bulb' ? !(S.bulbs[it.i] || {}).online :
+    const ext = it.k === 'ext' && S.ext.devs[it.i], setup = ext && zonesNeed(ext), off = ext ? (ext.enabled || setup) && !ext.online && !ext.held && !ext.covered : it.k === 'bulb' ? !(S.bulbs[it.i] || {}).online :
       it.k === 'nano' ? !(nanoCtls().find(n => n.slot === it.slot) || {}).online : false;
     c.save();
     c.globalAlpha = drag && drag.src.key === it.key ? v * .35 : v;
@@ -3011,12 +3011,15 @@ function devStatus(d) {
   if (!d.enabled) return t('dev.off');
   if (d.own) return t('own.status');
   if (d.held) { const o = devById(d.same); return t(d.kind === 'openrgb' ? 'path.st.direct' : 'path.st.orgb', o ? o.name : '?') + (o ? ' · ' + devStatus(o) : ''); }
+  if (d.covered) { const o = devById(d.covered); return t('orgb.covered', o ? o.name : '?'); }
   if (d.pro && proLocked()) return t('dev.pro');
   if (!d.online && d.kind === 'tryx' && / busy$/.test(d.info)) return t('tx.busy') + cfWhy('tryx');
   if (d.online && d.kind === 'tryx' && / upload (\d+)%/.test(d.info)) return t('tx.up', RegExp.$1);
   if (d.online && d.kind === 'tryx' && / upload failed/.test(d.info)) return t(/ no adb/.test(d.info) ? 'tx.up.noadb' : 'tx.up.fail');
+  // OpenRGB: what the controller takes (drv_openrgb.c, CAP_*), or why it is not lit
+  if (!d.online && d.kind === 'openrgb' && d.cap >= 4) return t(d.cap === 4 && /whole board only/.test(d.info) ? 'cap.4b' : 'cap.' + d.cap);
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
-  return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds);
+  return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds) + (d.kind === 'openrgb' && d.cap >= 1 && d.cap <= 3 ? ' · ' + t('cap.' + d.cap) : '');
 }
 // "Check connection": what the core found (S.netchk: ping / same network) and whether the device came back meanwhile
 let CHK_ID = 0;
@@ -3032,7 +3035,7 @@ const DEV_ADV = new Set();   // devices whose "Advanced" part is open (kept when
 // set while it can't be reached: the core keeps [dev.N] and reads it again on every reconnect, so it does apply then,
 // as long as it stays on, haku's and still tries (not given back to its own lighting, not waiting for Pro)
 const DEV_SAVED = new Set();
-const devWaits = d => d.enabled && !d.own && !d.held && !d.online && !(d.pro && proLocked());
+const devWaits = d => d.enabled && !d.own && !d.held && !d.covered && !d.online && !(d.pro && proLocked());
 function buildDevices() {
   if (SHEET.kind === 'ext') closeSheet();
   buildBrandTabs();
@@ -4183,7 +4186,9 @@ $('#fixed-ok').addEventListener('click', () => {
 const REPORT = { open: false, sent: false };
 function updateDiag() {
   const D = S.diag || {}, R = D.report || {};
-  $('#diag-go').disabled = !!D.busy;
+  $('#diag-go').disabled = $('#help-diag-save').disabled = !!D.busy;
+  $('#help-diag-open').classList.toggle('hidden', D.ok !== 1);
+  $('#help-diag-st').textContent = D.busy ? t('diag.busy') : D.ok === 1 ? t('diag.done', D.file) : D.ok === 0 ? t('diag.fail') : '';
   $('#diag-note').textContent = D.busy ? t('diag.busy') : D.ok === 1 ? t('diag.done', D.file) : D.ok === 0 ? t('diag.fail') : t('report.note');
   if (!REPORT.open) return;
   const busy = !!R.busy;
@@ -4220,7 +4225,7 @@ $('#report-form').addEventListener('submit', e => {
   send({ cmd: 'report', text, contact: $('#report-contact').value.trim(), install: commInstall(), attach: $('#report-attach').checked ? '1' : '0' });
   updateDiag();
 });
-$('#diag-go').addEventListener('click', () => { S.diag = Object.assign({}, S.diag, { busy: 1 }); updateDiag(); send({ cmd: 'diag' }); });
+$$('#diag-go, #help-diag-save').forEach(b => b.addEventListener('click', () => { S.diag = Object.assign({}, S.diag, { busy: 1 }); updateDiag(); send({ cmd: 'diag' }); }));
 
 // ------------------------------------------------------------------ mood: describe it, a local model picks the colours
 const MOOD = { base: 0, pending: false, err: '', applied: false, text: '' };
@@ -4365,7 +4370,7 @@ function updateChips() {
   if (S.msi) h.push(chip(S.msi_own ? 'off' : 'on', `${t('chip.board')} <b>MSI</b>`));
   if (S.sticks) h.push(chip(S.ram_own ? 'off' : 'on', `${t('chip.mem')} <b>${S.sticks} ${t('chip.pcs')}</b>`));
   if (S.gpu_temp != null) h.push(chip('on', `GPU <b>${S.gpu_temp}°</b>`));
-  const nL = nanoCtls(), ed = S.ext.devs.filter(d => d.enabled && !d.held);
+  const nL = nanoCtls(), ed = S.ext.devs.filter(d => d.enabled && !d.held && !d.covered);
   if (nL.length) h.push(chipSet('Nanoleaf', nL, OFF_ROW.nano));
   if (S.bulbs.length) h.push(chipSet(t('chip.lamps'), S.bulbs, OFF_ROW.bulb));
   if (ed.length) h.push(chipSet(t('chip.devs'), ed, OFF_ROW.ext));
@@ -4398,7 +4403,60 @@ function updateChips() {
   $('#strip-title').textContent = stripName();
   const sn = $('#strip-name'); if (document.activeElement !== sn) sn.value = cv('layout', 'strip_name', '');
   sn.placeholder = t('pc.block');
+  updateHome();
 }
+
+// ------------------------------------------------------------------ Home: what is not lit and why, the fans as they run
+// the same status the device cards and the chips use; nothing here is shown that the core did not report
+const HOME = { attn: [] };
+function homeAttn() {
+  const r = [], row = (o, kind, why, help, extra) => r.push({ n: o.n, h: o.h, kind, why, help, extra });
+  for (const d of S.ext.devs) {
+    if (!zonesNeed(d) && !devWaits(d)) continue;
+    row(OFF_ROW.ext(d), kindTitle(d.kind), devStatus(d), d.kind === 'openrgb' ? 'orgb' : 'offline', pcDev(d) && !zonesNeed(d) ? 'retry' : '');
+  }
+  S.bulbs.forEach((b, i) => { if (!b.online) row(OFF_ROW.bulb(b, i), t('chip.lamps'), t('dev.offline'), 'offline'); });
+  nanoCtls().forEach(n => { if (!n.online) row(OFF_ROW.nano(n), 'Nanoleaf', t('dev.offline'), 'offline'); });
+  const leave = cfList('leave');
+  for (const x of (S.cf || {}).a || [])
+    if (x.run && cfDev(x) === 'held' && !leave.includes(x.id)) r.push({ n: x.name, kind: t('cf.w.' + x.w), why: t('cf.dev.held'), help: 'conflict', extra: 'cf' });
+  return r;
+}
+function updateHome() {
+  const none = !S.ext.devs.length && !S.bulbs.length && !nanoCtls().length && !S.sticks && !S.msi && !(S.fans || {}).on && !llOn();
+  $('#home-first').classList.toggle('hidden', !none || document.documentElement.classList.contains('remote'));
+  const a = homeAttn(), btn = (k, v, txt, cls) => `<button class="btn small${cls || ' ghost'}" type="button" data-${k}="${esc(v)}"><span>${txt}</span></button>`;
+  const html = a.map((x, i) => `<div class="found-row" data-i="${i}"><span class="kind">${esc(x.kind)}</span>
+    <div class="what"><b>${esc(x.n)}</b><small>${esc(x.why)}</small></div>
+    <span class="added">${x.h ? btn('a', 'open', t('home.open'), ' ') : ''}${x.extra === 'retry' ? btn('a', 'retry', t('dev.retry')) : ''}${x.extra === 'cf' ? btn('a', 'cf', t('cf.title')) : ''}${btn('help', x.help, t('help.open'))}</span></div>`).join('');
+  const L = $('#home-attn-list');
+  if (L.dataset.html !== html) { L.dataset.html = html; L.innerHTML = html; HOME.attn = a; }
+  $('#home-attn').classList.toggle('hidden', !a.length);
+  // the fans: the QUADRO's and the board's channels as they run now (fans.c), the hidden ones left out
+  // shortcut: Lian Li wireless fans are not summed up here, only on the Fans tab; add them if people ask
+  const F = S.fans || {}, f = (F.f || []).map((x, i) => x && !fanHidden(i) ? `<span><b>${esc(fanName(i))}</b> ${x.rpm} ${t('home.rpm')}</span>` : '').filter(Boolean);
+  const c = $('#home-cool');
+  c.classList.toggle('hidden', !F.on || !f.length || !NAV_NEED.fans());
+  const ch = `<h3>${t('nav.fans')}</h3><div class="home-fans">${f.join('')}${F.gpu != null ? `<span><b>GPU</b> ${F.gpu}°</span>` : ''}</div>`;
+  if (c.dataset.html !== ch) { c.dataset.html = ch; c.innerHTML = ch; }
+}
+$('#home-attn-list').addEventListener('click', e => {
+  const b = e.target.closest('button[data-a]'); if (!b) return;
+  const x = HOME.attn[+b.closest('[data-i]').dataset.i]; if (!x) return;
+  if (b.dataset.a === 'open') { const r = b.getBoundingClientRect(); openSheet(x.h, r.left + r.width / 2, r.top); }
+  else if (b.dataset.a === 'retry') { b.disabled = true; setTimeout(() => { b.disabled = false; }, 3000); send({ cmd: 'dev_retry' }); }
+  else if (b.dataset.a === 'cf') { showTab('pc'); setTimeout(() => $('#cf-card').scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }
+});
+$('#home-cool').addEventListener('click', () => showTab('fans'));
+$('#home-find').addEventListener('click', () => { showTab('devices'); S.ext.scanning = 1; updateDevices(); send({ cmd: 'scan' }); });
+// help: a topic in Settings, opened from where the question comes up
+function helpOpen(topic) {
+  showTab('settings');
+  const d = $('#help-' + topic); if (!d) return;
+  if (d.tagName === 'DETAILS') d.open = true;
+  setTimeout(() => d.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-help]'); if (b) helpOpen(b.dataset.help); });
 
 // ------------------------------------------------------------------ messages from the core
 // ------------------------------------------------------------------ fans: Aqua Computer QUADRO and the board's Super I/O (fans.c, sio.c)

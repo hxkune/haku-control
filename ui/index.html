@@ -106,6 +106,20 @@
       <div class="arrange-bar hidden" id="arrange-bar"><span data-i18n="hero.arrange.hint"></span><button class="btn small primary" id="arrange-done"><span data-i18n="group.done">Done</span></button></div>
     </div>
     <button class="hero-more hidden" id="hero-more"><span></span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+    <!-- nothing found yet: where to start -->
+    <div class="card home-first hidden" id="home-first">
+      <h3 data-i18n="home.first">No devices yet</h3>
+      <p class="note" data-i18n="home.first.text"></p>
+      <div class="btn-row"><button class="btn small primary" type="button" id="home-find"><span data-i18n="home.find">Find devices</span></button>
+        <button class="btn small ghost" type="button" data-help="start"><span data-i18n="help.open">Help</span></button></div>
+    </div>
+    <!-- what is not lit and why, each with what to do: from the same status as the device cards -->
+    <div class="card home-attn hidden" id="home-attn">
+      <h3 data-i18n="home.attn">Needs attention</h3>
+      <div class="found" id="home-attn-list"></div>
+    </div>
+    <!-- the fans as they run now; set on the Fans tab -->
+    <button class="card home-cool hidden" type="button" id="home-cool"></button>
   </section>
 
   <!-- ============ EFFECTS ============ -->
@@ -659,6 +673,25 @@
         </div>
         <p class="ha-state" id="ha-state"></p>
         <details class="trouble"><summary data-i18n="ha.how">How to set it up</summary><p class="hint" data-i18n="ha.how.text"></p></details>
+      </div>
+      <!-- answers to what people ask, each checked against what the code does; opened from Home and the cards -->
+      <div class="card" id="help">
+        <h3 data-i18n="help.title">Help and diagnostics</h3>
+        <details class="trouble" id="help-start"><summary data-i18n="help.start"></summary><p class="hint" data-i18n="help.start.text"></p>
+          <div class="btn-row"><button class="btn small ghost" type="button" data-go="devices"><span data-i18n="nav.devices"></span></button></div></details>
+        <details class="trouble" id="help-offline"><summary data-i18n="help.offline"></summary><p class="hint" data-i18n="help.offline.text"></p>
+          <div class="btn-row"><button class="btn small ghost" type="button" data-go="devices"><span data-i18n="nav.devices"></span></button></div></details>
+        <details class="trouble" id="help-orgb"><summary data-i18n="help.orgb"></summary><p class="hint" data-i18n="help.orgb.text"></p>
+          <div class="btn-row"><button class="btn small ghost" type="button" data-go="pc"><span data-i18n="nav.pc"></span></button></div></details>
+        <details class="trouble" id="help-conflict"><summary data-i18n="help.conflict"></summary><p class="hint" data-i18n="help.conflict.text"></p>
+          <div class="btn-row"><button class="btn small ghost" type="button" data-go="pc"><span data-i18n="nav.pc"></span></button></div></details>
+        <details class="trouble" id="help-fans"><summary data-i18n="help.fans"></summary><p class="hint" data-i18n="help.fans.text"></p>
+          <div class="btn-row"><button class="btn small ghost" type="button" data-go="fans"><span data-i18n="nav.fans"></span></button></div></details>
+        <div class="set-row pc-only" id="help-diag">
+          <div><b data-i18n="help.diag">Diagnostics file</b><p class="muted" data-i18n="help.diag.text"></p><p class="muted" id="help-diag-st" role="status"></p></div>
+          <div class="bk-btns"><button class="btn small ghost" type="button" id="help-diag-save"><span data-i18n="help.diag.save">Save</span></button>
+            <button class="btn small ghost hidden" type="button" id="help-diag-open" data-open="diag"><span data-i18n="help.diag.open">Open to check</span></button></div>
+        </div>
       </div>
       <div class="card">
         <h3 data-i18n="files">Files</h3>
