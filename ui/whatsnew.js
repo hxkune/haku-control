@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.50',
+    en: ['The logo in the menu moves twice as fast, so its drift, glint and shadow are easier to see.'],
+    ru: ['Логотип в меню двигается вдвое быстрее: покачивание, блик и тень стало легче заметить.'],
+    fr: ['Le logo du menu bouge deux fois plus vite : son flottement, son reflet et son ombre se voient mieux.'] },
   { v: '0.4.49',
     en: ['The haku logo in the menu is centred and comes alive: it drifts slightly, a soft glint and shadow pass across it. With Animations off it holds still.'],
     ru: ['Логотип haku в меню стоит по центру и ожил: слегка покачивается, по нему проходят мягкий блик и тень. При выключенных анимациях он неподвижен.'],
