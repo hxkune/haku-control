@@ -49,6 +49,8 @@ struct ext_dev {
     char  key[128];           // pairing token (Hue); saved with ext_save_key()
     int   sub, cfg_leds, nleds, reverse, enabled;
     int   own;                // [dev.N] own=1: given back to its own lighting (its maker's app, the mode it had)
+    int   same;               // the [dev.N] of the same hardware on the other path (an OpenRGB device's [dev.M] same=N: dev.N drives it directly)
+    int   held;               // 1: that other path drives it ([dev.M] path=direct|openrgb), so this one is not opened
     float rate;               // frames/s this device takes (set by the driver on open; 0: the driver's rate)
     float gain[3];            // [dev.N] warmth as r/g/b gains
     float cfg_rate;           // [dev.N] rate: chosen in the window (0: auto)
@@ -56,7 +58,8 @@ struct ext_dev {
     char  zones[160];         // [dev.N] zones: LEDs on each resizable zone, "name=count|..." (a | as ; starts a comment in settings.ini) (OpenRGB's ARGB headers)
     int   online;
     DWORD next_try;           // reconnect backoff
-    int   fails;
+    int   fails;              // attempts that failed since it last stayed connected
+    DWORD up_at;              // when it came online (a loss soon after counts as a failed attempt)
     SOCKET sock;              // for drivers with one socket
     void *priv;               // driver state
 };

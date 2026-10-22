@@ -290,7 +290,8 @@ void  hw_scan_start(void);              // the PC's lighting hardware, as a list
 int   hw_scan_json(char *out, int cap);  // "hw":{...}
 // other lighting programs holding controllers (conflicts.c): listed for the PC page, closed on a click or by [conflicts] stop
 void  conflicts_tick(void);             // every 3 s on the window thread
-void  conflicts_close(const char *id);  // in the background; the PC window only
+void  conflicts_close(const char *id);  // asked to end, in the background; the PC window only
+void  conflicts_end(const char *id);    // ended the hard way, with its services; the PC window only, after a warning
 int   conflicts_json(char *out, int cap);
 void  app_reopen_devices(void);         // the PC's own controllers are opened again (main.c), as after sleep
 // haku Pro (pro/license.c in the paid build, src/pro_free.c in the open one): the lights on Wi-Fi / the network

@@ -121,7 +121,7 @@ jobs:
           Copy-Item bin "$pkg\bin" -Recurse
           Copy-Item scripts\install.ps1, scripts\uninstall.ps1, scripts\stop.ps1, scripts\aidot-setup.ps1 "$pkg\scripts"
           Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $pkg
-          Copy-Item third_party\pawnio\COPYING "$pkg\bin\SmbusPIIX4.COPYING.txt"
+          foreach ($m in 'SmbusPIIX4', 'LpcIO', 'AMDFamily17', 'IntelMSR') { Copy-Item third_party\pawnio\COPYING "$pkg\bin\$m.COPYING.txt" }
           Compress-Archive -Path "$pkg\*" -DestinationPath "$pkg.zip"
           "PKG=$pkg" >> $env:GITHUB_ENV
 

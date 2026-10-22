@@ -1979,11 +1979,32 @@ function drawMouse(c, cols, glow, px) {   // px: one device pixel in this space
   c.restore();
 }
 
+// The keyboards as drawn in art (60%, TKL, full size): keys in reading order as [x, y, w, h, modifier] in the
+// drawing's units, inside its 14-unit margin. A row item is [x, w, modifier, count, h]; keys in a run sit 2 apart.
+const KB = (() => {
+  const row = (y, ...ks) => ks.flatMap(([x, w = 16, m = 0, n = 1, h = 16]) => [...Array(n)].map((_, i) => [x + i * (w + 2), y, w, h, m]));
+  const main = [[[0, 16, 1], [18, 16, 0, 12], [234, 34, 1]], [[0, 25, 1], [27, 16, 0, 12], [243, 25, 1]], [[0, 29, 1], [31, 16, 0, 11], [229, 39, 1]],
+    [[0, 38, 1], [40, 16, 0, 10], [220, 48, 1]], [[0, 20, 1, 3], [66, 114], [182, 20, 1, 4]]];
+  const fn = [[0, 16, 1], [36, 16, 0, 4], [117, 16, 1, 4], [198, 16, 0, 4], [280, 16, 1, 3]];
+  const nav = [[[280, 16, 1, 3]], [[280, 16, 1, 3]], [], [[298, 16, 1]], [[280, 16, 1, 3]]];
+  const pad = [[[340, 16, 1, 4]], [[340, 16, 0, 3], [394, 16, 1, 1, 34]], [[340, 16, 0, 3]], [[340, 16, 0, 3], [394, 16, 1, 1, 34]], [[340, 34], [376]]];
+  const big = (...add) => [...row(0, ...fn), ...main.flatMap((r, i) => row(22 + i * 18, ...r, ...add.flatMap(a => a[i])))];
+  return {
+    60: { w: 296, h: 116, plates: [[10, 10, 276, 96]], keys: main.flatMap((r, i) => row(i * 18, ...r)) },
+    tkl: { w: 356, h: 138, plates: [[10, 10, 276, 118], [290, 10, 56, 118]], keys: big(nav) },
+    full: { w: 434, h: 138, plates: [[10, 10, 276, 118], [290, 10, 56, 118], [350, 10, 74, 118]], keys: big(nav, pad), dots: [358, 375, 392] },
+  };
+})();
+// By its key (LED) count: full size from 96 (96% boards too), TKL from 70 (75% boards too), 60% below that (65% too).
+// 24 or fewer is a keyboard lit in zones, not per key: taken for a full size.
+const kbLayout = n => KB[n >= 96 || n <= 24 ? 'full' : n >= 70 ? 'tkl' : 60];
+
 // One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
 // the TRYX screen is a picture: tryx.svg when on, tryx-off.svg when off
 const TRYX_IMG = Object.fromEntries([['on', 'tryx.svg'], ['off', 'tryx-off.svg']].map(([k, src]) =>
   [k, Object.assign(new Image(), { src, onload: () => { if (typeof tab !== 'undefined' && tab === 'home') drawHero(); } })]));
-function drawFixture(c, X, Y, W, H, type, cols, on) {
+// keys: a keyboard's real LED count (cols may be thinned out), which picks its layout
+function drawFixture(c, X, Y, W, H, type, cols, on, keys) {
   const dp = devicePixelRatio, n = cols.length, cx = X + W / 2, cy = Y + H / 2;
   const col = i => (on && cols[i]) || OFF, glow = on ? avgColor(cols) : null;
   const all = () => n > 1 ? cols.map((_, i) => col(i)) : [col(0), col(0)];
@@ -2069,26 +2090,30 @@ function drawFixture(c, X, Y, W, H, type, cols, on) {
   } else if (type === 'screen') {   // the TRYX cooler: its screen picture
     const im = on ? TRYX_IMG.on : TRYX_IMG.off, r = im.naturalWidth / im.naturalHeight || 200 / 175, w = Math.min(W, H * r), h = w / r;
     if (im.complete && im.naturalWidth) c.drawImage(im, cx - w / 2, cy - h / 2, w, h);
-  } else if (type === 'keyboard') {   // a keyboard: rows of keys at their real widths, lit by their LEDs
-    const w = Math.min(W * 0.95, H * 2.9), h = w * 0.36, x = cx - w / 2, y = cy - h / 2, p = w * 0.025;
-    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; } box(x, y, w, h, DEEP); c.restore();
-    box(x, y, w, h, DEEP);
-    // widths in key units, 15 to a row; the top row is the function row with its gaps
-    const ROWS = [[1, .5, 1, 1, 1, 1, .5, 1, 1, 1, 1, .5, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], [1.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.5],
-      [1.75, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.25], [2.25, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.75], [1.25, 1.25, 1.25, 6.25, 1.25, 1.25, 1.25, 1.25]];
-    const u = (w - p * 2) / 15, rh = (h - p * 2) / ROWS.length;
-    ROWS.forEach((row, r) => {
-      let kx = x + p;
-      const ky = y + p + r * rh + (r ? rh * 0.1 : 0), kh = rh * (r ? 0.8 : 0.66);
-      row.forEach(ku => {
-        if (!(r === 0 && ku === .5)) {
-          const f = (kx + ku * u / 2 - x - p) / (w - p * 2);   // where this key sits across the board
-          const i = n <= 24 ? Math.floor(f * Math.max(n, 1)) : Math.floor(((r + f) / ROWS.length) * n), kc = col(Math.min(i, n - 1));
-          c.fillStyle = lit1(kc) ? kc : '#1d1d1d'; c.fillRect(kx + u * 0.08, ky, ku * u - u * 0.16, kh);
-          if (lit1(kc)) { c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(kx + u * 0.2, ky + kh * 0.14, ku * u - u * 0.4, kh * 0.6); }   // the keycap top over the glow
-        }
-        kx += ku * u;
-      });
+  } else if (type === 'keyboard') {   // a keyboard, 60% / TKL / full size by its key count, each key lit by its LED
+    const L = kbLayout(keys || n), s = Math.min(W * 0.95 / L.w, H * 0.8 / L.h), ox = cx - L.w * s / 2, oy = cy - L.h * s / 2;
+    const rr = (x, y, w, h, r) => { c.beginPath(); c.roundRect(ox + x * s, oy + y * s, w * s, h * s, r * s); };
+    const grad = (y0, y1, a, b) => { const g = c.createLinearGradient(0, oy + y0 * s, 0, oy + y1 * s); g.addColorStop(0, a); g.addColorStop(1, b); return g; };
+    const cg = c.createLinearGradient(ox, oy, ox + L.w * s, oy + L.h * s);
+    [[0, '#222226'], [.5, '#141417'], [1, '#1c1c20']].forEach(([o, k]) => cg.addColorStop(o, k));
+    c.save(); if (glow) { c.shadowColor = glow; c.shadowBlur = 18 * dp; }
+    rr(2, 2, L.w - 4, L.h - 4, 8); c.fillStyle = cg; c.fill(); c.restore();
+    c.strokeStyle = '#383840'; c.lineWidth = 1.5 * s; c.stroke();
+    c.lineWidth = s; L.plates.forEach(p => { rr(...p, 4); c.fillStyle = '#0c0c0e'; c.fill(); c.strokeStyle = '#1f1f24'; c.stroke(); });
+    c.fillStyle = '#383842'; (L.dots || []).forEach(x => { c.beginPath(); c.arc(ox + (14 + x) * s, oy + 22 * s, 2 * s, 0, Math.PI * 2); c.fill(); });
+    c.lineWidth = .8 * s;
+    L.keys.forEach(([x, y, w, h, m], j) => {
+      // a keyboard lit in zones takes its colours across the board, one lit per key in reading order
+      const i = n <= 24 ? Math.floor((x + w / 2) / (L.w - 28) * n) : Math.floor(j * n / L.keys.length), kc = col(Math.min(i, n - 1));
+      x += 14; y += 14;
+      rr(x, y, w, h, 2);
+      if (lit1(kc)) {
+        c.fillStyle = kc; c.fill(); c.strokeStyle = kc; c.stroke();
+        rr(x + 2.5, y + 2, w - 5, h - 6, 1.5); c.fillStyle = 'rgba(0,0,0,.4)'; c.fill();   // the keycap top over the glow
+      } else {
+        c.fillStyle = m ? grad(y, y + h, '#34343c', '#25252b') : grad(y, y + h, '#2a2a30', '#1e1e22'); c.fill();
+        c.strokeStyle = m ? '#43434f' : '#383842'; c.stroke();
+      }
     });
   } else if (type === 'gate') {   // Divoom Times Gate: five square screens in a row on one bar, on two feet
     const k = col(0), on1 = lit1(k), w = Math.min(W * 0.94, H * 3.6), u = (w - 14 * dp) / 5.4, bh = u + 10 * dp;
@@ -2145,7 +2170,7 @@ function drawExt(c, X, Y, W, H, k) {
   const d = S.ext.devs[k];
   if (!d) return;
   const cols = F.ext[k] || [], on = d.online && d.enabled, n = Math.max(1, cols.length || Math.min(d.leds || 1, 60));
-  drawFixture(c, X, Y, W, H, d.type || (d.per_led ? 'strip' : 'bulb'), [...Array(n)].map((_, i) => cols[i] || OFF), on);
+  drawFixture(c, X, Y, W, H, d.type || (d.per_led ? 'strip' : 'bulb'), [...Array(n)].map((_, i) => cols[i] || OFF), on, d.leds);
 }
 function label(c, text, x, y, bright) {
   const d = devicePixelRatio;
@@ -2178,7 +2203,7 @@ function heroAnim(key, target) {
 // controller, each bulb, each LAN device), laid out in rows; a row that is full wraps to the next one. Full rows
 // stretch a little to fill the width, the last row stays left-aligned. The preview grows by whole rows (CSS
 // animates the height) and tiles glide to their new places when something is added or removed.
-const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, keyboard: 2.2, mouse: .8, keylight: 1, gate: 1.2, frame: 1.4, screen: 1.2 };
+const HERO_EXT_W = { strip: 2.4, tv: 1.7, bars: 1.1, floor: .9, lamp: 1, panels: 1.7, gpu: 2, ram: .9, board: 1.2, fan: 1, mouse: .8, keylight: 1, gate: 1.2, frame: 1.4, screen: 1.2 };
 function heroItems(all) {
   const hide = all ? [] : heroHidden(), items = [];
   if (S.sticks && !hide.includes('ram')) items.push({ key: 'ram', k: 'ram', zone: 'zone.ram', w: 1.1, name: t('pc.memory'), draw: drawRam });
@@ -2195,7 +2220,7 @@ function heroItems(all) {
     if (hide.includes('dev' + dv.id)) return;
     const ty = dv.type || (dv.per_led ? 'strip' : 'bulb');
     items.push({ key: 'ext' + dv.id, k: 'ext', i: k, id: dv.id, zone: 'zone.dev' + dv.id, name: dv.name,
-      w: HERO_EXT_W[ty] || Math.min(2.4, .55 + .35 * Math.max(1, dv.leds || 1)), draw: (c, x, y, w, h) => drawExt(c, x, y, w, h, k) });
+      w: ty === 'keyboard' ? (L => L.w / L.h * .85)(kbLayout(dv.leds)) : HERO_EXT_W[ty] || Math.min(2.4, .55 + .35 * Math.max(1, dv.leds || 1)), draw: (c, x, y, w, h) => drawExt(c, x, y, w, h, k) });
   });
   // fans only when added from the menu; all === 'any' (the drag order) takes them in too, the groups' lists do not
   const fans = heroFans();
@@ -2354,7 +2379,7 @@ function drawHero() {
     const v = heroAnim('a:' + it.key, 1);
     const x = p.x * d, y = p.y * d, w = p.w * d, h = p.h * d, hot = HERO.hover === it.key || (to && to.key === it.key);
     // not reachable: the tile is dimmed and says so (a device switched off in haku is not offline, only dark)
-    const ext = it.k === 'ext' && S.ext.devs[it.i], setup = ext && zonesNeed(ext), off = ext ? (ext.enabled || setup) && !ext.online : it.k === 'bulb' ? !(S.bulbs[it.i] || {}).online :
+    const ext = it.k === 'ext' && S.ext.devs[it.i], setup = ext && zonesNeed(ext), off = ext ? (ext.enabled || setup) && !ext.online && !ext.held : it.k === 'bulb' ? !(S.bulbs[it.i] || {}).online :
       it.k === 'nano' ? !(nanoCtls().find(n => n.slot === it.slot) || {}).online : false;
     c.save();
     c.globalAlpha = drag && drag.src.key === it.key ? v * .35 : v;
@@ -2974,12 +2999,20 @@ const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logi
 const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max, at] = z.split(':'); return { name, count: +count, min: +min, max: +max, at: +at || 0 }; });
 // OpenRGB starts a board's ARGB connectors at 0 LEDs: nothing to light (not offline) until their counts are set
 const zonesNeed = d => !d.online && devZones(d).length > 0 && devZones(d).every(z => !z.count);
+// one device seen twice, through its own driver and through OpenRGB: the OpenRGB one's [dev.M] same=N says so and path=
+// which of the two lights it (devices.c load_config). haku only offers the pair (the maker's name in OpenRGB's), the user says
+const devById = id => S.ext.devs.find(x => x.id === id);
+const brandWord = d => kindTitle(d.kind).split(' ')[0].toLowerCase();
+const pathPairs = o => S.ext.devs.filter(n => pcDev(n) && n.kind !== 'openrgb' && (n.id === o.same ||
+  !n.same && brandWord(n).length >= 3 && (o.name + ' ' + o.info).toLowerCase().includes(brandWord(n))));
+const pathCur = o => !o.same ? '' : (o.own && devById(o.same)?.own ? 'own' : cv('dev.' + o.id, 'path', 'direct') === 'openrgb' ? 'orgb' : 'direct') + ':' + o.same;
 function devStatus(d) {
   if (zonesNeed(d)) return t('zones.need');   // first, also when switched off: it was likely switched off for looking offline
   if (!d.enabled) return t('dev.off');
   if (d.own) return t('own.status');
+  if (d.held) { const o = devById(d.same); return t(d.kind === 'openrgb' ? 'path.st.direct' : 'path.st.orgb', o ? o.name : '?') + (o ? ' · ' + devStatus(o) : ''); }
   if (d.pro && proLocked()) return t('dev.pro');
-  if (!d.online && d.kind === 'tryx' && /KANALI/.test(d.info)) return t('tx.busy');
+  if (!d.online && d.kind === 'tryx' && / busy$/.test(d.info)) return t('tx.busy') + cfWhy('tryx');
   if (d.online && d.kind === 'tryx' && / upload (\d+)%/.test(d.info)) return t('tx.up', RegExp.$1);
   if (d.online && d.kind === 'tryx' && / upload failed/.test(d.info)) return t(/ no adb/.test(d.info) ? 'tx.up.noadb' : 'tx.up.fail');
   if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
@@ -2999,7 +3032,7 @@ const DEV_ADV = new Set();   // devices whose "Advanced" part is open (kept when
 // set while it can't be reached: the core keeps [dev.N] and reads it again on every reconnect, so it does apply then,
 // as long as it stays on, haku's and still tries (not given back to its own lighting, not waiting for Pro)
 const DEV_SAVED = new Set();
-const devWaits = d => d.enabled && !d.own && !d.online && !(d.pro && proLocked());
+const devWaits = d => d.enabled && !d.own && !d.held && !d.online && !(d.pro && proLocked());
 function buildDevices() {
   if (SHEET.kind === 'ext') closeSheet();
   buildBrandTabs();
@@ -3046,6 +3079,10 @@ function buildDevices() {
           <div class="pc-only" style="display:flex;gap:10px;align-items:center;margin:4px 0;flex-wrap:wrap"><button class="btn small ghost dev-media" type="button"><span>${t('tx.pick')}</span></button><button class="btn small ghost dev-build" type="button"><span>${t('tx.build')}</span></button><span class="muted dev-media-name">${esc(cv(sec, 'media', '').split(/[\\/]/).pop())}</span></div>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('tx.follow')}</em></label>
           <p class="hint">${t('tx.note')}</p>` : ''}
+        ${d.kind === 'openrgb' && pathPairs(d).length ? `<label class="num"><span>${t('path.title')}</span><select class="select dev-path"><option value="">${t('path.none')}</option>${pathPairs(d).map(n =>
+          ['direct', 'orgb', 'own'].map(v => `<option value="${v}:${n.id}"${pathCur(d) === v + ':' + n.id ? ' selected' : ''}>${esc(t('path.' + v, n.name))}</option>`).join('')).join('')}</select></label>
+          <p class="hint">${t('path.note')}</p>` : ''}
+        ${d.kind !== 'openrgb' && devById(d.same) ? `<p class="hint">${esc(t('path.hint', devById(d.same).name))}</p>` : ''}
         <details class="trouble dev-adv"${DEV_ADV.has(d.id) || devStatus(d) === t('zones.need') ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
         ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
@@ -3063,7 +3100,7 @@ function buildDevices() {
           <p class="hint">${t('own.note.dev')}</p>`}
         </div></details>
         <div class="btn-row">${scr ? '' : `<button class="btn small dev-ident" title="${esc(t('dev.identify.title'))}"><span>${t('dev.identify')}</span></button>`}
-        ${pcDev(d) ? '' : `<button class="btn small dev-check">${t('dev.check')}</button>`}
+        ${pcDev(d) ? `<button class="btn small dev-retry" title="${esc(t('dev.retry.t'))}" hidden>${t('dev.retry')}</button>` : `<button class="btn small dev-check">${t('dev.check')}</button>`}
         ${scr ? '' : `<button class="btn small dev-cal">${t('cal.btn')}</button>`}
         <button class="btn danger small dev-del">${t('dev.remove')}</button></div>
         <p class="hint dev-chk" id="dev-chk-${d.id}" aria-live="polite"></p>
@@ -3078,6 +3115,7 @@ function buildDevices() {
     el.querySelector('.dev-ident')?.addEventListener('click', () => send({ cmd: 'identify', zone: 'zone.dev' + d.id }));
     el.querySelector('.dev-cal')?.addEventListener('click', e => calOpen(d, e.currentTarget));
     el.querySelector('.dev-check')?.addEventListener('click', () => { CHK_ID = d.id; S.netchk = { id: d.id, busy: 1 }; updateDevices(); send({ cmd: 'dev_check', id: String(d.id) }); });
+    el.querySelector('.dev-retry')?.addEventListener('click', e => { const b = e.currentTarget; b.disabled = true; setTimeout(() => { b.disabled = false; }, 3000); send({ cmd: 'dev_retry' }); });
     el.querySelector('.dev-own')?.addEventListener('change', e => { d.own = e.target.checked ? 1 : 0; setCfg(sec, 'own', d.own); updateDevices(); drawHero(); });
     el.querySelector('.dev-name').addEventListener('change', e => {
       const v = e.target.value.replace(/[;#\[\]=]/g, '').trim(); if (!v) return;
@@ -3087,6 +3125,15 @@ function buildDevices() {
     el.querySelector('.dev-token')?.addEventListener('change', e => { const v = e.target.value.replace(/\D/g, ''); e.target.value = v; setCfg(sec, 'key', v); });
     el.querySelector('.dev-type')?.addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
+    // own first, then path, then the pair itself: the core never sees the pair with the wrong path for a moment
+    el.querySelector('.dev-path')?.addEventListener('change', e => {
+      const [v, n] = e.target.value.split(':');
+      if (!v) { setCfg(sec, 'same', ''); return; }
+      const own = v === 'own' ? 1 : 0;
+      if (own || d.own) setCfg(sec, 'own', own);
+      if (own || devById(+n)?.own) setCfg('dev.' + n, 'own', own);
+      setCfg(sec, 'path', v === 'orgb' ? 'openrgb' : 'direct'); setCfg(sec, 'same', n);
+    });
     el.querySelector('.dev-rate')?.addEventListener('change', e => setCfg(sec, 'rate', e.target.value));
     el.querySelector('.dev-static')?.addEventListener('change', e => setCfg(sec, 'static', e.target.value));
     // LEDs on each connector: all of them saved together ([dev.N] zones), the device reconnects with them
@@ -3279,6 +3326,7 @@ function txbOpen(d, from) {
 }
 const txbFreeSrc = s => { if (!s) return; if (s.el) { s.el.pause(); URL.revokeObjectURL(s.el.src); } (s.frames || []).forEach(f => f.bmp.close()); s.bmp?.close(); };
 function txbClose() {
+  if (TXB?.rec) TXB.stop = 1;   // while the video is made, closing stops it instead and keeps the work
   if (!TXB || TXB.busy) return;
   txbFreeSrc(TXB.src); TXB.layers.forEach(l => l.bmp?.close());
   $('#txb').classList.add('hidden');
@@ -3418,8 +3466,10 @@ async function txbMake() {
   if (!TXB || TXB.busy || TXB.ld) return;   // a save already on its way, or a picture still loading
   const B = TXB, s = B.src, [w0, h0] = TXB_SHAPES[B.shape], vid = !!(s && s.dur), msg = $('#txb-msg');
   const c = document.createElement('canvas'); c.width = vid ? w0 : w0 * 1.5; c.height = vid ? h0 : h0 * 1.5;
-  const busy = on => { B.busy = on; $('#txb').querySelectorAll('button, input, select').forEach(e => { e.disabled = on; }); };
-  busy(1); msg.classList.remove('warn');
+  // while the video is made, Cancel and the cross stay on: they stop it (txbClose); once sent, the save is the core's
+  const busy = on => { B.busy = on; $('#txb').querySelectorAll('button, input, select').forEach(e => { e.disabled = on && !(B.rec && (e.id === 'txb-cancel' || e.id === 'txb-x')); }); };
+  let enc = null;
+  B.stop = 0; B.rec = vid; busy(1); msg.classList.remove('warn');
   try {
     let blob;
     if (!vid) { txbDraw(c, 0); blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .9)); }
@@ -3431,7 +3481,7 @@ async function txbMake() {
         if (!cfg && window.VideoEncoder && (await VideoEncoder.isConfigSupported({ ...base, ...o }).catch(() => ({}))).supported) cfg = { ...base, ...o };
       if (!cfg) throw t('txb.novideo');
       const chunks = []; let desc = null, err = null;
-      const enc = new VideoEncoder({ error: e => { err = e; }, output: (ch, meta) => {
+      enc = new VideoEncoder({ error: e => { err = e; }, output: (ch, meta) => {
         const d = meta?.decoderConfig?.description; if (d) desc = new Uint8Array(ArrayBuffer.isView(d) ? d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength) : d.slice(0));
         const b = new Uint8Array(ch.byteLength); ch.copyTo(b); chunks.push({ b, t: ch.timestamp, key: ch.type === 'key' });
       } });
@@ -3439,25 +3489,26 @@ async function txbMake() {
       if (s.el) { s.el.loop = false; s.el.pause(); s.el.currentTime = 0; await new Promise(r => { s.el.onseeked = r; }); await s.el.play(); }
       const t0 = performance.now(); let last = -1, n = 0;
       // in real time, at most 30 frames a second (a hidden window slows the frames down)
-      await new Promise(r => { const step = () => {
+      // a frame's error ends the wait (each frame runs in its own rAF call, out of reach of the catch below)
+      await new Promise((r, no) => { const step = () => { try {
         const tt = s.el ? s.el.currentTime : (performance.now() - t0) / 1000;
-        if (tt >= s.dur || s.el?.ended || err) return r();
+        if (tt >= s.dur || s.el?.ended || err || B.stop) return r();
         if (tt - last >= 1 / 32 && enc.encodeQueueSize < 8) {
           txbDraw(c, tt); last = tt;
-          const f = new VideoFrame(c, { timestamp: Math.round(tt * 1e6) }); enc.encode(f, { keyFrame: n++ % 60 === 0 }); f.close();
+          const f = new VideoFrame(c, { timestamp: Math.round(tt * 1e6) });
+          try { enc.encode(f, { keyFrame: n++ % 60 === 0 }); } finally { f.close(); }
         }
         msg.textContent = t('txb.rec', Math.round(tt / s.dur * 100)); requestAnimationFrame(step);
-      }; step(); });
-      if (!err) await enc.flush().catch(e => { err = e; });
-      if (enc.state !== 'closed') enc.close();
-      if (s.el) { s.el.loop = true; s.el.play().catch(() => {}); }
+      } catch (e) { no(e); } }; step(); });
+      if (!err && !B.stop) await enc.flush().catch(e => { err = e; });
+      if (B.stop) throw t('txb.stopped');
       if (err || !desc || !chunks.length) throw t('txb.fail', err?.message || 'no video frames');
       blob = new Blob([txbMp4(c.width, c.height, desc, chunks)], { type: 'video/mp4' });
     }
     if (blob.size > 16 << 20) throw t('txb.big');
     const data = await new Promise((r, no) => { const f = new FileReader(); f.onload = () => r(f.result.slice(f.result.indexOf(',') + 1)); f.onerror = no; f.readAsDataURL(blob); });
     // the core answers this request (tryx_built): until it says saved, the builder keeps everything for another try
-    const req = String(++TXB_REQ); msg.textContent = t('txb.saving');
+    const req = String(++TXB_REQ); msg.textContent = t('txb.saving'); B.rec = false; busy(1);   // too late to stop from here
     const r = await new Promise(done => {
       const tm = setTimeout(() => done({ ok: 0, err: 'wait' }), 20000);
       B.wait = { req, done: m => { clearTimeout(tm); done(m); } };
@@ -3466,8 +3517,12 @@ async function txbMake() {
     B.wait = null;
     if (!r.ok) throw t('txb.nosave', t('txb.e.' + (['open', 'write', 'replace', 'wait'].includes(r.err) ? r.err : 'bad')));
     msg.textContent = t('txb.saved');   // on this PC; the cable upload to the screen shows on the device card
-  } catch (e) { msg.textContent = typeof e === 'string' ? e : t('txb.fail', e?.message || e); msg.classList.add('warn'); }
-  busy(0); txbLayers(); txbLoop();
+  } catch (e) { msg.textContent = typeof e === 'string' ? e : t('txb.fail', e?.message || e); msg.classList.toggle('warn', e !== t('txb.stopped')); }
+  finally {
+    if (enc && enc.state !== 'closed') enc.close();
+    if (vid && s.el) { s.el.loop = true; s.el.play().catch(() => {}); }
+    B.rec = false; B.stop = 0; busy(0); txbLayers(); txbLoop();
+  }
 }
 let TXB_REQ = 0;
 $('#txb-src').addEventListener('click', () => $('#txb-file').click());
@@ -3513,7 +3568,7 @@ $('#txb-layers').addEventListener('click', e => {
 }
 $('#txb-go').addEventListener('click', txbMake);
 ['#txb-x', '#txb-cancel'].forEach(s => $(s).addEventListener('click', txbClose));
-$('#txb').addEventListener('pointerdown', e => { if (e.target.id === 'txb') txbClose(); });
+$('#txb').addEventListener('pointerdown', e => { if (e.target.id === 'txb' && !TXB.busy) txbClose(); });   // a stray click never stops a video
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && TXB) txbClose(); });
 // ---- other PC hardware: what OpenRGB on this PC offers (S.orgb: state 0 not looked, 1 looking, 2 answers, 3 none).
 // Hardware haku drives itself (the MSI board, ENE memory) is shown but not offered, so two programs never fight.
@@ -3597,7 +3652,7 @@ function updateLink() {
 function updateLL() {
   const L = S.ll || {}, g = L.g || [];
   $('#ll-card').classList.toggle('hidden', !L.st || L.st === 'none');
-  $('#ll-status').textContent = (L.st === 'ok' ? (g.length ? t('ll.st.ok', g.length) : t('ll.st.empty')) : t('ll.st.' + (L.st || 'none'), L.err || 0))
+  $('#ll-status').textContent = (L.st === 'ok' ? (g.length ? t('ll.st.ok', g.length) : t('ll.st.empty')) : t('ll.st.' + (L.st || 'none'), L.err || 0) + (L.st === 'busy' ? cfWhy('lianli') : ''))
     + (L.tx && L.tx !== 'off' && L.tx !== 'ok' ? ' · ' + t('ll.tx.' + L.tx, L.txe || 0) : '');
   const sel = d => { const cur = cv('fans', 'll_' + d.mac.replace(/:/g, ''), '');
     return `<select class="select" data-mac="${esc(d.mac)}" aria-label="${esc(t('ll.speed'))}"><option value="">${t('ll.own')}</option>${[30, 40, 50, 60, 70, 80, 90, 100].map(p =>
@@ -3614,29 +3669,53 @@ $('#ll-list').addEventListener('change', e => {
   setCfg('fans', 'll_' + s.dataset.mac.replace(/:/g, ''), s.value); s.blur();
 });
 $('#link-on').addEventListener('change', e => { setCfg('link', 'on', e.target.checked ? '1' : '0'); updateLink(); });
-// ---- other lighting programs holding controllers (conflicts.c): close one now, each time it starts ([conflicts] stop),
-// or remove it in Windows' Installed apps
-const cfStop = () => cv('conflicts', 'stop', '').split(/[, ]+/).filter(Boolean);
+// ---- other lighting programs (conflicts.c). One running is a possible conflict only: a device that refused haku is
+// the confirmed one, and even then no program is named as the cause unless it runs. Per program: leave it the devices
+// ([conflicts] leave), ask it to close, end it with its services (after a warning), close it each time it starts
+// ([conflicts] stop; not one that also runs fans or pumps: haku has no tested handover of those), or remove it
+const cfList = k => cv('conflicts', k, '').split(/[, ]+/).filter(Boolean);
+const cfApp = id => ((S.cf || {}).a || []).find(x => x.id === id);
+const cfRun = id => !!(cfApp(id) || {}).run;
+const cfWhy = id => ' · ' + (cfRun(id) ? t('cf.why.run', cfApp(id).name) : t('cf.why.unk'));
+// what haku sees of the devices the program may hold: held (access refused), down (no answer), wait (haku yields), ''
+function cfDev(x) {
+  if (x.id === 'lianli') { const s = (S.ll || {}).st; return s === 'busy' ? 'held' : s === 'err' ? 'down' : ''; }
+  if (x.id === 'tryx') { const d = S.ext.devs.filter(d => d.kind === 'tryx' && d.enabled && !d.online); return d.some(d => / busy$/.test(d.info)) ? 'held' : d.length ? 'down' : ''; }
+  if (/^(icue|openlinkhub|signalrgb)$/.test(x.id) && cv('link', 'on', '0') === '1') { const s = (S.link || {}).st; return s === 'app' && x.run ? 'wait' : s === 'err' ? 'down' : ''; }
+  return '';
+}
 function updateConflicts() {
-  const C = S.cf || {}, a = C.a || [], stop = cfStop(), n = a.filter(x => x.run).length;
+  const C = S.cf || {}, a = C.a || [], stop = cfList('stop'), leave = cfList('leave'), n = a.filter(x => x.run).length;
   $('#cf-card').classList.toggle('hidden', !a.length);
   $('#cf-status').textContent = n ? t('cf.st.run', n) : t('cf.st.idle');
-  const html = a.map(x => `<div class="found-row" data-id="${esc(x.id)}"><span class="kind">${t('cf.w.' + x.w)}</span>
-    <div class="what"><b>${esc(x.name)}</b><small>${t(C.busy === x.id ? 'cf.busy' : x.fail ? 'cf.fail' : x.run ? 'cf.run' : 'cf.inst')}</small></div>
-    <span class="added cf-act pc-only">${x.run && !C.busy ? `<button class="btn small" type="button" data-act="close"><span>${t('cf.close')}</span></button>` : ''}
-      <label class="check" title="${esc(t('cf.auto.t'))}"><input type="checkbox" data-act="auto"${stop.includes(x.id) ? ' checked' : ''}><span></span><em>${t('cf.auto')}</em></label>
-      ${x.inst ? `<button class="btn small ghost" type="button" data-act="del" title="${esc(t('cf.del.t'))}"><span>${t('cf.del')}</span></button>` : ''}</span></div>`).join('');
+  const html = a.map(x => {
+    const left = leave.includes(x.id), busy = C.busy === x.id, dev = cfDev(x);
+    const st = busy ? t('cf.busy') : x.fail === 2 ? t('cf.fail') : x.fail ? t('cf.fail.soft') : x.run ? t(left ? 'cf.left' : 'cf.run') : t('cf.inst');
+    const sub = [st, x.cool && t('cf.cool'), x.bad && t('cf.bad'), dev && t('cf.dev.' + dev)].filter(Boolean).join(' · ');
+    const btn = (act, cls, tip) => `<button class="btn small${cls}" type="button" data-act="${act}"${tip ? ` title="${esc(t(tip))}"` : ''}><span>${t('cf.' + act)}</span></button>`;
+    const auto = x.cool || left;   // cooling: not closed by a rule; left to it: the user chose so
+    return `<div class="found-row" data-id="${esc(x.id)}"><span class="kind">${t('cf.w.' + x.w)}</span>
+    <div class="what"><b>${esc(x.name)}</b><small>${esc(sub)}</small></div>
+    <span class="added cf-act pc-only">${x.run && !busy && !left ? btn('leave', ' ghost', 'cf.leave.t') + btn('close', '', 'cf.close.t') + btn('end', ' ghost', 'cf.end.t') : ''}
+      ${left ? btn('unleave', ' ghost') : ''}
+      <label class="check" title="${esc(t(x.cool ? 'cf.auto.cool' : left ? 'cf.auto.left' : 'cf.auto.t'))}"><input type="checkbox" data-act="auto"${stop.includes(x.id) && !auto ? ' checked' : ''}${auto ? ' disabled' : ''}><span></span><em>${t(x.cool && stop.includes(x.id) ? 'cf.auto.paused' : 'cf.auto')}</em></label>
+      ${x.inst ? btn('del', ' ghost', 'cf.del.t') : ''}</span></div>`;
+  }).join('');
   const list = $('#cf-list');
   if (list.dataset.html !== html) { list.dataset.html = html; list.innerHTML = html; }
 }
 $('#cf-list').addEventListener('click', e => {
   const b = e.target.closest('button[data-act]'); if (!b) return;
-  if (b.dataset.act === 'close') send({ cmd: 'cf_close', id: b.closest('[data-id]').dataset.id });
+  const id = b.closest('[data-id]').dataset.id, x = cfApp(id) || {}, act = b.dataset.act, rm = k => cfList(k).filter(v => v !== id);
+  if (act === 'close') send({ cmd: 'cf_close', id });
+  else if (act === 'end') { if (confirm(t('cf.end.q', x.name) + (x.cool ? '\n\n' + t('cf.end.cool') : ''))) send({ cmd: 'cf_end', id }); }
+  else if (act === 'leave') { setCfg('conflicts', 'leave', rm('leave').concat(id).join(',')); setCfg('conflicts', 'stop', rm('stop').join(',')); updateConflicts(); }
+  else if (act === 'unleave') { setCfg('conflicts', 'leave', rm('leave').join(',')); updateConflicts(); }
   else send({ cmd: 'open', what: 'apps' });
 });
 $('#cf-list').addEventListener('change', e => {
   const c = e.target.closest('input[data-act="auto"]'); if (!c) return;
-  const id = c.closest('[data-id]').dataset.id, s = cfStop().filter(x => x !== id);
+  const id = c.closest('[data-id]').dataset.id, s = cfList('stop').filter(x => x !== id);
   setCfg('conflicts', 'stop', (c.checked ? s.concat(id) : s).join(',')); updateConflicts();
 });
 // ---- lighting in this PC: what haku found (hw, from hwinfo.c) and which way each is lit: by haku itself, through
@@ -3739,8 +3818,10 @@ function updateDevices() {
   const E = S.ext;
   E.devs.forEach(d => {
     const el = $('#dev-st-' + d.id); if (!el) return;
-    el.innerHTML = `<span class="dot ${d.enabled && d.online ? 'on' : 'off'}" style="display:inline-block;margin-right:6px"></span>${esc(devStatus(d))}`;
-    const own = el.closest('.card')?.querySelector('.dev-own'); if (own && own !== document.activeElement) own.checked = !!d.own;
+    const waits = devWaits(d);   // the core tries again, less often after a few failures (devices.c retry_wait)
+    el.innerHTML = `<span class="dot ${d.enabled && d.online ? 'on' : 'off'}" style="display:inline-block;margin-right:6px"></span>${esc(devStatus(d) + (waits && d.fails >= 3 ? ' · ' + t('dev.waits') : ''))}`;
+    const card = el.closest('.card'), own = card?.querySelector('.dev-own'); if (own && own !== document.activeElement) own.checked = !!d.own;
+    const rt = card?.querySelector('.dev-retry'); if (rt) rt.hidden = !waits;
     const ck = $('#dev-chk-' + d.id), mine = CHK_ID === d.id && (S.netchk || {}).id === d.id;
     if (d.online) DEV_SAVED.delete(d.id);
     if (ck) { ck.textContent = mine ? chkText(d) : DEV_SAVED.has(d.id) && devWaits(d) ? t('dev.saved') : ''; ck.previousElementSibling.querySelector('.dev-check')?.toggleAttribute('disabled', mine && !!S.netchk.busy); }
@@ -4019,6 +4100,21 @@ $('#remote-on').addEventListener('change', e => { setCfg('remote', 'enabled', e.
 $('#remote-newpin').addEventListener('click', () => send({ cmd: 'remote_pin' }));
 $('#remote-forget').addEventListener('click', () => send({ cmd: 'remote_forget' }));
 
+// what haku carries, downloads or took code from (THIRD_PARTY_NOTICES.md has the full texts): [name, version, how, licence, site, sources]
+const COMPONENTS = [
+  ['OpenRGB', '1.0', 'comp.orgb', 'GPL-2.0', 'openrgb.org', 'codeberg.org/OpenRGB/OpenRGB'],
+  ['Microsoft WebView2', 'bootstrapper 1.3.295.9', 'comp.wv2', 'BSD-style (SDK) · Microsoft (runtime)', 'developer.microsoft.com/microsoft-edge/webview2', ''],
+  ['PawnIO', '2.2.0', 'comp.pawnio', 'GPL-2.0', 'pawnio.eu', 'github.com/namazso/PawnIO'],
+  ['PawnIO.Modules', '0.2.11', 'comp.pmod', 'LGPL-2.1', 'github.com/namazso/PawnIO.Modules', 'github.com/namazso/PawnIO.Modules'],
+  ['LibreHardwareMonitor', '', 'comp.lhm', 'MPL-2.0', 'github.com/LibreHardwareMonitor/LibreHardwareMonitor', 'github.com/LibreHardwareMonitor/LibreHardwareMonitor'],
+  ['FanControl.LianLiWireless · LL-Connect-Wireless · lian-li-linux', '', 'comp.lianli', 'MIT', 'github.com/MarcusSanchez/FanControl.LianLiWireless', 'github.com/Yoinky3000/LL-Connect-Wireless · github.com/sgtaziz/lian-li-linux'],
+  ['tinyuz', '', 'comp.tuz', 'MIT', 'github.com/sisong/tinyuz', 'github.com/sisong/tinyuz'],
+];
+$('#comp').addEventListener('toggle', e => {
+  if (!e.target.open) return;
+  $('#comp-list').innerHTML = `<p class="muted">${t('orgb.credit')}. ${t('comp.note')}</p>` + COMPONENTS.map(([n, v, how, lic, site, src]) =>
+    `<div class="comp-row"><b>${esc(n)}</b>${v ? ' ' + esc(v) : ''} · ${esc(lic)}<br><span class="muted">${t(how)}</span><br><span class="comp-url">${esc(site)}${src && src !== site ? ' · ' + t('comp.src') + ': ' + esc(src) : ''}</span></div>`).join('');
+});
 function updateUpdate() {
   const U = S.update || {};
   $('#about1').textContent = t('about1', U.version || '');
@@ -4269,7 +4365,7 @@ function updateChips() {
   if (S.msi) h.push(chip(S.msi_own ? 'off' : 'on', `${t('chip.board')} <b>MSI</b>`));
   if (S.sticks) h.push(chip(S.ram_own ? 'off' : 'on', `${t('chip.mem')} <b>${S.sticks} ${t('chip.pcs')}</b>`));
   if (S.gpu_temp != null) h.push(chip('on', `GPU <b>${S.gpu_temp}°</b>`));
-  const nL = nanoCtls(), ed = S.ext.devs.filter(d => d.enabled);
+  const nL = nanoCtls(), ed = S.ext.devs.filter(d => d.enabled && !d.held);
   if (nL.length) h.push(chipSet('Nanoleaf', nL, OFF_ROW.nano));
   if (S.bulbs.length) h.push(chipSet(t('chip.lamps'), S.bulbs, OFF_ROW.bulb));
   if (ed.length) h.push(chipSet(t('chip.devs'), ed, OFF_ROW.ext));
@@ -4396,15 +4492,16 @@ function fanWidgets() {
 const FAN_STALE = 5000;   // as fans.c STALE_MS: older QUADRO readings are not current
 // the QUADRO's readings are not now: the link is down, or its last report is older than fans.c trusts (the board reads on its own)
 const fanOld = i => { const F = S.fans || {}; return !fanCh(i).b && (F.link === 0 || (F.age || 0) > FAN_STALE); };
-// a Home tile's status from all its fans, the worst first: [short text for the tile, full text for a screen reader] or null
-const FAN_TILE = ['fans.tile.nolink', 'fans.tile.old', 'fans.tile.em', 'fans.tile.err'];
+// a Home tile's status from all its fans, the worst first: [short text for the tile, full text for a screen reader,
+// only a warning (no rpm read while driven, as the fan's own line says)] or null
+const FAN_TILE = ['fans.tile.nolink', 'fans.tile.old', 'fans.tile.em', 'fans.tile.err', 'fans.tile.norpm'];
 function fanTileSt(m) {
   let w = null;
   for (const i of m) {
-    const [st, c] = fanState(i), k = fanOld(i) ? ((S.fans || {}).link === 0 ? 0 : 1) : fanCh(i).em ? 2 : c === 'bad' ? 3 : -1;
-    if (k >= 0 && (!w || k < w.k)) w = { k, i, st };
+    const [st, c] = fanState(i), k = fanOld(i) ? ((S.fans || {}).link === 0 ? 0 : 1) : fanCh(i).em ? 2 : c === 'bad' ? 3 : fanNoRpm(i) ? 4 : -1;
+    if (k >= 0 && (!w || k < w.k)) w = { k, i, st: k === 4 ? t('fans.norpm') : st };
   }
-  return w && [t(FAN_TILE[w.k]), (m.length > 1 ? fanName(w.i) + ': ' : '') + w.st];
+  return w && [t(FAN_TILE[w.k]), (m.length > 1 ? fanName(w.i) + ': ' : '') + w.st, w.k === 4];
 }
 const FAN_BLADE = new Path2D('M-1.5-4.8C-2-10 1-15 6-16.8C9-15.8 11-14.3 12.3-12.3C8.5-9.5 5.5-6.5 3.8-3.3Z'), FAN_SPIN = {};
 const PUMP_BL = new Path2D(PUMP_BLADE), PUMP_FLOW = new Path2D('M24 53A26 26 0 0 1 45 27.5M76 53A26 26 0 0 1 55 78.5');
@@ -4445,7 +4542,7 @@ function drawFanTile(c, x, y, w, h, fw) {
     c.beginPath(); c.arc(0, 0, 5, 0, 7); c.fillStyle = inkA(.7); c.fill();
   }
   c.restore();
-  c.textAlign = 'center'; c.fillStyle = st ? '#d0605a' : THEME.hi;
+  c.textAlign = 'center'; c.fillStyle = st ? (st[2] ? '#f0b44a' : '#d0605a') : THEME.hi;
   ls.forEach((l, n) => c.fillText(l, cx, y + h - 2 * d - (ls.length - 1 - n) * 10 * d));
 }
 const fanValid = o => !!o && (o.g ? fanGroups().some(g => g.n === o.g && (o.i == null || g.m.includes(o.i))) : !fanHidden(o.i));
@@ -5011,7 +5108,7 @@ function applyStatus(m) {
   const effectChanged = m.effect !== S.effect;
   Object.assign(S, m);
   S.ext = S.ext || { devs: [], found: [], kinds: [], scanning: 0 };
-  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type, d.zones]));
+  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type, d.zones, d.same, d.held]));
   if (!dragging) { setRange($('#bright'), S.brightness); $('#bright-val').textContent = S.brightness + '%'; }
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbsChanged) buildBulbs(); else updateBulbs();

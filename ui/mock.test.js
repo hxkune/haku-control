@@ -259,23 +259,119 @@
     setCfg('link', 'on', '0'); S.link = K; updateLink();
   });
 
-  test('programs in the way: Close while it runs, Each time into [conflicts] stop, Remove opens Installed apps', async () => {
+  test('programs in the way: running is only possible; Leave, Close, End with a warning; Each time not for cooling', async () => {
     await fresh();
-    const rows = () => [...$('#cf-list').children], btn = (r, a) => r.querySelector(`[data-act="${a}"]`);
-    ok(!$('#cf-card').classList.contains('hidden') && rows().length === 2 && $('#cf-status').textContent === t('cf.st.run', 1), 'card, rows or status');
-    ok(btn(rows()[0], 'close') && !btn(rows()[1], 'close') && btn(rows()[1], 'del'), 'Close only on the running one, Remove on the installed one');
-    btn(rows()[1], 'auto').click(); await wait(20);
-    ok(cv('conflicts', 'stop', '') === 'icue' && btn(rows()[1], 'auto').checked, 'Each time did not reach the settings');
-    btn(rows()[0], 'auto').click(); btn(rows()[1], 'auto').click(); await wait(20);
-    ok(cv('conflicts', 'stop', '') === 'armoury', 'the list kept the wrong ones: ' + cv('conflicts', 'stop', ''));
-    btn(rows()[0], 'close').click(); await wait(60);
-    ok(rows()[0].textContent.includes(t('cf.busy')) && !btn(rows()[0], 'close'), 'no Closing state');
-    await wait(700);
-    ok(rows()[0].textContent.includes(t('cf.inst')) && $('#cf-status').textContent === t('cf.st.idle'), 'not closed after the core said so');
+    const rows = () => [...$('#cf-list').children], row = id => rows().find(r => r.dataset.id === id), btn = (id, a) => row(id).querySelector(`[data-act="${a}"]`);
+    ok(!$('#cf-card').classList.contains('hidden') && rows().length === 3 && $('#cf-status').textContent === t('cf.st.run', 2), 'card, rows or status');
+    const arm = row('armoury').textContent;
+    ok(arm.includes(t('cf.run')) && arm.includes(t('cf.cool')) && !arm.includes(t('cf.dev.held')), 'a running one claimed as certain: ' + arm);
+    ok(btn('armoury', 'close') && btn('armoury', 'end') && btn('armoury', 'leave') && !btn('icue', 'close') && btn('icue', 'del'), 'actions only on the running ones, Remove on the installed');
+    ok(btn('armoury', 'auto').disabled && btn('icue', 'auto').disabled && !btn('asrock', 'auto').disabled, 'Each time offered for a cooling program');
+    btn('asrock', 'auto').click(); await wait(20);
+    ok(cv('conflicts', 'stop', '') === 'asrock' && btn('asrock', 'auto').checked, 'Each time did not reach the settings');
+    setCfg('conflicts', 'stop', 'icue,armoury,asrock'); updateConflicts();
+    ok(row('icue').textContent.includes(t('cf.auto.paused')) && !btn('icue', 'auto').checked, 'an old rule on a cooling program not shown as paused');
+    btn('armoury', 'leave').click(); await wait(20);
+    ok(cv('conflicts', 'leave', '') === 'armoury' && cv('conflicts', 'stop', '') === 'icue,asrock', 'Leave did not keep it off the rule: ' + cv('conflicts', 'stop', ''));
+    ok(row('armoury').textContent.includes(t('cf.left')) && !btn('armoury', 'close') && btn('armoury', 'unleave'), 'left to it, yet still offered to close');
+    btn('armoury', 'unleave').click(); await wait(20);
+    ok(cv('conflicts', 'leave', '') === '' && btn('armoury', 'close'), 'Undo');
     setCfg('conflicts', 'stop', '');
+    // Close asks; this one only hides in the tray, and the row says so instead of claiming it closed
+    btn('asrock', 'close').click(); await wait(60);
+    ok(row('asrock').textContent.includes(t('cf.busy')) && !btn('asrock', 'close'), 'no Closing state');
+    await wait(700);
+    ok(row('asrock').textContent.includes(t('cf.fail.soft')) && btn('asrock', 'end'), 'a program left in the tray shown as closed');
+    // End: nothing without a yes; the cooling one's warning says the fans are not taken over
+    const conf = window.confirm; let asked = '';
+    window.confirm = m => (asked = m, false);
+    sent.length = 0; btn('armoury', 'end').click();
+    ok(!sent.some(o => o.cmd === 'cf_end') && asked.includes(t('cf.end.q', 'ASUS Armoury Crate / Aura')) && asked.includes(t('cf.end.cool')), 'End went ahead or did not warn: ' + asked);
+    window.confirm = m => (asked = m, true);
+    btn('asrock', 'end').click(); await wait(20);
+    window.confirm = conf;
+    ok(sent.some(o => o.cmd === 'cf_end' && o.id === 'asrock') && !asked.includes(t('cf.end.cool')), 'End not sent, or the cooling warning on a lights-only program');
+    await wait(700);
+    ok(row('asrock').textContent.includes(t('cf.inst')) && $('#cf-status').textContent === t('cf.st.run', 1), 'not ended after the core said so');
     const a = S.cf; S.cf = { busy: '', a: [] }; updateConflicts();
     ok($('#cf-card').classList.contains('hidden'), 'shown with nothing in the way');
     S.cf = a; updateConflicts();
+  });
+
+  test('programs in the way: a refused device is confirmed, its program named only while it runs; a stranger is left alone', async () => {
+    await fresh();
+    const cf = S.cf, ll = S.ll, devs = S.ext.devs;
+    const lc = { id: 'lianli', name: 'Lian Li L-Connect', w: 'fans', cool: 1, run: 0, inst: 1, bad: 0, fail: 0 };
+    const kn = { id: 'tryx', name: 'TRYX KANALI', w: 'cooler', cool: 1, run: 0, inst: 0, bad: 1, fail: 0 };
+    S.cf = { busy: '', a: cf.a.concat(lc, kn) }; S.ll = { st: 'busy', err: 5, g: [] };
+    updateConflicts(); updateLL();
+    const row = id => [...$('#cf-list').children].find(r => r.dataset.id === id), st = () => $('#ll-status').textContent;
+    ok(st() === t('ll.st.busy', 5) + ' · ' + t('cf.why.unk') && !/L-Connect/.test(st()), 'the refusal pinned on a program not running: ' + st());
+    ok(row('lianli').textContent.includes(t('cf.dev.held')), 'the refused device not under its program');
+    lc.run = 1; updateLL();
+    ok(st().includes(t('cf.why.run', 'Lian Li L-Connect')), 'a running L-Connect not named as the likely one: ' + st());
+    ok(row('tryx').textContent.includes(t('cf.bad')) && !row('tryx').querySelector('[data-act="close"],[data-act="end"],[data-act="leave"]'), 'a stranger with its name offered to close');
+    const d = { i: 77, kind: 'tryx', name: 'TRYX PANORAMA', enabled: 1, online: 0, own: 0, pro: 0, info: 'COM5 busy' };
+    ok(devStatus(d) === t('tx.busy') + ' · ' + t('cf.why.unk'), 'TRYX busy: ' + devStatus(d));
+    kn.run = 1; kn.bad = 0;
+    ok(devStatus(d) === t('tx.busy') + ' · ' + t('cf.why.run', 'TRYX KANALI'), 'TRYX busy with KANALI running: ' + devStatus(d));
+    S.ext.devs = devs.concat(d); updateConflicts();
+    ok(row('tryx').textContent.includes(t('cf.dev.held')), 'the busy screen not under KANALI');
+    S.cf = cf; S.ll = ll; S.ext.devs = devs; updateConflicts(); updateLL();
+  });
+
+  test('reconnect: waits grow and say so, Retry now starts over; a device given back to its own lighting is not retried', async () => {
+    await fresh();
+    const d = S.ext.devs.find(x => x.id === 10);
+    Object.assign(d, { online: 0, fails: 4 }); buildDevices(); updateDevices();
+    const card = () => $('#dev-st-10').closest('.card'), rt = () => card().querySelector('.dev-retry');
+    ok($('#dev-st-10').textContent.includes(t('dev.waits')) && !rt().hidden, 'a device failing again and again: no Retry now or no word that it waits longer');
+    d.fails = 1; updateDevices();
+    ok(!$('#dev-st-10').textContent.includes(t('dev.waits')) && !rt().hidden, 'one failure already called a long wait');
+    d.own = 1; updateDevices();
+    ok(rt().hidden && !$('#dev-st-10').textContent.includes(t('dev.waits')), 'a device left to its own lighting offered a retry');
+    d.own = 0; updateDevices();
+    sent.length = 0; rt().click();
+    ok(sent.some(o => o.cmd === 'dev_retry') && rt().disabled, 'Retry now not sent, or clickable again at once');
+    await wait(150);
+    ok(rt().hidden && S.ext.devs.find(x => x.id === 10).online, 'back online, yet Retry now still shown');
+  });
+
+  test('path: one device seen directly and through OpenRGB, the user picks which lights it, the other lets go; kept on restart', async () => {
+    await fresh();
+    STATE.ext.kinds.push({ kind: 'aura', title: 'ASUS Aura (board)', per_led: 1 });
+    STATE.ext.devs.push({ id: 14, kind: 'aura', title: 'ASUS Aura (board)', name: 'ASUS board LEDs', host: 'USB', sub: 0, leds: 8, per_led: 1, online: 1, enabled: 1, type: 'board', info: 'ASUS Aura · motherboard · USB' });
+    emit(STATE); await wait(80);
+    const sel = id => $('#dev-st-' + id).closest('.card').querySelector('.dev-path'), st = id => $('#dev-st-' + id).textContent;
+    const pick = async v => { sent.length = 0; sel(8).value = v; sel(8).dispatchEvent(new Event('change', { bubbles: true })); await wait(120); };
+    ok(sel(8) && sel(8).value === '' && [...sel(8).options].some(o => o.value === 'orgb:14'), 'the board through OpenRGB not offered as the ASUS board');
+    ok(!sel(7), 'Corsair memory offered as an ASUS device');
+    await pick('orgb:14');
+    const sets = sent.filter(o => o.cmd === 'set' && o.s === 'dev.8').map(o => o.k);
+    ok(sets.indexOf('path') >= 0 && sets.indexOf('path') < sets.indexOf('same'), 'the pair sent before its path: ' + sets);
+    ok(devById(14).held && !devById(8).held && st(14).includes(t('path.st.orgb', 'B550-F')), 'the direct one still lights it, or says nothing: ' + st(14));
+    ok(!devWaits(devById(14)) && $('#dev-st-14').closest('.card').querySelector('.dev-retry').hidden, 'a device let go on purpose waits for a retry');
+    ok(!sel(6) || ![...sel(6).options].some(o => o.value.endsWith(':14')), 'a device already paired offered to another card');
+    // the path taken does not answer: the card says so, it does not claim it is lit
+    devById(8).online = 0; updateDevices();
+    ok(st(14).includes(t('dev.offline')), 'a failed handover shown as working: ' + st(14));
+    // restart: the core reads the pair from the settings again
+    STATE.ext.devs.forEach(d => { d.same = d.held = 0; }); window.chrome.webview.postMessage(JSON.stringify({ cmd: 'hello' })); await wait(120);
+    ok(devById(14).held && sel(8).value === 'orgb:14', 'the choice lost on restart');
+    await pick('direct:14');
+    ok(devById(8).held && !devById(14).held && st(8).includes(t('path.st.direct', 'ASUS board LEDs')), 'OpenRGB still lights it: ' + st(8));
+    await pick('');
+    ok(!devById(8).held && !devById(14).held && !devById(14).same && sel(8).value === '', 'Not the same device left one of them let go');
+    STATE.ext.devs.pop(); STATE.ext.kinds.pop(); delete STATE.cfg['dev.8']; emit(STATE); await wait(80);
+  });
+
+  test('about: the components list credits OpenRGB as a separate program, with its licence and sources', async () => {
+    await fresh(); showTab('settings');
+    const c = $('#comp'); c.open = true; await wait(30);
+    const tx = $('#comp-list').textContent;
+    ok(tx.includes(t('orgb.credit')) && tx.includes('GPL-2.0') && tx.includes('codeberg.org/OpenRGB/OpenRGB'), 'OpenRGB not credited: ' + tx.slice(0, 120));
+    ok(['en', 'ru', 'fr'].every(l => STR[l]['orgb.credit'] && STR[l]['comp.orgb'] && STR[l]['path.note']), 'a language misses the new texts');
+    c.open = false;
   });
 
   test('the offline list: the chip is a button, each name opens its device card, Esc goes back to the chip', async () => {
@@ -649,6 +745,52 @@
     setCfg('ui', 'hero_fans', ''); setCfg('ui', 'hero_order', ''); await fanReset();
   });
 
+  test('fans: a Home tile warns when a fan of it reads no rpm while driven (the second of a group too), worse states first, gone once rpm is back', async () => {
+    await fresh(); await fanReset();
+    const F = STATE.fans, keep = F.f.map(f => ({ rpm: f.rpm, pct: f.pct })), P = CanvasRenderingContext2D.prototype, fill = P.fillText;
+    const drawn = () => { const out = []; P.fillText = function (s, ...a) { out.push(String(s)); return fill.call(this, s, ...a); }; try { drawHero(); } finally { P.fillText = fill; } out.includes = s => out.join(' ').includes(s); return out; };
+    const label = k => { const h = HERO.hits.findIndex(h => h.key === k), b = $(`#hero-keys button[data-i="${h}"]:not([data-pw])`); return b ? b.getAttribute('aria-label') : null; };
+    const samples = async n => { for (let k = 0; k < n; k++) await fanEmit(); };
+    try {
+      // a group: the first fan fine at 50%, the second driven at 50% and reading 0 rpm, several readings in a row
+      setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,2'); setCfg('fans', 'fan1', 'fix'); setCfg('fans', 'fan2', 'fix');
+      Object.assign(F.f[0], { own: 1, want: 50, ok: 1, pct: 50, rpm: 1100 }); Object.assign(F.f[1], { own: 1, want: 50, ok: 1, pct: 50, rpm: 0 });
+      setCfg('ui', 'hero_fans', 'fang1'); setCfg('ui', 'hero_order', 'fang1'); showTab('home');
+      await samples(1); drawHero();
+      ok(!fanTileSt([0, 1]), 'one reading is not yet a warning');
+      await samples(2); drawHero();
+      ok(fanNoRpm(1) && !fanNoRpm(0) && fanState(1)[1] === '', 'the fan\'s own state: ' + fanNoRpm(1) + ' ' + fanState(1));
+      ok(drawn().includes(t('fans.tile.norpm')), 'the tile shows no warning: ' + drawn().join(' | '));
+      ok(label('fang1').includes(fanName(1) + ': ' + t('fans.norpm')), 'the name for a screen reader: ' + label('fang1'));
+      ok(fanTileSt([0, 1])[2] === true, 'marked as worse than a warning');
+      // worse states of the group come first: a control error on the first fan, then an emergency on the second
+      F.f[0].ok = -1; await fanEmit(); drawHero();
+      ok(drawn().includes(t('fans.tile.err')) && !drawn().includes(t('fans.tile.norpm')) && label('fang1').includes(fanName(0) + ': ' + t('fans.st.fail')) && !fanTileSt([0, 1])[2], 'the error first: ' + label('fang1'));
+      F.f[0].ok = 1; F.f[1].em = 'stale'; await fanEmit(); drawHero();
+      ok(drawn().includes(t('fans.tile.em')) && label('fang1').includes(fanName(1) + ': ' + t('fans.em.stale')), 'the emergency first: ' + label('fang1'));
+      F.f[1].em = ''; F.link = 0; await fanEmit(); drawHero();
+      ok(drawn().includes(t('fans.tile.nolink')), 'no connection first');
+      F.link = 1; await samples(3); drawHero();
+      ok(fanTileSt([0, 1])?.[0] === t('fans.tile.norpm'), 'the warning after the link is back: ' + fanTileSt([0, 1]));
+      // the rpm back: gone at once
+      F.f[1].rpm = 900; await fanEmit(); drawHero();
+      ok(!fanTileSt([0, 1]) && !label('fang1').includes(t('fans.norpm')), 'still warned once rpm is back: ' + label('fang1'));
+      ok(!drawn().includes(t('fans.tile.norpm')), 'still drawn once rpm is back');
+      // “No speed signal” ticked: no warning
+      F.f[1].rpm = 0; await samples(3); ok(fanTileSt([0, 1]), 'the warning not back');
+      setCfg('fans', 'fan2_notach', '1'); drawHero();
+      ok(!fanTileSt([0, 1]) && !drawn().includes(t('fans.tile.norpm')), 'warned with “No speed signal” ticked');
+      // a fan on its own tile
+      setCfg('fans', 'fan2_notach', ''); setCfg('fans', 'g1', ''); setCfg('fans', 'g1_name', '');
+      setCfg('ui', 'hero_fans', 'fan1'); setCfg('ui', 'hero_order', 'fan1'); await fanEmit(); drawHero();
+      ok(drawn().includes(t('fans.tile.norpm')) && label('fan1') === fanName(1) + ', ' + t('fans.norpm'), 'a fan alone: ' + label('fan1'));
+      F.f[1].rpm = 900; await fanEmit(); drawHero();
+      ok(!drawn().includes(t('fans.tile.norpm')) && label('fan1') === fanName(1), 'a fan alone, rpm back: ' + label('fan1'));
+    } finally {
+      F.f.forEach((f, i) => Object.assign(f, keep[i])); setCfg('ui', 'hero_fans', ''); setCfg('ui', 'hero_order', ''); await fanReset();
+    }
+  });
+
   test('fans: the tab is there for any fan controller, a Lian Li receiver alone too, and never on a phone', async () => {
     await fresh(); await fanReset();
     const F = STATE.fans, L = STATE.ll, keep = { on: F.on, q: F.q, st: L.st }, vis = s => !$(s).classList.contains('hidden') && !!$(s).offsetParent;
@@ -659,7 +801,7 @@
       ok(NAV_NEED.fans() === !!want, 'the tab: ' + c);
       if (want) { showTab('fans'); await wait(30);
         ok(vis('#ll-card') === (st !== 'none') && vis('#fan-main') === !!on && vis('#tab-fans .fans-top') === !!on, 'the page: ' + c);
-        if (!on) ok($('#ll-status').textContent === (st === 'ok' ? t('ll.st.ok', L.g.length) : t('ll.st.' + st, L.err || 0)), 'the receiver: ' + $('#ll-status').textContent);
+        if (!on) ok($('#ll-status').textContent === (st === 'ok' ? t('ll.st.ok', L.g.length) : t('ll.st.' + st, L.err || 0) + (st === 'busy' ? cfWhy('lianli') : '')), 'the receiver: ' + $('#ll-status').textContent);
       }
     }
     document.documentElement.classList.add('remote');
@@ -940,6 +1082,102 @@
     } finally { log.restore(); await txbOff(); }
   });
 
+  // a stand-in VideoEncoder and VideoFrame (plan: the encode call that throws, a failing flush), counting what was made
+  // and closed; frames come from a timer, as a hidden pane runs none. The work a broken or stopped video must leave as it was
+  const fakeEncoder = (plan = {}) => {
+    const real = { E: window.VideoEncoder, F: window.VideoFrame, raf: window.requestAnimationFrame, draw: window.txbDraw };
+    const log = { enc: 0, encClosed: 0, frames: 0, framesClosed: 0, encoded: 0, draws: 0, previews: 0 };
+    window.VideoEncoder = class {
+      static isConfigSupported() { return Promise.resolve({ supported: true }); }
+      constructor({ output }) { this.out = output; this.state = 'unconfigured'; this.encodeQueueSize = 0; log.enc++; }
+      configure() { this.state = 'configured'; }
+      encode(f, o) {
+        if (++log.encoded === plan.encode) throw new Error('encode broke');
+        this.out({ byteLength: 4, timestamp: f.timestamp, type: o.keyFrame ? 'key' : 'delta', copyTo: b => b.set([0, 0, 0, 1]) }, { decoderConfig: { description: new Uint8Array([1, 66, 0, 40]) } });
+      }
+      flush() { return plan.flush ? Promise.reject(new Error('flush broke')) : Promise.resolve(); }
+      close() { this.state = 'closed'; log.encClosed++; }
+    };
+    window.VideoFrame = class { constructor(c, { timestamp }) { this.timestamp = timestamp; log.frames++; } close() { log.framesClosed++; } };
+    window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16);
+    window.txbDraw = (c, tt, sel) => { if (sel) log.previews++; else if (++log.draws === plan.draw) throw new Error('draw broke'); return real.draw(c, tt, sel); };
+    log.restore = () => { window.VideoEncoder = real.E; window.VideoFrame = real.F; window.requestAnimationFrame = real.raf; window.txbDraw = real.draw; };
+    log.tidy = () => log.enc === log.encClosed && log.frames === log.framesClosed;
+    return log;
+  };
+  const within = (p, ms = 4000) => Promise.race([p, wait(ms).then(() => { throw new Error('it never ended: busy=' + TXB?.busy); })]);
+  const txbAnim = async dur => { await txbOn(); $('#txb-text').click(); txbZoom(2);
+    const frames = [];
+    for (let i = 0; i < 3; i++) { const c = document.createElement('canvas'); c.width = 400; c.height = 200; frames.push({ bmp: await createImageBitmap(c), at: i * dur / 3, dur: dur / 3 }); }
+    TXB.src = { frames, w: 400, h: 200, dur }; TXB.cx = .4; txbClamp(); return TXB.src; };
+  const txbKept = async (src, log, why) => {
+    const B = TXB, p = log.previews;
+    ok(B && !B.busy && B.src === src && src.frames.every(f => !shut(f.bmp)) && B.layers.length === 1 && B.z === 2 && Math.abs(B.cx - .4) < 1e-9 && B.shape === '2:1', why + ': the work changed');
+    ok(['#txb-go', '#txb-src', '#txb-cancel', '#txb-x', '#txb-shape', '#txb-zoom'].every(s => !$(s).disabled) && !$('#txb').classList.contains('hidden'), why + ': the builder is not usable');
+    await wait(80); ok(log.previews > p, why + ': the preview stopped');
+  };
+
+  test('TRYX: a video frame failing to encode, the first or the second, ends the making, frees the encoder and every frame, keeps the work, and a retry saves', async () => {
+    await fresh(); const src = await txbAnim(.3); let log = null;
+    try {
+      for (const n of [1, 2]) {
+        log = fakeEncoder({ encode: n }); sent.length = 0;
+        await within(txbMake());
+        ok($('#txb-msg').textContent === t('txb.fail', 'encode broke') && $('#txb-msg').classList.contains('warn'), n + ': ' + $('#txb-msg').textContent);
+        ok(log.tidy() && log.encoded === n && !sent.some(o => o.cmd === 'tryx_build'), n + ': left open or sent: ' + JSON.stringify(log));
+        await txbKept(src, log, 'frame ' + n); log.restore(); log = null;
+      }
+      log = fakeEncoder(); sent.length = 0; await within(txbMake());
+      const o = sent.find(x => x.cmd === 'tryx_build');
+      ok(o && o.ext === 'mp4' && $('#txb-msg').textContent === t('txb.saved') && !$('#txb-msg').classList.contains('warn') && log.tidy() && log.frames > 2, 'the retry: ' + $('#txb-msg').textContent + ' ' + JSON.stringify(log));
+    } finally { log?.restore(); await txbOff(); }
+  });
+
+  test('TRYX: drawing a frame or the flush failing ends the making with the reason and frees it all', async () => {
+    await fresh(); const src = await txbAnim(.3); let log = null;
+    try {
+      for (const [plan, e] of [[{ draw: 1 }, 'draw broke'], [{ draw: 2 }, 'draw broke'], [{ flush: 1 }, 'flush broke']]) {
+        log = fakeEncoder(plan); sent.length = 0;
+        await within(txbMake());
+        ok($('#txb-msg').textContent === t('txb.fail', e) && log.tidy() && !sent.some(o => o.cmd === 'tryx_build'), JSON.stringify(plan) + ': ' + $('#txb-msg').textContent + ' ' + JSON.stringify(log));
+        await txbKept(src, log, JSON.stringify(plan)); log.restore(); log = null;
+      }
+    } finally { log?.restore(); await txbOff(); }
+  });
+
+  test('TRYX: Cancel or Escape while the video is made stops it, frees it, saves nothing, keeps the work; one making at a time; a retry saves', async () => {
+    await fresh(); const src = await txbAnim(1.5); let log = null;
+    try {
+      for (const how of ['cancel', 'escape', 'cross']) {
+        log = fakeEncoder(); sent.length = 0;
+        const p = txbMake(); await wait(100);
+        ok(TXB.busy && log.frames > 0 && !$('#txb-cancel').disabled && !$('#txb-x').disabled && $('#txb-go').disabled && $('#txb-src').disabled, how + ': while making: ' + JSON.stringify(log));
+        await txbMake(); ok(log.enc === 1, how + ': a second making started');
+        $('#txb').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); ok(!TXB.stop, how + ': a click beside the builder stopped it');
+        if (how === 'cancel') $('#txb-cancel').click(); else if (how === 'cross') $('#txb-x').click(); else key(document.body, 'Escape');
+        await within(p);
+        ok($('#txb-msg').textContent === t('txb.stopped') && !$('#txb-msg').classList.contains('warn'), how + ': ' + $('#txb-msg').textContent);
+        ok(log.tidy() && !sent.some(o => o.cmd === 'tryx_build') && log.draws < 60, how + ': left open, sent or ran on: ' + JSON.stringify(log));
+        await txbKept(src, log, how); log.restore(); log = null;
+      }
+      log = fakeEncoder(); sent.length = 0; await within(txbMake(), 6000);
+      ok(sent.some(o => o.cmd === 'tryx_build') && $('#txb-msg').textContent === t('txb.saved') && log.tidy(), 'the retry: ' + $('#txb-msg').textContent);
+    } finally { log?.restore(); await txbOff(); }
+  });
+
+  test('TRYX: once the video is handed to the core, Cancel is off and never says it stopped what the core may have saved', async () => {
+    await fresh(); const src = await txbAnim(.3); const log = fakeEncoder();
+    try {
+      sent.length = 0; const p = txbMake();
+      while (!sent.some(o => o.cmd === 'tryx_build')) await wait(4);
+      ok(TXB.busy && $('#txb-cancel').disabled && $('#txb-x').disabled && $('#txb-msg').textContent === t('txb.saving'), 'while saving: ' + $('#txb-msg').textContent);
+      txbClose(); key(document.body, 'Escape');
+      await within(p);
+      ok($('#txb-msg').textContent === t('txb.saved') && !$('#txb').classList.contains('hidden') && log.tidy(), 'after: ' + $('#txb-msg').textContent);
+      await txbKept(src, log, 'saved');
+    } finally { log.restore(); await txbOff(); }
+  });
+
   test('OpenRGB: a board whose connectors have 0 LEDs says it needs setup, even switched off, and opens its LED counts', async () => {
     await fresh();
     STATE.ext.devs.push({ id: 15, kind: 'openrgb', title: 'OpenRGB', name: 'X870E', host: '127.0.0.1', sub: 5, leds: 0, per_led: 1, online: 0, enabled: 0, type: 'board', info: 'OpenRGB · set the LEDs on its connectors', zones: 'Addressable RGB Header 1:0:0:120|Addressable RGB Header 2:0:0:120' });
@@ -947,6 +1185,29 @@
     ok($('#dev-st-15').textContent === t('zones.need'), 'the status: ' + $('#dev-st-15').textContent);
     ok($('#dev-st-15').closest('.card').querySelector('details.dev-adv').open, 'the LED counts are not open');
     STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit();
+  });
+
+  test('keyboard: 60% / TKL / full size picked by its key count, the keys lit in reading order from a thinned-out frame', async () => {
+    ok(KB[60].keys.length === 61 && KB.tkl.keys.length === 87 && KB.full.keys.length === 104, 'the key counts: ' + [KB[60], KB.tkl, KB.full].map(l => l.keys.length));
+    const pick = n => Object.keys(KB).find(k => KB[k] === kbLayout(n));
+    ok([1, 24, 25, 61, 68, 69, 70, 84, 87, 95, 96, 104, 160].map(pick).join() === 'full,full,60,60,60,60,tkl,tkl,tkl,tkl,full,full,full', 'the thresholds: ' + [1, 24, 25, 61, 68, 69, 70, 84, 87, 95, 96, 104, 160].map(pick));
+    ok(KB.full.keys.every(([x, y, w, h]) => x + 14 + w <= KB.full.w - 10 && y + 14 + h <= KB.full.h - 10), 'a key off the plate');
+    // 104 LEDs come thinned out to 52 colours: the first key from the first, the last key from the last
+    const cv_ = Object.assign(document.createElement('canvas'), { width: 868, height: 345 }), c = cv_.getContext('2d');
+    const cols = [...Array(52)].map((_, i) => i === 0 ? '#ff0000' : i === 51 ? '#00ff00' : '#000000');
+    drawFixture(c, 0, 0, 868, 345, 'keyboard', cols, true, 104);
+    const L = KB.full, s = Math.min(868 * .95 / L.w, 345 * .8 / L.h), ox = 434 - L.w * s / 2, oy = 172.5 - L.h * s / 2;
+    const px = ([x, y, w, h]) => [...c.getImageData(Math.round(ox + (14 + x + w / 2) * s), Math.round(oy + (14 + y + h / 2) * s), 1, 1).data];
+    const [first, last, mid] = [px(L.keys[0]), px(L.keys[103]), px(L.keys[50])];
+    ok(first[0] > 100 && first[1] < 40, 'Esc not red: ' + first);
+    ok(last[1] > 100 && last[0] < 40, 'Num . not green: ' + last);
+    ok(mid[0] < 80 && mid[1] < 80, 'an unlit key lit: ' + mid);
+    // the tile is as wide as the layout
+    await fresh();
+    const it = () => heroItems(true).find(i => i.key === 'ext2').w, dv = STATE.ext.devs.find(d => d.id === 2), keep = dv.leds, full = it();
+    dv.leds = 61; await fanEmit(); const small = it();
+    dv.leds = keep; await fanEmit();
+    ok(full > small && Math.abs(full - KB.full.w / KB.full.h * .85) < 1e-9, 'the tile widths: ' + full + ' / ' + small);
   });
 
   test('calibrate: each ARGB connector of a board gets its own step, its ends counted from where it starts', async () => {

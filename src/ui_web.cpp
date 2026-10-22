@@ -189,6 +189,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "timed_off") { app_timed_off(atoi(field(js, "min").c_str())); post_status(); }
     else if (cmd == "identify") app_identify(field(js, "zone").c_str());
     else if (cmd == "calib") app_calib(field(js, "zone").c_str(), atoi(field(js, "mode").c_str()), atoi(field(js, "from").c_str()), atoi(field(js, "n").c_str()));
+    else if (cmd == "dev_retry") { ext_retry(); post_status(); }   // Retry now: every device not connected, the waits start over
     else if (cmd == "dev_check") { std::string id = field(js, "id"); ext_retry(); net_check_start(atoi(id.c_str()), cfg_get(("dev." + id).c_str(), "host", "")); post_status(); }
     else if (cmd == "pair") { std::string ip = field(js, "ip"); nano_pair_start_ip(ip.c_str()); post_status(); }
     else if (cmd == "preset") { app_preset_apply(atoi(field(js, "id").c_str())); post_state(); }
@@ -211,7 +212,8 @@ static void on_message(const std::string &js) {
     else if (cmd == "scan") { ext_scan(); orgb_check_start(); post_status(); }
     else if (cmd == "orgb_check") { orgb_check_start(); post_status(); }
     else if (cmd == "hw_scan") { hw_scan_start(); orgb_check_start(); post_status(); }
-    else if (cmd == "cf_close") { conflicts_close(field(js, "id").c_str()); post_status(); }   // not in remote_allowed: ends programs on this PC
+    else if (cmd == "cf_close") { conflicts_close(field(js, "id").c_str()); post_status(); }   // cf_close, cf_end: not in remote_allowed, they end programs on this PC
+    else if (cmd == "cf_end") { conflicts_end(field(js, "id").c_str()); post_status(); }
     else if (cmd == "ai_setup") { ollama_setup(); post_status(); }
     else if (cmd == "theme") title_bar(field(js, "v").c_str());
     else if (cmd == "orgb_setup") { orgbapp_setup(); post_status(); }

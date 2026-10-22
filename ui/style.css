@@ -257,6 +257,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .check span { width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--line3); flex: none; display: grid; place-items: center; transition: background .15s; }
 .check input:checked + span { background: var(--strong); border-color: var(--strong); }
 .check input:checked + span::after { content: ""; width: 8px; height: 4px; border: 1.5px solid var(--on-strong); border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
+.check:has(input:disabled) { opacity: .45; cursor: default; }
 
 .seg { display: flex; padding: 3px; gap: 2px; border-radius: 999px; border: 1px solid var(--line2); margin-top: 9px; }
 .seg button {
@@ -792,7 +793,7 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .found-row .what b { display: block; font-weight: 600; }
 .found-row .what small { color: var(--muted); font-size: 12px; }
 .found-row .added { color: var(--muted); font-size: 12px; }
-.found-row .cf-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.found-row .cf-act { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; grid-column: 2 / -1; margin-top: -4px; }   /* own line: up to five controls */
 .manual { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
 .manual summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; }
 .manual summary::before { content: '+'; display: inline-block; width: 16px; }
@@ -804,7 +805,7 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev {
 .dev-card canvas.live { margin-bottom: 14px; }
 .dev-card .opts { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
 .dev-card .btn.danger.confirm { color: #ff5c6c; --lc: #ff5c6c; }
-@media (max-width: 760px) { .manual-row { grid-template-columns: 1fr 1fr; } .found-row { grid-template-columns: 1fr auto; } .found-row .kind { display: none; } }
+@media (max-width: 760px) { .manual-row { grid-template-columns: 1fr 1fr; } .found-row { grid-template-columns: 1fr auto; } .found-row .kind { display: none; } .found-row .cf-act { grid-column: 1 / -1; } }
 
 /* ---------------- first-start wizard */
 .wizard { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px;
@@ -1105,6 +1106,8 @@ body.calm nav button { transition: none; }
 .remote-only { display: none; }
 .remote .remote-only { display: block; }
 @media (max-width: 760px) { .acc-fields { grid-template-columns: 1fr; } }
+.comp-row { font-size: 12.5px; margin-top: 10px; line-height: 1.45; }
+.comp-url { color: var(--faint); font-size: 11.5px; user-select: text; overflow-wrap: anywhere; }
 .about .about-lic { color: var(--faint); font-size: 11.5px; margin-top: 4px; user-select: text; }
 
 /* phone card: troubleshooting, folded */

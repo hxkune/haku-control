@@ -7,7 +7,8 @@
 Every fake prints what it receives (frames per second, a sample colour), so a dev build of haku control
 (build.cmd dev) can be pointed at them. Addresses to add in the app:
     WLED     127.0.0.1:8080  (real WLED uses port 80; mDNS answers point there when port 80 is free)
-    OpenRGB  127.0.0.1       (port 6742: keyboard, fan hub, graphics card, memory, board; --orgb-shuffle reverses them)
+    OpenRGB  127.0.0.1       (port 6742: keyboard, fan hub, graphics card, memory, board, then 60% / 75% / full-size
+                              keyboards; --orgb-shuffle reverses them, --orgb-port=6743 when a real OpenRGB holds 6742)
     Govee    127.0.0.1       (scan answers on UDP 4002, commands on 4003)
     LIFX     127.0.0.1       (UDP 56700)
     WiZ      127.0.0.1       (UDP 38899)
@@ -135,7 +136,12 @@ def orgb_controller(name, ctype, nleds, matrix):
 
 ORGB_CTRL = [orgb_controller('Fake Keyboard', 5, 24, (4, 5)), orgb_controller('Fake Fan Hub', 3, 12, None),
              orgb_controller('ASUS TUF RTX 4070', 2, 8, None), orgb_controller('Corsair Vengeance RGB Pro', 1, 10, None),
-             orgb_controller('ASUS ROG STRIX B550-F GAMING', 0, 12, None)]
+             orgb_controller('ASUS ROG STRIX B550-F GAMING', 0, 12, None),
+             orgb_controller('Fake 60% Keyboard', 5, 61, None), orgb_controller('Fake 75% Keyboard', 5, 84, None),
+             orgb_controller('Fake Full Keyboard', 5, 104, None)]
+ORGB_PORT = 6742
+for a in [a for a in sys.argv if a.startswith('--orgb-port=')]:
+    ORGB_PORT = int(a.split('=')[1]); sys.argv.remove(a)
 if '--orgb-shuffle' in sys.argv:   # OpenRGB found its devices in another order: haku finds them again by name
     ORGB_CTRL.reverse()
     sys.argv.remove('--orgb-shuffle')
@@ -171,7 +177,7 @@ def orgb_client(c, addr):
 
 def openrgb():
     s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(('127.0.0.1', 6742)); s.listen()
+    s.bind(('127.0.0.1', ORGB_PORT)); s.listen()
     while True:
         c, a = s.accept()
         threading.Thread(target=orgb_client, args=(c, a), daemon=True).start()

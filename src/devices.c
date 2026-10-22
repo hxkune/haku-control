@@ -25,7 +25,7 @@ static int     ndevs;
 
 // ---- shared (lock)
 static SRWLOCK lk = SRWLOCK_INIT;
-typedef struct { int id, nleds, per_led, online, enabled, own; char name[64], host[64], info[96], kind[16], type[12]; int sub; } slot_t;
+typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held; char name[64], host[64], info[96], kind[16], type[12]; int sub; } slot_t;
 static slot_t  slots[EXT_MAX];
 static int     nslots;
 static rgbf    frame[EXT_MAX][EXT_MAX_LEDS];
@@ -88,7 +88,7 @@ static void publish_slots(void) {
         char ty[12]; device_type(d, ty, sizeof(ty));
         if (s->id != d->id || s->nleds != n || strcmp(s->type, ty)) InterlockedExchange(&layout_new, 1);
         strcpy_s(s->type, sizeof(s->type), ty);
-        s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->enabled = d->enabled; s->own = d->own;
+        s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->fails = d->fails; s->enabled = d->enabled; s->own = d->own; s->same = d->same; s->held = d->held;
         s->sub = d->sub;
         strcpy_s(s->name, sizeof(s->name), d->name); strcpy_s(s->host, sizeof(s->host), d->host);
         strcpy_s(s->info, sizeof(s->info), d->info); strcpy_s(s->kind, sizeof(s->kind), d->drv->kind);
@@ -164,6 +164,18 @@ static void load_config(void) {
         strcpy_s(d->zones, sizeof(d->zones), cfg_get(sec, "zones", ""));
         strcpy_s(d->key, sizeof(d->key), cfg_get(sec, "key", ""));
     }
+    // One write path per device: an OpenRGB device marked in the window as the same hardware as one haku drives
+    // directly ([dev.M] same=N) and that one take turns, [dev.M] path saying which (direct unless it says openrgb)
+    for (int i = 0; i < nn; i++) {
+        if (strcmp(nd[i].drv->kind, "openrgb")) continue;
+        char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", nd[i].id);
+        int n = cfg_geti(sec, "same", 0), orgb = !_stricmp(cfg_get(sec, "path", ""), "openrgb");
+        for (int j = 0; j < nn && n; j++)
+            if (nd[j].id == n && strcmp(nd[j].drv->kind, "openrgb") && !nd[j].same) {
+                nd[i].same = n; nd[j].same = nd[i].id;
+                if (nd[orgb ? i : j].enabled) nd[orgb ? j : i].held = 1;   // the chosen one switched off: the other may light it
+            }
+    }
     // keep connections of devices whose address (and key) did not change
     for (int i = 0; i < nn; i++) {
         for (int k = 0; k < ndevs; k++) {
@@ -172,6 +184,7 @@ static void load_config(void) {
                 !strcmp(o->key, nd[i].key) && !strcmp(o->zones, nd[i].zones) && o->cfg_static == nd[i].cfg_static) {
                 ext_dev keep = *o;
                 keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own; keep.cfg_rate = nd[i].cfg_rate;
+                keep.same = nd[i].same; keep.held = nd[i].held;
                 memcpy(keep.gain, nd[i].gain, sizeof(keep.gain));
                 strcpy_s(keep.name, sizeof(keep.name), nd[i].name);
                 nd[i] = keep;
@@ -189,6 +202,16 @@ static void load_config(void) {
     publish_slots();
     InterlockedExchange(&layout_new, 1);
 }
+
+// the same hardware on the other path still connected or connecting
+static int other_path_busy(const ext_dev *d) {
+    for (int k = 0; k < ndevs && d->same; k++) if (devs[k].id == d->same) return devs[k].online || opening(devs[k].id);
+    return 0;
+}
+
+// Wait before the next attempt after `fails` failed ones: 3 s, then 10 s, 30 s, at most a minute (a light switched
+// on at the wall still comes back within it). Retry now (ext_retry) starts over.
+static DWORD retry_wait(int fails) { return fails < 1 ? 0 : fails < 3 ? 3000 : fails < 6 ? 10000 : fails < 12 ? 30000 : 60000; }
 
 static unsigned __stdcall worker(void *p) {
     (void)p;
@@ -223,22 +246,25 @@ static unsigned __stdcall worker(void *p) {
             ext_dev *d = NULL;
             for (int k = 0; k < ndevs; k++)
                 if (devs[k].id == o->d.id && devs[k].drv == o->d.drv && !strcmp(devs[k].host, o->d.host) && devs[k].sub == o->d.sub && !devs[k].online) d = &devs[k];
-            if (o->ok && d && d->enabled && !d->own) {
+            if (o->ok && d && d->enabled && !d->own && !d->held) {
                 int k = (int)(d - devs);
                 d->sock = o->d.sock; d->priv = o->d.priv; d->nleds = o->d.nleds; d->rate = o->d.rate;
                 strcpy_s(d->info, sizeof(d->info), o->d.info); strcpy_s(d->key, sizeof(d->key), o->d.key);
-                d->online = 1; d->fails = 0; seen[k] = 0;
+                d->online = 1; d->up_at = now; seen[k] = 0;   // fails stays until it has held a while (connection lost, below)
                 memset(last8[k], 0, sizeof(last8[k]));
                 if (d->cfg_leds > 0 && d->drv->per_led) d->nleds = min(d->cfg_leds, d->nleds > 0 ? d->nleds : d->cfg_leds);
                 if (d->nleds > EXT_MAX_LEDS) d->nleds = EXT_MAX_LEDS;
-                logf_("dev.%d (%s %s): online, %d LEDs %s", d->id, d->drv->kind, d->host, d->nleds, d->info);
+                logf_("dev.%d (%s %s): online, %d LEDs %s%s", d->id, d->drv->kind, d->host, d->nleds, d->info, d->fails ? " (after failed attempts)" : "");
             } else if (o->ok) {
                 o->d.drv->close(&o->d);   // removed, changed or switched off meanwhile
             } else if (d) {
                 if (o->d.info[0]) strcpy_s(d->info, sizeof(d->info), o->d.info);   // why, if the driver says (e.g. a missing key)
                 d->fails++;
-                d->next_try = now + (d->fails < 3 ? 3000 : d->fails < 10 ? 10000 : 30000);
-                if (d->fails == 1) logf_("dev.%d (%s %s): not reachable, retrying", d->id, d->drv->kind, d->host);
+                DWORD wait = retry_wait(d->fails);
+                d->next_try = now + wait;
+                if (wait != retry_wait(d->fails - 1))   // the first failure and each longer wait, not every attempt
+                    logf_("dev.%d (%s %s): not reachable (%d attempts, %s): next try in %lu s", d->id, d->drv->kind, d->host,
+                          d->fails, d->info[0] ? d->info : "no answer", wait / 1000);
             }
             free(o);
             changed_state = 1;   // online state / info text for the UI
@@ -258,8 +284,13 @@ static unsigned __stdcall worker(void *p) {
                 if (d->online) { let_go(d, leave_mode()); changed_state = 1; }
                 continue;
             }
+            if (d->held) {   // the same hardware on the other path drives it: stop here, as it was, for that one to take over
+                if (d->online) { let_go(d, LEAVE_KEEP); changed_state = 1; }
+                continue;
+            }
             if (!d->online) {
-                if ((int)(now - d->next_try) >= 0 && !opening(d->id)) start_open(d);
+                // the other path is let go first (above, this pass or the next) and only then is this one opened
+                if ((int)(now - d->next_try) >= 0 && !opening(d->id) && !other_path_busy(d)) start_open(d);
                 continue;
             }
             // frame from the render thread
@@ -287,9 +318,14 @@ static unsigned __stdcall worker(void *p) {
                 last_send[k] = now;
                 if (strcmp(was, d->info)) changed_state = 1;   // the driver's own news (TRYX: the upload's %)
             } else {
-                logf_("dev.%d (%s %s): connection lost", d->id, d->drv->kind, d->host);
+                // lost soon after connecting (another program takes it back, a device that drops each frame):
+                // a failed attempt, so the waits grow instead of a reconnect every 2 s fighting over it
+                if (now - d->up_at >= 60000) d->fails = 0;
+                d->fails++;
+                DWORD wait = d->fails == 1 ? 2000 : retry_wait(d->fails);
+                logf_("dev.%d (%s %s): connection lost after %lu s: next try in %lu s", d->id, d->drv->kind, d->host, (now - d->up_at) / 1000, wait / 1000);
                 d->drv->close(d);
-                d->online = 0; d->next_try = now + 2000;
+                d->online = 0; d->next_try = now + wait;
                 changed_state = 1;
             }
         }
@@ -496,8 +532,8 @@ int ext_json(char *out, int cap) {
         json_escape_to(zs, sizeof(zs), cfg_get(sec, "zones_found", ""));   // resizable zones (OpenRGB), "name:count:min:max|..."
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"enabled\":%d,\"own\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\"}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->enabled, s->own, s->type, inf, pro_kind(s->kind), zs);
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\"}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->type, inf, pro_kind(s->kind), zs);
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {
