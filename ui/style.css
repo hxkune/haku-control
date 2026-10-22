@@ -138,9 +138,19 @@ h3::before { content: none; margin-right: 9px; font-size: 10px; color: var(--mut
 }
 .brand { padding: 0 8px 30px; }
 .brand .logo {
-  width: clamp(150px, 6.29vw + 70px, 190px); aspect-ratio: 1540 / 903; background: var(--strong);
-  -webkit-mask: url(haku.svg) left center / contain no-repeat; mask: url(haku.svg) left center / contain no-repeat;
+  position: relative; width: clamp(150px, 6.29vw + 70px, 190px); aspect-ratio: 1540 / 903; margin: 0 auto; background: var(--strong);
+  -webkit-mask: url(haku.svg) center / contain no-repeat; mask: url(haku.svg) center / contain no-repeat;
 }
+/* a slow glint across the wordmark: the rest a shade toward the background, the band at full; the colour the
+   intro reads stays the logo's own */
+.brand .logo::after {
+  content: ""; position: absolute; inset: 0; transition: opacity .5s ease .62s;
+  --dim: color-mix(in srgb, var(--bg) 22%, transparent);
+  background: linear-gradient(105deg, var(--dim) 42%, transparent 50%, var(--dim) 58%) 100% 0 / 300% 100%;
+  animation: logo-glint 9s ease-in-out infinite;
+}
+@keyframes logo-glint { 0%, 72% { background-position: 100% 0; } 92%, 100% { background-position: 0 0; } }
+html.intro .brand .logo::after { opacity: 0; }
 .brand .word { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 4px; font: 600 11px var(--display); letter-spacing: .3em; color: var(--muted); }
 .brand .word::after { content: ""; flex: 1; height: 1px; background: var(--line2); }
 nav { display: flex; flex-direction: column; gap: clamp(4px, .3145vw, 6px); }
@@ -980,11 +990,11 @@ nav button:active, .power:active, .fx:active, .seg button:active, .kbd:active { 
 /* the window behind others: the endless animations hold still and the background light changes without fading
    (each fade repaints the whole window for over a second) */
 body.idle .ambient i, body.idle .ambient i b, body.idle .dot.on, :root[data-theme="bubblegum"] body.idle *,
-:root[data-theme="kyoka"] body.idle * { animation-play-state: paused !important; }
+:root[data-theme="kyoka"] body.idle *, body.idle .brand .logo::after { animation-play-state: paused !important; }
 body.idle .ambient { transition: none; }
 body.calm .ambient i, body.calm .dot.on, body.calm .tab.active .card, body.calm .tab.active .fx, body.calm .tab { animation: none; }
 body.calm .fx:hover { transform: none; }
-body.calm .ambient, body.calm .card::after, body.calm .fx::after { display: none; }
+body.calm .ambient, body.calm .card::after, body.calm .fx::after, body.calm .brand .logo::after { display: none; }
 body.calm .btn.primary, body.calm .power.off { transition: none; }
 
 /* ---------------- mood: describe it, a local model picks the colours */
