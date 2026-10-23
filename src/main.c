@@ -29,10 +29,15 @@
 #define ID_RAM_ON    1205
 #define ID_GPU_ON    1206
 #define ID_LIGHTS_ON 1207
-#define ID_PC_OWN    1208
+#define ID_PC_OWN    1208   // the PC's lighting given back to its own programs
+#define ID_POWER     1209
+#define ID_PC_HAKU   1210   // ... and taken again
+#define ID_HELP      1211
+#define ID_DIAG      1212
 #define ID_NANO_ON   1300   // + controller 0..NANO_MAX-1
 #define ID_PRESET    1400   // + preset number 1..PRESET_MAX
 #define ID_PROFILE   1500   // + profile number 1..PROFILE_MAX
+#define ID_DEV_ON    1600   // + N of a [dev.N] device, 1..99
 #define WM_REHOTKEY  (WM_APP + 2)
 #define WM_REMOTE_CMD (WM_APP + 3)
 #define WM_BLOCKED   (WM_APP + 4)
@@ -302,6 +307,8 @@ static void load_config(void) {
     cfg_load(NULL);
     EnterCriticalSection(&cs);
     cur_effect = effect_index(cfg_get("general", "effect", "flow"));
+    prev_effect = effect_index(cfg_get("general", "prev", "flow"));   // what turning on brings back, also after a restart
+    if (prev_effect == effect_index("off")) prev_effect = 0;
     brightness = clampf(cfg_getf("general", "brightness", 100) / 100.0f, 0, 1);
     fps = cfg_geti("general", "fps", 30);
     if (fps < 5) fps = 5;
@@ -541,17 +548,50 @@ static unsigned __stdcall render_thread(void *p) {
 }
 
 // ---- tray / UI
+static int profile_exists(int id);
+
+// a user's name for the tray: at most 40 characters and "…" (a surrogate pair kept whole); in a menu & is shown as &
+static void short_name(const char *s, wchar_t *out, int cap, int menu) {
+    wchar_t w[256];
+    if (!MultiByteToWideChar(CP_UTF8, 0, s, -1, w, 256)) w[0] = 0;
+    int n = (int)wcslen(w), o = 0;
+    if (n > 40) { n = IS_HIGH_SURROGATE(w[38]) ? 38 : 39; w[n++] = 0x2026; }
+    for (int i = 0; i < n && o < cap - 2; i++) { if (menu && w[i] == L'&') out[o++] = L'&'; out[o++] = w[i]; }
+    out[o] = 0;
+}
+
+// a device on and meant to be lit that does not answer (not while it waits for its app, Pro or the PC's sleep)
+static int dev_unreachable(int f) { return f >= 0 && (f & 1) && !(f & 2) && (f & 8) && !(f & (4 | 16)) && !((f & 32) && pro_off) && !sleeping; }
+
+// the tray tip: the profile, the brightness, what shows, and a problem once confirmed; Windows keeps 127 characters
 static void update_tip(void) {
-    swprintf(nid.szTip, 128, L"haku control — %s, %d%%", effect_title(cur_effect), (int)(brightness * 100 + 0.5f));
+    wchar_t t[512], nm[96] = L"", prof[160] = L"", bad[160] = L"";
+    int pid = cfg_geti("general", "profile", 0), ft = fans_trouble(), down = 0;
+    char sec[24], one[64] = "";
+    snprintf(sec, sizeof(sec), "profile.%d", pid);
+    if (pid && profile_exists(pid)) { short_name(cfg_get(sec, "name", ""), nm, 96, 0); swprintf(prof, 160, L"%s: %s · ", TR(L"Profile", L"Профиль", L"Profil"), nm); }
+    for (int k = 0; !ft && k < ext_count(); k++) { char d[64]; if (dev_unreachable(ext_slot_menu(k, d, sizeof(d))) && !down++) strcpy_s(one, sizeof(one), d); }
+    if (ft == 2) wcscpy_s(bad, 160, TR(L"Cooling: a fan on its emergency speed", L"Охлаждение: вентилятор на аварийной скорости", L"Refroidissement : un ventilateur en vitesse de secours"));
+    else if (ft == 1) wcscpy_s(bad, 160, TR(L"Cooling: no word from the QUADRO", L"Охлаждение: нет связи с QUADRO", L"Refroidissement : le QUADRO ne répond pas"));
+    else if (down == 1) { short_name(one, nm, 96, 0); swprintf(bad, 160, TR(L"Not reachable: %s", L"Нет связи: %s", L"Injoignable : %s"), nm); }
+    else if (down) swprintf(bad, 160, TR(L"%d devices not reachable", L"Нет связи с устройствами: %d", L"%d appareils injoignables"), down);
+    swprintf(t, 512, L"haku control\n%s%s: %d%%\n%s%s%s", prof, TR(L"Brightness", L"Яркость", L"Luminosité"), (int)(brightness * 100 + 0.5f),
+             cur_effect == effect_index("off") ? TR(L"Lighting off", L"Подсветка выключена", L"Éclairage éteint") : effect_title(cur_effect), *bad ? L"\n" : L"", bad);
+    int n = (int)wcslen(t);
+    if (n > 127) { n = IS_HIGH_SURROGATE(t[126]) ? 126 : 127; t[n] = 0; }
+    if (!wcscmp(t, nid.szTip)) return;   // (refreshed every 3 s: only a change reaches the shell)
+    wcscpy_s(nid.szTip, 128, t);
     nid.uFlags = NIF_TIP;
     Shell_NotifyIconW(NIM_MODIFY, &nid);
 }
 
 static void set_effect(int fx) {
     EnterCriticalSection(&cs);
-    if (fx != cur_effect && fx == effect_index("off")) prev_effect = cur_effect;
+    int went_off = fx != cur_effect && fx == effect_index("off");
+    if (went_off) prev_effect = cur_effect;
     cur_effect = fx; effects_reset();
     LeaveCriticalSection(&cs);
+    if (went_off) { cfg_set("general", "prev", g_effects[prev_effect].id); cfg_set("general", "prev_preset", cfg_get("general", "preset", "")); }
     if (cfg_get("general", "preset", NULL)) cfg_set("general", "preset", "");   // a preset is no longer what shows
     cfg_set_and_save("general", "effect", g_effects[fx].id);
     update_tip();
@@ -1006,20 +1046,21 @@ void app_pc_own(int own) {
     ui_refresh();
 }
 
-// 1: everything of the PC that haku could light has its own lighting
-int app_pc_own_now(void) {
-    if (have_msi && !msi_own) return 0;
-    if (have_ene && ene_count() > 0 && !ram_own) return 0;
-    int any = (have_msi && msi_own) || (have_ene && ene_count() > 0 && ram_own);
+// what of the PC haku could light (n), and how much of it has its own lighting (own)
+static void pc_own_count(int *n, int *own) {
+    *n = *own = 0;
+    if (have_msi) { (*n)++; *own += msi_own != 0; }
+    if (have_ene && ene_count() > 0) { (*n)++; *own += ram_own != 0; }
     for (int k = 0; k < ext_count(); k++) {
         char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", ext_slot_id(k));
         const char *kind = cfg_get(sec, "kind", "");
         if (!*kind || pro_kind(kind)) continue;
-        if (!cfg_geti(sec, "own", 0)) return 0;
-        any = 1;
+        (*n)++; *own += cfg_geti(sec, "own", 0) != 0;
     }
-    return any;
 }
+
+// 1: everything of the PC that haku could light has its own lighting
+int app_pc_own_now(void) { int n, own; pc_own_count(&n, &own); return n && own == n; }
 
 void app_toggle_device(const char *key) {
     cfg_set_and_save("layout", key, cfg_geti("layout", key, 1) ? "0" : "1");
@@ -1217,9 +1258,15 @@ int app_ru(void) { return app_lang() == 1; }
 int app_effect_now(void) { return cur_effect; }
 float app_brightness_now(void) { return brightness; }
 
+// the one on / off: off keeps what showed (also over a restart), on brings it back with its preset; the devices
+// switched off one by one stay off, and the fans are not touched
 void app_power(void) {
     int off = effect_index("off");
-    set_effect(cur_effect == off ? prev_effect : off);
+    if (cur_effect != off) { set_effect(off); return; }
+    char pre[16], sec[24]; snprintf(pre, sizeof(pre), "%s", cfg_get("general", "prev_preset", ""));
+    snprintf(sec, sizeof(sec), "preset.%s", pre);
+    set_effect(prev_effect);
+    if (*pre && !_stricmp(cfg_get(sec, "effect", ""), g_effects[prev_effect].id)) cfg_set_and_save("general", "preset", pre);   // (still that preset's effect)
 }
 
 void app_timed_off(int minutes) {
@@ -1303,50 +1350,85 @@ int app_autostart(int set) {
 }
 
 static void show_menu(void) {
-    HMENU m = CreatePopupMenu(), mb = CreatePopupMenu();
-    AppendMenuW(m, MF_STRING, ID_WINDOW, TR(L"Open haku control…", L"Открыть haku control…", L"Ouvrir haku control…"));
+    HMENU m = CreatePopupMenu(), mb = CreatePopupMenu(), mf = CreatePopupMenu(), mx = CreatePopupMenu(), md = CreatePopupMenu(), mc = CreatePopupMenu(), mh = CreatePopupMenu();
+    wchar_t w[160]; char sec[24];
+    int off = effect_off_index(), pct = (int)(brightness * 100 + 0.5f);
+    AppendMenuW(m, MF_STRING, ID_WINDOW, TR(L"Open haku control", L"Открыть haku control", L"Ouvrir haku control"));
     SetMenuDefaultItem(m, ID_WINDOW, FALSE);
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-    for (int i = 0; i < g_effect_count; i++) {
-        if (i == effect_off_index()) AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-        AppendMenuW(m, MF_STRING | (i == cur_effect ? MF_CHECKED : 0), ID_FX_BASE + i, effect_title(i));
-    }
+    // on / off as the window's power button: back on is the effect shown before, each device as it was
+    AppendMenuW(m, MF_STRING, ID_POWER, cur_effect == off ? TR(L"Turn the lighting on", L"Включить подсветку", L"Allumer l'éclairage")
+                                                          : TR(L"Turn the lighting off", L"Выключить подсветку", L"Éteindre l'éclairage"));
     static const int levels[] = { 10, 25, 50, 75, 100 };
     for (int i = 0; i < 5; i++) {
-        wchar_t s[16]; swprintf(s, 16, L"%d%%", levels[i]);
-        AppendMenuW(mb, MF_STRING | ((int)(brightness * 100 + 0.5f) == levels[i] ? MF_CHECKED : 0), ID_BRIGHT + levels[i], s);
+        swprintf(w, 16, L"%d%%", levels[i]);
+        AppendMenuW(mb, MF_STRING | (pct == levels[i] ? MF_CHECKED : 0), ID_BRIGHT + levels[i], w);
     }
-    AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-    HMENU mp = CreatePopupMenu(); int np = 0, cur_p = cfg_geti("general", "preset", 0);
+    swprintf(w, 160, L"%s: %d%%", TR(L"Brightness", L"Яркость", L"Luminosité"), pct);
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)mb, w);
+    // profiles as the window lists them: the pinned ones first, then the rest
+    int nf = 0, cur_f = cfg_geti("general", "profile", 0);
+    for (int pass = 0, pinned = 0; pass < 2; pass++, pinned = nf)
+        for (int i = 1; i <= PROFILE_MAX; i++) {
+            snprintf(sec, sizeof(sec), "profile.%d", i);
+            if (!profile_exists(i) || !cfg_geti(sec, "pin", 0) != pass) continue;
+            if (pass && pinned && nf == pinned) AppendMenuW(mf, MF_SEPARATOR, 0, NULL);
+            short_name(cfg_get(sec, "name", "Profile"), w, 160, 1);
+            AppendMenuW(mf, MF_STRING | (i == cur_f ? MF_CHECKED : 0), ID_PROFILE + i, w); nf++;
+        }
+    if (!nf) AppendMenuW(mf, MF_STRING | MF_GRAYED, 0, TR(L"No profiles yet", L"Профилей пока нет", L"Aucun profil pour l'instant"));
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)mf, TR(L"Profile", L"Профиль", L"Profil"));
+    // every effect ("off" is the item above), then the presets apart from them
+    for (int i = 0; i < g_effect_count; i++)
+        if (i != off) AppendMenuW(mx, MF_STRING | (i == cur_effect ? MF_CHECKED : 0), ID_FX_BASE + i, effect_title(i));
+    int np = 0, cur_p = cfg_geti("general", "preset", 0);
     for (int i = 1; i <= PRESET_MAX; i++) {
-        char sec[24]; snprintf(sec, sizeof(sec), "preset.%d", i);
+        snprintf(sec, sizeof(sec), "preset.%d", i);
         if (!cfg_get(sec, "effect", NULL)) continue;
-        wchar_t w[80]; MultiByteToWideChar(CP_UTF8, 0, cfg_get(sec, "name", "Preset"), -1, w, 80);
-        AppendMenuW(mp, MF_STRING | (i == cur_p ? MF_CHECKED : 0), ID_PRESET + i, w); np++;
+        if (!np++) { AppendMenuW(mx, MF_SEPARATOR, 0, NULL); AppendMenuW(mx, MF_STRING | MF_GRAYED, 0, TR(L"Presets", L"Пресеты", L"Préréglages")); }
+        short_name(cfg_get(sec, "name", "Preset"), w, 160, 1);
+        AppendMenuW(mx, MF_STRING | (i == cur_p ? MF_CHECKED : 0), ID_PRESET + i, w);
     }
-    if (np) AppendMenuW(m, MF_POPUP, (UINT_PTR)mp, TR(L"Presets", L"Пресеты", L"Préréglages")); else DestroyMenu(mp);
-    HMENU mf = CreatePopupMenu(); int nf = 0, cur_f = cfg_geti("general", "profile", 0);
-    for (int i = 1; i <= PROFILE_MAX; i++) {
-        if (!profile_exists(i)) continue;
-        char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", i);
-        wchar_t w[80]; MultiByteToWideChar(CP_UTF8, 0, cfg_get(sec, "name", "Profile"), -1, w, 80);
-        AppendMenuW(mf, MF_STRING | (i == cur_f ? MF_CHECKED : 0), ID_PROFILE + i, w); nf++;
-    }
-    if (nf) AppendMenuW(m, MF_POPUP, (UINT_PTR)mf, TR(L"Profiles", L"Профили", L"Profils")); else DestroyMenu(mf);
-    AppendMenuW(m, MF_POPUP, (UINT_PTR)mb, TR(L"Brightness", L"Яркость", L"Luminosité"));
-    AppendMenuW(m, MF_STRING | (ram_on ? MF_CHECKED : 0), ID_RAM_ON, TR(L"Memory lighting", L"Подсветка памяти", L"Éclairage de la mémoire"));
-    AppendMenuW(m, MF_STRING | (gpu_on ? MF_CHECKED : 0), ID_GPU_ON, TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты", L"Éclairage du ruban ARGB"));
-    if (lights_count()) AppendMenuW(m, MF_STRING | (lights_on ? MF_CHECKED : 0), ID_LIGHTS_ON, TR(L"AiDot bulbs", L"Лампочки AiDot", L"Ampoules AiDot"));
-    for (int k = 0; k < NANO_MAX; k++) if (nano_present(k)) {
-        char t[64]; wchar_t w[64]; nano_title(k, t, sizeof(t));
-        MultiByteToWideChar(CP_UTF8, 0, t, -1, w, 64);
-        AppendMenuW(m, MF_STRING | (nano_on[k] ? MF_CHECKED : 0), ID_NANO_ON + k, w);
-    }
-    // the PC's lighting back to its own programs (MSI Center, the makers' apps): also when the window is no help
-    AppendMenuW(m, MF_STRING | (app_pc_own_now() ? MF_CHECKED : 0), ID_PC_OWN, TR(L"PC: its own lighting", L"ПК: своя подсветка", L"PC : son propre éclairage"));
-    AppendMenuW(m, MF_STRING, ID_SETTINGS, TR(L"Settings file", L"Файл настроек", L"Fichier de réglages"));
-    AppendMenuW(m, MF_STRING, ID_LOG, TR(L"Log", L"Журнал", L"Journal"));
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)mx, TR(L"Effect", L"Эффект", L"Effet"));
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+    // devices: checked is on (the user's switch); one that does not answer stays as it is, with why beside it
+    int nd = 0;
+    if (have_ene && ene_count() > 0) { AppendMenuW(md, MF_STRING | (ram_on ? MF_CHECKED : 0), ID_RAM_ON, TR(L"Memory lighting", L"Подсветка памяти", L"Éclairage de la mémoire")); nd++; }
+    if (have_msi) { AppendMenuW(md, MF_STRING | (gpu_on ? MF_CHECKED : 0), ID_GPU_ON, TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты", L"Éclairage du ruban ARGB")); nd++; }
+    if (lights_count()) { AppendMenuW(md, MF_STRING | (lights_on ? MF_CHECKED : 0), ID_LIGHTS_ON, TR(L"AiDot bulbs", L"Лампочки AiDot", L"Ampoules AiDot")); nd++; }
+    for (int k = 0; k < NANO_MAX; k++) if (nano_present(k)) {
+        char t[64]; nano_title(k, t, sizeof(t)); short_name(t, w, 160, 1);
+        AppendMenuW(md, MF_STRING | (nano_on[k] ? MF_CHECKED : 0), ID_NANO_ON + k, w); nd++;
+    }
+    for (int k = 0; k < ext_count(); k++) {
+        char nm[64]; int f = ext_slot_menu(k, nm, sizeof(nm)), id = ext_slot_id(k);
+        if (f < 0 || id < 1 || id > 99) continue;
+        short_name(nm, w, 96, 1);
+        const wchar_t *why = (f & 4) ? TR(L"its own lighting", L"своя подсветка", L"son propre éclairage")
+            : !(f & 1) || (f & 2) ? NULL
+            : (f & 32) && pro_off ? TR(L"needs Pro", L"нужен Pro", L"Pro requis")
+            : (f & 16) ? TR(L"busy in another app", L"занято другой программой", L"occupé par une autre application")
+            : (f & 8) ? TR(L"not reachable", L"нет связи", L"injoignable") : TR(L"connecting…", L"подключение…", L"connexion…");
+        if (why) { size_t n = wcslen(w); swprintf(w + n, 160 - n, L" — %s", why); }
+        AppendMenuW(md, MF_STRING | ((f & 1) ? MF_CHECKED : 0), ID_DEV_ON + id, w); nd++;
+    }
+    if (!nd) AppendMenuW(md, MF_STRING | MF_GRAYED, 0, TR(L"No devices", L"Устройств нет", L"Aucun appareil"));
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)md, TR(L"Devices", L"Устройства", L"Appareils"));
+    // the PC's lighting to its own programs (MSI Center, the makers' apps), also when the window is no help;
+    // some given back and some not checks neither
+    int pn, po; pc_own_count(&pn, &po);
+    UINT gray = pn ? 0 : MF_GRAYED;
+    AppendMenuW(mc, MF_STRING | gray | (pn && !po ? MF_CHECKED : 0), ID_PC_HAKU, TR(L"Lit by haku", L"Управляет Haku", L"Éclairé par haku"));
+    AppendMenuW(mc, MF_STRING | gray | (pn && po == pn ? MF_CHECKED : 0), ID_PC_OWN,
+                TR(L"Hand over to the devices' own apps", L"Передать управление приложениям устройств", L"Rendre aux applications des appareils"));
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)mc, TR(L"PC lighting control", L"Управление подсветкой ПК", L"Contrôle de l'éclairage du PC"));
+    AppendMenuW(m, MF_SEPARATOR, 0, NULL);
+    AppendMenuW(mh, MF_STRING, ID_HELP, TR(L"Open help", L"Открыть справку", L"Ouvrir l'aide"));
+    AppendMenuW(mh, MF_STRING, ID_LOG, TR(L"Open the log", L"Открыть журнал", L"Ouvrir le journal"));
+    // to Downloads, nothing is sent
+    AppendMenuW(mh, MF_STRING, ID_DIAG, TR(L"Save diagnostics", L"Сохранить диагностику", L"Enregistrer le diagnostic"));
+    AppendMenuW(mh, MF_STRING, ID_SETTINGS, TR(L"Open the settings file", L"Открыть файл настроек", L"Ouvrir le fichier de réglages"));
+    AppendMenuW(m, MF_POPUP, (UINT_PTR)mh, TR(L"Help and diagnostics", L"Помощь и диагностика", L"Aide et diagnostic"));
     AppendMenuW(m, MF_STRING, ID_EXIT, TR(L"Quit", L"Выход", L"Quitter"));
     POINT pt; GetCursorPos(&pt);
     SetForegroundWindow(hwnd);
@@ -1417,7 +1499,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER:
         if (wp == SAVE_TIMER) { KillTimer(h, SAVE_TIMER); cfg_save_if_dirty(); }
-        if (wp == AUTO_TIMER) { if (!auto_paused()) auto_tick(); sched_tick(); conflicts_tick(); }
+        if (wp == AUTO_TIMER) { if (!auto_paused()) auto_tick(); sched_tick(); conflicts_tick(); update_tip(); }
         return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: swap the tray icon
@@ -1463,7 +1545,15 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (id == ID_WINDOW) ui_open(app_inst);
         else if (id == ID_RAM_ON) app_toggle_device("ram_enabled");
         else if (id == ID_GPU_ON) app_toggle_device("gpu_enabled");
-        else if (id == ID_PC_OWN) app_pc_own(!app_pc_own_now());
+        else if (id == ID_PC_OWN || id == ID_PC_HAKU) app_pc_own(id == ID_PC_OWN);
+        else if (id == ID_POWER) app_power();
+        else if (id == ID_HELP) ui_open_help(app_inst);
+        else if (id == ID_DIAG) diag_save();
+        else if (id > ID_DEV_ON && id < ID_DEV_ON + 100) {   // the window's switch: [dev.N] enabled, the device is opened again
+            char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", id - ID_DEV_ON);
+            app_set(sec, "enabled", cfg_geti(sec, "enabled", 1) ? "0" : "1");
+            ui_refresh_state();
+        }
         else if (id == ID_LIGHTS_ON) app_toggle_device("lights_enabled");
         else if (id > ID_PRESET && id <= ID_PRESET + PRESET_MAX) app_preset_apply(id - ID_PRESET);
         else if (id > ID_PROFILE && id <= ID_PROFILE + PROFILE_MAX) app_profile_apply(id - ID_PROFILE);
@@ -1479,7 +1569,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         switch (wp) {
         case HK_NEXT: set_effect(cur_effect >= n - 1 || cur_effect == off ? 0 : cur_effect + 1); break;
         case HK_PREV: set_effect(cur_effect == 0 || cur_effect == off ? n - 1 : cur_effect - 1); break;
-        case HK_OFF:  set_effect(cur_effect == off ? prev_effect : off); break;
+        case HK_OFF:  app_power(); break;
         case HK_BUP:  set_brightness(brightness + 0.1f); break;
         case HK_BDOWN: set_brightness(brightness - 0.1f); break;
         case HK_PROFILE_NEXT: profile_next(); break;
@@ -1506,6 +1596,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == quit_msg && quit_msg) { DestroyWindow(h); return 0; }
     if (msg == show_msg && show_msg) { ui_open(app_inst); return 0; }
     if (msg == taskbar_created && taskbar_created) {   // explorer restarted
+        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;   // (the last change left only one of them set)
         Shell_NotifyIconW(NIM_ADD, &nid);
         return 0;
     }

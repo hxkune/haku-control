@@ -81,6 +81,7 @@ static int   zkelvin[MAX_ZONES];
 static float zlevel[MAX_ZONES];           // per-zone brightness 0..1
 static rgbf  zpal[MAX_ZONES][MAX_PALETTE];
 static int   znpal[MAX_ZONES];
+static int   zsteady[MAX_ZONES];          // the device holds one steady colour only: shown still, this frame
 static int   sync_all = 1;
 static int   last_fx = -1;
 static int   used_temp, used_audio;       // some LED shows the temperature / audio effect
@@ -263,6 +264,8 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
     int e = fx == FX_OFF ? FX_OFF : zone_fx(z);
     if (e != FX_OFF && zmode[z] == ZMODE_WHITE) return scalec(kelvin_rgb(zkelvin[z]), zlevel[z]);
     if (e != FX_OFF && zmode[z] == ZMODE_STATIC) return scalec(zpal[z][0], zlevel[z]);
+    // no animation there: its palette's first colour, else the effect's, so the colour it holds is a known one
+    if (e != FX_OFF && zsteady[z]) return scalec(zmode[z] == ZMODE_PALETTE && znpal[z] ? zpal[z][0] : fx_pal[e][0], zlevel[z]);
     if (zmode[z] == ZMODE_PALETTE) { pal = zpal[z]; npal = znpal[z]; } else { pal = fx_pal[e]; npal = fx_npal[e]; }
 
     // own effect / no sync: position inside the device and a per-device clock offset
@@ -426,10 +429,13 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
     if (!loaded || fx != last_fx) { load_params(); if (fx != last_fx) nbub = 0; }
     last_fx = fx;
 
+    for (int k = 0, n = ext_count(); k < EXT_SLOTS; k++) zsteady[ZONE_EXT0 + k] = k < n && ext_slot_steady(k);
+
     // which effects are on screen this frame
     int uses[FX_N] = { 0 }, bub_leds[MAX_LEDS], nbl = 0;
     for (int i = 0; i < sc->count; i++) {
         int z = sc->leds[i].zone, e = fx == FX_OFF ? FX_OFF : zone_fx(z);
+        if (zsteady[z] && e != FX_OFF) continue;   // still: needs no screen, sound or bubbles
         uses[e] = 1;
         if (e == FX_BUBBLES) bub_leds[nbl++] = i;
     }

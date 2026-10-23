@@ -271,7 +271,7 @@
     const A = mul(CAM, p.at(t)), B = mul(CAM, p.at(t - SHUT));
     let dist = 0;
     for (const [x, y] of p.probe) { const u = mv(A, x, y), v = mv(B, x, y); dist = Math.max(dist, Math.hypot(u[0] - v[0], u[1] - v[1])); }
-    const n = Math.max(1, Math.min(22, Math.ceil(dist / (2.5 * D))));
+    const n = Math.max(1, Math.min(LOW ? 6 : 22, Math.ceil(dist / (2.5 * D))));
     const one = (img, M, ts, al) => {
       if (clip) { ctx.save(); const m = mul(CAM, M); ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]); ctx.clip(clip(ts)); }
       put(p.s, M, al, img);
@@ -283,7 +283,7 @@
       if (dist < .4 * D) one(p.s.c, M, ts, a / n);
       else for (let c = 0; c < 2; c++) one(p.ch[c], lerpM(M, p.at(ts + (c - .5) * SPLIT), f), ts, a / n);
     }
-    if (!clip && dist > 8 * D) ghosts(p.s, p.ch, p.at, t, a * Math.min(1, (dist / D - 8) / 30));
+    if (!clip && !LOW && dist > 8 * D) ghosts(p.s, p.ch, p.at, t, a * Math.min(1, (dist / D - 8) / 30));
   }
   // the ghosts: echoes of where it just was, each one further back and its pink and cyan further apart
   function ghosts(s, ch, at, t, a, step = .026, n = 3) {
@@ -526,7 +526,7 @@
     const A = at(x), B = at(x - SHUT / FLY), probe = [[VB[0], VB[1]], [VB[2], VB[3]], [VB[0], VB[3]], [VB[2], VB[1]]];
     let dist = 0;
     for (const [px, py] of probe) { const u = mv(A, px, py), v = mv(B, px, py); dist = Math.max(dist, Math.hypot(u[0] - v[0], u[1] - v[1])); }
-    const n = Math.max(1, Math.min(24, Math.ceil(dist / (2.2 * D))));
+    const n = Math.max(1, Math.min(LOW ? 6 : 24, Math.ceil(dist / (2.2 * D))));
     // white while it flies, its own colour as it lands; pink and cyan apart and ghosts while it is fast
     const cf = to ? smooth((x - .3) / .6) : 0, fade = to ? 1 : 1 - smooth(x / .8), wa = fade * (1 - cf);
     const f = Math.min(1, 7 * D / Math.max(1e-6, dist * SPLIT / SHUT));
@@ -536,51 +536,61 @@
       else for (let c = 0; c < 2; c++) put(whole, lerpM(M, at(xs + (c - .5) * SPLIT / FLY), f), wa / n, wholeCh[c]);
       if (cf > 0) put(whole, M, cf / n, toImg);
     }
-    if (dist > 8 * D) ghosts(whole, wholeCh, s => at(s / FLY), x * FLY, wa * Math.min(1, (dist / D - 8) / 30) * .8, .022, 4);
+    if (!LOW && dist > 8 * D) ghosts(whole, wholeCh, s => at(s / FLY), x * FLY, wa * Math.min(1, (dist / D - 8) / 30) * .8, .022, 4);
     put(glowW, A, .3 * (1 - smooth(x / .45)) * fade);
   }
 
   // ---- running it
-  let SVG = null, ready = false, started = false, done = false, raf = 0, last = 0, T = 0;
+  let SVG = null, ready = false, started = false, done = false, raf = 0, last = 0, T = 0, slow = 0, LOW = false;
   function frame(now) {
     if (done) return;
     if (cvs.width !== Math.round(innerWidth * (devicePixelRatio || 1)) || cvs.height !== Math.round(innerHeight * (devicePixelRatio || 1))) size();
-    // a frame that came late (the window still settling as it opens) holds the film rather than skipping it on
-    T += Math.min(now - (last || now), 34) / 1000; last = now;
+    // the film runs on the clock; one late frame (the window still settling) holds it at most .1 s, and a few slow
+    // ones draw it lighter (fewer sub-frames, no ghosts)
+    const dt = Math.min(now - (last || now), 100); last = now;
+    if (dt > 40 && ++slow >= 3) LOW = true;
+    T += dt / 1000;
     const t = FREEZE ? +FREEZE : T;
     try { render(t); } catch (e) { console.error(e); finish(); return; }
     if (!done) raf = requestAnimationFrame(frame);
   }
   function skip(e) {
-    if (e.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
-    removeEventListener('keydown', skip, true); ov.removeEventListener('pointerdown', skip);
+    if (done || (e && e.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key))) return;
+    if (!started) { finish(); return; }   // still loading: the page is just there
+    unhook(); cancelAnimationFrame(raf);
     root.classList.add('intro-out'); root.classList.remove('intro');
     ov.style.transition = 'opacity .35s ease'; ov.style.opacity = '0';
-    setTimeout(finish, 380);
+    setTimeout(finish, 380);   // a timer, not transitionend: it ends even when the fade never runs
   }
-  function finish() {   // when it never started (no animations, no logo) the page is just there, without coming in
+  const hidden = () => { if (document.hidden) finish(true); };   // back from the background is the page, not the rest of the film
+  function unhook() {
+    removeEventListener('keydown', skip, true); removeEventListener('pointerdown', skip, true);
+    document.removeEventListener('visibilitychange', hidden);
+  }
+  function finish(still) {   // when it never started (no animations, no logo) the page is just there, without coming in
     if (done) return;
-    done = true; cancelAnimationFrame(raf);
-    removeEventListener('keydown', skip, true);
-    if (started) root.classList.add('intro-out');
+    done = true; cancelAnimationFrame(raf); unhook();
+    if (started && !still) root.classList.add('intro-out');
     root.classList.remove('intro');
     ov.remove();
     setTimeout(() => root.classList.remove('intro-out'), 1800);   // after the page's own coming in (style.css)
   }
+  addEventListener('keydown', skip, true); addEventListener('pointerdown', skip, true);
+  document.addEventListener('visibilitychange', hidden);
   function go() {
     if (started || done || !SVG || !ready) return;
-    if (stillMotion()) { finish(); return; }
+    if (stillMotion() || !root.classList.contains('intro')) { finish(); return; }   // off, or index.html's fallback already opened the page
     try {
       build();
-      // the first draw of each layer is slow (the browser readies it then): drawn once through the film while the
-      // window is still dark, so the film itself does not stall in its first frames
-      for (let t = 0; t < PRE + OUT; t += .15) render(t);
+      // the first draw of each layer is slow (the browser readies it then): a few moments of the film drawn once while
+      // the window is still dark, all before it leaves, so the film itself does not stall in its first frames
+      for (const t of [0, .3, PRE + .3, PRE + HIT, PRE + SWEEP, PRE + OUT - .05]) render(t);
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cvs.width, cvs.height);
     } catch (e) { console.error(e); finish(); return; }
     started = true;
     ov.classList.add('run');
-    ov.addEventListener('pointerdown', skip); addEventListener('keydown', skip, true);
     raf = requestAnimationFrame(frame);
+    if (!FREEZE) setTimeout(skip, (PRE + OUT + FLY + 1.5) * 1000);   // frames that never come (or crawl) still give the window over
   }
   fetch('haku.svg').then(r => r.text()).then(s => { SVG = s; go(); }).catch(finish);
   // the first state says whether animations are on, and the effect whose colours to use

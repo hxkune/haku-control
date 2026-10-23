@@ -123,7 +123,7 @@ class orgb_controller:
     def __init__(self, name, ctype, nleds, matrix, modes=MODES, active=1, loc='HID: fake', zones=None):
         self.name, self.ctype, self.modes, self.active, self.loc = name, ctype, modes, active, loc
         self.zones = zones or [('Main', nleds - 4, matrix, False), ('Logo', 4, None, False)]
-        self.stuck, self.counts = False, {}
+        self.stuck, self.counts, self.last = False, {}, 0
     def data(self):
         body = struct.pack('<i', self.ctype) + orgb_str(self.name) + orgb_str('fake device') + orgb_str('1.0') + orgb_str('SN1') + orgb_str(self.loc)
         body += struct.pack('<Hi', len(self.modes), self.active)
@@ -181,9 +181,9 @@ def orgb_client(c, addr):
             if pid == 50: log('openrgb', f'client name {data.rstrip(bytes(1)).decode()}')
             elif pid == 0: out(0, 0, struct.pack('<I', len(ORGB_CTRL)))
             elif pid == 1: out(1, dev, ORGB_CTRL[dev].data())
-            elif pid >= 9000:   # test only (orgb_test.c): 9000 the commands counted since the last ask,
+            elif pid >= 9000:   # test only (orgb_test.c): 9000 the commands counted since the last ask and the colour shown,
                 x = ORGB_CTRL[dev]  # 9001 mode commands ignored or not, 9002 OpenRGB changed the mode itself,
-                if pid == 9000: out(9000, dev, struct.pack('<IIII', *(x.counts.get(i, 0) for i in (1100, 1101, 1050, 1051)))); x.counts = {}
+                if pid == 9000: out(9000, dev, struct.pack('<IIIII', *(x.counts.get(i, 0) for i in (1100, 1101, 1050, 1051)), x.last)); x.counts = {}
                 elif pid == 9001: x.stuck = bool(data[0])
                 elif pid == 9002: x.active = data[0]
                 elif pid == 9003: c.close(); return   # 9003 the connection dropped
@@ -197,10 +197,12 @@ def orgb_client(c, addr):
                     i = struct.unpack('<I', data[4:8])[0]
                     log('openrgb', f'controller {dev}: mode {i}' + (' ignored' if x and x.stuck else ''))
                     if x and not x.stuck and i < len(x.modes): x.active = i
+                    if x and i < len(x.modes) and x.modes[i][2]: x.last = struct.unpack('<I', data[-4:])[0]   # the colour it shows: the mode's last
                 elif pid in (1050, 1051):
                     z = 4 if pid == 1051 else 0
                     n = struct.unpack('<H', data[4 + z:6 + z])[0]
                     first = data[6 + z:10 + z]
+                    if x and n: x.last = struct.unpack('<I', first)[0]
                     rates.setdefault((dev, pid), Rate(f'openrgb {dev}')).hit(f'{n} colours, first=#{first[:3].hex()}')
                 else: log('openrgb', f'packet {pid} ({size} bytes)')
     except (ConnectionError, OSError):

@@ -369,9 +369,9 @@
     await fresh();
     const d = devById(2), info = d.info, st = id => $('#dev-st-' + id).textContent;
     d.cap = 1; updateDevices();
-    ok(st(2).includes(t('cap.1')), 'effects not said: ' + st(2));
+    ok(st(2).includes(t('drive.1')), 'haku through Direct not said: ' + st(2));
     d.cap = 3; updateDevices();
-    ok(st(2).includes(t('cap.3')), 'steady colour only not said: ' + st(2));
+    ok(st(2).includes(t('drive.3')), 'steady colour only not said: ' + st(2));
     d.cap = 5; d.online = 0; updateDevices();
     ok(st(2) === t('cap.5'), 'a mode that did not switch not said: ' + st(2));
     d.cap = 4; d.info = 'OpenRGB · Keyboard · steady colour for the whole board only'; updateDevices();
@@ -1265,6 +1265,52 @@
     ok(['en', 'ru', 'fr'].every(l => ['home.first', 'home.attn', 'help.title', 'help.start.text', 'help.offline.text', 'help.orgb.text', 'help.conflict.text', 'help.fans.text', 'help.diag.text', 'help.diag.open'].every(k => STR[l][k])), 'a language misses the help texts');
   });
 
+  test('home cooling: old readings not shown as now, a lost QUADRO is one row while the board reads on; problems first, worst first, each opens its fan and goes once fixed', async () => {
+    await fresh(); await fanReset(); showTab('home');
+    const F = STATE.fans, q = F.f.slice(), rpm = n => n + ' ' + t('home.rpm'), cool = () => $('#home-cool').textContent;
+    const rows = () => HOME.attn.filter(x => x.fan), up = async () => { await fanEmit(); showTab('home'); updateHome(); };
+    F.chip = 'NCT6799D'; F.f.push({ b: 1, rpm: 900, pct: 40, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }); await up();
+    ok(cool().includes(rpm(q[0].rpm)) && cool().includes(rpm(900)) && !rows().length, 'fresh: ' + cool());
+    F.age = 9000; await up();
+    ok(!cool().includes(rpm(q[0].rpm)) && !cool().includes(rpm(q[1].rpm)) && cool().includes(t('fans.tile.old')) && cool().includes(rpm(900)), 'old readings shown as now, or the board lost with them: ' + cool());
+    ok(rows().length === 1 && rows()[0].n === 'QUADRO' && rows()[0].why === t('fans.st.old'), 'old readings: ' + JSON.stringify(rows()));
+    F.link = 0; await up();
+    ok(rows().length === 1 && rows()[0].why === t('fans.st.stale') && HOME.attn[0] === rows()[0] && cool().includes(t('fans.tile.nolink')) && cool().includes(rpm(900)), 'a lost link: ' + JSON.stringify(rows()) + cool());
+    $('#home-attn-list .found-row [data-a="open"]').click(); await wait(120);
+    ok(SHEET.kind === 'fan' && tab === 'home', 'the row does not open its fan');
+    closeSheet();
+    Object.assign(F, { link: 1, age: 400 }); await up();
+    ok(cool().includes(rpm(q[0].rpm)) && !rows().length, 'back: ' + cool());
+    // control asked and taken, or not confirmed: the line under the rpm tells which
+    setCfg('fans', 'fan2', 'curve'); Object.assign(F.f[1], { own: 1, want: 50, ok: 1 }); await up();
+    const line = () => $('#home-cool [data-hf="1"] small').textContent;
+    ok(line() === fanMode(1) + ' · ' + t('fans.st.ok'), 'applied: ' + line());
+    F.f[1].ok = 0; await up();
+    ok(line() === fanMode(1) + ' · ' + t('fans.st.unconf') && !rows().length, 'not confirmed: ' + line());
+    F.f[1].ok = -1; F.f[0].em = 'nosensor'; await up();
+    ok(rows().map(x => x.k).join() === '2,3' && rows()[0].n === fanName(0) && rows()[1].n === fanName(1), 'the worst first: ' + JSON.stringify(rows()));
+    F.f[0].em = ''; F.f[1].ok = 1; await up();
+    ok(!rows().length, 'still listed once fixed: ' + JSON.stringify(rows()));
+    F.f.splice(0, F.f.length, ...q); delete F.chip; setCfg('fans', 'fan2', '');
+    await fanReset(); showTab('home');
+    $('#home-cool').nextElementSibling.querySelector('[data-help=""]').click(); await wait(30);
+    ok($('#tab-settings').classList.contains('active'), 'Help and diagnostics on Home opens nothing');
+    showTab('home');
+  });
+
+  test('a device card keeps its last events: newest first, the same one counted not repeated, none shown without any', async () => {
+    await fresh(); showTab('devices');
+    const ev = id => $('#dev-ev-' + id), lines = id => ev(id).querySelector('pre').textContent.split('\n');
+    ok(ev(3) && !ev(3).classList.contains('hidden') && lines(3).length === 3, 'the events: ' + ev(3)?.textContent);
+    ok(lines(3)[0].endsWith(t('dev.ev.3') + ' ×4') && lines(3)[2].endsWith(t('dev.ev.1')), 'not newest first, or the repeat not counted: ' + lines(3));
+    ok(ev(1).classList.contains('hidden'), 'an empty history shown');
+    const d = devById(1), now = Date.now() / 1e3 | 0;
+    d.ev = [[now, 5, 3, 1], [now, 6, 2, 1]]; updateDevices();
+    ok(lines(1)[0].endsWith(t('dev.ev.6.2')) && lines(1)[1].endsWith(t('dev.ev.5', t('drive.3'))), 'mode or let go: ' + lines(1));
+    delete d.ev; updateDevices();
+    ok(['en', 'ru', 'fr'].every(l => ['dev.ev', 'dev.ev.1', 'dev.ev.2', 'dev.ev.3', 'dev.ev.4', 'dev.ev.5', 'dev.ev.6.0', 'dev.ev.6.1', 'dev.ev.6.2'].every(k => STR[l][k])), 'a language misses the event texts');
+  });
+
   test('help: the diagnostics file saved on a click, sends nothing else, then offered to open and check', async () => {
     await fresh(); showTab('settings');
     ok($('#help-diag-open').classList.contains('hidden'), 'Open to check shown before a file is saved');
@@ -1277,7 +1323,175 @@
     delete STATE.diag; emit(STATE); await wait(80); showTab('home');
   });
 
-  const only = decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it
+  test("help: the tray's Help opens the Help card, sends nothing", async () => {
+    await fresh(); showTab('home'); sent.length = 0;
+    emit({ type: 'go', to: 'help' }); await wait(80);
+    ok(tab === 'settings' && $('#tab-settings').classList.contains('active') && $('#help').offsetParent, 'not on the Help card: ' + tab);
+    ok(!sent.length, 'sent: ' + JSON.stringify(sent));
+    showTab('home');
+  });
+
+  test('a steady-colour-only controller: no effect to pick, the colour it holds told, one chosen in place', async () => {
+    await fresh();
+    const d = S.ext.devs.find(x => x.id === 10), sec = 'zone.dev10', was = { mode: cv(sec, 'mode', ''), palette: cv(sec, 'palette', '') };
+    const el = document.createElement('div'); el.className = 'zone'; el.dataset.zone = sec; document.body.appendChild(el);
+    try {
+      setCfg(sec, 'mode', 'effect'); setCfg(sec, 'palette', '');
+      d.cap = 3; renderZone(el);
+      ok(!el.querySelector('.zfx') && el.querySelector('.zsteady'), 'the effect choice shown: ' + el.innerHTML.slice(0, 200));
+      const ms = [...el.querySelectorAll('.seg button')].map(b => b.dataset.m).join();
+      ok(ms === 'static,white' && !el.querySelector('.seg button.on'), 'modes: ' + ms);
+      ok(el.querySelector('.zfb').textContent.includes(fxName(S.effect)), 'the colour it holds: ' + el.querySelector('.zfb').textContent);
+      el.querySelector('.seg button[data-m="static"]').click();
+      ok(cv(sec, 'mode') === 'static' && parsePal(cv(sec, 'palette'))[0] === effPal(S.effect)[0], 'Colour did not keep the one it held: ' + cv(sec, 'palette'));
+      ok(el.querySelector('.swatches') && el.querySelector('.seg button.on').dataset.m === 'static', 'no colour to pick');
+      delete d.cap; renderZone(el);
+      ok(el.querySelector('.zfx') && el.querySelectorAll('.seg button').length === MODES.length, 'a full controller lost its choices');
+    } finally { delete d.cap; el.remove(); setCfg(sec, 'palette', was.palette); setCfg(sec, 'mode', was.mode); }
+  });
+
+  // ---- animations: one setting, nothing left running, scenes that end cleanly (the preview's page counts as hidden,
+  // so these say it is in front while they run)
+  const shown = v => Object.defineProperty(document, 'hidden', { value: !v, configurable: true });
+  const motionWas = () => ({ theme: cv('general', 'theme', 'dark'), unlocked: cv('general', 'unlocked', ''), mo: cv('general', 'ui_motion', 'sys') });
+  const motionBack = w => {
+    delete document.hidden; delete RM.matches; sceneStop(false); document.body.classList.remove('idle');
+    $$('.ky-fly, .vchat').forEach(x => x.remove());
+    setCfg('general', 'unlocked', w.unlocked); setCfg('general', 'ui_motion', w.mo); applyMotion(); setTheme(w.theme);
+  };
+  const motion = v => { setCfg('general', 'ui_motion', v); applyMotion(); };
+
+  test('animations: Off and On apply at once, As in Windows follows the system, a choice made stays', async () => {
+    await fresh();
+    const w = motionWas(), calm = () => document.body.classList.contains('calm'), seg = v => $(`#ui-motion button[data-v="${v}"]`);
+    const sys = m => { Object.defineProperty(RM, 'matches', { value: m, configurable: true }); RM.dispatchEvent(new Event('change')); };
+    try {
+      showTab('settings');
+      seg('0').click(); ok(calm() && sets('general', 'ui_motion').pop().v === '0' && seg('0').classList.contains('on'), 'Off: ' + document.body.className);
+      seg('1').click(); ok(!calm(), 'On left it still');
+      sys(true); ok(!calm(), 'an On chosen gave way to the system');
+      seg('sys').click(); ok(calm() && seg('sys').classList.contains('on'), 'As in Windows did not follow "reduce"');
+      sys(false); ok(!calm(), 'As in Windows did not follow the system turning motion back on');
+      delete S.cfg.general.ui_motion; updateSettings();
+      ok($('#ui-motion button.on').dataset.v === 'sys', 'never chosen is not As in Windows: ' + $('#ui-motion button.on').dataset.v);
+    } finally { motionBack(w); showTab('home'); }
+  });
+
+  test('effect previews: one loop, only on Effects in front; the preset window opened twice runs one, none once closed', async () => {
+    await fresh();
+    const raf = window.requestAnimationFrame, caf = window.cancelAnimationFrame, Q = new Map();
+    let id = 1e6, now = performance.now();
+    caf(ANIM.raf); caf(PDLG.raf); ANIM.raf = PDLG.raf = 0;
+    window.requestAnimationFrame = cb => (Q.set(++id, cb), id);
+    window.cancelAnimationFrame = i => Q.delete(i);
+    const n = f => [...Q.values()].filter(c => c === f).length;
+    const tick = () => { const q = [...Q.values()]; Q.clear(); now += 34; q.forEach(c => c(now)); };
+    try {
+      showTab('effects'); previewWake(); previewWake();
+      ok(n(animate) === 1, 'loops on Effects: ' + n(animate));
+      tick(); tick(); ok(n(animate) === 1, 'loops after two frames: ' + n(animate));
+      document.body.classList.add('idle'); await wait(0); tick();
+      ok(n(animate) === 0 && !ANIM.raf, 'still running in the background');
+      document.body.classList.remove('idle'); await wait(0);
+      ok(n(animate) === 1, 'loops back in front: ' + n(animate));
+      showTab('home'); tick(); ok(n(animate) === 0, 'running off Effects');
+      presetDialog(0, 'x'); presetDialog(0, 'x');
+      ok(n(pdlgPreview) === 1, 'preset window loops: ' + n(pdlgPreview));
+      tick(); ok(n(pdlgPreview) === 1, 'preset window loops after a frame: ' + n(pdlgPreview));
+      closePresetDialog(); tick(); ok(n(pdlgPreview) === 0 && !PDLG.raf, 'the closed preset window still draws');
+    } finally {
+      window.requestAnimationFrame = raf; window.cancelAnimationFrame = caf; Q.clear();
+      closePresetDialog(); ANIM.raf = PDLG.raf = 0; previewWake(); showTab('home');
+    }
+  });
+
+  test('a code scene: a theme picked during it stays, it ends on its own timers, the background or Off ends it with its theme', async () => {
+    await fresh();
+    const w = motionWas(), th = () => document.documentElement.dataset.theme;
+    try {
+      shown(true); setCfg('general', 'unlocked', 'verity,kyoka,akapzz'); motion('1'); setTheme('dark');
+      kyokaArrives(); ok($('.kyoka-ov') && SCENE, 'no kyoka scene');
+      $('#theme button[data-v="grey"]').click();
+      ok(!$('.kyoka-ov') && !SCENE && !document.body.classList.contains('ky-pressing'), 'the scene stayed after a theme was picked');
+      await wait(2100);
+      ok(th() === 'grey' && cv('general', 'theme') === 'grey', 'the stopped scene brought its theme back: ' + th());
+      kyokaArrives(); await wait(4200);   // no animationend or transitionend needed: its own timers end it
+      ok(!$('.kyoka-ov') && !SCENE && th() === 'kyoka' && !document.body.classList.contains('ky-pressing'), 'did not end on its own: ' + th());
+      $$('.ky-fly').forEach(x => x.remove()); setTheme('dark');
+      akapzzArrives(); ok($('.akz-ov') && SCENE, 'no akapzz scene');
+      shown(false); document.dispatchEvent(new Event('visibilitychange'));
+      ok(!$('.akz-ov') && !SCENE && th() === 'akapzz', 'the background did not end it with its theme: ' + th());
+      shown(true); setTheme('dark');
+      kyokaArrives(); motion('0');
+      ok(!$('.kyoka-ov') && !SCENE && th() === 'kyoka', 'Off did not end it with its theme: ' + th());
+      setTheme('dark'); akapzzArrives();
+      ok(!$('.akz-ov') && !SCENE && th() === 'akapzz', 'with Off a scene still played: ' + th());
+    } finally { motionBack(w); }
+  });
+
+  test("verity's scene is only looks: the tab, title, a typed field and its focus stay", async () => {
+    await fresh();
+    const w = motionWas(), inp = $('#code-in'), body = document.body;
+    try {
+      shown(true); setCfg('general', 'unlocked', 'verity'); motion('1'); setTheme('dark');
+      showTab('settings'); codeShow(true); inp.value = 'abc'; inp.focus();
+      const title = $('#title').textContent, dt = document.title;
+      const same = () => tab === 'settings' && $('#title').textContent === title && document.title === dt && inp.value === 'abc' && document.activeElement === inp;
+      verityArrives(); await wait(400);
+      ok($('.vglitch') && same(), 'moved during the scene: ' + tab + ' / ' + $('#title').textContent + ' / ' + inp.value + ' / ' + (document.activeElement || {}).id);
+      ok(!document.documentElement.dataset.theme, 'the theme changed before the scene ended');
+      sceneStop(true);
+      ok(!$('.vglitch') && !body.classList.contains('glitching') && !['--gx', '--gy', '--sk', '--hue', '--v-rgb2', '--look'].some(p => body.style.getPropertyValue(p)), 'the scene left something: ' + body.getAttribute('style'));
+      ok(document.documentElement.dataset.theme === 'verity' && same(), 'after the scene: ' + document.documentElement.dataset.theme + ' / ' + tab);
+    } finally { inp.value = ''; codeShow(false); motionBack(w); showTab('home'); }
+  });
+
+  test('butterflies: paused in the background, none sent then, gone with Off; lights and fans not touched', async () => {
+    await fresh();
+    const w = motionWas(), body = document.body, paused = f => f.every(x => x.getAnimations().every(a => a.playState === 'paused'));
+    try {
+      shown(true); motion('1'); await wait(0); sent.length = 0;
+      hellButterflies(2); const f = $$('.ky-fly'); ok(f.length === 2, 'flying: ' + f.length);
+      body.classList.add('idle'); await wait(0);
+      ok(paused(f), 'still flying in the background');
+      hellButterflies(1); ok($$('.ky-fly').length === 2, 'a new one in the background');
+      body.classList.remove('idle'); await wait(0);
+      ok(!f.some(x => x.getAnimations().some(a => a.playState === 'paused')), 'not flying again in front');
+      motion('0'); await wait(0);
+      ok(!$$('.ky-fly').length, 'left flying with Off');
+      ok(!sent.some(o => o.cmd !== 'set' || o.s !== 'general'), 'the decorations sent: ' + JSON.stringify(sent));
+    } finally { motionBack(w); }
+  });
+
+  test('the intro: a key before it has loaded opens the page at once, the background ends it, stalled frames end it in bounded time', async () => {
+    const open = async () => {
+      const fr = document.createElement('iframe');
+      fr.style.cssText = 'position:fixed;left:0;top:0;width:800px;height:600px;opacity:0;pointer-events:none';
+      fr.src = '?mock#intro'; document.body.appendChild(fr);
+      let i = 0; while (i++ < 300 && !(fr.contentDocument && fr.contentDocument.URL.includes('mock') && fr.contentDocument.readyState !== 'loading')) await wait(5);
+      fr.contentWindow.setCfg('general', 'ui_motion', '1'); fr.contentWindow.applyMotion();   // whatever this Windows says
+      return fr;
+    };
+    const gone = fr => !fr.contentDocument.documentElement.classList.contains('intro') && !fr.contentDocument.getElementById('intro');
+    let fr = await open();
+    try {
+      const ov = fr.contentDocument.getElementById('intro');
+      ok(ov && !ov.classList.contains('run') && fr.contentDocument.documentElement.classList.contains('intro'), 'the intro had already started or was gone');
+      fr.contentWindow.dispatchEvent(new fr.contentWindow.KeyboardEvent('keydown', { key: 'Escape' }));
+      ok(gone(fr), 'a key before it loaded did not open the page');
+      fr.remove(); fr = await open();
+      let i = 0; while (i++ < 60 && !fr.contentDocument.querySelector('#intro.run')) await wait(50);
+      ok(fr.contentDocument.querySelector('#intro.run'), 'the intro did not start');
+      Object.defineProperty(fr.contentDocument, 'hidden', { value: true, configurable: true }); fr.contentDocument.dispatchEvent(new Event('visibilitychange'));
+      ok(gone(fr) && !fr.contentDocument.documentElement.classList.contains('intro-out'), 'the background did not end it, or ended it with the coming in');
+      fr.remove(); fr = await open();
+      i = 0; while (i++ < 140 && !gone(fr)) await wait(50);   // the preview's page is hidden: its frames hardly come, the worst slow case
+      ok(gone(fr), 'still on after 7 s');
+    } finally { fr.remove(); }
+  });
+
+  const only =decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it
+  setCfg('general', 'ui_motion', '1'); applyMotion();   // the tests move whatever this Windows says about motion
   for (const [name, fn] of tests) {
     if (only && !name.includes(only)) continue;
     try { await fn(); log.push('ok   ' + name); }

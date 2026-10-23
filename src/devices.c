@@ -25,7 +25,7 @@ static int     ndevs;
 
 // ---- shared (lock)
 static SRWLOCK lk = SRWLOCK_INIT;
-typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held, covered, cap; char name[64], host[64], info[96], kind[16], type[12]; int sub; } slot_t;
+typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held, covered, cap; char name[64], host[64], info[96], kind[16], type[12]; int sub, nev; ext_ev ev[EXT_EV]; } slot_t;
 static slot_t  slots[EXT_MAX];
 static int     nslots;
 static rgbf    frame[EXT_MAX][EXT_MAX_LEDS];
@@ -90,7 +90,7 @@ static void publish_slots(void) {
         strcpy_s(s->type, sizeof(s->type), ty);
         s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->fails = d->fails; s->enabled = d->enabled; s->own = d->own; s->same = d->same; s->held = d->held;
         s->covered = d->covered; s->cap = d->cap;
-        s->sub = d->sub;
+        s->sub = d->sub; s->nev = d->nev; memcpy(s->ev, d->ev, sizeof(s->ev));
         strcpy_s(s->name, sizeof(s->name), d->name); strcpy_s(s->host, sizeof(s->host), d->host);
         strcpy_s(s->info, sizeof(s->info), d->info); strcpy_s(s->kind, sizeof(s->kind), d->drv->kind);
     }
@@ -139,10 +139,12 @@ static void let_go(ext_dev *d, int how) {
     if (d->drv->leave) d->drv->leave(d, how);
     d->drv->close(d);
     d->online = 0;
+    ext_event(d, EV_LET, how);
     logf_("dev.%d (%s %s): released", d->id, d->drv->kind, d->host);
 }
 
 // Re-reads [dev.N] sections: unchanged devices stay connected, others are (re)created.
+static unsigned gens;
 static void load_config(void) {
     ext_dev nd[EXT_MAX]; int nn = 0;
     for (int id = 1; id <= 64 && nn < EXT_MAX; id++) {
@@ -151,7 +153,7 @@ static void load_config(void) {
         const ext_driver *drv = kind ? ext_driver_by_kind(kind) : NULL;
         if (!drv) continue;
         ext_dev *d = &nd[nn++]; memset(d, 0, sizeof(*d));
-        d->id = id; d->drv = drv; d->sock = INVALID_SOCKET;
+        d->id = id; d->drv = drv; d->sock = INVALID_SOCKET; d->gen = ++gens;
         strcpy_s(d->host, sizeof(d->host), cfg_get(sec, "host", ""));
         strcpy_s(d->name, sizeof(d->name), cfg_get(sec, "name", drv->title));
         d->sub = cfg_geti(sec, "sub", -1);
@@ -189,7 +191,9 @@ static void load_config(void) {
     for (int i = 0; i < nn; i++) {
         for (int k = 0; k < ndevs; k++) {
             ext_dev *o = &devs[k];
-            if (o->id == nd[i].id && o->drv == nd[i].drv && !strcmp(o->host, nd[i].host) && o->sub == nd[i].sub && o->cfg_leds == nd[i].cfg_leds &&
+            if (o->id != nd[i].id) continue;
+            memcpy(nd[i].ev, o->ev, sizeof(o->ev)); nd[i].nev = o->nev;   // its history goes on under new settings
+            if (o->drv == nd[i].drv && !strcmp(o->host, nd[i].host) && o->sub == nd[i].sub && o->cfg_leds == nd[i].cfg_leds &&
                 !strcmp(o->key, nd[i].key) && !strcmp(o->zones, nd[i].zones) && o->cfg_static == nd[i].cfg_static) {
                 ext_dev keep = *o;
                 keep.reverse = nd[i].reverse; keep.enabled = nd[i].enabled; keep.own = nd[i].own; keep.cfg_rate = nd[i].cfg_rate;
@@ -227,7 +231,7 @@ static unsigned __stdcall worker(void *p) {
     net_init();
     static rgbf  cur[EXT_MAX_LEDS];
     static BYTE  last8[EXT_MAX][EXT_MAX_LEDS * 3];
-    DWORD last_send[EXT_MAX] = { 0 };
+    DWORD last_send[EXT_MAX] = { 0 }, due[EXT_MAX] = { 0 };
     LONG  seen[EXT_MAX] = { 0 };
     int   orgb_look = 1;
     load_config();
@@ -252,26 +256,31 @@ static unsigned __stdcall worker(void *p) {
             opener_t *o = openers[i];
             if (!o || !o->done) continue;
             openers[i] = NULL;
-            ext_dev *d = NULL;
-            for (int k = 0; k < ndevs; k++)
-                if (devs[k].id == o->d.id && devs[k].drv == o->d.drv && !strcmp(devs[k].host, o->d.host) && devs[k].sub == o->d.sub && !devs[k].online) d = &devs[k];
+            int how, k = ext_open_fate(devs, ndevs, &o->d, &how);
+            ext_dev *d = k >= 0 ? &devs[k] : NULL;
+            if (d && d->cap != o->d.cap && o->d.cap) ext_event(d, EV_CAP, o->d.cap);   // the mode it takes, when it changes
             if (d) d->cap = o->d.cap;
-            if (o->ok && d && d->enabled && !d->own && !d->held && !d->covered) {
-                int k = (int)(d - devs);
+            if (o->ok && d && how < 0) {
                 d->sock = o->d.sock; d->priv = o->d.priv; d->nleds = o->d.nleds; d->rate = o->d.rate;
                 strcpy_s(d->info, sizeof(d->info), o->d.info); strcpy_s(d->key, sizeof(d->key), o->d.key);
                 d->online = 1; d->up_at = now; seen[k] = 0;   // fails stays until it has held a while (connection lost, below)
+                due[k] = now; last_send[k] = now - 1000;
                 memset(last8[k], 0, sizeof(last8[k]));
                 if (d->cfg_leds > 0 && d->drv->per_led) d->nleds = min(d->cfg_leds, d->nleds > 0 ? d->nleds : d->cfg_leds);
                 if (d->nleds > EXT_MAX_LEDS) d->nleds = EXT_MAX_LEDS;
+                int back = d->nev && (d->ev[d->nev - 1].code == EV_LOST || d->ev[d->nev - 1].code == EV_FAIL);
+                ext_event(d, back ? EV_BACK : EV_ONLINE, 0);
                 logf_("dev.%d (%s %s): online, %d LEDs %s%s", d->id, d->drv->kind, d->host, d->nleds, d->info, d->fails ? " (after failed attempts)" : "");
-            } else if (o->ok) {
-                o->d.drv->close(&o->d);   // removed, changed or switched off meanwhile
+            } else if (o->ok) {   // removed, changed or switched off meanwhile: let go as it would have been, had it been taken
+                if (how != LEAVE_KEEP && o->d.drv->leave) o->d.drv->leave(&o->d, how);
+                o->d.drv->close(&o->d);
+                logf_("dev.%d (%s %s): connected under settings no longer current, let go", o->d.id, o->d.drv->kind, o->d.host);
             } else if (d) {
                 if (o->d.info[0]) strcpy_s(d->info, sizeof(d->info), o->d.info);   // why, if the driver says (e.g. a missing key)
                 d->fails++;
                 DWORD wait = retry_wait(d->fails);
                 d->next_try = now + wait;
+                ext_event(d, EV_FAIL, 0);
                 if (wait != retry_wait(d->fails - 1))   // the first failure and each longer wait, not every attempt
                     logf_("dev.%d (%s %s): not reachable (%d attempts, %s): next try in %lu s", d->id, d->drv->kind, d->host,
                           d->fails, d->info[0] ? d->info : "no answer", wait / 1000);
@@ -314,8 +323,8 @@ static unsigned __stdcall worker(void *p) {
             // frames/s: chosen in the window, else the driver's; never past what the device takes (set by the driver on open)
             float fps = d->cfg_rate > 0 ? d->cfg_rate : d->drv->rate > 0 ? d->drv->rate : 10;
             if (d->rate > 0 && fps > d->rate) fps = d->rate;
-            int interval = (int)(1000 / fps);
-            if ((int)(now - last_send[k]) < interval - interval / 4) continue;   // frames come every ~33 ms: allow jitter
+            int interval = (int)(1000 / fps + .999f), hard = d->rate > 0 ? (int)(1000 / d->rate + .999f) : 0;
+            if (!ext_pace_due(now, due[k], last_send[k], hard)) continue;
             BYTE q[EXT_MAX_LEDS * 3];
             for (int i = 0; i < n; i++) { cur[i].r *= d->gain[0]; cur[i].g *= d->gain[1]; cur[i].b *= d->gain[2]; }   // [dev.N] warmth
             for (int i = 0; i < n; i++) { q[i * 3] = to8(cur[i].r); q[i * 3 + 1] = to8(cur[i].g); q[i * 3 + 2] = to8(cur[i].b); }
@@ -326,6 +335,7 @@ static unsigned __stdcall worker(void *p) {
             char was[sizeof(d->info)]; strcpy_s(was, sizeof(was), d->info);
             if (d->drv->send(d, cur, n)) {
                 memcpy(last8[k], q, n * 3);
+                due[k] = ext_pace_next(now, due[k], interval);
                 last_send[k] = now;
                 if (strcmp(was, d->info)) changed_state = 1;   // the driver's own news (TRYX: the upload's %)
             } else {
@@ -334,6 +344,7 @@ static unsigned __stdcall worker(void *p) {
                 if (now - d->up_at >= 60000) d->fails = 0;
                 d->fails++;
                 DWORD wait = d->fails == 1 ? 2000 : retry_wait(d->fails);
+                ext_event(d, EV_LOST, 0);
                 logf_("dev.%d (%s %s): connection lost after %lu s: next try in %lu s", d->id, d->drv->kind, d->host, (now - d->up_at) / 1000, wait / 1000);
                 d->drv->close(d);
                 d->online = 0; d->next_try = now + wait;
@@ -418,6 +429,27 @@ void ext_slot_type(int k, char *out, int cap) {
     AcquireSRWLockShared(&lk);
     snprintf(out, cap, "%s", k < nslots ? slots[k].type : "strip");
     ReleaseSRWLockShared(&lk);
+}
+
+int ext_slot_steady(int k) {
+    AcquireSRWLockShared(&lk);
+    int s = k < nslots && slots[k].cap == CAP_STEADY;
+    ReleaseSRWLockShared(&lk);
+    return s;
+}
+
+// For the tray: its name (the driver's title if it has none) and 1 on, 2 reached, 4 left to its own lighting, 8 a try failed,
+// 16 held or covered by another app or device, 32 needs Pro; -1 none
+int ext_slot_menu(int k, char *name, int cap) {
+    AcquireSRWLockShared(&lk);
+    int r = -1;
+    if (k < nslots) {
+        slot_t *s = &slots[k]; const ext_driver *drv = ext_driver_by_kind(s->kind);
+        snprintf(name, cap, "%s", *s->name ? s->name : drv ? drv->title : s->kind);
+        r = (s->enabled ? 1 : 0) | (s->online ? 2 : 0) | (s->own ? 4 : 0) | (s->fails ? 8 : 0) | (s->held || s->covered ? 16 : 0) | (pro_kind(s->kind) ? 32 : 0);
+    }
+    ReleaseSRWLockShared(&lk);
+    return r;
 }
 
 int ext_slot_id(int k) {
@@ -535,16 +567,19 @@ void ext_remove(int id) {
 int ext_json(char *out, int cap) {
     int n = snprintf(out, cap, "{\"devs\":[");
     AcquireSRWLockShared(&lk);
-    for (int k = 0; k < nslots && n < cap - 600; k++) {
+    for (int k = 0; k < nslots && n < cap - 800; k++) {
         slot_t *s = &slots[k];
-        char nm[140], inf[200], host[140], zs[300], sec[16];
+        char nm[140], inf[200], host[140], zs[300], sec[16], ev[EXT_EV * 28 + 4]; int m = 0;
+        for (int e = 0; e < s->nev; e++)   // [time, what, its detail, times in a row]
+            m += snprintf(ev + m, sizeof(ev) - m, "%s[%u,%d,%d,%d]", e ? "," : "", s->ev[e].t, s->ev[e].code, s->ev[e].a, s->ev[e].n);
+        ev[m] = 0;
         json_escape_to(nm, sizeof(nm), s->name); json_escape_to(inf, sizeof(inf), s->info); json_escape_to(host, sizeof(host), s->host);
         snprintf(sec, sizeof(sec), "dev.%d", s->id);
         json_escape_to(zs, sizeof(zs), cfg_get(sec, "zones_found", ""));   // resizable zones (OpenRGB), "name:count:min:max|..."
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"covered\":%d,\"cap\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\"}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->covered, s->cap, s->type, inf, pro_kind(s->kind), zs);
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"covered\":%d,\"cap\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\",\"ev\":[%s]}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->covered, s->cap, s->type, inf, pro_kind(s->kind), zs, ev);
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {

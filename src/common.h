@@ -142,6 +142,8 @@ void ext_suspend(int sleeping);
 int  ext_count(void);                     // configured devices ("slots")
 int  ext_slot_leds(int k);                // LEDs of slot k in the scene (0: disabled / not known yet)
 int  ext_slot_id(int k);                  // N of its [dev.N] section
+int  ext_slot_menu(int k, char *name, int cap);   // name and 1 on | 2 reached | 4 own lighting | 8 a try failed | 16 held | 32 Pro; -1 none
+int  ext_slot_steady(int k);              // 1: the controller holds one steady colour only, no animation
 int  ext_slot_strip(int k);               // 1: addressable strip, 0: separate lights
 void ext_slot_type(int k, char *out, int cap);   // strip, tv, bars, floor, lamp, panels, bulb
 int  ext_layout_changed(void);            // 1 once after a device appeared / changed its LED count
@@ -223,6 +225,7 @@ void fans_feed(float gpu_temp, DWORD at); // the render loop's GPU reading and w
 int  fans_need_gpu(void);
 float fans_water(void);                 // the first connected temperature sensor, NAN when none
 int  fans_json(char *out, int cap);
+int  fans_trouble(void);                  // 1 the QUADRO not heard from, 2 a channel on its emergency speed, 0 neither
 // ---- lianli.c: Lian Li wireless fans through their USB dongle, read only (own thread)
 void ll_start(void);
 void ll_stop(void);
@@ -335,6 +338,7 @@ HICON app_icon(int big);
 
 // ---- ui_web.cpp: settings window, exists only while open
 void  ui_open(HINSTANCE inst);
+void  ui_open_help(HINSTANCE inst);       // the window, on its Help card
 void  ui_refresh(void);                 // effect/brightness changed elsewhere (hotkey, tray)
 int   ui_is_dialog_message(MSG *m);
 

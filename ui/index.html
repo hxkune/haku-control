@@ -120,6 +120,7 @@
     </div>
     <!-- the fans as they run now; set on the Fans tab -->
     <button class="card home-cool hidden" type="button" id="home-cool"></button>
+    <div class="home-help"><button class="btn small ghost" type="button" data-help=""><span data-i18n="help.title">Help and diagnostics</span></button></div>
   </section>
 
   <!-- ============ EFFECTS ============ -->
@@ -586,9 +587,10 @@
           <div><b data-i18n="hotspot">Windows hotspot</b><p class="muted" id="hotspot-status"></p></div>
           <label class="switch"><input type="checkbox" id="hotspot-auto"><span></span></label>
         </div>
-        <div class="set-row">
-          <div><b data-i18n="motion">Animations</b><p class="muted" data-i18n="motion.note"></p></div>
-          <label class="switch"><input type="checkbox" id="ui-motion"><span></span></label>
+        <div class="field">
+          <div class="lbl"><span data-i18n="motion">Animations</span></div>
+          <div class="seg" id="ui-motion"><button data-v="sys" data-i18n="motion.sys">As in Windows</button><button data-v="1" data-i18n="motion.on">On</button><button data-v="0" data-i18n="motion.off">Off</button></div>
+          <p class="muted" data-i18n="motion.note"></p>
         </div>
         <div class="field">
           <div class="lbl"><span data-i18n="onexit">On PC shutdown, sleep or exit</span></div>

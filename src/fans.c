@@ -539,6 +539,16 @@ float fans_water(void) {
     return t;
 }
 
+// for the tray tip: 1 the QUADRO is not heard from (as the panel shows it), 2 a channel runs its emergency speed, else 0
+int fans_trouble(void) {
+    if (!th) return 0;
+    EnterCriticalSection(&cs);
+    int r = st.on && !paused && (!st.link || GetTickCount() - st.seen > STALE_MS) ? 1 : 0;
+    for (int f = 0; !r && f < FANS + bd.n; f++) if (ch[f].em) r = 2;
+    LeaveCriticalSection(&cs);
+    return r;
+}
+
 int fans_json(char *out, int cap) {
     if (!th) return snprintf(out, cap, "{\"on\":0}");
     DWORD now = GetTickCount(), at = (DWORD)gpu_at; LONG g = gpu_c; int cpuok = cpu_can(); float cpu = cpu_last();

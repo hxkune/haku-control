@@ -148,7 +148,7 @@ function applyTheme() {
   const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
   Object.assign(THEME, { ink: g('--ink'), hi: g('--text'), mid: g('--muted'), lo: g('--faint'), tip: g('--menu') });
   $$('#theme button').forEach(b => b.classList.toggle('on', b.dataset.v === th));
-  if (th === 'kyoka' && !kyTimer) kyTimer = setTimeout(kyWrite, 0); else if (th !== 'kyoka') { clearTimeout(kyTimer); kyTimer = 0; }
+  if (th === 'kyoka' && !kyTimer) kyTimer = setTimeout(kyWrite, 0); else if (th !== 'kyoka') { clearTimeout(kyTimer); kyTimer = 0; $$('.ky-fly').forEach(f => f.remove()); }
   setTimeout(skyRun);   // (declared further down)
 }
 
@@ -176,49 +176,62 @@ function veritySays(i) {
   setTimeout(() => d.remove(), 7200);
   verityNext = Date.now() + (3 + Math.random() * 4) * 60000;
 }
-// only haku's own Animations switch stops them, like everything else here (not Windows' animation effects,
-// which many turn off for speed)
+// one Animations setting: on, off, or as Windows says (prefers-reduced-motion) when never chosen
 const stillMotion = () => document.body.classList.contains('calm');
+const quiet = () => document.hidden || document.body.classList.contains('idle');   // timers and Web Animations wait
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+const motionPref = () => { const v = String(cv('general', 'ui_motion', 'sys')); return v === '1' || v === '0' ? v : 'sys'; };
+// a code's entrance scene: one at a time; a key or a click skips it, anything else ends it with stop(apply)
+let SCENE = null;
+function sceneStart(stop) {
+  sceneStop(true);
+  const t0 = performance.now(), skip = e => { if (e.timeStamp > t0) sceneStop(true); };
+  addEventListener('keydown', skip, true); addEventListener('pointerdown', skip, true);
+  SCENE = apply => { removeEventListener('keydown', skip, true); removeEventListener('pointerdown', skip, true); stop(apply); };
+}
+function sceneStop(apply) { const s = SCENE; SCENE = null; if (s) s(apply); }
+function applyMotion() {
+  const v = motionPref(), calm = v === '0' || (v === 'sys' && RM.matches);
+  document.body.classList.toggle('calm', calm);
+  if (calm) sceneStop(true);
+}
+RM.addEventListener('change', applyMotion);
+applyMotion();   // before the first state, so the intro already knows
 
-// verity's code: for about three seconds the window breaks down (it shakes, tears, flips colours and themes, jumps
-// between tabs, the ball shows both its faces), then the theme is on and verity says hello. Without animations
-// the theme just comes on.
-let verityBusy = false;
+// verity's code: for about three seconds the window breaks down (it shakes, tears, flips colours, the ball shows
+// both its faces), then the theme is on and verity says hello. Only looks: the tab, title and fields stay as they
+// are. Without animations the theme just comes on.
 function verityArrives() {
-  if (verityBusy) return;
-  const done = () => { showTab(back); setTheme('verity'); veritySays(0); };
-  const back = tab;
-  if (stillMotion()) { done(); return; }
-  verityBusy = true;
-  const tabs = $$('#nav button').filter(b => b.offsetParent && b.dataset.tab).map(b => b.dataset.tab);
-  const looks = ['', 'light', 'grey', 'bubblegum', 'verity'];
+  const done = () => { setTheme('verity'); veritySays(0); };
+  if (stillMotion()) { sceneStop(false); done(); return; }
   const words = ['h̷̢e̸l̵l̶o̷?', 'V E R I T Y', 'ERR 0x5M1L3', ':)', 'i̸ ̷s̵e̶e̷ ̸y̵o̶u̸', 'l̶e̸t̷ ̵m̶e̴ ̷i̵n̶', '☺☺☺☺☺☺'];
+  const looks = ['', 'grayscale(1) brightness(1.15)', 'hue-rotate(290deg) saturate(1.3)', 'sepia(.5) hue-rotate(-30deg)', 'contrast(1.25) brightness(.85)'];
   const pick = a => a[Math.floor(Math.random() * a.length)];
-  const root = document.documentElement, body = document.body;
+  const body = document.body;
   const ov = document.createElement('div'); ov.className = 'vglitch';
+  let timer = 0;
+  sceneStart(apply => {
+    clearTimeout(timer); ov.remove(); body.classList.remove('glitching');
+    ['--gx', '--gy', '--sk', '--hue', '--v-rgb2', '--look'].forEach(p => body.style.removeProperty(p));
+    if (apply) done();
+  });
   body.appendChild(ov); body.classList.add('glitching');
   const t0 = Date.now(), len = 3200;
   (function step() {
     const k = (Date.now() - t0) / len;
-    if (k >= 1) {
-      ov.remove(); body.classList.remove('glitching');
-      ['--gx', '--gy', '--sk', '--hue', '--v-rgb2'].forEach(p => body.style.removeProperty(p));
-      verityBusy = false; done(); return;
-    }
+    if (k >= 1) { sceneStop(true); return; }
     const hard = k > .55;   // it gets worse towards the end
     const r = (n) => (Math.random() * 2 - 1) * n;
-    body.style.setProperty('--gx', r(hard ? 18 : 8).toFixed(1) + 'px');
-    body.style.setProperty('--gy', r(hard ? 8 : 3).toFixed(1) + 'px');
-    body.style.setProperty('--sk', r(hard ? 6 : 2).toFixed(1) + 'deg');
+    body.style.setProperty('--gx', r(hard ? 10 : 5).toFixed(1) + 'px');
+    body.style.setProperty('--gy', r(hard ? 5 : 2).toFixed(1) + 'px');
+    body.style.setProperty('--sk', r(hard ? 3 : 1.5).toFixed(1) + 'deg');
     body.style.setProperty('--hue', (Math.random() < .3 ? r(180) : 0).toFixed(0) + 'deg');
     body.style.setProperty('--v-rgb2', Math.random() < .6 ? 'drop-shadow(4px 0 0 rgba(255,0,60,.7)) drop-shadow(-4px 0 0 rgba(0,240,255,.7))' : 'hue-rotate(0deg)');
-    if (Math.random() < .45) showTab(pick(tabs));
-    root.dataset.theme = pick(looks); if (!root.dataset.theme) delete root.dataset.theme;
-    if (Math.random() < .5) $('#title').textContent = pick(words);
+    body.style.setProperty('--look', pick(looks));   // '' drops it
     ov.innerHTML = '';
     for (let n = 0; n < 2 + Math.floor(Math.random() * (hard ? 6 : 3)); n++) {
       const b = document.createElement('i');
-      b.style.top = Math.random() * 100 + '%'; b.style.height = 2 + Math.random() * (hard ? 90 : 40) + 'px';
+      b.style.top = Math.random() * 100 + '%'; b.style.height = 2 + Math.random() * (hard ? 40 : 20) + 'px';
       b.style.setProperty('--h', Math.floor(Math.random() * 360) + 'deg');
       ov.appendChild(b);
     }
@@ -228,7 +241,7 @@ function verityArrives() {
       ov.appendChild(f);
     }
     if (Math.random() < .35) { const w = document.createElement('div'); w.className = 'vg-text'; w.textContent = '<Verity> ' + pick(words); ov.appendChild(w); }
-    setTimeout(step, 60 + Math.random() * (hard ? 70 : 140));
+    timer = setTimeout(step, 60 + Math.random() * (hard ? 70 : 140));
   })();
 }
 
@@ -236,7 +249,7 @@ function verityArrives() {
 (function ballGlitch() {
   setTimeout(() => {
     const w = $('.watermark');
-    if (w && document.documentElement.dataset.theme === 'verity' && !document.hidden && !stillMotion()) {
+    if (w && document.documentElement.dataset.theme === 'verity' && !quiet() && !stillMotion()) {
       w.classList.remove('vg'); void w.offsetWidth; w.classList.add('vg');
       setTimeout(() => w.classList.remove('vg'), 2700);
     }
@@ -245,7 +258,7 @@ function verityArrives() {
 })();
 
 setInterval(() => {
-  if (document.documentElement.dataset.theme !== 'verity' || document.hidden) return;
+  if (document.documentElement.dataset.theme !== 'verity' || quiet()) return;
   if (!verityNext) verityNext = Date.now() + 2 * 60000;
   else if (Date.now() > verityNext) veritySays();
 }, 20000);
@@ -329,18 +342,15 @@ function skyRun() {
   if (SKY.on && !SKY.raf) { if (!SKY.stars.length) skyBuild(); SKY.last = 0; SKY.raf = requestAnimationFrame(skyFrame); }
   if (!SKY.on && SKY.raf) { cancelAnimationFrame(SKY.raf); SKY.raf = 0; }
 }
-document.addEventListener('visibilitychange', skyRun);
 addEventListener('resize', () => { if (SKY.on) { skyBuild(); if (!SKY.raf) SKY.raf = requestAnimationFrame(skyFrame); } });
-new MutationObserver(skyRun).observe(document.body, { attributes: true, attributeFilter: ['class'] });   // calm on / off
 
 // the code: a galaxy turns out of the dark, its arms of stars winding round a bright core, then it rushes past
 // (the theme comes on behind it) and leaves the sky
-let akapzzBusy = false;
 function akapzzArrives() {
-  if (akapzzBusy) return;
-  if (stillMotion()) { setTheme('akapzz'); return; }
-  akapzzBusy = true;
+  if (stillMotion()) { sceneStop(false); setTheme('akapzz'); return; }
+  let raf = 0, themed = false, last = 0;
   const ov = document.createElement('div'); ov.className = 'akz-ov';
+  sceneStart(apply => { cancelAnimationFrame(raf); ov.remove(); if (apply && !themed) setTheme('akapzz'); });
   ov.innerHTML = '<canvas></canvas><div class="akz-name"><b>akapzz</b><small>✦ under the same stars</small></div>';
   document.body.appendChild(ov);
   const cvs = ov.querySelector('canvas'), d = devicePixelRatio || 1, W = innerWidth, H = innerHeight;
@@ -353,10 +363,12 @@ function akapzzArrives() {
     return { u, ang, z: (rnd() - .5) * .06, r: core ? .5 + rnd() * 1.1 : .3 + rnd() * .9, blue: rnd() < .5, b: .4 + rnd() * .6 };
   });
   const T0 = performance.now(), DUR = 3800;
-  let themed = false;
   const frame = now => {
+    raf = requestAnimationFrame(frame);
+    if (now - last < 33) return;   // ~30 frames a second
+    last = now;
     const t = (now - T0) / DUR;
-    if (t >= 1) { ov.remove(); akapzzBusy = false; return; }
+    if (t >= 1) { sceneStop(true); return; }
     if (t > .62 && !themed) { themed = true; setTheme('akapzz'); ov.classList.add('reveal'); }
     const ease = x => 1 - Math.pow(1 - x, 3);
     // grows out of a point (0 -> .45), turns, then rushes towards you (.62 -> 1)
@@ -378,17 +390,14 @@ function akapzzArrives() {
       const r = p.r * (1 + rush * 2.5);
       c.fillRect(x - r / 2, y - r / 2, r, r);
     }
-    requestAnimationFrame(frame);
   };
-  requestAnimationFrame(frame);
+  raf = requestAnimationFrame(frame);
 }
 
-let kyokaBusy = false;
 function kyokaArrives() {
-  if (kyokaBusy) return;
-  if (stillMotion()) { setTheme('kyoka'); return; }
-  kyokaBusy = true;
-  const body = document.body, rnd = (a, b) => a + Math.random() * (b - a);
+  if (stillMotion()) { sceneStop(false); setTheme('kyoka'); return; }
+  const body = document.body, rnd = (a, b) => a + Math.random() * (b - a), T = [];
+  let themed = false;
   // cracks: jagged lines from the middle out past the edges, and broken rings round the point of impact (pixels)
   const W = innerWidth, H = innerHeight, cx = W / 2, cy = H / 2, R = Math.hypot(W, H) / 2;
   let paths = '';
@@ -406,12 +415,17 @@ function kyokaArrives() {
   ov.className = 'kyoka-ov';
   ov.innerHTML = `<div class="ky-press"></div><div class="ky-slash"></div><svg class="ky-cracks" viewBox="0 0 ${W} ${H}">${paths}</svg>
     <div class="ky-name"><b>鏡花水月</b><small>kyōka suigetsu · complete hypnosis</small></div>`;
+  sceneStart(apply => {
+    T.forEach(clearTimeout); ov.getAnimations({ subtree: true }).forEach(a => a.cancel()); ov.remove();
+    body.classList.remove('ky-pressing');
+    if (apply && !themed) setTheme('kyoka');
+  });
   body.appendChild(ov); body.classList.add('ky-pressing');
-  setTimeout(() => ov.classList.add('cut'), 650);
-  setTimeout(() => ov.classList.add('crack'), 900);
-  setTimeout(() => {
+  T.push(setTimeout(() => ov.classList.add('cut'), 650));
+  T.push(setTimeout(() => ov.classList.add('crack'), 900));
+  T.push(setTimeout(() => {
     // the illusion breaks: shards of dark glass (a jittered grid cut into triangles) fly out from the middle and fall
-    setTheme('kyoka');
+    themed = true; setTheme('kyoka');
     body.classList.remove('ky-pressing');
     ov.classList.add('break');
     const N = 7, M = 5, P = [];
@@ -434,12 +448,13 @@ function kyokaArrives() {
                  { transform: `translate(${(mx * rnd(.5, 1.1)).toFixed(1)}vw, ${(my * rnd(.4, .9) + rnd(40, 90)).toFixed(1)}vh) rotate(${rnd(-160, 160).toFixed(0)}deg) scale(${rnd(.6, .95).toFixed(2)})`, opacity: 0 }],
                 { duration: rnd(900, 1500), delay: dist * 9 + rnd(0, 120), easing: 'cubic-bezier(.4,0,.8,.6)', fill: 'forwards' });
     });
-  }, 1900);
-  setTimeout(() => { ov.remove(); kyokaBusy = false; hellButterflies(4); }, 3900);
+  }, 1900));
+  T.push(setTimeout(() => { sceneStop(true); hellButterflies(4); }, 3900));
 }
 // hell butterflies (jigokuchō): black, with a violet glow, crossing the window on a wavering path, head first,
 // each wing beating on its own
 function hellButterflies(n) {
+  if (quiet() || stillMotion()) return;
   for (let k = 0; k < n; k++) {
     const f = document.createElement('i');
     f.className = 'ky-fly';
@@ -458,13 +473,13 @@ function hellButterflies(n) {
       frames.push({ transform: `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px) rotate(${head.toFixed(0)}deg)` });
     }
     const dur = 10000 + Math.random() * 5000, delay = k * 800 + Math.random() * 600;
-    f.animate(frames, { duration: dur, delay, easing: 'linear', fill: 'both' });
-    setTimeout(() => f.remove(), dur + delay + 300);
+    const a = f.animate(frames, { duration: dur, delay, easing: 'linear', fill: 'both' });
+    a.finished.then(() => f.remove(), () => f.remove());   // cancelled counts too
   }
 }
 (function butterflyTimer() {
   setTimeout(() => {
-    if (document.documentElement.dataset.theme === 'kyoka' && !document.hidden && !stillMotion()) hellButterflies(1 + Math.floor(Math.random() * 2));
+    if (document.documentElement.dataset.theme === 'kyoka') hellButterflies(1 + Math.floor(Math.random() * 2));
     butterflyTimer();
   }, 45000 + Math.random() * 60000);
 })();
@@ -501,6 +516,7 @@ function kyWrite() {
   box.getAnimations({ subtree: true }).forEach(a => a.cancel());
   const paths = $$('.ky-script mask path');
   if (stillMotion()) { paths.forEach(p => { p.style.strokeDashoffset = 0; }); return; }
+  if (quiet()) return;   // decorWake writes it again on return
   paths.forEach(p => { p.style.strokeDashoffset = ''; });
   let t = 400, last = null;
   paths.forEach(p => {
@@ -515,7 +531,19 @@ function kyWrite() {
   box.animate([{ opacity: .5 }, { opacity: .5, offset: (t + hold) / (t + hold + fade) }, { opacity: 0 }], { duration: t + hold + fade, fill: 'forwards' });
   kyTimer = setTimeout(kyWrite, t + hold + fade + 900);
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && document.documentElement.dataset.theme === 'kyoka' && !kyTimer) kyWrite(); });
+// the decorations follow the window: paused while it is hidden or in the background, gone with animations off, and
+// started again (once) on return; the effect previews too
+function decorWake() {
+  skyRun();
+  if (document.hidden) sceneStop(true);
+  const q = quiet(), still = stillMotion();
+  $$('.ky-fly').forEach(f => still ? f.remove() : f.getAnimations().forEach(a => q ? a.pause() : a.play()));
+  if ((q || still) && kyTimer) { clearTimeout(kyTimer); kyTimer = 0; if (!still) $('.ky-script')?.getAnimations({ subtree: true }).forEach(a => a.pause()); }
+  if (document.documentElement.dataset.theme === 'kyoka' && ((!q && !kyTimer) || still)) kyWrite();
+  previewWake();
+}
+document.addEventListener('visibilitychange', decorWake);
+new MutationObserver(decorWake).observe(document.body, { attributes: true, attributeFilter: ['class'] });   // calm, idle
 
 // ------------------------------------------------------------------ colour helpers
 const hex2rgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -742,8 +770,7 @@ function showTab(t) {
   const bn = brandName(t);
   $('#title').textContent = bn || window.t('nav.' + t);
   $('#subtitle').textContent = bn ? window.t('sub.brand', S.ext.devs.filter(d => brandTab(d) === t).length) : window.t('sub.' + t + (t === 'fans' && !(S.fans || {}).q ? '.b' : ''));
-  requestAnimationFrame(sizeCanvases);
-  $$(`#tab-${t} .card, #tab-${t} .fx`).forEach((c, i) => c.style.setProperty('--i', Math.min(i, 14)));
+  requestAnimationFrame(sizeCanvases); previewWake();
   try { localStorage.setItem('tab', t); } catch (e) { }
 }
 
@@ -893,32 +920,35 @@ function zoneMode(section) {
 }
 // What a device's zone can do: 'white' (white light only: Elgato Key Light, Ring Light; its range in K from the
 // driver, [dev.N] caps / kmin / kmax), 'onoff' (only switched on and off here: a Govee sync box in its own mode),
-// or '' (everything). Only what applies is shown, and a group does not push the rest onto it.
+// 'steady' (one steady colour only: an OpenRGB controller with no Direct mode, cap 3), or '' (everything). Only what
+// applies is shown, and a group does not push the rest onto it.
 function zoneCaps(zone) {
   const m = /^zone\.dev(\d+)$/.exec(zone || ''); if (!m) return { kind: '' };
   const sec = 'dev.' + m[1], d = (S.ext.devs || []).find(x => x.id === +m[1]);
   if (d && d.kind === 'goveecloud' && gcSync(d, sec)) return { kind: 'onoff' };
   if (cv(sec, 'caps', '') === 'white') return { kind: 'white', kmin: +cv(sec, 'kmin', 2700), kmax: +cv(sec, 'kmax', 6500) };
+  if (d && d.kind === 'openrgb' && d.cap === 3) return { kind: 'steady' };
   return { kind: '' };
 }
-const zoneTakes = (zone, k) => { const c = zoneCaps(zone).kind; return !c || (c === 'white' && (k === 'brightness' || k === 'kelvin')); };
+const zoneTakes = (zone, k) => { const c = zoneCaps(zone).kind; return !c || c === 'steady' || (c === 'white' && (k === 'brightness' || k === 'kelvin')); };
 
 function renderZone(el) {
   const section = el.dataset.zone, caps = zoneCaps(section);
   if (caps.kind === 'onoff') { el.innerHTML = `<p class="note">${t('zone.onoff')}</p>`; return; }
   if (caps.kind === 'white') { renderWhiteZone(el, section, caps); return; }
-  const mode = zoneMode(section);
+  const mode = zoneMode(section), steady = caps.kind === 'steady', modes = steady ? ['static', 'white'] : MODES;
   const k = +cv(section, 'kelvin', 4000), br = +cv(section, 'brightness', 100);
   const own = cv(section, 'effect', '');
   const opts = [`<option value="">${t('zone.global')} — ${fxName(S.effect)}</option>`]
     .concat(S.effects.map(e => `<option value="${e.id}" ${e.id === own ? 'selected' : ''}>${e.id === 'off' ? t('zone.offfx') : fxName(e.id)}</option>`));
-  el.innerHTML = `
+  // steady: no effect to pick, it would not move; what was saved stays and decides the colour it holds meanwhile
+  el.innerHTML = `${steady ? `<p class="note zsteady">${t('zone.steady')}</p>` : `
     <div class="field">
       <div class="lbl"><span>${t('zone.effect')}</span>${own ? `<b>${t('zone.own')}</b>` : ''}</div>
       <select class="select zfx ${own ? 'own' : ''}">${opts.join('')}</select>
-    </div>
+    </div>`}
     <div class="field"><div class="lbl"><span>${t('zone.mode')}</span></div></div>
-    <div class="seg">${MODES.map(m => `<button type="button" data-m="${m}" class="${m === mode ? 'on' : ''}">${t('mode.' + m)}</button>`).join('')}</div>
+    <div class="seg">${modes.map(m => `<button type="button" data-m="${m}" class="${m === mode ? 'on' : ''}">${t('mode.' + m)}</button>`).join('')}</div>
     <div class="zbody"></div>
     <div class="field">
       <div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
@@ -926,8 +956,8 @@ function renderZone(el) {
     </div>
     <p class="note">${t('zone.bright.note')}</p>`;
   const body = el.querySelector('.zbody');
-  el.querySelector('.zfx').addEventListener('change', e => { setCfg(section, 'effect', e.target.value); renderZone(el); renderOwnList(); });
-  if ((own || S.effect) === 'screen' && mode === 'effect') {
+  el.querySelector('.zfx')?.addEventListener('change', e => { setCfg(section, 'effect', e.target.value); renderZone(el); renderOwnList(); });
+  if (!steady && (own || S.effect) === 'screen' && mode === 'effect') {
     const sa = cv(section, 'screen', 'auto'), f = document.createElement('div');
     f.className = 'field';
     f.innerHTML = `<div class="lbl"><span>${t('zone.screen')}</span></div><select class="select zscr">${['auto', 'whole', 'border', 'left', 'right', 'top', 'bottom'].map(v =>
@@ -936,7 +966,9 @@ function renderZone(el) {
     f.querySelector('.zscr').addEventListener('change', e => setCfg(section, 'screen', e.target.value));
   }
   const fxT = fxName(own || S.effect);
-  if (mode === 'effect') body.innerHTML = `<p class="note">${t('zone.note', fxT)}</p>`;
+  // the colour core's led_color holds for it until one is chosen: the palette's first, else the effect's
+  if (steady && !modes.includes(mode)) body.innerHTML = `<p class="note zfb">${t('zone.steady.fb', mode === 'palette' ? t('mode.palette') : fxT)}</p>`;
+  else if (mode === 'effect') body.innerHTML = `<p class="note">${t('zone.note', fxT)}</p>`;
   else if (mode === 'white') {
     body.innerHTML = `<div class="field"><div class="lbl"><span>${t('kelvin')}</span><b>${k} K</b></div>
       <input type="range" class="range kelvin" min="2700" max="6500" step="100" value="${k}"></div>
@@ -1218,7 +1250,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#prof-
 // ---- preset window: "+" opens it with the look that shows now as the starting point, and every part (effect,
 // colours, speed, brightness, the devices' own colours) can be changed before it is added. A preset's "···" (or a
 // right click) opens the same window with that preset's values. Saving shows the preset.
-const PDLG = { id: 0, effect: 'flow', pal: [], palTouched: false, speed: 5, bri: 100, zonesHad: false, retake: false, raf: 0 };
+const PDLG = { id: 0, effect: 'flow', pal: [], palTouched: false, speed: 5, bri: 100, zonesHad: false, retake: false, raf: 0, last: 0, sig: '' };
 const pdlgEffects = () => S.effects.filter(e => e.id !== 'off');
 const pdlgSpeed = id => !['static', 'off', 'temperature'].includes(id);
 // devices with a look of their own right now (own effect, own colours, white light)
@@ -1247,7 +1279,7 @@ function presetDialog(id, name) {
   $('#pdlg').classList.remove('hidden');
   pdlgRender();
   const cvs = $('#pdlg-prev'); cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio;
-  if (!PDLG.raf) PDLG.raf = requestAnimationFrame(pdlgPreview);
+  PDLG.sig = ''; previewWake();
   setTimeout(() => { $('#pdlg-name').focus(); $('#pdlg-name').select(); }, 30);
 }
 function pdlgRender() {
@@ -1283,10 +1315,15 @@ function pdlgPalette() {
 }
 function pdlgPreview(now) {
   PDLG.raf = 0;
-  if ($('#pdlg').classList.contains('hidden')) return;
-  const cvs = $('#pdlg-prev'), pal = (PDLG.effect === 'static' ? PDLG.pal.slice(0, 1) : PDLG.pal).map(hex2rgb);
-  if (cvs.width && pal.length) drawStrip(cvs, preview(PDLG.effect, pal, now / 1000 * PDLG.speed / 5, 40));
+  if ($('#pdlg').classList.contains('hidden') || document.body.classList.contains('idle')) return;
   PDLG.raf = requestAnimationFrame(pdlgPreview);
+  if (now - PDLG.last < 33) return;   // ~30 frames a second, like the cards
+  PDLG.last = now;
+  const cvs = $('#pdlg-prev'), pal = (PDLG.effect === 'static' ? PDLG.pal.slice(0, 1) : PDLG.pal).map(hex2rgb);
+  const still = stillMotion() || stillFx(PDLG.effect), sig = still ? PDLG.effect + pal + cvs.width : '';
+  if (still && PDLG.sig === sig) return;
+  PDLG.sig = sig;
+  if (cvs.width && pal.length) drawStrip(cvs, preview(PDLG.effect, pal, still ? 3 : now / 1000 * PDLG.speed / 5, 40));
 }
 $('#pdlg-fx').addEventListener('click', e => {
   const b = e.target.closest('[data-fx]'); if (!b) return;
@@ -1702,12 +1739,17 @@ function drawStrip(cv2, cols, mode) {
   sh.addColorStop(0, 'rgba(255,255,255,.10)'); sh.addColorStop(.5, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.1)');
   c.fillStyle = sh; c.fillRect(0, 0, w, bh);
 }
-let t0 = performance.now(), lastPrev = 0;
+// the effect previews: ~30 frames a second, only on the Effects tab with the window in front (previewWake starts
+// it again); a still picture (animations off, or a static colour) is drawn only when it changes
+const ANIM = { raf: 0, t0: performance.now(), last: 0 };
+const stillFx = id => id === 'static' || id === 'off';
 function animate(now) {
-  requestAnimationFrame(animate);
-  if (tab !== 'effects' || now - lastPrev < 33 || document.body.classList.contains('idle')) return;
-  lastPrev = now;
-  const t = (now - t0) / 1000;
+  ANIM.raf = 0;
+  if (tab !== 'effects' || document.body.classList.contains('idle')) return;
+  ANIM.raf = requestAnimationFrame(animate);
+  if (now - ANIM.last < 33) return;
+  ANIM.last = now;
+  const calm = stillMotion(), t = calm ? 3 : (now - ANIM.t0) / 1000;
   const PR = presets();
   for (const b of $$('.fx')) {
     const cvs = b.querySelector('canvas'); if (!cvs) continue;
@@ -1715,13 +1757,18 @@ function animate(now) {
     const C = b.dataset.comm ? COMM.items.find(x => x.id === b.dataset.comm) : null;
     const P = C ? { effect: C.effect, palette: (C.palette || []).join(', '), speed: C.speed } : b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null, id = P ? P.effect : b.dataset.id;
     if (!id) continue;
-    if (cvs.width !== cvs.clientWidth * devicePixelRatio) { cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio; }
+    if (cvs.width !== cvs.clientWidth * devicePixelRatio) { cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio; cvs._sig = ''; }
     const pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(id);
+    if (calm || stillFx(id)) { const sig = id + pal + (C ? 'g' : 's'); if (cvs._sig === sig) continue; cvs._sig = sig; } else cvs._sig = '';
     const spd = +(P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5))) / 5;
     drawStrip(cvs, preview(id, pal.map(hex2rgb), t * spd, 28), C ? 'glow' : 'spill');
   }
 }
-requestAnimationFrame(animate);
+function previewWake() {
+  if (!ANIM.raf) ANIM.raf = requestAnimationFrame(animate);
+  if (!PDLG.raf) PDLG.raf = requestAnimationFrame(pdlgPreview);
+}
+ANIM.raf = requestAnimationFrame(animate);
 
 // ------------------------------------------------------------------ live drawing
 function sizeCanvases() {
@@ -3018,9 +3065,14 @@ function devStatus(d) {
   if (d.online && d.kind === 'tryx' && / upload failed/.test(d.info)) return t(/ no adb/.test(d.info) ? 'tx.up.noadb' : 'tx.up.fail');
   // OpenRGB: what the controller takes (drv_openrgb.c, CAP_*), or why it is not lit
   if (!d.online && d.kind === 'openrgb' && d.cap >= 4) return t(d.cap === 4 && /whole board only/.test(d.info) ? 'cap.4b' : 'cap.' + d.cap);
-  if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t('dev.offline');
-  return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds) + (d.kind === 'openrgb' && d.cap >= 1 && d.cap <= 3 ? ' · ' + t('cap.' + d.cap) : '');
+  if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t(d.fails === 0 ? 'dev.connecting' : 'dev.offline');   // no attempt failed yet: the first one runs
+  // who lights it: OpenRGB says through which mode haku drives the controller (CAP_*), the others take haku's frames
+  return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds) + (d.kind === 'openrgb' && d.cap >= 1 && d.cap <= 3 ? ' · ' + t('drive.' + d.cap) : '');
 }
+// its short history (devices.c dev_event), the newest first: [time, what, its detail, times in a row]
+const devEvWhat = (c, a) => c === 5 ? t('dev.ev.5', t(a <= 3 ? 'drive.' + a : 'cap.' + a)) : c === 6 ? t('dev.ev.6.' + a) : t('dev.ev.' + c);
+const devEvText = d => (d.ev || []).slice().reverse().map(([tm, c, a, n]) =>
+  `${new Date(tm * 1000).toLocaleTimeString(LANG, { hour: '2-digit', minute: '2-digit' })} ${devEvWhat(c, a)}${n > 1 ? ' ×' + n : ''}`).join('\n');
 // "Check connection": what the core found (S.netchk: ping / same network) and whether the device came back meanwhile
 let CHK_ID = 0;
 function chkText(d) {
@@ -3101,6 +3153,7 @@ function buildDevices() {
           <p class="hint">${t('dev.mode.note')}</p>` : ''}
         ${!pcDev(d) ? '' : `<label class="check"><input type="checkbox" class="dev-own" ${d.own ? 'checked' : ''}><span></span><em>${t('own')}</em></label>
           <p class="hint">${t('own.note.dev')}</p>`}
+        <div class="dev-ev hidden" id="dev-ev-${d.id}"><b>${t('dev.ev')}</b><pre class="fans-log"></pre></div>
         </div></details>
         <div class="btn-row">${scr ? '' : `<button class="btn small dev-ident" title="${esc(t('dev.identify.title'))}"><span>${t('dev.identify')}</span></button>`}
         ${pcDev(d) ? `<button class="btn small dev-retry" title="${esc(t('dev.retry.t'))}" hidden>${t('dev.retry')}</button>` : `<button class="btn small dev-check">${t('dev.check')}</button>`}
@@ -3828,6 +3881,8 @@ function updateDevices() {
     const ck = $('#dev-chk-' + d.id), mine = CHK_ID === d.id && (S.netchk || {}).id === d.id;
     if (d.online) DEV_SAVED.delete(d.id);
     if (ck) { ck.textContent = mine ? chkText(d) : DEV_SAVED.has(d.id) && devWaits(d) ? t('dev.saved') : ''; ck.previousElementSibling.querySelector('.dev-check')?.toggleAttribute('disabled', mine && !!S.netchk.busy); }
+    const ev = $('#dev-ev-' + d.id), txt = devEvText(d);
+    if (ev) { ev.classList.toggle('hidden', !txt); const p = ev.querySelector('pre'); if (p.textContent !== txt) p.textContent = txt; }
   });
   const btn = $('#scan-btn');
   btn.disabled = !!E.scanning;
@@ -3919,9 +3974,9 @@ $$('#wz-lang button').forEach(b => b.addEventListener('click', () => $$('#lang b
 
 // settings
 $('#autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.target.checked ? 1 : 0 }));
-$('#ui-motion').addEventListener('change', e => { setCfg('general', 'ui_motion', e.target.checked ? 1 : 0); updateSettings(); });
+$$('#ui-motion button').forEach(b => b.addEventListener('click', () => { setCfg('general', 'ui_motion', b.dataset.v); updateSettings(); }));
 function setTheme(v) { setCfg('general', 'theme', v); applyTheme(); send({ cmd: 'theme', v }); drawAll(); }
-$$('#theme button').forEach(b => b.addEventListener('click', () => setTheme(b.dataset.v)));
+$$('#theme button').forEach(b => b.addEventListener('click', () => { sceneStop(false); setTheme(b.dataset.v); }));   // a scene still running must not bring its theme back
 // the code field stays folded behind a small "Code" until asked for; empty and left (or Esc), it folds back
 function codeShow(on) {
   $('#code').classList.toggle('hidden', !on); $('#code-open').classList.toggle('hidden', on);
@@ -4308,8 +4363,7 @@ function updateSettings() {
   const a = $('#autostart');
   a.checked = S.autostart === 1; a.disabled = S.autostart < 0;
   $('#hotspot-auto').checked = cv('hotspot', 'auto', '0') !== '0';
-  const motion = cv('general', 'ui_motion', '1') !== '0';
-  $('#ui-motion').checked = motion; document.body.classList.toggle('calm', !motion);
+  const mo = motionPref(); $$('#ui-motion button').forEach(b => b.classList.toggle('on', b.dataset.v === mo)); applyMotion();
   $('#hotspot-status').textContent = S.hotspot ? t('hotspot.on') : t('hotspot.off');
   const f = +cv('general', 'fps', 30); setRange($('#fps'), f); $('#fps-val').textContent = f;
   const ex = cv('general', 'on_exit', 'off');
@@ -4420,7 +4474,17 @@ function homeAttn() {
   const leave = cfList('leave');
   for (const x of (S.cf || {}).a || [])
     if (x.run && cfDev(x) === 'held' && !leave.includes(x.id)) r.push({ n: x.name, kind: t('cf.w.' + x.w), why: t('cf.dev.held'), help: 'conflict', extra: 'cf' });
-  return r;
+  return [...homeCool(), ...r];
+}
+// the fans that need a look, the worst first, as their tiles tell it: the QUADRO's lost link once for all its channels
+// (the board's go on reading), then each channel in emergency, not taken or driven with no rpm read (not a no-tach one)
+function homeCool() {
+  const F = S.fans || {}; if (!F.on || !NAV_NEED.fans()) return [];
+  const vis = fanAll().filter(i => !fanHidden(i)), gs = fanGroups(), at = i => { const g = gs.find(g => g.m.includes(i)); return g ? { g: g.n, i } : { i }; };
+  const r = [], old = vis.filter(fanOld), row = (n, k, why, i) => r.push({ n, kind: t('nav.fans'), why, help: 'fans', fan: at(i), k });
+  if (old.length) row('QUADRO', F.link === 0 ? 0 : 1, t(F.link === 0 ? 'fans.st.stale' : 'fans.st.old'), old[0]);
+  for (const i of vis) { const p = !fanOld(i) && fanTileSt([i]); if (p) row(fanName(i), p[3], p[0] + ' · ' + p[1], i); }
+  return r.sort((a, b) => a.k - b.k);
 }
 function updateHome() {
   const none = !S.ext.devs.length && !S.bulbs.length && !nanoCtls().length && !S.sticks && !S.msi && !(S.fans || {}).on && !llOn();
@@ -4428,13 +4492,17 @@ function updateHome() {
   const a = homeAttn(), btn = (k, v, txt, cls) => `<button class="btn small${cls || ' ghost'}" type="button" data-${k}="${esc(v)}"><span>${txt}</span></button>`;
   const html = a.map((x, i) => `<div class="found-row" data-i="${i}"><span class="kind">${esc(x.kind)}</span>
     <div class="what"><b>${esc(x.n)}</b><small>${esc(x.why)}</small></div>
-    <span class="added">${x.h ? btn('a', 'open', t('home.open'), ' ') : ''}${x.extra === 'retry' ? btn('a', 'retry', t('dev.retry')) : ''}${x.extra === 'cf' ? btn('a', 'cf', t('cf.title')) : ''}${btn('help', x.help, t('help.open'))}</span></div>`).join('');
+    <span class="added">${x.h || x.fan ? btn('a', 'open', t('home.open'), ' ') : ''}${x.extra === 'retry' ? btn('a', 'retry', t('dev.retry')) : ''}${x.extra === 'cf' ? btn('a', 'cf', t('cf.title')) : ''}${btn('help', x.help, t('help.open'))}</span></div>`).join('');
   const L = $('#home-attn-list');
   if (L.dataset.html !== html) { L.dataset.html = html; L.innerHTML = html; HOME.attn = a; }
   $('#home-attn').classList.toggle('hidden', !a.length);
-  // the fans: the QUADRO's and the board's channels as they run now (fans.c), the hidden ones left out
+  // the fans: the QUADRO's and the board's channels as they run now (fans.c), the hidden ones left out; a reading that
+  // is not current is not shown as one, and under each what drives it and whether the controller took it
   // shortcut: Lian Li wireless fans are not summed up here, only on the Fans tab; add them if people ask
-  const F = S.fans || {}, f = (F.f || []).map((x, i) => x && !fanHidden(i) ? `<span><b>${esc(fanName(i))}</b> ${x.rpm} ${t('home.rpm')}</span>` : '').filter(Boolean);
+  const F = S.fans || {}, f = fanAll().filter(i => !fanHidden(i)).map(i => {
+    const x = fanCh(i), p = fanTileSt([i]), [st, c] = fanState(i), v = fanOld(i) ? '' : ` ${x.rpm == null || x.rpm < 0 ? '—' : x.rpm} ${t('home.rpm')}`;
+    const [s, sc] = p ? [p[0], p[2] ? 'warn' : 'bad'] : [fanMode(i) + (st ? ' · ' + st : ''), c];
+    return `<span data-hf="${i}"><b>${esc(fanName(i))}</b>${v}<small class="fan-st ${sc}">${esc(s)}</small></span>`; });
   const c = $('#home-cool');
   c.classList.toggle('hidden', !F.on || !f.length || !NAV_NEED.fans());
   const ch = `<h3>${t('nav.fans')}</h3><div class="home-fans">${f.join('')}${F.gpu != null ? `<span><b>GPU</b> ${F.gpu}°</span>` : ''}</div>`;
@@ -4443,7 +4511,8 @@ function updateHome() {
 $('#home-attn-list').addEventListener('click', e => {
   const b = e.target.closest('button[data-a]'); if (!b) return;
   const x = HOME.attn[+b.closest('[data-i]').dataset.i]; if (!x) return;
-  if (b.dataset.a === 'open') { const r = b.getBoundingClientRect(); openSheet(x.h, r.left + r.width / 2, r.top); }
+  if (b.dataset.a === 'open' && x.fan) fanOpen(x.fan, b);
+  else if (b.dataset.a === 'open') { const r = b.getBoundingClientRect(); openSheet(x.h, r.left + r.width / 2, r.top); }
   else if (b.dataset.a === 'retry') { b.disabled = true; setTimeout(() => { b.disabled = false; }, 3000); send({ cmd: 'dev_retry' }); }
   else if (b.dataset.a === 'cf') { showTab('pc'); setTimeout(() => $('#cf-card').scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }
 });
@@ -4452,7 +4521,7 @@ $('#home-find').addEventListener('click', () => { showTab('devices'); S.ext.scan
 // help: a topic in Settings, opened from where the question comes up
 function helpOpen(topic) {
   showTab('settings');
-  const d = $('#help-' + topic); if (!d) return;
+  const d = $(topic ? '#help-' + topic : '#help'); if (!d) return;   // no topic: the whole card
   if (d.tagName === 'DETAILS') d.open = true;
   setTimeout(() => d.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
 }
@@ -4551,7 +4620,7 @@ const FAN_STALE = 5000;   // as fans.c STALE_MS: older QUADRO readings are not c
 // the QUADRO's readings are not now: the link is down, or its last report is older than fans.c trusts (the board reads on its own)
 const fanOld = i => { const F = S.fans || {}; return !fanCh(i).b && (F.link === 0 || (F.age || 0) > FAN_STALE); };
 // a Home tile's status from all its fans, the worst first: [short text for the tile, full text for a screen reader,
-// only a warning (no rpm read while driven, as the fan's own line says)] or null
+// only a warning (no rpm read while driven, as the fan's own line says), its rank in FAN_TILE] or null
 const FAN_TILE = ['fans.tile.nolink', 'fans.tile.old', 'fans.tile.em', 'fans.tile.err', 'fans.tile.norpm'];
 function fanTileSt(m) {
   let w = null;
@@ -4559,7 +4628,7 @@ function fanTileSt(m) {
     const [st, c] = fanState(i), k = fanOld(i) ? ((S.fans || {}).link === 0 ? 0 : 1) : fanCh(i).em ? 2 : c === 'bad' ? 3 : fanNoRpm(i) ? 4 : -1;
     if (k >= 0 && (!w || k < w.k)) w = { k, i, st: k === 4 ? t('fans.norpm') : st };
   }
-  return w && [t(FAN_TILE[w.k]), (m.length > 1 ? fanName(w.i) + ': ' : '') + w.st, w.k === 4];
+  return w && [t(FAN_TILE[w.k]), (m.length > 1 ? fanName(w.i) + ': ' : '') + w.st, w.k === 4, w.k];
 }
 const FAN_BLADE = new Path2D('M-1.5-4.8C-2-10 1-15 6-16.8C9-15.8 11-14.3 12.3-12.3C8.5-9.5 5.5-6.5 3.8-3.3Z'), FAN_SPIN = {};
 const PUMP_BL = new Path2D(PUMP_BLADE), PUMP_FLOW = new Path2D('M24 53A26 26 0 0 1 45 27.5M76 53A26 26 0 0 1 55 78.5');
@@ -5180,6 +5249,7 @@ if (wv) wv.addEventListener('message', e => {
   if (m.type === 'frame') onFrame(m.l);
   else if (m.type === 'focus') document.body.classList.toggle('idle', !m.on);   // behind other windows: endless animations pause
   else if (m.type === 'status') applyStatus(m);
+  else if (m.type === 'go') helpOpen('');   // the tray's Help
   else if (m.type === 'tryx_built') { if (TXB?.wait?.req === m.req) TXB.wait.done(m); }
   else if (m.type === 'state') {
     const prof = cv('general', 'profile', '');

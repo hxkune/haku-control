@@ -141,25 +141,18 @@ h3::before { content: none; margin-right: 9px; font-size: 10px; color: var(--mut
   position: relative; width: clamp(150px, 6.29vw + 70px, 190px); aspect-ratio: 1540 / 903; margin: 0 auto; background: var(--strong);
   -webkit-mask: url(haku.svg) center / contain no-repeat; mask: url(haku.svg) center / contain no-repeat;
 }
-/* a slow glint across the wordmark: the rest a shade toward the background, a soft band at full; under it a
-   shadow drifting back and forth at another angle. The colour the intro reads stays the logo's own */
-.brand .logo::before, .brand .logo::after { content: ""; position: absolute; inset: 0; transition: opacity .5s ease .62s; }
+/* one soft glint across the wordmark: the rest a shade toward the background, a band at full passing once soon
+   after the window opens, then every 16 s (a wide layer moved by transform; the mask keeps it in the letters). Still
+   in the background and with animations off. The colour the intro reads stays the logo's own */
 .brand .logo::after {
-  --dim: color-mix(in srgb, var(--bg) 22%, transparent); --dim2: color-mix(in srgb, var(--bg) 8%, transparent);
-  background: linear-gradient(105deg, var(--dim) 34%, var(--dim2) 43%, transparent 50%, var(--dim2) 57%, var(--dim) 66%) 100% 0 / 300% 100%;
-  animation: logo-glint 4.5s cubic-bezier(.45, 0, .25, 1) infinite;
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 300%; transition: opacity .5s ease .62s;
+  --dim: color-mix(in srgb, var(--bg) 18%, transparent); --dim2: color-mix(in srgb, var(--bg) 7%, transparent);
+  background: linear-gradient(105deg, var(--dim) 34%, var(--dim2) 43%, transparent 50%, var(--dim2) 57%, var(--dim) 66%);
+  transform: translateX(-66.667%);
 }
-@keyframes logo-glint { 0%, 60% { background-position: 100% 0; } 95%, 100% { background-position: 0 0; } }
-.brand .logo::before {
-  --shade: color-mix(in srgb, var(--bg) 30%, transparent); --shade2: color-mix(in srgb, var(--bg) 12%, transparent);
-  background: linear-gradient(70deg, transparent 30%, var(--shade2) 40%, var(--shade) 50%, var(--shade2) 60%, transparent 70%) 0 0 / 250% 100%;
-  animation: logo-shade 6.5s ease-in-out infinite alternate;
-}
-@keyframes logo-shade { to { background-position: 100% 0; } }
-/* and it drifts: a few pixels up and back with a slight tilt, out of step with the glint */
-.brand .logo { animation: logo-float 3.5s ease-in-out infinite; }
-@keyframes logo-float { 0%, 100% { translate: 0 0; rotate: 0deg; } 50% { translate: 0 -3px; rotate: -.8deg; } }
-html.intro .brand .logo::before, html.intro .brand .logo::after { opacity: 0; }
+html:not(.intro):not(.intro-out) .brand .logo::after { animation: logo-glint 16s cubic-bezier(.45, 0, .25, 1) .8s infinite; }
+@keyframes logo-glint { 0% { transform: translateX(-66.667%); } 16%, 100% { transform: translateX(0); } }
+html.intro .brand .logo::after { opacity: 0; }
 .brand .word { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 4px; font: 600 11px var(--display); letter-spacing: .3em; color: var(--muted); }
 .brand .word::after { content: ""; flex: 1; height: 1px; background: var(--line2); }
 nav { display: flex; flex-direction: column; gap: clamp(4px, .3145vw, 6px); }
@@ -219,9 +212,9 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .dot.warn { background: linear-gradient(90deg, var(--strong) 50%, transparent 50%); border-color: var(--strong); }
 .dot.off { border-color: var(--faint); }
 
-.tab { display: none; animation: fade .3s ease; }
+.tab { display: none; animation: fade .18s ease; }
 .tab.active { display: block; }
-@keyframes fade { from { opacity: 0; transform: translateY(6px); } }
+@keyframes fade { from { opacity: 0; } }
 
 .card {
   position: relative;
@@ -795,7 +788,7 @@ body.collapsed .side { margin-left: calc(-1 * var(--side-w)); }
 .side-toggle:hover .chev { stroke: var(--strong); }
 body.collapsed .side-toggle { left: 0; }
 body.collapsed .side-toggle .chev { transform: scaleX(-1); }
-body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev { transition: none; }
+body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev, body.calm .side, body.calm .side-toggle, body.calm .side-toggle .chev { transition: none; }
 
 /* white balance of the PWM LEDs */
 .wb .range { margin-top: 8px; }
@@ -986,26 +979,23 @@ input[type=text], .own-item, .sw, .addr {
 }
 nav button:active, .power:active, .fx:active, .seg button:active, .kbd:active { transform: scale(.985); }
 
-/* cards come in as a short wave when a tab opens (--i from app.js) */
-.tab.active .card, .tab.active .fx { animation: rise .42s cubic-bezier(.2, .75, .25, 1) backwards; animation-delay: calc(var(--i, 0) * 32ms); }
-@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 
-/* live status dots breathe */
-.dot.on { animation: breathe 2.8s ease-in-out infinite; }
-@keyframes breathe { 50% { box-shadow: 0 0 3px rgba(var(--ink), .35); } }
-
-/* Settings -> Animations off ([general] ui_motion=0); Windows' own "animation effects" switch is not used,
-   many people turn it off for speed and still want this */
+/* Settings -> Animations off ([general] ui_motion=0, or "As in Windows" with Windows' animation effects off):
+   body.calm (app.js). Spinners of running work stay */
 /* the window behind others: the endless animations hold still and the background light changes without fading
    (each fade repaints the whole window for over a second) */
-body.idle .ambient i, body.idle .ambient i b, body.idle .dot.on, :root[data-theme="bubblegum"] body.idle *,
-:root[data-theme="kyoka"] body.idle *, body.idle .brand .logo, body.idle .brand .logo::before, body.idle .brand .logo::after { animation-play-state: paused !important; }
+body.idle .ambient i, body.idle .ambient i b, :root[data-theme="bubblegum"] body.idle *,
+:root[data-theme="kyoka"] body.idle *, :root[data-theme="verity"] body.idle *, body.idle .brand .logo, body.idle .brand .logo::after { animation-play-state: paused !important; }
 body.idle .ambient { transition: none; }
-body.calm .ambient i, body.calm .dot.on, body.calm .tab.active .card, body.calm .tab.active .fx, body.calm .tab { animation: none; }
+body.calm .ambient i, body.calm .tab, body.calm .card.pdlg, body.calm .popover, body.calm .wizard, body.calm .wz-step.on,
+body.calm .hero-menu, body.calm .acc-form, body.calm .prof-menu, body.calm .chip-pop, body.calm .undo,
+body.calm .code input.bad, body.calm .code input.ok { animation: none; }
 body.calm .fx:hover { transform: none; }
-body.calm .ambient, body.calm .card::after, body.calm .fx::after, body.calm .brand .logo::before, body.calm .brand .logo::after { display: none; }
+body.calm .ambient, body.calm .card::after, body.calm .fx::after, body.calm .brand .logo::after { display: none; }
 body.calm .brand .logo { animation: none; }
-body.calm .btn.primary, body.calm .power.off { transition: none; }
+body.calm .btn.primary, body.calm .power.off, body.calm .switch span, body.calm .switch span::after,
+body.calm .fx:not(.comm) small { transition: none; }
 
 /* ---------------- mood: describe it, a local model picks the colours */
 .mood { padding: 12px 16px; margin-bottom: 20px; }
@@ -1064,8 +1054,8 @@ body.calm .btn.primary, body.calm .power.off { transition: none; }
   translate: var(--dx) var(--dy);
 }
 .sheet.wide { width: min(860px, 100%); }
-.sheet.in { animation: sheet-in .32s cubic-bezier(.2, .8, .25, 1); }
-@keyframes sheet-in { from { opacity: 0; transform: scale(.9); } }
+.sheet.in { animation: sheet-in .2s cubic-bezier(.2, .8, .25, 1); }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(8px); } }
 .sheet:hover { border-color: var(--line2); }
 .sheet::after { display: none; }
 .sheet-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 18px; border-bottom: 1px solid var(--line); cursor: grab; flex: none; }
@@ -1084,12 +1074,12 @@ body.calm .sheet.in, body.calm .sheet-wrap { animation: none; }
 @media (max-width: 700px) {
   .sheet-wrap { place-items: end stretch; padding: 0; }
   .sheet, .sheet.wide { width: 100%; max-height: 86vh; translate: none; }
-  .sheet.in { animation: sheet-up .3s cubic-bezier(.2, .8, .25, 1); }
-  @keyframes sheet-up { from { transform: translateY(40%); opacity: 0; } }
+  .sheet.in { animation: sheet-up .22s cubic-bezier(.2, .8, .25, 1); }
+  @keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } }
   .sheet-head { cursor: default; }
 }
 .hero { overflow: visible; }   /* the customize menu may reach below it */
-.hero { transition: height .45s cubic-bezier(.2, .8, .25, 1); }
+.hero { transition: height .2s cubic-bezier(.2, .8, .25, 1); }
 body.calm .hero { transition: none; }
 
 /* ---------------- sidebar tabs come and go with the hardware */
@@ -1283,7 +1273,7 @@ body.calm nav button { transition: none; }
 :root[data-theme="bubblegum"] .seg button.on, :root[data-theme="bubblegum"] .btn.primary, :root[data-theme="bubblegum"] .brand .logo {
   background-size: 300% 100%; animation: bubblegum-rainbow 6s linear infinite;
 }
-:root[data-theme="bubblegum"] .brand .logo { background: var(--chrome); background-size: 300% 100%; animation: bubblegum-rainbow 6s linear infinite, logo-float 3.5s ease-in-out infinite; }
+:root[data-theme="bubblegum"] .brand .logo { background: var(--chrome); background-size: 300% 100%; animation: bubblegum-rainbow 6s linear infinite; }
 :root[data-theme="bubblegum"] .brand .word { color: var(--strong); }
 :root[data-theme="bubblegum"] .watermark {
   -webkit-mask: none; mask: none; background: none; opacity: .07; width: auto; aspect-ratio: auto; right: -30px; bottom: -20px;
@@ -1355,7 +1345,7 @@ body.calm .burst, :root[data-theme="bubblegum"] body.calm * { animation: none !i
 /* entering verity's code: the whole window breaks down for a few seconds (app.js drives it), then the theme is on */
 .vglitch { position: fixed; inset: 0; z-index: 98; cursor: none;
   background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px); }
-.vglitch i { position: absolute; left: 0; right: 0; backdrop-filter: invert(1) hue-rotate(var(--h, 90deg)); }
+.vglitch i { position: absolute; left: 0; right: 0; backdrop-filter: hue-rotate(var(--h, 90deg)) saturate(1.8); }   /* no invert: dark turned white strobes */
 .vglitch .vg-face { position: absolute; left: 50%; top: 50%; width: min(60vh, 70vw); aspect-ratio: 1; transform: translate(-50%, -50%);
   background: var(--v-smile) center / contain no-repeat; filter: var(--v-rgb); }
 .vglitch .vg-face.evil { background-image: var(--v-evil); }
@@ -1363,7 +1353,7 @@ body.calm .burst, :root[data-theme="bubblegum"] body.calm * { animation: none !i
   background: rgba(0, 0, 0, .7); color: #ffe14a; font: 18px "Consolas", "Cascadia Mono", monospace; }
 body.glitching > *:not(.vglitch):not(.vchat) {
   transform: translate(var(--gx, 0), var(--gy, 0)) skewX(var(--sk, 0deg));
-  filter: hue-rotate(var(--hue, 0deg)) var(--v-rgb2, );
+  filter: hue-rotate(var(--hue, 0deg)) var(--v-rgb2, ) var(--look, );
 }
 
 /* what verity says, as a line of game chat */
@@ -1517,14 +1507,14 @@ html.intro-out .fx-grid > .fx:nth-child(20) { --d: 0.95s; }
 .kyoka-ov .ky-press { position: absolute; inset: 0; animation: ky-press 1.9s ease-in forwards;
   background: radial-gradient(circle at 50% 50%, transparent 30%, rgba(60, 20, 140, .55) 100%); }
 @keyframes ky-press { from { opacity: 0; } to { opacity: 1; } }
-body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .09s linear infinite; filter: saturate(.4) brightness(.8); }
-@keyframes ky-shake { 0% { translate: 0 0; } 25% { translate: 2px -1px; } 50% { translate: -2px 1px; } 75% { translate: 1px 2px; } 100% { translate: 0 0; } }
+body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .12s linear infinite; filter: saturate(.4) brightness(.8); }
+@keyframes ky-shake { 0% { translate: 0 0; } 25% { translate: 1px -.5px; } 50% { translate: -1px .5px; } 75% { translate: .5px 1px; } 100% { translate: 0 0; } }
 .kyoka-ov .ky-slash { position: absolute; left: -10%; right: -10%; top: 50%; height: 3px; transform: rotate(-24deg) scaleX(0); transform-origin: 0 50%;
   background: linear-gradient(90deg, transparent, #fff 20%, #fff 80%, transparent); box-shadow: 0 0 18px 4px rgba(200, 170, 255, .9), 0 0 60px 12px rgba(140, 90, 255, .6); opacity: 0; }
 .kyoka-ov.cut .ky-slash { animation: ky-slash .5s cubic-bezier(.2, .9, .3, 1) forwards; }
 @keyframes ky-slash { 0% { opacity: 1; transform: rotate(-24deg) scaleX(0); } 40% { opacity: 1; transform: rotate(-24deg) scaleX(1); } 100% { opacity: 0; transform: rotate(-24deg) scaleX(1) scaleY(4); } }
 .kyoka-ov.cut { animation: ky-flash .35s ease-out; }
-@keyframes ky-flash { 0% { background: rgba(255, 255, 255, .55); } 100% { background: transparent; } }
+@keyframes ky-flash { 0% { background: rgba(225, 210, 255, .28); } 100% { background: transparent; } }
 .kyoka-ov .ky-cracks { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: rgba(240, 232, 255, .95);
   filter: drop-shadow(0 0 3px rgba(180, 140, 255, .9)); }
 .kyoka-ov .ky-cracks path { stroke-width: 1.6; stroke-linejoin: bevel; stroke-dasharray: 1; stroke-dashoffset: 1; }
@@ -1615,6 +1605,9 @@ button.chip { font: inherit; font-size: 12px; background: none; }
 .home-cool { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .home-fans { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; color: var(--muted); font-size: 12.5px; }
 .home-fans b { color: var(--text); font-weight: 600; }
+.home-fans > span { display: flex; flex-wrap: wrap; column-gap: 5px; align-items: baseline; }
+.dev-ev { margin-top: 10px; font-size: 12px; }
+.home-help { display: flex; justify-content: center; margin-top: 14px; }
 
 /* button hover: the other buttons fill from the left like a gauge and rise a hair; chrome ones keep their sweep */
 @media (hover: hover) {

@@ -33,6 +33,7 @@ static HWND wnd;
 static ComPtr<ICoreWebView2Environment> env;
 static ComPtr<ICoreWebView2Controller> ctrl;
 static ComPtr<ICoreWebView2> web;
+static bool go_help;                     // the tray's Help: the page opens it once it has said hello
 static bool page_ready;                  // the page has said hello; messages can be posted
 static const COLORREF BG = RGB(10, 10, 10);
 
@@ -168,7 +169,7 @@ static void profile_app_pick(int id) {
 
 static void on_message(const std::string &js) {
     std::string cmd = field(js, "cmd");
-    if (cmd == "hello") { page_ready = true; send_state(); post_focus(GetForegroundWindow() == wnd); }
+    if (cmd == "hello") { page_ready = true; send_state(); post_focus(GetForegroundWindow() == wnd); if (go_help) { go_help = false; post("{\"type\":\"go\",\"to\":\"help\"}"); } }
     else if (cmd == "get") send_state();
     else if (cmd == "effect") { app_set_effect(effect_index(field(js, "id").c_str())); post_status(); }
     else if (cmd == "brightness") { app_set_brightness(atoi(field(js, "v").c_str()) / 100.0f, 0); app_save_soon(); }
@@ -519,6 +520,12 @@ extern "C" void ui_open(HINSTANCE inst) {
     create_webview();
     SetTimer(wnd, FRAME_TIMER, 50, NULL);
     SetTimer(wnd, STATUS_TIMER, 1000, NULL);
+}
+
+extern "C" void ui_open_help(HINSTANCE inst) {
+    go_help = true;
+    ui_open(inst);
+    if (page_ready) { go_help = false; post("{\"type\":\"go\",\"to\":\"help\"}"); }
 }
 
 extern "C" void ui_refresh(void) { if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 0, 0); }

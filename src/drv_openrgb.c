@@ -191,12 +191,13 @@ static SOCKET orgb_connect(const char *host, unsigned *count) {
     return s;
 }
 
+// the packet buffer is the call's own: connects and scans run on short-lived threads, a thread's own one was never freed
 static int read_ctrl(SOCKET s, unsigned idx, ctrl_t *c) {
-    static __declspec(thread) unsigned char *buf;
-    if (!buf) buf = malloc(1 << 20);
-    if (!buf || !send_pkt(s, idx, PKT_REQUEST_CONTROLLER_DATA, NULL, 0)) return 0;
-    int n = recv_pkt(s, PKT_REQUEST_CONTROLLER_DATA, buf, 1 << 20, NULL);
-    return n > 0 && parse_ctrl(buf, n, c);
+    unsigned char *buf = malloc(1 << 20);
+    int n = buf && send_pkt(s, idx, PKT_REQUEST_CONTROLLER_DATA, NULL, 0) ? recv_pkt(s, PKT_REQUEST_CONTROLLER_DATA, buf, 1 << 20, NULL) : -1;
+    int ok = n > 0 && parse_ctrl(buf, n, c);
+    free(buf);
+    return ok;
 }
 
 // The mode to give back when haku lets go (the controller's own effect, as its maker's app or OpenRGB set it). One
@@ -429,6 +430,21 @@ static int send_colors(ext_dev *d, const unsigned *col, int n) {
     return send_pkt(d->sock, o->idx, z ? PKT_UPDATEZONELEDS : PKT_UPDATELEDS, buf, size);
 }
 
+// one colour for the whole controller (DRIVE_ONE): its Static mode as it was described, with v as each of its colours
+static int send_one(ext_dev *d, unsigned v) {
+    orgb_t *o = d->priv;
+    // the description up to its colour count, then that many colours (at least its minimum, at least one)
+    int head = 2 + (o->st.use[0] | o->st.use[1] << 8) + 36, nc = o->st.use_cmin > 0 ? o->st.use_cmin : 1;
+    unsigned char m[512];
+    if (head + 2 + nc * 4 > (int)sizeof(m) || head > o->st.use_len) return 1;
+    memcpy(m, o->st.use, head);
+    m[head] = (unsigned char)nc; m[head + 1] = (unsigned char)(nc >> 8);
+    for (int i = 0; i < nc; i++) memcpy(m + head + 2 + i * 4, &v, 4);
+    if (!send_mode(d, o->st.use_idx, m, head + 2 + nc * 4)) return 0;
+    o->one = v; o->sent_one = 1; o->cand_at = 0;
+    return 1;
+}
+
 static int near_rgb(unsigned a, unsigned b) {
     for (int k = 0; k < 24; k += 8) if (abs((int)(a >> k & 255) - (int)(b >> k & 255)) > 6) return 0;
     return 1;
@@ -457,23 +473,17 @@ static int orgb_send(ext_dev *d, const rgbf *c, int n) {
         if (n) { r /= n; g /= n; b /= n; }
         unsigned v = to8(r) | to8(g) << 8 | to8(b) << 16;
         // a mode command can restart the controller's fade: sent only for a new colour that has held for a moment,
-        // so an animation is not played on it as a stream of mode changes
+        // so an animation is not played on it as a stream of mode changes; going dark and lighting again are not
+        // waited out
         DWORD now = GetTickCount();
         if (o->sent_one) {
             if (near_rgb(v, o->one)) { o->cand_at = 0; return 1; }
-            if (!o->cand_at || !near_rgb(v, o->cand)) { o->cand = v; o->cand_at = now | 1; return 1; }
-            if (now - o->cand_at < 600) return 1;
+            if (v && o->one) {
+                if (!o->cand_at || !near_rgb(v, o->cand)) { o->cand = v; o->cand_at = now | 1; return 1; }
+                if (now - o->cand_at < 600) return 1;
+            }
         }
-        // the description up to its colour count, then that many colours (at least its minimum, at least one)
-        int head = 2 + (o->st.use[0] | o->st.use[1] << 8) + 36, nc = o->st.use_cmin > 0 ? o->st.use_cmin : 1;
-        unsigned char m[512];
-        if (head + 2 + nc * 4 > (int)sizeof(m) || head > o->st.use_len) return 1;
-        memcpy(m, o->st.use, head);
-        m[head] = (unsigned char)nc; m[head + 1] = (unsigned char)(nc >> 8);
-        for (int i = 0; i < nc; i++) memcpy(m + head + 2 + i * 4, &v, 4);
-        if (!send_mode(d, o->st.use_idx, m, head + 2 + nc * 4)) return 0;
-        o->one = v; o->sent_one = 1; o->cand_at = 0;
-        return 1;
+        return send_one(d, v);
     }
     unsigned col[EXT_MAX_LEDS];
     for (int i = 0; i < n; i++) col[i] = to8(c[i].r) | to8(c[i].g) << 8 | to8(c[i].b) << 16;
@@ -486,7 +496,7 @@ static int orgb_send(ext_dev *d, const rgbf *c, int n) {
 static void orgb_leave(ext_dev *d, int how) {
     orgb_t *o = d->priv;
     unsigned col[EXT_MAX_LEDS] = { 0 };
-    if (how == LEAVE_OFF) send_colors(d, col, d->nleds);
+    if (how == LEAVE_OFF) o->st.how == DRIVE_ONE ? send_one(d, 0) : send_colors(d, col, d->nleds);   // its colour is the mode's
     else if (how == LEAVE_RESTORE) {
         if (o->norig) send_colors(d, o->orig, o->norig < d->nleds ? o->norig : d->nleds);
         // its own effect again (the mode it had, as it was described), once the last of the controller's devices

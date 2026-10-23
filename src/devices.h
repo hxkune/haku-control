@@ -6,12 +6,18 @@
 #pragma once
 #include <winsock2.h>
 #include "common.h"
+#include <time.h>
 
 #define EXT_MAX       EXT_SLOTS   // configured devices
 #define EXT_MAX_LEDS  512     // LEDs per device
 #define DISC_MAX      64      // discovery results
 
 typedef struct ext_dev ext_dev;
+
+// A device's short history, shown on its card (devices.c dev_event): what happened, when, how many times in a row
+enum { EV_ONLINE = 1, EV_BACK, EV_FAIL, EV_LOST, EV_CAP, EV_LET };
+#define EXT_EV 8
+typedef struct { unsigned t; unsigned char code, a, n; } ext_ev;   // t: time(); a: EV_CAP the CAP_*, EV_LET the LEAVE_*
 
 // What the device does when we let go of it ([general] on_exit, or the device switched off in the app).
 enum { LEAVE_OFF, LEAVE_KEEP, LEAVE_RESTORE };
@@ -66,13 +72,48 @@ struct ext_dev {
     float cfg_rate;           // [dev.N] rate: chosen in the window (0: auto)
     int   cfg_static;         // [dev.N] static=1: OpenRGB through its Static mode even if it has Direct (a board that flickers in Direct)
     char  zones[160];         // [dev.N] zones: LEDs on each resizable zone, "name=count|..." (a | as ; starts a comment in settings.ini) (OpenRGB's ARGB headers)
+    unsigned gen;             // its settings' generation: a connect started under other settings is not taken over
     int   online;
     DWORD next_try;           // reconnect backoff
     int   fails;              // attempts that failed since it last stayed connected
     DWORD up_at;              // when it came online (a loss soon after counts as a failed attempt)
+    ext_ev ev[EXT_EV];        // the last events, oldest first (kept across a settings change)
+    int   nev;
     SOCKET sock;              // for drivers with one socket
     void *priv;               // driver state
 };
+
+// The send pace (devices.c). due: when the next frame may go at the chosen rate, moved on by one interval from where
+// it was (the jitter of ~33 ms frames does not cost a frame) or from now after a pause (no catch-up burst); hard: the
+// device's own limit in ms since the last send, never cut short. Ticks compared as differences, so they may wrap.
+static inline int ext_pace_due(DWORD now, DWORD due, DWORD last, int hard) { return (int)(now - due) >= 0 && (!hard || (int)(now - last) >= hard); }
+static inline DWORD ext_pace_next(DWORD now, DWORD due, int iv) { return (int)(now - due) < iv ? due + iv : now + iv; }
+
+// One event in a device's history (devices.c): the same as the last one again only counts (a device that keeps
+// dropping is one line), the oldest goes when it is full
+static inline void ext_event(ext_dev *d, int code, int a) {
+    ext_ev *l = d->nev ? &d->ev[d->nev - 1] : NULL;
+    if (l && l->code == code && l->a == a) { if (l->n < 255) l->n++; l->t = (unsigned)time(NULL); return; }
+    if (d->nev == EXT_EV) { memmove(d->ev, d->ev + 1, sizeof(d->ev) - sizeof(d->ev[0])); d->nev--; }
+    d->ev[d->nev++] = (ext_ev){ (unsigned)time(NULL), (unsigned char)code, (unsigned char)a, 1 };
+}
+
+// A finished connect (devices.c), the device copy it ran on (res) against the devices now: the index that takes it
+// over, or -1 and *how, what is done with what it opened: LEAVE_KEEP closed as it is (its settings changed, the new
+// connect sets it up; on the other path or its whole board), LEAVE_OFF (switched off), LEAVE_RESTORE (removed, given back).
+// Failed: the index is still that of its device under the same settings (for the retry wait), switched off or not.
+static inline int ext_open_fate(const ext_dev *devs, int n, const ext_dev *res, int *how) {
+    *how = LEAVE_RESTORE;
+    for (int k = 0; k < n; k++) {
+        const ext_dev *d = &devs[k];
+        if (d->id != res->id) continue;
+        if (d->drv != res->drv || strcmp(d->host, res->host) || d->sub != res->sub) return -1;   // other hardware under its number
+        if (d->gen != res->gen || d->online) { *how = LEAVE_KEEP; return -1; }
+        *how = !d->enabled ? LEAVE_OFF : d->own ? LEAVE_RESTORE : d->held || d->covered ? LEAVE_KEEP : -1;
+        return k;
+    }
+    return -1;
+}
 
 // OpenRGB on this PC (drv_openrgb.c)
 typedef struct { int idx, type, leds; char name[64], kind[24]; } orgb_ctl;
