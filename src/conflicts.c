@@ -27,7 +27,7 @@ static const cf_app APPS[] = {
       L"ArmourySocketServer.exe", L"LightingService.exe", L"AuraWallpaperService.exe" }, { L"armoury crate", L"aura" } },
     { "icue", "Corsair iCUE", "corsair", 1, L"corsair", { L"iCUE.exe", L"Corsair.Service.exe", L"iCUEDevicePluginHost.exe", L"CorsairDeviceControlService.exe",
       L"CorsairLLAService.exe", L"Corsair.Service.CpuIdRemote64.exe" }, { L"icue" } },
-    { "signalrgb", "SignalRGB", "all", 1, NULL, { L"SignalRgb.exe", L"SignalRgbLauncher.exe" }, { L"signalrgb" } },
+    { "signalrgb", "SignalRGB", "all", 1, NULL, { L"SignalRgb.exe", L"SignalRgbLauncher.exe", L"SignalRgbService.exe" }, { L"signalrgb" } },
     { "msi", "MSI Center / Mystic Light", "board", 1, L"micro-star", { L"MSI.CentralServer.exe", L"MSI.TerminalServer.exe", L"MSI Center.exe",
       L"MysticLight.exe", L"LEDKeeper2.exe" }, { L"msi center", L"mystic light" } },
     { "gigabyte", "Gigabyte RGB Fusion / Control Center", "board", 1, L"giga-byte", { L"RGBFusion.exe", L"RGBFusion2.exe", L"GCC.exe", L"GigabyteControlCenter.exe" },

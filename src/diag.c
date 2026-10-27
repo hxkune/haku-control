@@ -26,7 +26,8 @@ static int  last_ok = -1;
 static volatile LONG rbusy;              // a bug report being sent
 static int  r_ok = -1;                   // its result: 1 sent (r_id), 0 not (r_err)
 static char r_id[24], r_err[16];
-static char f_id[24], f_text[600];         // a report of this PC the developer marked as done, not shown yet
+// a report of this PC the developer marked as done, or answered (f_rid: that report, f_report: what it said), not shown yet
+static char f_id[24], f_text[4200], f_rid[12], f_report[1300];
 
 typedef struct { char *p; int n, cap; } buf_t;
 
@@ -253,8 +254,11 @@ void diag_open(void) {
 // ok -1 before the first one
 int diag_json(char *out, int cap) {
     AcquireSRWLockShared(&lk);
-    int n = snprintf(out, cap, "{\"busy\":%d,\"ok\":%d,\"file\":\"%s\",\"report\":{\"busy\":%d,\"ok\":%d,\"id\":\"%s\",\"err\":\"%s\"}}",
-                     (int)busy, last_ok, last_file, (int)rbusy, r_ok, r_id, r_err);
+    char text[8192], report[2048];
+    json_escape_to(text, sizeof(text), f_text); json_escape_to(report, sizeof(report), f_report);
+    int n = snprintf(out, cap, "{\"busy\":%d,\"ok\":%d,\"file\":\"%s\",\"report\":{\"busy\":%d,\"ok\":%d,\"id\":\"%s\",\"err\":\"%s\"},"
+                     "\"fixed\":{\"id\":\"%s\",\"rid\":\"%s\",\"text\":\"%s\",\"report\":\"%s\"}}",
+                     (int)busy, last_ok, last_file, (int)rbusy, r_ok, r_id, r_err, f_id, f_rid, text, report);
     ReleaseSRWLockShared(&lk);
     return n;
 }
@@ -308,20 +312,38 @@ void diag_report(const char *text, const char *contact, const char *install, int
     if (h) CloseHandle(h); else { free(r->text); free(r->contact); free(r); InterlockedExchange(&rbusy, 0); }
 }
 
-// ---- a report marked as done on the site: asked with the update check (update.c), shown once in the window and
-// from the tray. The site answers for this installation's reports only, the oldest done one not in [report] seen.
+// "<10 hex>", or "<reply>,<report>" for a reply to a report that is done too: it goes into [report] seen as it is
+static int seen_id(const char *s) {
+    size_t n = strlen(s);
+    if (n != 10 && n != 21) return 0;
+    for (size_t i = 0; i < n; i++) if (i == 10 ? s[i] != ',' : !isxdigit((unsigned char)s[i])) return 0;
+    return 1;
+}
+
+// ---- a report marked as done on the site, or answered there: asked with the update check (update.c), shown once in
+// the window and from the tray. The site answers for this installation's reports only, the oldest not in [report] seen.
 void diag_fixed_check(void) {
     const char *install = cfg_get("community", "install", "");
     if (strlen(install) != 32) return;   // never sent a report (the window makes the ID on the first one)
-    char body[1024], resp[1024], id[24] = "", text[600] = "";
-    snprintf(body, sizeof(body), "{\"action\":\"fixed\",\"install\":\"%s\",\"seen\":\"%.900s\"}", install, cfg_get("report", "seen", ""));
+    static char resp[8192], text[sizeof(f_text)], report[sizeof(f_report)];   // the update thread only
+    char body[1024], id[24] = "", kind[8] = "", rid[12] = "";
+    snprintf(body, sizeof(body), "{\"action\":\"fixed\",\"install\":\"%s\",\"seen\":\"%.900s\",\"replies\":1}", install, cfg_get("report", "seen", ""));
     if (web_post(cfg_get("report", "api", "https://hakune.blog/api/report.php"), "text/plain", body, resp, sizeof(resp)) != 200 ||
-        !json_get_str(resp, "id", id, sizeof(id)) || strlen(id) != 10 || !strcmp(id, f_id)) return;
-    json_get_str(resp, "text", text, sizeof(text));
-    AcquireSRWLockExclusive(&lk); strcpy_s(f_id, sizeof(f_id), id); strcpy_s(f_text, sizeof(f_text), text); ReleaseSRWLockExclusive(&lk);
-    logf_("bug report %s: marked as fixed", id);
-    app_notify(L"haku control", TR(L"The problem you reported is fixed. Open haku to see it.", L"Проблема из вашего отчёта исправлена. Откройте haku, чтобы посмотреть.",
-                                   L"Le problème que vous avez signalé est corrigé. Ouvrez haku pour le voir."));
+        !json_get_str(resp, "id", id, sizeof(id)) || !seen_id(id) || !strcmp(id, f_id)) return;
+    json_get_text(resp, "text", text, sizeof(text));
+    int reply = json_get_str(resp, "kind", kind, sizeof(kind)) && !strcmp(kind, "reply");
+    report[0] = 0;
+    if (reply) { json_get_text(resp, "report", report, sizeof(report)); json_get_str(resp, "rid", rid, sizeof(rid)); }
+    if (reply && !seen_id(rid)) strcpy_s(rid, sizeof(rid), "?");   // the window still needs to know it is a reply
+    AcquireSRWLockExclusive(&lk);
+    strcpy_s(f_id, sizeof(f_id), id); strcpy_s(f_text, sizeof(f_text), text);
+    strcpy_s(f_rid, sizeof(f_rid), reply ? rid : ""); strcpy_s(f_report, sizeof(f_report), report);
+    ReleaseSRWLockExclusive(&lk);
+    logf_("bug report %s: %s", reply ? rid : id, reply ? "answered" : "marked as fixed");
+    if (reply) app_notify(L"haku control", TR(L"The developer answered your report. Open haku to read it.", L"Разработчик ответил на ваш отчёт. Откройте haku, чтобы прочитать.",
+                                              L"Le développeur a répondu à votre signalement. Ouvrez haku pour le lire."));
+    else app_notify(L"haku control", TR(L"The problem you reported is fixed. Open haku to see it.", L"Проблема из вашего отчёта исправлена. Откройте haku, чтобы посмотреть.",
+                                        L"Le problème que vous avez signalé est corrigé. Ouvrez haku pour le voir."));
     ui_refresh();
 }
 
@@ -329,7 +351,7 @@ void diag_fixed_check(void) {
 void diag_fixed_seen(const char *id) {
     AcquireSRWLockExclusive(&lk);
     int match = id && *id && !strcmp(id, f_id);
-    if (match) f_id[0] = f_text[0] = 0;
+    if (match) f_id[0] = f_text[0] = f_rid[0] = f_report[0] = 0;
     ReleaseSRWLockExclusive(&lk);
     if (!match) return;
     char seen[1024]; const char *old = cfg_get("report", "seen", "");

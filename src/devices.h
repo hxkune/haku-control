@@ -156,6 +156,7 @@ void   udp_send_all_ifaces(SOCKET s, const char *group, int port, const void *da
 void   mdns_browse(const char *service, int ms, void (*hit)(const char *ip, void *ctx), void *ctx);
 int    host_port(const char *host, int def_port, char *h, int cap);   // "ip[:port]" -> ip, port
 int    json_get_str(const char *js, const char *key, char *out, int cap);
+int    json_get_text(const char *js, const char *key, char *out, int cap);   // keeps \n and \t
 double json_get_num(const char *js, const char *key, double def);
 const char *json_get_obj(const char *js, const char *key);
 int    json_escape_to(char *out, int cap, const char *s);

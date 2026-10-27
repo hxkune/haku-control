@@ -189,6 +189,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "power") { app_power(); post_status(); }
     else if (cmd == "timed_off") { app_timed_off(atoi(field(js, "min").c_str())); post_status(); }
     else if (cmd == "identify") app_identify(field(js, "zone").c_str());
+    else if (cmd == "dev_test") { app_test(field(js, "zone").c_str()); post_status(); }
     else if (cmd == "calib") app_calib(field(js, "zone").c_str(), atoi(field(js, "mode").c_str()), atoi(field(js, "from").c_str()), atoi(field(js, "n").c_str()));
     else if (cmd == "dev_retry") { ext_retry(); post_status(); }   // Retry now: every device not connected, the waits start over
     else if (cmd == "dev_check") { std::string id = field(js, "id"); ext_retry(); net_check_start(atoi(id.c_str()), cfg_get(("dev." + id).c_str(), "host", "")); post_status(); }

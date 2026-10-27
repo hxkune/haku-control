@@ -364,18 +364,26 @@ static const char *json_find(const char *js, const char *key) {
     return NULL;
 }
 
-int json_get_str(const char *js, const char *key, char *out, int cap) {
+static int get_str(const char *js, const char *key, char *out, int cap, int text) {
     out[0] = 0;
     const char *v = js ? json_find(js, key) : NULL;
     if (!v || *v != '"') return 0;
     int i = 0;
     for (v++; *v && *v != '"' && i < cap - 1; v++) {
-        if (*v == '\\' && v[1]) v++;
+        if (*v == '\\' && v[1]) {
+            v++;
+            if (text && (*v == 'n' || *v == 't')) { out[i++] = *v == 'n' ? '\n' : '\t'; continue; }
+        }
         out[i++] = *v;
     }
     out[i] = 0;
     return 1;
 }
+
+int json_get_str(const char *js, const char *key, char *out, int cap) { return get_str(js, key, out, cap, 0); }
+
+// keeps line breaks and tabs (json_get_str turns \n into n): for text shown as it was written, never a config value
+int json_get_text(const char *js, const char *key, char *out, int cap) { return get_str(js, key, out, cap, 1); }
 
 double json_get_num(const char *js, const char *key, double def) {
     const char *v = js ? json_find(js, key) : NULL;

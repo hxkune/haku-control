@@ -1242,6 +1242,7 @@ body.calm nav button { transition: none; }
 .wn-list ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; }
 .wn-list li::marker { color: var(--faint); }
 .fixed-text { margin: 4px 0 12px; padding: 8px 12px; border-left: 2px solid var(--line); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow-y: auto; }
+.fixed-was { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 80px; overflow-y: auto; }
 
 /* ---- theme switch with the secret-code field beside it */
 .set-row:has(> .theme-ctl) { flex-wrap: wrap; row-gap: 10px; }
@@ -1688,3 +1689,27 @@ svg .f { fill: currentColor; stroke: none; }
 /* the drawn switch and box are clipped to their shape, so the ring goes round the whole control */
 .switch:has(input:focus-visible), .check:has(input:focus-visible) { outline: 2px solid var(--live, var(--strong)); outline-offset: 3px; }
 .switch input:focus-visible, .check input:focus-visible { outline: 0; }
+
+/* first-run guide on Home (app.js updateGuide): no motion of its own, the page's colours and controls */
+.guide { margin-bottom: 18px; }
+.gd-top { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.gd-ic { width: 34px; height: 34px; flex: none; fill: none; stroke: var(--strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.gd-head { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.gd-prog { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+.gd-head .wz-dots { flex: none; }
+.gd-skip { flex: none; }
+.guide h3:focus { outline: 0; }
+.guide h3:focus-visible { outline: 2px solid var(--live, var(--strong)); outline-offset: 2px; }
+.guide .note { margin-top: 6px; line-height: 1.5; max-width: 640px; }
+.gd-x { margin-top: 12px; }
+.gd-x .num { max-width: 320px; margin-top: 12px; }
+.gd-x .found-row .what small, .gd-pair p, .gd-tip p { overflow-wrap: anywhere; }
+.gd-sub { margin-top: 16px; font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+.gd-pair { padding: 12px 0; border-top: 1px solid var(--line); }
+.gd-pair p { margin: 0; }
+.gd-st { min-height: 1.4em; margin-top: 12px; color: var(--muted); font-size: 12.5px; }
+.gd-st:empty { min-height: 0; margin: 0; }
+.gd-st.bad { color: #ff8a8a; }
+.gd-probs .btn { white-space: normal; text-align: left; }
+.gd-tip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-top: 12px; padding: 10px 12px; border-left: 2px solid var(--line3); }
+.gd-tip p { margin: 0; flex: 1 1 260px; }

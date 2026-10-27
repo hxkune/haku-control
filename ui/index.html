@@ -106,6 +106,8 @@
       <div class="arrange-bar hidden" id="arrange-bar"><span data-i18n="hero.arrange.hint"></span><button class="btn small primary" id="arrange-done"><span data-i18n="group.done">Done</span></button></div>
     </div>
     <button class="hero-more hidden" id="hero-more"><span></span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+    <!-- the first-run guide (app.js updateGuide): first device, a test colour, the first profile -->
+    <div class="card guide hidden" id="guide"></div>
     <!-- nothing found yet: where to start -->
     <div class="card home-first hidden" id="home-first">
       <h3 data-i18n="home.first">No devices yet</h3>
@@ -679,6 +681,7 @@
       <!-- answers to what people ask, each checked against what the code does; opened from Home and the cards -->
       <div class="card" id="help">
         <h3 data-i18n="help.title">Help and diagnostics</h3>
+        <div class="btn-row"><button class="btn small ghost" type="button" id="guide-open"><span data-i18n="gd.open">Getting started</span></button></div>
         <details class="trouble" id="help-start"><summary data-i18n="help.start"></summary><p class="hint" data-i18n="help.start.text"></p>
           <div class="btn-row"><button class="btn small ghost" type="button" data-go="devices"><span data-i18n="nav.devices"></span></button></div></details>
         <details class="trouble" id="help-offline"><summary data-i18n="help.offline"></summary><p class="hint" data-i18n="help.offline.text"></p>
@@ -801,14 +804,15 @@
   </form>
 </div>
 <!-- a group of devices in the preview: its name, who is in it and one look for all of them -->
-<!-- a report this PC sent, marked as done by the developer: shown once -->
+<!-- a report this PC sent, marked as done or answered by the developer: shown once -->
 <div class="sheet-wrap pdlg-wrap hidden" id="fixed">
-  <div class="card pdlg wn" role="dialog" aria-modal="true">
-    <div class="pdlg-head"><h3 data-i18n="fixed.title">Your report is fixed</h3></div>
-    <p data-i18n="fixed.body">Thank you for reporting it. The developer has fixed the problem you sent:</p>
+  <div class="card pdlg wn" role="dialog" aria-modal="true" aria-labelledby="fixed-title">
+    <div class="pdlg-head"><h3 id="fixed-title" data-i18n="fixed.title">Your report is fixed</h3></div>
+    <p id="fixed-body" data-i18n="fixed.body">Thank you for reporting it. The developer has fixed the problem you sent:</p>
     <blockquote class="fixed-text" id="fixed-text"></blockquote>
-    <p class="hint" data-i18n="fixed.hint">The fix comes with the latest version of haku, which installs itself.</p>
-    <div class="btn-row"><button class="btn primary" type="button" id="fixed-ok"><span data-i18n="wn.ok">Got it</span></button></div>
+    <p class="hint fixed-was hidden" id="fixed-was"><span data-i18n="fixed.was">Your report:</span> <span id="fixed-report"></span></p>
+    <p class="hint" id="fixed-hint" data-i18n="fixed.hint">The fix comes with the latest version of haku, which installs itself.</p>
+    <div class="btn-row"><button class="btn ghost hidden" type="button" id="fixed-answer"><span data-i18n="fixed.answer">Answer</span></button><button class="btn primary" type="button" id="fixed-ok"><span data-i18n="wn.ok">Got it</span></button></div>
   </div>
 </div>
 <!-- what is new: once after an update, and from Settings -->

@@ -166,6 +166,8 @@ static volatile LONG cal_from, cal_n, cal_rev;          // 3: the ends of one co
 #define CAL_MS       300000   // left on by a window that went away: it stops by itself
 #define OFF_FADE_MS  60000
 #define IDENT_MS     3000
+static volatile LONG test_zone = -1, test_at;   // the first-run guide's test: that zone shows one steady colour
+#define TEST_MS      60000    // ended by the window, or by itself when the window is gone
 static volatile LONG xfade_req;          // a profile switch: the next frames blend over from the last one
 #define XFADE_MS     800
 static HINSTANCE app_inst;
@@ -380,10 +382,11 @@ static unsigned __stdcall render_thread(void *p) {
     while (running) {
         if (InterlockedExchange(&need_reinit, 0)) {
             // after resume from sleep: controllers were power-cycled
-            close_devices(0); Sleep(1500); open_devices(); build_scene();
+            close_devices(0); Sleep(1500); open_devices(); test_zone = -1; build_scene();
         }
         if (InterlockedExchange(&need_own, 0)) { own_apply(); build_scene(); ui_refresh(); }
-        if (nano_layout_changed() | lights_changed() | ext_layout_changed()) { build_scene(); ui_refresh(); }
+        // the zones may be numbered anew: the test must not land on another device
+        if (nano_layout_changed() | lights_changed() | ext_layout_changed()) { test_zone = -1; build_scene(); ui_refresh(); }
         if (InterlockedExchange(&need_reload, 0) ||
             (GetTickCount() - last_cfg_check > 1000 && (last_cfg_check = GetTickCount(), cfg_changed_on_disk()))) {
             own_apply();
@@ -415,6 +418,7 @@ static unsigned __stdcall render_thread(void *p) {
             if (left <= 0) { br = 0; PostMessageW(hwnd, WM_TIMED_OFF, 0, 0); }   // held dark until the main thread switches off
             else if (left < OFF_FADE_MS) br *= left / (float)OFF_FADE_MS;
         }
+        int tz = tk - (DWORD)test_at < TEST_MS ? test_zone : -1;
         int iz = tk - (DWORD)ident_at < IDENT_MS ? ident_zone : -1, iblink = (tk - (DWORD)ident_at) / 250 % 2 == 0;
         int cm = tk - (DWORD)cal_at < CAL_MS ? cal_mode : 0, cz = cal_zone, cn = 0;
         if (cm == 1 || cm == 3) for (int i = 0; i < sc.count; i++) if (sc.leds[i].zone == cz && sc.leds[i].index >= cn) cn = sc.leds[i].index + 1;
@@ -433,6 +437,7 @@ static unsigned __stdcall render_thread(void *p) {
             rgbf c = scalec(out[i], br);
             const rgbf *was = xk < 1 ? xf_from(&xf, &sc.leds[i], sc_unit) : NULL;
             if (was) c = mixc(*was, c, xk);   // (an LED new to this profile just starts)
+            if (sc.leds[i].zone == tz) { c.r = 0; c.g = .6f; c.b = .24f; }   // steady green, as the guide shows it (not saved anywhere)
             if (sc.leds[i].zone == iz) c.r = c.g = c.b = iblink ? 1.0f : 0.0f;
             if (cm == 2) c.r = c.g = c.b = 0.8f;
             else if ((cm == 1 || cm == 3) && sc.leds[i].zone == cz) {
@@ -1128,11 +1133,12 @@ static void pawnio_setup(void) {
 
 volatile LONG g_state_rev;
 static int status_body(char *out, int cap) {
-    char gt[16] = "null";
+    char gt[16] = "null", tz[32] = "";
+    if (test_zone >= 0 && GetTickCount() - (DWORD)test_at < TEST_MS) zone_section(test_zone, tz, sizeof(tz));
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"rev\":%ld,\"bulbs\":[",
+    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"rev\":%ld,\"test\":\"%s\",\"bulbs\":[",
                      g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, app_pc_own_now(),
-                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, g_state_rev);
+                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, g_state_rev, tz);
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
@@ -1280,6 +1286,16 @@ void app_identify(const char *zone) {
         zone_section(k, z, sizeof(z));
         if (!_stricmp(z, zone)) { ident_at = (LONG)GetTickCount(); ident_zone = k; return; }
     }
+}
+
+// "" (or a zone that is not there) ends it; the render thread draws the normal frame again from the settings as they are now
+void app_test(const char *zone) {
+    char z[64];
+    for (int k = 0; k < MAX_ZONES; k++) {
+        zone_section(k, z, sizeof(z));
+        if (zone[0] && !_stricmp(z, zone)) { test_at = (LONG)GetTickCount(); test_zone = k; return; }
+    }
+    test_zone = -1;
 }
 
 void app_calib(const char *zone, int mode, int from, int n) {

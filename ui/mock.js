@@ -54,7 +54,17 @@ window.chrome = { webview: {
     if (o.cmd === 'dev_check') { STATE.netchk = { id: +o.id, busy: 1, res: '' }; emit(STATE); setTimeout(() => { STATE.netchk = { id: +o.id, busy: 0, res: o.id % 2 ? 'silent' : 'answers', ms: 0 }; emit(STATE); }, 1500); }
     if (o.cmd === 'profile') { G.profile = o.id; STATE.prof_why = 1; setTimeout(() => emit(STATE), 120); }
     if (o.cmd === 'profile_dup') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; setTimeout(() => emit(STATE), 60); }
-    if (o.cmd === 'profile_save') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; G.profile = String(n); setTimeout(() => emit(STATE), 60); }
+    // main.c app_test: one zone's steady test colour, '' ends it (the core's own minute is not run here)
+    if (o.cmd === 'dev_test') { STATE.test = o.zone; setTimeout(() => emit(STATE), 30); }
+    // devices.c: the scan, short here; window.mockScanStuck: one that does not end
+    if (o.cmd === 'scan') { STATE.ext.scanning = 1; emit(STATE); if (!window.mockScanStuck) setTimeout(() => { STATE.ext.scanning = 0; emit(STATE); }, 300); }
+    // devices.c ext_add: the same hardware is never added twice
+    if (o.cmd === 'dev_add') { const E = STATE.ext, same = x => x.kind === o.kind && x.host === o.host && x.sub === o.sub, f = E.found.find(same);
+      if (!E.devs.some(same)) E.devs.push({ id: Math.max(0, ...E.devs.map(d => d.id)) + 1, kind: o.kind, title: f ? f.title : o.kind, name: o.name, host: o.host, sub: o.sub,
+        leds: f ? f.leds : 1, per_led: 1, online: 1, enabled: 1, type: '', info: f ? f.info : '' });
+      if (f) f.added = 1; setTimeout(() => emit(STATE), 60); }
+    // window.mockSaveFail: the core does not write it
+    if (o.cmd === 'profile_save' && !window.mockSaveFail) { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; G.profile = String(n); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'profile_delete') { delete C['profile.' + o.id]; if (G.profile === o.id) G.profile = ''; setTimeout(() => emit(STATE), 60); }
   },
   addEventListener(t, f) { L.push(f); },
@@ -62,7 +72,7 @@ window.chrome = { webview: {
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
 const panels = (LAY || LAYOUTS.blocks).panels;
 const STATE = {
-  type: 'state', hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
+  type: 'state', test: '', hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
     { cat: 'gpu', maker: 'ASUS', name: 'NVIDIA GeForce RTX 4070', id: '10DE:2786' }, { cat: 'usb', maker: 'Corsair', name: 'K70 RGB PRO', id: '1B1C:1BB3' },
     { cat: 'usb', maker: 'Wooting', name: 'Wooting 60HE v2', id: '31E3:1342' }, { cat: 'usb', maker: 'Lian Li', name: 'LianLi-Strimer Plus-1.5', id: '0CF2:A200' }] },
   orgb: { state: 2, exe: 1, auto: 1, ours: 1, setup: 0, pct: 0, err: '', ctls: [{ i: 0, type: 5, kind: 'keyboard', leds: 104, name: 'Keyboard' }, { i: 1, type: 3, kind: 'cooler', leds: 16, name: 'Fan hub' },

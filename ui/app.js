@@ -760,6 +760,7 @@ $('#aidot-form').addEventListener('submit', e => {
 });
 
 function showTab(t) {
+  if (t !== 'home' && GUIDE.test) { gdTestEnd(); updateGuide(); }   // the test colour is only on while its step is in view
   closeSheet();
   tab = t;
   $('main').scrollTop = 0;
@@ -3181,15 +3182,7 @@ function buildDevices() {
     el.querySelector('.dev-token')?.addEventListener('change', e => { const v = e.target.value.replace(/\D/g, ''); e.target.value = v; setCfg(sec, 'key', v); });
     el.querySelector('.dev-type')?.addEventListener('change', e => setCfg(sec, 'type', e.target.value));
     el.querySelector('.dev-lights')?.addEventListener('change', e => setCfg(sec, 'lights', e.target.value));
-    // own first, then path, then the pair itself: the core never sees the pair with the wrong path for a moment
-    el.querySelector('.dev-path')?.addEventListener('change', e => {
-      const [v, n] = e.target.value.split(':');
-      if (!v) { setCfg(sec, 'same', ''); return; }
-      const own = v === 'own' ? 1 : 0;
-      if (own || d.own) setCfg(sec, 'own', own);
-      if (own || devById(+n)?.own) setCfg('dev.' + n, 'own', own);
-      setCfg(sec, 'path', v === 'orgb' ? 'openrgb' : 'direct'); setCfg(sec, 'same', n);
-    });
+    el.querySelector('.dev-path')?.addEventListener('change', e => pathSet(d, e.target.value));
     el.querySelector('.dev-rate')?.addEventListener('change', e => setCfg(sec, 'rate', e.target.value));
     el.querySelector('.dev-static')?.addEventListener('change', e => setCfg(sec, 'static', e.target.value));
     // LEDs on each connector: all of them saved together ([dev.N] zones), the device reconnects with them
@@ -3240,7 +3233,7 @@ function buildDevices() {
 }
 // ---- undo the last change (Ctrl+Z, or the button that shows for a few seconds after one): a setting, the effect or the
 // brightness. The core then sends its whole state again, so every control shows the value back.
-const UNDO = [], UNDO_SKIP = /^(general\.(seen_version|welcome|unlocked|recent)|ui\.brands_fold|community\..*)$/;
+const UNDO = [], UNDO_SKIP = /^(general\.(seen_version|welcome|unlocked|recent|guide)|ui\.brands_fold|community\..*)$/;
 // One entry is one action: everything written while one event is handled (a group's look on all its devices,
 // a device moved between groups) goes back together; each change keeps the value it replaced.
 let undoing = false, undoHide = 0, undoCur = null;
@@ -3966,7 +3959,8 @@ $('#wz-back').addEventListener('click', () => wzGo(wzStep - 1));
 $('#wz-next').addEventListener('click', () => {
   if (wzStep < 2) return wzGo(wzStep + 1);
   setCfg('general', 'welcome', 0);
-  wizard(false);
+  if (!gdStep()) setCfg('general', 'guide', 'dev');   // a new install: the guide on Home takes it from here
+  wizard(false); updateGuide();
 });
 $('#wz-scan').addEventListener('click', () => { S.ext.scanning = 1; updateWizard(); send({ cmd: 'scan' }); });
 $('#wz-autostart').addEventListener('change', e => send({ cmd: 'autostart', v: e.target.checked ? 1 : 0 }));
@@ -4219,12 +4213,21 @@ $('#wn-ok').addEventListener('click', whatsNewClose);
 $('#wn').addEventListener('pointerdown', e => { if (e.target.id === 'wn') whatsNewClose(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#wn').classList.contains('hidden')) whatsNewClose(); });
 $('#wn-open').addEventListener('click', () => whatsNew(true));
-// ---- a report this PC sent, marked as done on the site (diag.c, diag_fixed_check): shown once, then not asked about
+// ---- a report this PC sent, marked as done on the site or answered there (diag.c, diag_fixed_check): shown once,
+// then not asked about. A reply's id is "<reply>,<report>" when the report is done too.
 function fixedCheck() {
   const F = (S.diag || {}).fixed || {};
   if (!F.id || document.documentElement.classList.contains('remote') || !$('#fixed').classList.contains('hidden')) return;
+  const reply = !!F.rid, key = (el, k) => { el.dataset.i18n = k; el.textContent = t(k); };
+  key($('#fixed-title'), reply ? 'fixed.r.title' : 'fixed.title');
+  key($('#fixed-body'), reply ? 'fixed.r.body' : 'fixed.body');
+  key($('#fixed-hint'), !reply ? 'fixed.hint' : F.id.includes(',') ? 'fixed.r.done' : 'fixed.r.hint');
   $('#fixed-text').textContent = F.text || '';
+  $('#fixed-report').textContent = F.report || '';
+  $('#fixed-was').classList.toggle('hidden', !reply || !F.report);
+  $('#fixed-answer').classList.toggle('hidden', !reply);
   $('#fixed').dataset.id = F.id;
+  $('#fixed').dataset.rid = /^[0-9a-f]{10}$/.test(F.rid || '') ? F.rid : '';
   $('#fixed').classList.remove('hidden');
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#fixed').classList.contains('hidden')) $('#fixed-ok').click(); });
@@ -4233,6 +4236,13 @@ $('#fixed-ok').addEventListener('click', () => {
   $('#fixed').classList.add('hidden');
   send({ cmd: 'report_seen', id: $('#fixed').dataset.id });
   S.diag = Object.assign({}, S.diag, { fixed: {} });
+});
+// the answer is a new report, starting with the one it answers so the developer finds it
+$('#fixed-answer').addEventListener('click', () => {
+  const rid = $('#fixed').dataset.rid;
+  $('#fixed-ok').click();
+  reportDialog();
+  if (rid && !$('#report-text').value) $('#report-text').value = 'Re #' + rid + ': ';
 });
 
 // diagnostics: one text file in Downloads (log, settings, devices, network), without keys or passwords
@@ -4488,7 +4498,8 @@ function homeCool() {
 }
 function updateHome() {
   const none = !S.ext.devs.length && !S.bulbs.length && !nanoCtls().length && !S.sticks && !S.msi && !(S.fans || {}).on && !llOn();
-  $('#home-first').classList.toggle('hidden', !none || document.documentElement.classList.contains('remote'));
+  $('#home-first').classList.toggle('hidden', !none || gdOn() || document.documentElement.classList.contains('remote'));
+  updateGuide();
   const a = homeAttn(), btn = (k, v, txt, cls) => `<button class="btn small${cls || ' ghost'}" type="button" data-${k}="${esc(v)}"><span>${txt}</span></button>`;
   const html = a.map((x, i) => `<div class="found-row" data-i="${i}"><span class="kind">${esc(x.kind)}</span>
     <div class="what"><b>${esc(x.n)}</b><small>${esc(x.why)}</small></div>
@@ -4526,6 +4537,229 @@ function helpOpen(topic) {
   setTimeout(() => d.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-help]'); if (b) helpOpen(b.dataset.help); });
+
+// ------------------------------------------------------------------ first-run guide: a card on Home from the first device to
+// the first profile, through what is already there (the scan, the device card, the path pair, profile_save).
+// [general] guide = dev | path | test | save (where it was left) | done | skip; no key: an install from before it, not offered
+const GUIDE = { last: '', scanAt: 0, scanned: 0, adding: new Set(), dev: 0, test: '', seen: 0, said: '', prob: '', ok: 0, saving: null, err: '', name: '', tips: null, focus: 0 };
+const gdStep = () => cv('general', 'guide', '');
+const gdOn = () => !document.documentElement.classList.contains('remote') && (['dev', 'path', 'test', 'save'].includes(gdStep()) || !!GUIDE.tips);
+// an OpenRGB device that may be one the PC also has through its own driver: only offered, the user says (a name is no proof)
+const gdPairs = () => S.ext.devs.filter(o => o.kind === 'openrgb' && pathPairs(o).length);
+const gdSteps = () => ['dev', ...(gdStep() === 'path' || gdPairs().length ? ['path'] : []), 'test', 'save'];
+const gdAny = () => S.ext.devs.length || S.bulbs.length || nanoCtls().length;
+// why a device can't show the test colour here (then its own card or page is the way), '' when it can
+function gdWhyNot(d) {
+  if (d.kind === 'tryx') return t('gd.t.screen');
+  if (cv('dev.' + d.id, 'caps', '') === 'white') return t('gd.t.white');
+  if (zonesNeed(d) || !d.online || !d.enabled || d.own || d.held || d.covered || (d.pro && proLocked()) || (d.kind === 'openrgb' && d.cap >= 4)) return devStatus(d);
+  return '';
+}
+// what it takes from haku, as the core reports it (drv_openrgb.c CAP_*, the device status)
+function gdLevel(d) {
+  if (d.kind === 'tryx') return t('gd.lv.screen');
+  if (cv('dev.' + d.id, 'caps', '') === 'white') return t('gd.lv.white');
+  const w = gdWhyNot(d);
+  if (w) return w;
+  if (d.kind === 'openrgb' && d.cap === 2) return t('gd.lv.exp');
+  if (d.kind === 'openrgb' && d.cap === 3) return t('gd.lv.static');
+  return t('gd.lv.fx');
+}
+// one pair's way, as on the OpenRGB card: own first, then path, then the pair itself (the core never sees a wrong mix)
+function pathSet(d, val) {
+  const sec = 'dev.' + d.id, [v, n] = val.split(':');
+  if (!v) { setCfg(sec, 'same', ''); return; }
+  const own = v === 'own' ? 1 : 0;
+  if (own || d.own) setCfg(sec, 'own', own);
+  if (own || devById(+n)?.own) setCfg('dev.' + n, 'own', own);
+  setCfg(sec, 'path', v === 'orgb' ? 'openrgb' : 'direct'); setCfg(sec, 'same', n);
+}
+// the test colour: on only after Check; the core ends it by itself after a minute (TEST_MS), and on a layout change
+function gdTestEnd(why) {
+  if (!GUIDE.test) return;
+  const d = devById(GUIDE.dev);
+  send({ cmd: 'dev_test', zone: '' });
+  GUIDE.test = ''; GUIDE.seen = 0;
+  // haku sends the lighting as set now; whether the device shows it again is only known while it answers
+  GUIDE.said = why === 'core' ? t('gd.t.ended') : d && d.online ? t('gd.t.back') : t('gd.t.lost');
+}
+function gdGo(s) {
+  gdTestEnd();
+  if (s !== 'test') { GUIDE.said = ''; GUIDE.prob = ''; GUIDE.ok = 0; }
+  GUIDE.err = '';
+  setCfg('general', 'guide', s);
+  updateGuide();
+}
+function gdNext(dir) {
+  const L = gdSteps(), i = L.indexOf(gdStep());
+  if (dir < 0 && i > 0) return gdGo(L[i - 1]);
+  if (dir > 0 && i < L.length - 1) return gdGo(L[i + 1]);
+}
+function gdScan() { GUIDE.scanAt = Date.now(); GUIDE.scanned = 0; S.ext.scanning = 1; send({ cmd: 'scan' }); setTimeout(updateGuide, 30500); updateGuide(); }
+function gdName() {
+  const P = profiles().map(p => p.name); let k = P.length + 1;
+  while (P.includes(t('prof.n', k))) k++;
+  return t('prof.n', k);
+}
+function gdSave() {
+  if (GUIDE.saving) return;   // a second click while the first is on its way
+  const name = $('#gd-name').value.replace(/[;#\[\]=]/g, ' ').trim() || gdName();
+  GUIDE.name = name; GUIDE.err = '';
+  GUIDE.saving = { name, ids: profiles().map(p => p.id), at: Date.now() };
+  send({ cmd: 'profile_save', id: '0', name });   // 0: always a new one, never over a profile that is there
+  setTimeout(updateGuide, 6100); updateGuide();
+}
+const GD_ICON = {
+  dev: '<path d="M4 7h16v10H4z"/><path d="M8 17v3M16 17v3M7 11h.01M11 11h6"/>',
+  path: '<path d="M4 6h6l4 6-4 6H4"/><path d="M14 12h6"/>',
+  test: '<circle cx="12" cy="11" r="5"/><path d="M10 19h4M12 3v1M5 5l.7.7M19 5l-.7.7"/>',
+  save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
+  done: '<path d="M5 12l5 5L20 7"/>',
+};
+function gdBody(s) {
+  const E = S.ext, b = (g, txt, cls, extra) => `<button class="btn small${cls == null ? ' ghost' : cls}" type="button" data-g="${g}"${extra || ''}><span>${txt}</span></button>`;
+  const row = (kind, name, small, end) => `<div class="found-row"><span class="kind">${esc(kind)}</span><div class="what"><b>${esc(name)}</b><small>${esc(small)}</small></div><span class="added">${end || ''}</span></div>`;
+  if (s === 'dev') {
+    const err = E.scanning && GUIDE.scanAt && Date.now() - GUIDE.scanAt > 30000;
+    if (!E.scanning && GUIDE.scanAt) GUIDE.scanned = 1;
+    const fresh = E.found.filter(f => !f.added && !f.clash);
+    const none = GUIDE.scanned && !gdAny() && !fresh.length;
+    const st = err ? t('gd.d.err') : E.scanning ? t('dev.scanning.note') : fresh.length ? t('dev.found', fresh.length) : none ? t('gd.d.none') : '';
+    const found = fresh.map(f => { const k = [f.kind, f.host, f.sub].join('|'), i = E.found.indexOf(f);
+      return row(f.title, f.name || f.title, f.host + (f.info ? ' · ' + f.info : ''), GUIDE.adding.has(k) ? `<span>${t('gd.d.adding')}</span>` : b('add', t('dev.add'), '', ` data-i="${i}"`)); }).join('');
+    const have = [...E.devs.map(d => row(kindTitle(d.kind), d.name, gdLevel(d))),
+      ...S.bulbs.map((x, i) => row(t('chip.lamps'), bulbName(i), x.online ? t('gd.lv.page') : t('dev.offline'))),
+      ...nanoCtls().map(n => row('Nanoleaf', nanoName(n), n.online ? t('gd.lv.page') : t('dev.offline')))].join('');
+    return { st, err: err || none, x: `${found ? `<div class="found">${found}</div>` : ''}${have ? `<p class="gd-sub">${t('gd.d.have')}</p><div class="found">${have}</div>` : ''}`,
+      more: (gdAny() || err || none ? b('scan', t('gd.d.rescan'), ' ghost', E.scanning && !err ? ' disabled' : '') : '') +
+        b('manual', t('gd.d.manual')) + (err || none ? b('help-start', t('help.open')) : '') + (NAV_NEED.fans() ? b('fans', t('gd.d.fans')) : ''),
+      main: gdAny() ? b('next', t('wz.next'), ' primary') : err || none ? '' : b('scan', E.scanning ? t('dev.scanning') : t('dev.scan'), ' primary', E.scanning ? ' disabled' : '') };
+  }
+  if (s === 'path') {
+    const x = gdPairs().map(o => pathPairs(o).map(n => {
+      // a recommendation only from what OpenRGB said it can do with this controller (CAP_*), never from the name
+      const why = o.cap >= 2 && n.online ? `<p class="hint">${esc(t('gd.p.rec', n.name, t(o.cap <= 3 ? 'drive.' + o.cap : 'cap.' + o.cap)))}</p>` : '';
+      return `<div class="gd-pair"><p>${esc(t('gd.p.may', o.name, n.name, kindTitle(n.kind)))}</p>
+        <label class="num"><span>${t('path.title')}</span><select class="select" data-gp="${o.id}"><option value="">${t('gd.p.not')}</option>${['direct', 'orgb', 'own'].map(v =>
+          `<option value="${v}:${n.id}"${pathCur(o) === v + ':' + n.id ? ' selected' : ''}>${esc(t('path.' + v, n.name))}</option>`).join('')}</select></label>${why}</div>`; }).join('')).join('');
+    return { st: '', x: x + `<p class="hint">${t('path.note')}</p>`, more: '', main: b('next', t('wz.next'), ' primary') };
+  }
+  if (s === 'test') {
+    const can = S.ext.devs.filter(d => !gdWhyNot(d)), d = can.find(x => x.id === GUIDE.dev) || can[0];
+    if (d && !GUIDE.test) GUIDE.dev = d.id;
+    if (GUIDE.test && S.test === GUIDE.test) GUIDE.seen = 1;
+    else if (GUIDE.test && GUIDE.seen) gdTestEnd('core');   // the core ended it (its minute, a layout change), not the page
+    const on = GUIDE.test && S.test === GUIDE.test;
+    const not = [...S.ext.devs.filter(x => gdWhyNot(x)).map(x => row(kindTitle(x.kind), x.name, gdWhyNot(x), b('card', t('gd.t.card'), ' ghost', ` data-id="${x.id}"`))),
+      ...S.bulbs.map((x, i) => row(t('chip.lamps'), bulbName(i), t('gd.t.page'), b('tab-bulbs', t('home.open')))),
+      ...nanoCtls().map(n => row('Nanoleaf', nanoName(n), t('gd.t.page'), b('tab-nano', t('home.open'))))].join('');
+    const pick = can.length > 1 && !GUIDE.test ? `<label class="num"><span>${t('gd.t.dev')}</span><select class="select" id="gd-dev">${can.map(x =>
+      `<option value="${x.id}"${x.id === GUIDE.dev ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : '';
+    const prob = GUIDE.prob && GUIDE.prob !== 'ask' ? `<p class="hint">${t('gd.pr.' + GUIDE.prob + '.t')}</p><div class="btn-row">${GUIDE.prob === 'dark' ? b('help-offline', t('help.open'))
+      : GUIDE.prob === 'blink' ? b('help-conflict', t('help.open')) : b('card', t('gd.t.card'), ' ghost', ` data-id="${GUIDE.dev}"`)}${b('check', t('gd.t.again'))}</div>` : '';
+    const ask = GUIDE.test ? `<div class="btn-row">${b('works', t('gd.t.works'), ' primary')}${b('problem', t('gd.t.problem'))}${b('stop', t('gd.t.stop'))}</div>` : '';
+    const list = GUIDE.prob === 'ask' ? `<div class="btn-row gd-probs">${['dark', 'blink', 'other', 'colour'].map(p => b('pr-' + p, t('gd.pr.' + p))).join('')}</div>` : '';
+    const st = GUIDE.test ? (on ? t('gd.t.on', devById(GUIDE.dev)?.name || '') : t('gd.t.sending')) : GUIDE.ok ? t('gd.t.ok') : GUIDE.said;
+    return { st, x: (d ? pick + `<p class="hint">${t('gd.t.what')}</p>` + ask + list + prob : `<p class="hint">${t('gd.t.none')}</p>`) +
+        (not ? `<p class="gd-sub">${t('gd.t.other')}</p><div class="found">${not}</div>` : ''),
+      more: '', main: GUIDE.test ? '' : d && !GUIDE.ok && !GUIDE.prob ? b('check', t('gd.t.check'), ' primary') : b('next', t('wz.next'), GUIDE.ok || !d ? ' primary' : ' ghost') };
+  }
+  if (s === 'save') {
+    const P = profiles(), full = P.length >= PROFILE_MAX, sv = GUIDE.saving;
+    if (sv) {
+      const p = P.find(p => !sv.ids.includes(p.id) && p.name === sv.name);
+      if (p) { GUIDE.saving = null; gdFinish(p.name); return null; }   // the core wrote it: only now is it saved
+      if (Date.now() - sv.at > 6000) { GUIDE.saving = null; GUIDE.err = t(full ? 'gd.s.full' : 'gd.s.fail', PROFILE_MAX); }
+    }
+    const only = S.ext.devs.some(d => d.enabled && d.kind === 'openrgb' && d.cap === 3);
+    return { st: GUIDE.saving ? t('gd.s.saving') : GUIDE.err, err: !!GUIDE.err,
+      x: `${only ? `<p class="hint">${t('gd.s.static')}</p>` : ''}${full ? `<p class="hint">${t('gd.s.full', PROFILE_MAX)}</p>` :
+        `<label class="num"><span>${t('gd.s.name')}</span><input type="text" id="gd-name" maxlength="40" spellcheck="false"></label>`}`,
+      more: full ? b('prof', t('gd.s.open')) : '', main: full ? b('finish', t('gd.s.finish'), ' primary') : b('save', GUIDE.err ? t('gd.s.retry') : t('gd.s.save'), ' primary', GUIDE.saving ? ' disabled' : '') };
+  }
+}
+function gdFinish(name) {
+  gdTestEnd();
+  GUIDE.tips = { name, prof: 1, tray: 1 };
+  setCfg('general', 'guide', 'done');
+  updateGuide();
+}
+function updateGuide() {
+  const el = $('#guide'), on = gdOn();
+  el.classList.toggle('hidden', !on);
+  if (on) $('#home-first').classList.add('hidden');
+  if (!on) { el.dataset.html = ''; GUIDE.last = ''; return; }
+  const s = GUIDE.tips ? 'done' : gdStep();
+  let html;
+  if (s === 'done') {
+    const T = GUIDE.tips, tip = (k, txt) => T[k] ? `<div class="gd-tip"><p>${txt}</p><button class="btn small ghost" type="button" data-g="tip-${k}"><span>${t('gd.tip.ok')}</span></button></div>` : '';
+    html = `<div class="gd-top"><svg class="gd-ic" viewBox="0 0 24 24" aria-hidden="true">${GD_ICON.done}</svg><h3 id="gd-h" tabindex="-1">${t('gd.done.h')}</h3></div>
+      <p class="note" role="status">${esc(T.name ? t('gd.done.t', T.name) : t('gd.done.t0'))}</p>${tip('prof', t('gd.tip.prof'))}${tip('tray', t('gd.tip.tray'))}`;
+  } else {
+    const L = gdSteps(), i = Math.max(0, L.indexOf(s)), B = gdBody(s);
+    if (!B) return;   // finished meanwhile: gdFinish drew it
+    html = `<div class="gd-top"><svg class="gd-ic" viewBox="0 0 24 24" aria-hidden="true">${GD_ICON[s]}</svg>
+        <div class="gd-head"><span class="gd-prog">${t('gd.prog', i + 1, L.length)}</span><span class="wz-dots" aria-hidden="true">${L.map((_, k) => `<i${k <= i ? ' class="on"' : ''}></i>`).join('')}</span></div>
+        <button class="btn small ghost gd-skip" type="button" data-g="skip"><span>${t('gd.skip')}</span></button></div>
+      <h3 id="gd-h" tabindex="-1">${t('gd.' + s + '.h')}</h3><p class="note">${t('gd.' + s + '.t')}</p>
+      <p class="gd-st${B.err ? ' bad' : ''}" role="status" aria-live="polite">${esc(B.st || '')}</p>
+      <div class="gd-x">${B.x}</div>
+      <div class="btn-row">${i ? `<button class="btn small ghost" type="button" data-g="back"><span>${t('wz.back')}</span></button>` : ''}${B.more}${B.main}</div>`;
+  }
+  if (el.dataset.html === html) return;
+  // drawn anew: the control that had focus gets it back, and a new step moves it to its heading
+  const a = document.activeElement, was = el.contains(a) ? (a.id ? '#' + a.id : a.dataset.g ? `[data-g="${a.dataset.g}"]` : a.dataset.gp ? `[data-gp="${a.dataset.gp}"]` : '') : '';
+  const nm = $('#gd-name'); if (nm) GUIDE.name = nm.value;
+  el.dataset.html = html; el.innerHTML = html;
+  const ni = $('#gd-name'); if (ni) ni.value = GUIDE.name || (GUIDE.name = gdName());
+  if (GUIDE.last !== s) { GUIDE.last = s; if (GUIDE.focus) $('#gd-h').focus({ preventScroll: true }); }
+  else if (was) (el.querySelector(was) || $('#gd-h')).focus({ preventScroll: true });
+}
+$('#guide').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-g]'); if (!btn || btn.disabled) return;
+  const g = btn.dataset.g, E = S.ext;
+  GUIDE.focus = 1;   // from the first click on: a new step takes the focus (not at start, the page's own focus stays)
+  if (g === 'skip') { gdTestEnd(); GUIDE.tips = null; setCfg('general', 'guide', 'skip'); updateHome(); $('.home-help button').focus(); return; }
+  if (g === 'back') return gdNext(-1);
+  if (g === 'next') return gdNext(1);
+  if (g === 'scan') return gdScan();
+  if (g === 'add') {
+    const f = E.found[+btn.dataset.i]; if (!f || f.added || f.clash) return;
+    const k = [f.kind, f.host, f.sub].join('|'); if (GUIDE.adding.has(k)) return;   // once, whatever the clicks (devices.c dedups too)
+    GUIDE.adding.add(k); setTimeout(() => { GUIDE.adding.delete(k); updateGuide(); }, 8000);
+    send({ cmd: 'dev_add', kind: f.kind, host: f.host, sub: f.sub, name: f.name || f.title, leds: 0 }); updateGuide(); return;
+  }
+  if (g === 'manual') { showTab('devices'); setTimeout(() => { $('#man-kind').scrollIntoView({ block: 'center' }); $('#man-kind').focus(); }, 60); return; }
+  if (g === 'fans') return showTab('fans');
+  if (g.startsWith('help-')) return helpOpen(g.slice(5));
+  if (g.startsWith('tab-')) return showTab(g.slice(4));
+  if (g === 'card') { gdTestEnd(); updateGuide(); const r = btn.getBoundingClientRect(); openSheet({ k: 'ext', id: +btn.dataset.id }, r.left + r.width / 2, r.top); return; }
+  if (g === 'check') {
+    gdTestEnd(); GUIDE.prob = ''; GUIDE.ok = 0; GUIDE.said = '';
+    const d = devById(GUIDE.dev); if (!d || gdWhyNot(d)) return updateGuide();
+    GUIDE.test = 'zone.dev' + d.id; GUIDE.seen = 0;
+    send({ cmd: 'dev_test', zone: GUIDE.test }); updateGuide(); return;
+  }
+  if (g === 'works') { gdTestEnd(); GUIDE.ok = 1; GUIDE.said = ''; return updateGuide(); }
+  if (g === 'problem') { gdTestEnd(); GUIDE.prob = 'ask'; return updateGuide(); }
+  if (g === 'stop') { gdTestEnd(); return updateGuide(); }
+  if (g.startsWith('pr-')) { GUIDE.prob = g.slice(3); return updateGuide(); }
+  if (g === 'save') return gdSave();
+  if (g === 'prof') return profMenu(true);
+  if (g === 'finish') return gdFinish('');
+  if (g.startsWith('tip-')) {
+    GUIDE.tips[g.slice(4)] = 0;
+    if (!GUIDE.tips.prof && !GUIDE.tips.tray) { GUIDE.tips = null; updateGuide(); $('#prof-btn').focus(); } else { updateGuide(); $('#guide [data-g^="tip-"]')?.focus(); }
+  }
+});
+$('#guide').addEventListener('change', e => {
+  if (e.target.id === 'gd-dev') { GUIDE.dev = +e.target.value; GUIDE.ok = 0; GUIDE.prob = ''; GUIDE.said = ''; updateGuide(); }
+  const o = e.target.dataset.gp && devById(+e.target.dataset.gp); if (o) pathSet(o, e.target.value);
+});
+$('#guide').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'gd-name') { e.preventDefault(); gdSave(); } });
+// the window going away ends the test too (the core's own minute is there for when this does not run)
+addEventListener('pagehide', () => gdTestEnd());
+$('#guide-open').addEventListener('click', () => { gdTestEnd(); GUIDE.tips = null; GUIDE.last = ''; GUIDE.focus = 1; setCfg('general', 'guide', 'dev'); showTab('home'); updateGuide(); });
 
 // ------------------------------------------------------------------ messages from the core
 // ------------------------------------------------------------------ fans: Aqua Computer QUADRO and the board's Super I/O (fans.c, sio.c)
