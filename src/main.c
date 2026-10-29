@@ -158,6 +158,8 @@ static int      have_msi, have_ene, fps = 30;
 // the board's / memory's lighting given back to their own programs ([devices] msi_own / ene_own): their own effect
 // again (the one they keep), nothing sent to them, their makers' apps can change it
 static volatile LONG msi_own, ram_own, need_own;
+// bit k: an OpenRGB device that is on sits at stick k's address and lights it, so the stick is left to it here
+static volatile LONG ram_yield;
 // "off in N minutes" and "which one is it": both only shade what the render thread sends, nothing is saved
 static volatile LONG off_at;              // GetTickCount() when the lights go off (0: no timer); the last minute fades
 static volatile LONG ident_zone = -1, ident_at;   // that zone blinks white for a few seconds
@@ -221,6 +223,17 @@ static void build_scene(void) {
     load_calibration();
     // disabled devices are left out of the scene, so effects span only what is lit
     int sticks = !ram_on || ram_own ? 0 : have_ene ? ene_count() : 2;
+    // two writers on one stick fight (and memory switched off here would keep writing black over OpenRGB's colours)
+    LONG yield = 0;
+    for (int k = 0; have_ene && k < ene_count() && k < 2; k++) {
+        char at[24]; snprintf(at, sizeof(at), "address 0x%02x", ene_addr(k));
+        for (int id = 1; id <= 64; id++) {
+            char sec[16], loc[128]; snprintf(sec, sizeof(sec), "dev.%d", id);
+            snprintf(loc, sizeof(loc), "%s", cfg_get(sec, "loc", "")); _strlwr_s(loc, sizeof(loc));
+            if (strstr(loc, "smbus") && strstr(loc, at) && !_stricmp(cfg_get(sec, "kind", ""), "openrgb") && cfg_geti(sec, "enabled", 1) && !cfg_geti(sec, "own", 0)) { yield |= 1 << k; break; }
+        }
+    }
+    InterlockedExchange(&ram_yield, yield);
     if (sticks > 2) sticks = 2;
     int glit = gpu_on && !msi_own ? gpu_leds : 0;
 
@@ -331,7 +344,7 @@ static unsigned __stdcall ram_thread(void *p) {
         given = 0;
         rgbf c[2][8]; int n[2];
         EnterCriticalSection(&cs); memcpy(c, ram_buf, sizeof(c)); memcpy(n, ram_n, sizeof(n)); LeaveCriticalSection(&cs);
-        for (int st = 0; st < 2; st++) if (n[st]) ene_send(st, c[st], n[st]);
+        for (int st = 0; st < 2; st++) if (n[st] && !(ram_yield >> st & 1)) ene_send(st, c[st], n[st]);
     }
     return 0;
 }

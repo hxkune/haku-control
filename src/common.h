@@ -94,6 +94,7 @@ void msi_close(void);
 // ---- dev_ene.c (ENE DRAM RGB via PawnIO)
 int  ene_open(void);
 int  ene_count(void);
+int  ene_addr(int stick);   // its SMBus address
 int  ene_send(int stick, const rgbf *c, int n);
 void ene_restore(void);
 void ene_close(void);

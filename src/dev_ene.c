@@ -98,6 +98,7 @@ int ene_open(void) {
 }
 
 int ene_count(void) { return nsticks; }
+int ene_addr(int k) { return k < nsticks ? addr[k] : 0; }
 
 static BYTE to8(float v) { return (BYTE)(clampf(v, 0, 1) * 255.0f + 0.5f); }
 
