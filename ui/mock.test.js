@@ -1924,6 +1924,113 @@
     } finally { S.fx_audio = S.fx_temp = -2; S.effect = was; renderEffectSide(); }
   });
 
+  // the constructor: [custom] l1..l8 and k1..k3 as effects.c comp_load reads them
+  const cmpLines = () => [1, 2, 3, 4, 5, 6, 7, 8].map(i => cv('custom', 'l' + i, '')).filter(Boolean);
+  const cmpKeep = async fn => {
+    const was = S.effect, keep = JSON.stringify(S.cfg);
+    try { await fn(); } finally {
+      if (!$('#cdlg').classList.contains('hidden')) cmpClose(); if (!$('#share-dlg').classList.contains('hidden')) closeShare();
+      flushSets(); STATE.cfg = JSON.parse(keep); STATE.effect = S.effect = was; bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(120); renderEffectSide();
+    }
+  };
+  test('constructor: add, hide, move and delete layers; its own undo and redo; every step is the [custom] lines', async () => {
+    await fresh(); showTab('effects');
+    await cmpKeep(async () => {
+      for (let i = 1; i <= 8; i++) setCfg('custom', 'l' + i, ''); for (let i = 1; i <= 3; i++) setCfg('custom', 'k' + i, '');
+      S.effect = 'custom'; renderEffectSide();
+      ok($$('#fx-params input[data-kn]').length === 2 && $('#fx-params button[data-kn]'), 'side panel: the reactor knobs');
+      $('#cmp-open').click(); await wait(80);
+      const li = () => $$('#cdlg-list li'), names = () => li().map(x => x.querySelector('.cdlg-pick').textContent);
+      ok(li().length === 3 && $('#cdlg-undo').disabled && $('#cdlg-redo').disabled, 'opens on the reactor, nothing to undo');
+      $('#cdlg-add').click(); await wait(20);
+      ok(li().length === 4 && li()[3].classList.contains('on') && cmpLines().length === 4 && cmpLines()[3].startsWith('s:grad'), 'add: ' + cmpLines().join(' | '));
+      ok(cmpLines()[0] === fxPreview.comp.DEFAULT[0] && cv('custom', 'k3', '').startsWith('3 n '), 'the reactor written whole with its knobs');
+      li()[3].querySelector('[data-a="up"]').click(); await wait(20);
+      ok(cmpLines()[2].startsWith('s:grad') && cmpLines()[3].startsWith('s:spark') && li()[2].classList.contains('on'), 'up: ' + cmpLines().join(' | '));
+      ok(cv('custom', 'k3', '').startsWith('4 n '), 'a knob follows its layer when the order changes: ' + cv('custom', 'k3', ''));
+      li()[0].querySelector('[data-a="eye"]').click(); await wait(20);
+      ok(/hide:1/.test(cmpLines()[0]) && li()[0].classList.contains('off'), 'hide: ' + cmpLines()[0]);
+      // a setting dragged is one step however many inputs it sends
+      li()[2].querySelector('[data-a="pick"]').click(); await wait(20);
+      const r = $('#cdlg-edit input[data-p="v"]'); ok(r, 'no speed slider on the gradient');
+      for (const v of [30, 45, 60]) { r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })); }
+      await wait(300); flushSets();
+      ok(/ v:60/.test(cmpLines()[2]), 'drag: ' + cmpLines()[2]);
+      li()[3].querySelector('[data-a="del"]').click(); await wait(20);
+      ok(cmpLines().length === 3 && !cv('custom', 'k3', ''), 'delete takes its knob too: ' + cv('custom', 'k3', ''));
+      const steps = [cmpLines().join('|')], top = UNDO[UNDO.length - 1];
+      key(document.body, 'z', true); await wait(20); steps.push(cmpLines().join('|'));
+      ok(cmpLines().length === 4 && cv('custom', 'k3', '').startsWith('4 n ') && / v:60/.test(cmpLines()[2]), 'undo the delete');
+      key(document.body, 'z', true); await wait(20);
+      ok(!/ v:60/.test(cmpLines()[2]), 'undo the drag in one step: ' + cmpLines()[2]);
+      key(document.body, 'y', true); key(document.body, 'y', true); await wait(20);
+      ok(cmpLines().join('|') === steps[0] && $('#cdlg-redo').disabled, 'redo back to the last');
+      ok(top && UNDO.includes(top), 'Ctrl+Z in the constructor is its own: the window undo did not run');
+      // the shape and the colour: own colour shows a swatch; time and sound open their parts with a visible amount
+      const sel = (f, v) => { const s = $(`#cdlg-edit select[data-f="${f}"]`); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); };
+      sel('shape', 3); await wait(20); ok($('#cdlg-edit input[data-p="dur"]') && $('#cdlg-edit input[type=checkbox][data-p="fade"]'), 'ring settings');
+      sel('col', -2); await wait(20); ok($('#cdlg-sw'), 'own colour swatch');
+      sel('ap', fxPreview.comp.LPD.findIndex(d => d[0] === 'sz')); await wait(20); ok(/ap:sz/.test(cmpLines()[2]) && /aa:\d/.test(cmpLines()[2]) && $('#cdlg-edit details[data-d="anim"]').open, 'animate: ' + cmpLines()[2]);
+      sel('mp', 0); await wait(20); ok(/mp:o/.test(cmpLines()[2]) && /ma:\d/.test(cmpLines()[2]) && $('#cdlg-edit select[data-f="ms"]'), 'sound: ' + cmpLines()[2]);
+      key(document.body, 'Escape'); await wait(20);
+      ok($('#cdlg').classList.contains('hidden'), 'Esc closes');
+    });
+  });
+
+  test('constructor: the tutorials are plain layers; a panel knob moves its layer\'s setting; Save as preset sends the layers', async () => {
+    await fresh(); showTab('effects');
+    await cmpKeep(async () => {
+      S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+      const tut = $('#cdlg-tut'); tut.value = 'lights'; tut.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
+      ok(cmpLines().length === 2 && cmpLines()[0].startsWith('s:grad') && /s:dots.*b:mask/.test(cmpLines()[1]) && !cv('custom', 'l3', ''), 'lights: ' + cmpLines().join(' | '));
+      ok(cv('custom', 'k2', '') === '2 n 4 30 ' + t('cmp.k.lights'), 'knob: ' + cv('custom', 'k2', ''));
+      tut.value = 'reactor'; tut.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
+      ok(JSON.stringify(cmpLines()) === JSON.stringify(fxPreview.comp.DEFAULT.map(s => fxPreview.comp.line(fxPreview.comp.parse(s)))), 'reactor: ' + cmpLines().join(' | '));
+      $('#cdlg-done').click(); await wait(20);
+      // Sparks 1..30: the slider at 100 is 30 sparks
+      const r = $('#fx-params input[data-kn="2"]'); r.value = 100; r.dispatchEvent(new Event('input', { bubbles: true })); await wait(300); flushSets();
+      ok(/ n:30/.test(cv('custom', 'l3', '')) && $('#fx-params b[data-kn="2"]').textContent === '30', 'knob: ' + cv('custom', 'l3', ''));
+      sent.length = 0; $('#cmp-open').click(); await wait(40); $('#cdlg-save').click(); await wait(60);
+      ok($('#cdlg').classList.contains('hidden') && !$('#pdlg').classList.contains('hidden'), 'the preset window');
+      $('#pdlg-form').requestSubmit(); await wait(80);
+      const ps = sent.filter(o => o.cmd === 'preset_save');
+      ok(ps.length === 1 && ps[0].effect === 'custom' && ps[0].id === '0' && ps[0].fx === '', 'save: ' + JSON.stringify(ps));
+      const P = presets().filter(p => p.effect === 'custom').pop();
+      ok(P && / n:30/.test(cv('preset.' + P.id, 'fx.l3', '')), 'the preset keeps the layers');
+      // the preset showing, saved again: the core is told to take the layers as they are now
+      sent.length = 0; presetDialog(P.id, P.name); await wait(40); $('#pdlg-form').requestSubmit(); await wait(60);
+      ok(sent.some(o => o.cmd === 'preset_save' && o.id === String(P.id) && o.fx === 'cur'), 'resave: ' + JSON.stringify(sent.filter(o => o.cmd === 'preset_save')));
+    });
+  });
+
+  test('constructor codes: the layers travel in haku:, a bad layer refuses the code, the community is not offered', async () => {
+    await fresh(); showTab('effects');
+    await cmpKeep(async () => {
+      for (let i = 1; i <= 8; i++) setCfg('custom', 'l' + i, ''); for (let i = 1; i <= 3; i++) setCfg('custom', 'k' + i, '');
+      S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+      const tut = $('#cdlg-tut'); tut.value = 'lights'; tut.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
+      $('#cdlg-export').click(); await wait(60);
+      const code = $('#share-code').value;
+      ok(!$('#share-dlg').classList.contains('hidden') && $('#pub-row').classList.contains('hidden') && $('#share-note').textContent.includes(t('cmp.comm')), 'share window, no Publish');
+      const p = presetFromCode(code);
+      ok(p && p.effect === 'custom' && p.comp.l.length === 2 && /s:dots/.test(p.comp.l[1]) && p.comp.k[1].startsWith('2 n 4 30'), 'round trip: ' + JSON.stringify(p));
+      const raw = o => 'haku:' + b64u(JSON.stringify(o)), base = { v: 1, n: 'x', e: 'custom', p: ['#FF0000'] };
+      ok(!presetFromCode(raw({ ...base, c: { l: ['s:grad', 'x:5'], k: [] } })), 'a layer with no shape is refused');
+      ok(!presetFromCode(raw({ ...base, c: { l: ['s:grad; s:fill'], k: [] } })), 'a ; in a line is refused');
+      ok(!presetFromCode(raw({ ...base, c: { l: Array(9).fill('s:fill'), k: [] } })), 'nine layers are refused');
+      ok(!presetFromCode(raw({ ...base, c: { l: ['s:fill'], k: ['2 o 0 100'] } })), 'a knob on a missing layer is refused');
+      ok(!presetFromCode(raw(base)), 'a constructor code without layers is refused');
+      closeShare();
+      // importing: the layers go to [custom], then a new preset of them
+      for (let i = 1; i <= 8; i++) setCfg('custom', 'l' + i, ''); flushSets();
+      sent.length = 0; shareDialog(null); $('#share-code').value = code; $('#share-form').requestSubmit(); await wait(80);
+      const ps = sent.filter(o => o.cmd === 'preset_save'), last = sent.map(o => o.cmd).lastIndexOf('set');
+      ok(ps.length === 1 && ps[0].effect === 'custom' && sent.indexOf(ps[0]) > last && cmpLines().length === 2, 'import: ' + JSON.stringify(sent.map(o => o.cmd + ' ' + (o.k || ''))));
+      const P = presets().filter(x => x.effect === 'custom').pop();
+      ok(P && /s:dots/.test(cv('preset.' + P.id, 'fx.l2', '')), 'the imported preset has the layers');
+    });
+  });
+
   const only =decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it
   setCfg('general', 'ui_motion', '1'); applyMotion();   // the tests move whatever this Windows says about motion
   for (const [name, fn] of tests) {

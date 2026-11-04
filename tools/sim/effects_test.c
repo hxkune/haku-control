@@ -175,6 +175,13 @@ static void dump(const char *file) {
         { "steps", "palette", "#FF3060" },
         { "fire" }, { "fire", "height", "30" }, { "candle" }, { "candle", "flicker", "0" }, { "candle", "flicker", "100" },
         { "matrix" }, { "matrix", "style", "1" }, { "static" }, { "off" },
+        // the constructor: the reactor (its default), the dot mask over a moving gradient, and every shape and blend
+        { "custom" },
+        { "custom", "l1", "s:grad c:p v:20", "l2", "s:dots n:7 w:40 sf:30 b:mask" },
+        { "custom", "l1", "s:wave c:p sz:250 v:-30 a:90", "l2", "s:noise c:#ff8000 sz:180 v:40 b:mul o:70", "l3", "s:fill c:p2 o:30 b:screen" },
+        { "custom", "l1", "s:ring c:p1 x:20 dur:1.5 per:2.5 w:30 sf:0 fade:0", "l2", "s:spark c:p n:40 life:2 tail:30 v:-60 w:20 b:add", "l3", "s:dots n:5 w:50 inv:1 b:mask o:80" },
+        { "custom", "l1", "s:grad c:p ap:sz aa:80 at:3", "l2", "s:wave c:p1 ap:o aa:-60 at:5 b:add", "l3", "s:fill c:p0 hide:1" },
+        { "custom", "palette", "#FF0000, #00FF00", "l1", "s:spark c:p0 n:60 life:0.5 tail:0 v:0 w:100 b:screen" },
     };
     static const double T[] = { 0.37, 7.3, 41.9, 123.45 };
     FILE *f = fopen(file, "w"); if (!f) { printf("FAIL cannot write %s\n", file); fails++; return; }
@@ -447,6 +454,82 @@ int main(int argc, char **argv) {
         snprintf(what, sizeof(what), "a steady bass (no hits): no beats (%d)", beat_n - b0);
         CHECK(beat_n - b0 <= 1, what);
         reset_cfg(); sensors_ok();
+    }
+
+    // ---- the constructor: layers made of plain shapes, settings checked, the sound only when a layer asks for it
+    {
+        int fx = effect_index("custom"), ok = 1;
+        CHECK(fx == FX_CUSTOM, "the constructor is found by its id");
+        // nothing made yet: the reactor, not black
+        panel(16, 16); reset_cfg(); fresh();
+        effects_render(fx, &sc, &sn, 0.4, out);
+        int corner = 0, centre = 8 * 16 + 8;
+        snprintf(what, sizeof(what), "nothing made: the reactor shows (dark blue corner %.2f %.2f %.2f, the ring lit %.2f)", out[corner].r, out[corner].g, out[corner].b, maxlum(sc.count));
+        CHECK(ncl == 3 && out[corner].b > 0.1f && out[corner].b < 0.3f && out[corner].r < 0.05f && maxlum(sc.count) > 0.4f, what);
+        (void)centre;
+        // the ring grows from the middle over 2 s: at 0.4 s lit near the middle, at 1.6 s lit near the edge, gone at 2.5 s
+        {
+            float r1 = 0, r2 = 0, l1 = 0, l2 = 0;
+            for (int f = 0; f < 3; f++) {
+                fresh(); effects_render(fx, &sc, &sn, 0, out); cl[2].p[LP_HIDE] = 1;   // the sparks off: the ring alone
+                fx_t[fx] = f == 0 ? 0.4 : f == 1 ? 1.6 : 2.5;
+                for (int i = 0; i < sc.count; i++) {
+                    const led_t *l = &sc.leds[i]; rgbf q = led_color(fx, l, fx_t, NULL, 0);
+                    float d = sqrtf((l->x - 0.5f) * (l->x - 0.5f) + (l->y - 0.5f) * (l->y - 0.5f)), g = q.g;   // the ring is cyan, the sky has no green
+                    if (f == 0 && g > l1) { l1 = g; r1 = d; }
+                    if (f == 1 && g > l2) { l2 = g; r2 = d; }
+                    if (f == 2 && d > 0.05f && d < 0.95f && g > 0.12f) ok = 0;   // only sparks may be lit then
+                }
+            }
+            snprintf(what, sizeof(what), "the ring grows (brightest at %.2f then %.2f from the middle) and fades (%.2f then %.2f), gone between rings", r1, r2, l1, l2);
+            CHECK(r1 < 0.2f && r2 > 0.3f && r2 < 0.5f && l1 > l2 && l2 > 0.05f && ok, what);
+        }
+        // the gradient under a dot mask: every other step dark, the lit ones change colour as the gradient moves
+        strip(42); reset_cfg();
+        cfg_set("custom", "l1", "s:grad c:p v:25"); cfg_set("custom", "l2", "s:dots n:14 w:30 sf:0 b:mask"); fresh();
+        effects_render(fx, &sc, &sn, 0, out); memcpy(ref, out, sizeof(rgbf) * sc.count);
+        int dark = 0, lit = 0;
+        for (int i = 0; i < sc.count; i++) { float m = fmaxf(out[i].r, fmaxf(out[i].g, out[i].b)); dark += m < 0.02f; lit += m > 0.3f; }
+        for (int f = 0; f < 30; f++) effects_render(fx, &sc, &sn, 1 / 30.0, out);
+        float moved = maxdiff(ref, out, sc.count);
+        snprintf(what, sizeof(what), "a dot mask over a moving gradient: %d dark and %d lit of 42, the lit ones move on (%.2f in 1 s)", dark, lit, moved);
+        CHECK(dark >= 20 && lit >= 8 && moved > 0.1f, what);
+        // garbage, out of range, huge and missing values in every layer: clamped, 0..1, on every shape
+        const char *bad[] = { "s:ring x:1e30 y:-1e30 dur:nan per:0 w:abc sf:inf sz:-0 b:mask inv:7",
+                              "s:spark n:0 life:1e9 tail:-5 v:1e30 w:0 c:#zzzzzz",
+                              "s:dots n:1e30 w:nan c:p9 b:mul ap:v aa:1e30 at:0",
+                              "s:noise sz:nan v:-1e30 mp:o ma:1e30 ms:beat b:screen",
+                              "s:wave sz:1e30 a:-90 c:#ffffff00 o:200",
+                              "s:grad v:200 ap:a aa:400 at:0.2 b:add",
+                              "s:unknown x:50", "no colons at all ::: :: :" };
+        reset_cfg();
+        for (int i = 0; i < 8; i++) { char k[4]; snprintf(k, sizeof(k), "l%d", i + 1); cfg_set("custom", k, bad[i]); }
+        ok = 1;
+        for (int sh = 0; sh < 5; sh++) {
+            switch (sh) { case 0: strip(60); break; case 1: ring(24); break; case 2: panel(16, 16); break; case 3: lamp(); break; default: strip(2); }
+            ok &= run(fx, 10, 30);
+        }
+        for (int i = 0; i < ncl; i++) for (int k = 0; k < LP_NUM; k++) if (!(cl[i].p[k] >= LPD[k].lo && cl[i].p[k] <= LPD[k].hi)) { ok = 0; printf("     layer %d %s = %g\n", i + 1, LPD[k].key, cl[i].p[k]); }
+        snprintf(what, sizeof(what), "layers with garbage, huge, NaN and unknown words: %d of 8 kept (unknown shapes dropped), all clamped, colours in 0..1", ncl);
+        CHECK(ok && ncl == 6, what);
+        // a line longer than a config line: cut, not overrun
+        { static char lng[2000]; memset(lng, 'x', sizeof(lng) - 1); memcpy(lng, "s:fill c:p0 ", 12); clayer L; CHECK(comp_parse(lng, &L) && L.col == 0, "a 2000-character layer line: read up to its limit, nothing overrun"); }
+        // the sound: only a layer that asks for it turns the capture on, and it is then live (not baked)
+        strip(12); reset_cfg(); fresh(); effects_render(fx, &sc, &sn, 1 / 30.0, out);
+        int quiet = effects_need_audio();
+        cfg_set("custom", "l1", "s:fill c:p0 o:20 mp:o ma:80 ms:level"); fresh();
+        sensors_ok(); sn.audio_level = 0;
+        for (int f = 0; f < 30; f++) effects_render(fx, &sc, &sn, 1 / 30.0, out);
+        float low = maxlum(sc.count);
+        sn.audio_level = 0.9f;
+        for (int f = 0; f < 60; f++) effects_render(fx, &sc, &sn, 1 / 30.0, out);
+        float high = maxlum(sc.count);
+        for (int i = 0; i < sc.count; i++) { sc.leds[i].dev = DEV_NANO; sc.leds[i].zone = ZONE_NANO0; }
+        static rgbf fr[240 * 12]; float st = 0;
+        int baked = effects_bake(fx, &sc, DEV_NANO, ZONE_NANO0, 240, 12, fr, &st);
+        snprintf(what, sizeof(what), "a layer led by the sound: capture off without one (%d), on with it (%d), brighter when loud (%.2f -> %.2f), streamed not baked (%d)", quiet, effects_need_audio(), low, high, baked);
+        CHECK(!quiet && effects_need_audio() && high > low + 0.3f && baked == 0, what);
+        sensors_ok(); reset_cfg();
     }
 
     // ---- bubbles stay within their list however long they run

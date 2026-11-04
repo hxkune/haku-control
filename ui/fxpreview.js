@@ -64,6 +64,107 @@ var fxPreview = (function () {
     const id = h32(k ^ Math.imul(Math.floor(q) | 0, 0x9E3779B1)), hue = hashf(id ^ 0xC0);
     return [hashf(id) >= dens ? 0 : smooth01(f / 0.25) * smooth01((1 - f) / 0.25), hue];
   };
+  // ---- the constructor: effects.c comp_parse / comp_shape / comp_color, the same words, limits and drawing
+  const SHAPES = ['fill', 'grad', 'wave', 'ring', 'spark', 'dots', 'noise'], BLENDS = ['normal', 'add', 'screen', 'mul', 'mask'];
+  const LPD = [['o', 100, 0, 100], ['x', 50, 0, 100], ['y', 50, 0, 100], ['a', 0, 0, 360], ['sz', 100, 1, 400], ['w', 10, 1, 100],
+    ['sf', 50, 0, 100], ['v', 0, -200, 200], ['n', 8, 1, 60], ['dur', 2, 0.1, 20], ['per', 3, 0.1, 30], ['life', 1, 0.1, 10],
+    ['tail', 10, 0, 50], ['fade', 1, 0, 1], ['inv', 0, 0, 1], ['hide', 0, 0, 1], ['aa', 0, -400, 400], ['at', 4, 0.2, 60], ['ma', 0, -400, 400]];
+  const LP = {}; LPD.forEach((d, i) => { LP[d[0]] = i; });
+  const MOD = 13, MAX = 8, DEFAULT = ['s:fill c:#000a30', 's:ring c:p0 dur:2 per:3 w:12 sf:80 b:add', 's:spark c:p n:6 life:1.2 tail:12 v:35 w:6 b:add'];
+  const F = Math.fround, lpClamp = (i, v) => v >= LPD[i][2] ? (v <= LPD[i][3] ? v : LPD[i][3]) : LPD[i][2];
+  // shortcut: a number is read with parseFloat; C strtod also takes hex ("0x10"), which the window never writes
+  function parse(line) {
+    const L = { shape: -1, blend: 0, col: -1, ap: -1, mp: -1, ms: 0, rgb: [255, 255, 255], p: LPD.map(d => F(d[1])) };
+    for (const w of String(line || '').slice(0, 255).split(/[ \t]+/)) {
+      const at = w.indexOf(':'); if (at < 0) continue;
+      const k = w.slice(0, at), v = w.slice(at + 1);
+      if (k === 's') { const i = SHAPES.indexOf(v); if (i >= 0) L.shape = i; }
+      else if (k === 'b') { const i = BLENDS.indexOf(v); if (i >= 0) L.blend = i; }
+      else if (k === 'c') {
+        if (/^#[0-9a-fA-F]{6}$/.test(v)) { const x = parseInt(v.slice(1), 16); L.col = -2; L.rgb = [x >> 16 & 255, x >> 8 & 255, x & 255]; }
+        else L.col = /^p[0-7]$/.test(v) ? +v[1] : -1;
+      }
+      else if (k === 'ap' || k === 'mp') { const i = LP[v]; if (i !== undefined && i < MOD) L[k] = i; }
+      else if (k === 'ms') L.ms = v === 'bass' ? 1 : v === 'beat' ? 2 : 0;
+      else if (LP[k] !== undefined) { const d = parseFloat(v); L.p[LP[k]] = F(lpClamp(LP[k], isFinite(d) ? d : NaN)); }
+    }
+    return L.shape >= 0 ? L : null;
+  }
+  // a layer back to its words, only what differs from the defaults (so a line stays short)
+  const num = v => String(+(+v).toFixed(2));
+  function line(L) {
+    const w = ['s:' + SHAPES[L.shape]];
+    if (L.col === -2) w.push('c:#' + L.rgb.map(v => (v | 0).toString(16).padStart(2, '0')).join(''));
+    else w.push(L.col >= 0 ? 'c:p' + L.col : 'c:p');
+    LPD.forEach((d, i) => { if (Math.abs(L.p[i] - d[1]) > 1e-4) w.push(d[0] + ':' + num(L.p[i])); });
+    if (L.ap >= 0) w.push('ap:' + LPD[L.ap][0]);
+    if (L.mp >= 0) w.push('mp:' + LPD[L.mp][0], 'ms:' + ['level', 'bass', 'beat'][L.ms]);
+    if (L.blend) w.push('b:' + BLENDS[L.blend]);
+    return w.join(' ');
+  }
+  // [custom] l1..l8 as the core loads them (none: the reactor); get(k) is the saved value
+  function load(get) {
+    const out = [];
+    for (let i = 1; i <= MAX; i++) { const v = get('l' + i); if (v) { const L = parse(v); if (L) out.push(L); } }
+    return out.length ? out : DEFAULT.map(parse);
+  }
+  const band = (d, half, soft) => 1 - smooth01((d - half * (1 - soft)) / Math.max(2 * half * soft, 0.004));
+  function shape(L, p, px, py, flat, t, li) {
+    const ar = p[3] * 0.0174533, ca = Math.cos(ar), sa = Math.sin(ar), mv = t * p[7] / 100, sf = p[6] / 100;
+    const u = flat ? px : (px - 0.5) * ca + (py - 0.5) * sa + 0.5;
+    switch (L.shape) {
+      case 0: return [1, mv];
+      case 1: return [1, u * p[4] / 100 - mv];
+      case 2: { const ph = u * p[4] / 100 - mv; return [0.5 + 0.5 * Math.cos(6.2831853 * ph), ph]; }
+      case 6: { const k = p[4] / 25, a = vnoise2(px * k + mv * ca, (flat ? 0 : py * k) + mv * sa, 7 + li); return [a, a]; }
+      case 5: { const ph = (px - mv) * p[8], f = ph - Math.floor(ph); return [band(Math.abs(f - 0.5), p[5] / 200, sf), Math.floor(ph) / p[8]]; }
+      case 3: {
+        const per = p[10], q = t / per, age = (q - Math.floor(q)) * per, dur = p[9];
+        if (age > dur) return [0, 0];
+        const cx = p[1] / 100, cy = p[2] / 100, d = flat ? Math.abs(px - cx) : Math.hypot(px - cx, py - cy);
+        return [band(Math.abs(d - age / dur * p[4] / 200), p[5] / 200, sf) * (p[13] >= 0.5 ? 1 - age / dur : 1), fract(Math.floor(q) * 0.618034)];
+      }
+      case 4: {
+        const life = p[11], per = Math.max(life * 1.05, 80 / p[8]), spd = p[7] / 100, r = p[5] / 200, sg = spd < 0 ? -1 : 1;
+        let best = 0, h = 0;
+        for (let m = 0; m < 8; m++) {
+          const q = t / per + m * 0.125, qs = Math.floor(q), id = h32((Math.imul(qs | 0, 8) + m + 0x5A1 + li * 0x1000) >>> 0);
+          const age = (q - qs) * per - hashf(id ^ 5) * (per - life);
+          if (age < 0 || age > life) continue;
+          const da = hashf(id ^ 3) * 6.2831853, dx = flat ? (id & 0x100 ? 1 : -1) : Math.cos(da), dy = flat ? 0 : Math.sin(da);
+          const hx = hashf(id ^ 1) + dx * spd * age, hy = (flat ? 0.5 : hashf(id ^ 2)) + dy * spd * age;
+          const ox = px - hx, oy = (flat ? 0.5 : py) - hy, tl = Math.min(p[12] / 100, Math.abs(spd) * age);
+          const back = clamp(-(ox * dx + oy * dy) * sg, 0, tl), qx = ox + dx * back * sg, qy = oy + dy * back * sg;
+          const k = Math.exp(-(qx * qx + qy * qy) / (r * r)) * (tl > 0 ? 1 - back / tl : 1) * smooth01(age / 0.1) * smooth01((life - age) / (life * 0.4));
+          if (k > best) { best = k; h = hashf(id ^ 4); }
+        }
+        return [best, h];
+      }
+    }
+    return [0, 0];
+  }
+  // one point's colour (0..255) under the layers; snd = [level, bass, beat] or null (no sound: nothing follows it)
+  function color(layers, pal, palc, px, py, flat, t, snd) {
+    let acc = [0, 0, 0];
+    layers.forEach((L, i) => {
+      if (L.p[15] >= 0.5) return;
+      const p = L.p.slice();
+      if (L.ap >= 0) p[L.ap] = lpClamp(L.ap, p[L.ap] + p[16] * Math.sin(6.2831853 * t / p[17]));
+      if (L.mp >= 0 && snd) p[L.mp] = lpClamp(L.mp, p[L.mp] + p[18] * snd[L.ms]);
+      const [a, h] = shape(L, p, px, py, flat, t, i), k = a * p[0] / 100;
+      const c = L.col === -2 ? L.rgb : L.col >= 0 ? pal[L.col % pal.length] : palc(h);
+      switch (L.blend) {
+        case 1: acc = add(acc, scale(c, k)); break;
+        case 2: acc = acc.map((v, j) => 255 * (1 - (1 - Math.min(v / 255, 1)) * (1 - c[j] / 255 * k))); break;
+        case 3: acc = acc.map((v, j) => v * (1 + (c[j] / 255 - 1) * k)); break;
+        case 4: acc = scale(acc, 1 + ((p[14] >= 0.5 ? 1 - a : a) - 1) * p[0] / 100); break;
+        default: acc = mix(acc, c, k);
+      }
+    });
+    return acc;
+  }
+  const comp = { SHAPES, BLENDS, LPD, MOD, MAX, DEFAULT, parse, line, load, color };
+
   // the strip: DEV_EXT (6) in zone ZONE_EXT0 (18), y in the middle; it is flat
   const DEV = 6, ZONE = 18, KEY0 = DEV * 100003 + ZONE * 1009;
 
@@ -75,13 +176,15 @@ var fxPreview = (function () {
     return { level: lv(t), peak, bass: 0.5 + 0.5 * Math.sin(t * 1.7), age: fract(t / 0.5) * 0.5, n: Math.floor(t / 0.5) };
   }
 
-  return function preview(id, pal, t, n, P) {
+  function preview(id, pal, t, n, P) {
     P = P || (k => fxParamValue(id, k, null));
     const np = pal.length, out = [];
     if (!np) return out;
     const palc = p => { p = fract(p) * np; const i = Math.floor(p); return mix(pal[i % np], pal[(i + 1) % np], p - i); };
     const grad = p => { if (np === 1) return pal[0]; p = clamp(p, 0, 1) * (np - 1); const i = Math.floor(p); return i >= np - 1 ? pal[np - 1] : mix(pal[i], pal[i + 1], p - i); };
     const one = n === 1, y = 0.5, ad = id === 'audio' ? audioDemo(t) : null;
+    const cl = id === 'custom' ? comp.load(P) : null, cd = cl && cl.some(L => L.mp >= 0) ? audioDemo(t) : null;
+    const snd = cd && [cd.level, cd.bass, Math.exp(-cd.age / 0.35)];
     for (let i = 0; i < n; i++) {
       const x = n > 1 ? i / (n - 1) : 0, path = x, fill = x, key = h32(KEY0 + i);
       let c = [0, 0, 0];
@@ -248,11 +351,25 @@ var fxPreview = (function () {
           break;
         }
         case 'static': c = pal[0]; break;
+        case 'custom': c = comp.color(cl, pal, palc, path, 0.5, true, t, snd); break;
         case 'off': break;
         default: c = [14, 15, 19];
       }
       out.push(c.map(v => v > 0 ? (v < 255 ? v : 255) : 0));   // and a NaN becomes 0
     }
     return out;
+  }
+  // the editor's picture: the layers over a w x h grid of the room (not flat), RGBA, sound-led layers on the made-up sound
+  comp.frame = function (layers, pal, w, h, t) {
+    const np = pal.length, palc = p => { p = fract(p) * np; const i = Math.floor(p); return mix(pal[i % np], pal[(i + 1) % np], p - i); };
+    const cd = layers.some(L => L.mp >= 0) ? audioDemo(t) : null, snd = cd && [cd.level, cd.bass, Math.exp(-cd.age / 0.35)];
+    const out = new Uint8ClampedArray(w * h * 4);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const c = color(layers, pal, palc, (i + 0.5) / w, (j + 0.5) / h, false, t, snd), o = (j * w + i) * 4;
+      out[o] = c[0]; out[o + 1] = c[1]; out[o + 2] = c[2]; out[o + 3] = 255;
+    }
+    return out;
   };
+  preview.comp = comp;   // the constructor's editor draws and checks its layers with it
+  return preview;
 })();

@@ -262,7 +262,7 @@ int   app_lang(void);                    // [general] lang: 0 English, 1 Russian
 void  app_set_effect(int fx);
 #define PRESET_MAX 32
 int   app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
-                      const char *brightness, const char *zones);   // id 0: new; returns its number, see main.c
+                      const char *brightness, const char *zones, int fx_cur);   // id 0: new; returns its number, see main.c
 void  app_preset_apply(int id);
 void  app_preset_delete(int id);
 #define PROFILE_MAX 16

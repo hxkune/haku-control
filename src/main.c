@@ -644,9 +644,10 @@ static int palette_ok(const char *s) {
 
 // effect / palette / speed: the preset's look, "" = the current one; brightness: "" = none kept, "cur" = the
 // current one, else 5..100. zones: "1" takes every device's own colours as they are now, "keep" leaves the ones
-// saved before, anything else drops them. Returns the preset's number (0: all PRESET_MAX are taken).
+// saved before, anything else drops them. fx_cur: the effect's settings as they are now even over an edited preset of
+// the same effect (the constructor saves what is on screen). Returns the preset's number (0: all PRESET_MAX are taken).
 int app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
-                    const char *bri, const char *zones) {
+                    const char *bri, const char *zones, int fx_cur) {
     char sec[24];
     if (id <= 0 || id > PRESET_MAX) {   // a new one: the first free number
         id = 0;
@@ -662,7 +663,7 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
     int nkept = cfg_items(sec, kept, 512);
     const char *eff = effect && *effect ? g_effects[effect_index(effect)].id : g_effects[cur_effect].id;
     // the effect's own settings: an edited preset of the same effect keeps its own, anything else takes the current ones
-    int fx_kept = !_stricmp(cfg_get(sec, "effect", ""), eff) && cfg_geti(sec, "fx", 0);
+    int fx_kept = !fx_cur && !_stricmp(cfg_get(sec, "effect", ""), eff) && cfg_geti(sec, "fx", 0);
     cfg_remove_section(sec);
     cfg_set(sec, "name", nm);
     cfg_set(sec, "effect", eff);

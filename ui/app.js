@@ -1002,8 +1002,8 @@ const FX_GROUP = { breathe: 'calm', candle: 'calm', static: 'calm', aurora: 'cal
   flow: 'waves', wave: 'waves', rainbow: 'waves', ocean: 'waves', lava: 'waves', plasma: 'waves', interference: 'waves', fire: 'waves',
   bubbles: 'particles', twinkle: 'particles', meteor: 'particles', ripple: 'particles', matrix: 'particles',
   comet: 'sequences', pendulum: 'sequences', steps: 'sequences',
-  audio: 'music', temperature: 'system', pump: 'system', screen: 'system', off: 'off' };
-const FX_GROUPS = ['calm', 'waves', 'particles', 'sequences', 'music', 'system', 'off'];
+  audio: 'music', temperature: 'system', pump: 'system', screen: 'system', custom: 'create', off: 'off' };
+const FX_GROUPS = ['calm', 'waves', 'particles', 'sequences', 'music', 'system', 'create', 'off'];
 // what an effect shows nothing without (a badge on its card); the cards of the first two run on a made-up signal
 const FX_NEEDS = { audio: 'need.audio', temperature: 'need.temp', screen: 'need.screen', pump: 'need.pump' }, FX_DEMO = { audio: 1, temperature: 1 };
 // ready-made looks: an effect with colours, speed and settings that suit each other, not an algorithm of their own.
@@ -1386,7 +1386,9 @@ function pdlgPreview(now) {
   const still = stillMotion() || stillFx(PDLG.effect), sig = still ? PDLG.effect + pal + cvs.width : '';
   if (still && PDLG.sig === sig) return;
   PDLG.sig = sig;
-  const PG = fxGetter(PDLG.effect);
+  // a constructor preset that is not the one showing: its own saved layers, not the constructor's current ones
+  const own = PDLG.effect === 'custom' && PDLG.id && PDLG.id !== +cv('general', 'preset', 0) && cv('preset.' + PDLG.id, 'effect', '') === 'custom';
+  const PG = own ? k => cv('preset.' + PDLG.id, 'fx.' + k, '') : fxGetter(PDLG.effect);
   if (cvs.width && pal.length) drawStrip(cvs, fxPreview(PDLG.effect, pal, still ? 3 : now / 1000 * fxClockSpeed(PDLG.effect, PDLG.speed, PG), 40, PG));
 }
 $('#pdlg-fx').addEventListener('click', e => {
@@ -1412,7 +1414,9 @@ $('#pdlg-form').addEventListener('submit', e => {
   e.preventDefault();
   const z = $('#pdlg-zones').checked, pal = PDLG.effect === 'static' ? PDLG.pal.slice(0, 1) : PDLG.pal;
   send({ cmd: 'preset_save', id: String(PDLG.id), name: pdlgName(), effect: PDLG.effect, palette: palStr(pal), speed: String(PDLG.speed),
-    brightness: $('#pdlg-bri').checked ? String(PDLG.bri) : '', zones: z ? (PDLG.id && PDLG.zonesHad && !PDLG.retake ? 'keep' : '1') : '0', apply: '1' });
+    brightness: $('#pdlg-bri').checked ? String(PDLG.bri) : '', zones: z ? (PDLG.id && PDLG.zonesHad && !PDLG.retake ? 'keep' : '1') : '0', apply: '1',
+    // the constructor preset that is showing takes the layers as they are now (any other keeps its own)
+    fx: PDLG.effect === 'custom' && PDLG.id && PDLG.id === +cv('general', 'preset', 0) ? 'cur' : '' });
   closePresetDialog();
   if (FX_TAB !== 'presets') fxTab('presets');
 });
@@ -1431,7 +1435,21 @@ const b64u = s => btoa(String.fromCharCode(...new TextEncoder().encode(s))).repl
 const unb64u = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0)));
 function presetCode(P) {
   const o = { v: 1, n: P.name, e: P.effect, p: parsePal(P.palette), s: +P.speed || undefined, b: +P.bri || undefined };
+  if (P.effect === 'custom') {   // the constructor's look is its layers: words only, as saved (nothing else of the preset travels)
+    const get = k => P.id ? cv('preset.' + P.id, 'fx.' + k, '') : cv('custom', k, '');
+    o.c = P.c || { l: [1, 2, 3, 4, 5, 6, 7, 8].map(i => get('l' + i)).filter(Boolean), k: [1, 2, 3].map(i => get('k' + i)).filter(Boolean) };
+  }
   return 'haku:' + b64u(JSON.stringify(o));
+}
+// a code's constructor part, checked as the core would read it: at most 8 layers and 3 knobs, each one a line of
+// words that reads (a code is someone else's text: a bad one is refused whole, never half taken)
+function compFromCode(c) {
+  if (!c || !Array.isArray(c.l) || !Array.isArray(c.k) || c.l.length > fxc.MAX || c.k.length > 3) return null;
+  const L = c.l.map(s => typeof s === 'string' && s.length <= 240 && !/[;\r\n]/.test(s) ? fxc.parse(s) : null);
+  if (L.some(x => !x)) return null;
+  const K = c.k.map(s => typeof s === 'string' && s.length <= 240 ? knobParse(s, L) : null);
+  if (K.some(x => !x)) return null;
+  return { l: L.map(fxc.line), k: K.map(x => knobStr(x, L)) };
 }
 function presetFromCode(code) {
   const m = /haku:([A-Za-z0-9_-]+)/.exec(code.replace(/\s+/g, ''));
@@ -1441,19 +1459,21 @@ function presetFromCode(code) {
     if (!o || o.v !== 1 || !S.effects.some(e => e.id === o.e)) return null;
     const pal = (Array.isArray(o.p) ? o.p : []).filter(c => /^#[0-9a-fA-F]{6}$/.test(c)).slice(0, 8);
     const speed = Math.max(1, Math.min(10, Math.round(+o.s || 5))), bri = o.b ? Math.max(5, Math.min(100, Math.round(+o.b))) : 0;
-    return { name: String(o.n || '').replace(/[;#\[\]=]/g, ' ').trim().slice(0, 40) || fxName(o.e), effect: o.e, palette: pal.join(', '), speed, bri };
+    const comp = o.e === 'custom' ? compFromCode(o.c) : null;
+    if (o.e === 'custom' && !comp) return null;
+    return { name: String(o.n || '').replace(/[;#\[\]=]/g, ' ').trim().slice(0, 40) || fxName(o.e), effect: o.e, palette: pal.join(', '), speed, bri, comp };
   } catch (e) { return null; }
 }
 let SHARE = null;   // the preset being shared, or null: importing
 function shareDialog(P) {
   SHARE = P;
   $('#share-title').textContent = t(P ? 'share.title' : 'import.title');
-  $('#share-note').textContent = t(P ? 'share.note' : 'import.note');
+  $('#share-note').textContent = t(P ? 'share.note' : 'import.note') + (P && P.effect === 'custom' ? ' ' + t('cmp.comm') : '');
   const ta = $('#share-code');
   ta.value = P ? presetCode(P) : ''; ta.readOnly = !!P; ta.placeholder = P ? '' : 'haku:…';
   $('#share-ok span').textContent = t(P ? 'share.copy' : 'import.go');
   $('#share-msg').textContent = '';
-  $('#pub-row').classList.toggle('hidden', !P);
+  $('#pub-row').classList.toggle('hidden', !P || P.effect === 'custom');   // the community keeps no layers (docs/community-api.md)
   $('#pub-author').value = cv('community', 'author', ''); $('#pub-author').placeholder = t('pub.author');
   $('#share-dlg').classList.remove('hidden');
   setTimeout(() => { ta.focus(); if (P) ta.select(); }, 30);
@@ -1475,6 +1495,8 @@ $('#share-form').addEventListener('submit', async e => {
   const p = presetFromCode(ta.value);
   if (!p) { $('#share-msg').textContent = t('import.bad'); ta.focus(); return; }
   if (presets().length >= 32) { $('#share-msg').textContent = t('import.full'); return; }
+  // a constructor code: its layers go to the constructor first, and the new preset takes them from there
+  if (p.comp) { flushSets(); cmpWrite(p.comp.l, p.comp.k, false); }
   send({ cmd: 'preset_save', id: '0', name: p.name, effect: p.effect, palette: p.palette, speed: String(p.speed),
     brightness: p.bri ? String(p.bri) : '', zones: '0', apply: '1' });
   closeShare();
@@ -1506,7 +1528,7 @@ async function commLoad(more) {
   const q = new URLSearchParams({ sort: COMM.sort, q: COMM.q, effect: COMM.effect, page: more ? COMM.page + 1 : 0, install: commInstall() });
   try {
     const r = await fetch(commApi() + '?' + q, { cache: 'no-store' }), j = await r.json();
-    const items = (j.items || []).filter(x => x && x.id && S.effects.some(e => e.id === x.effect));
+    const items = (j.items || []).filter(x => x && x.id && x.effect !== 'custom' && S.effects.some(e => e.id === x.effect));
     COMM.items = more ? COMM.items.concat(items) : items;
     if (more) COMM.page++;
     COMM.more = !!j.more;
@@ -1580,7 +1602,246 @@ async function commPublish(P) {
   btn.disabled = false;
   $('#share-msg').textContent = msg;
 }
-$('#pub-go').addEventListener('click', () => { if (SHARE) commPublish(SHARE); });
+$('#pub-go').addEventListener('click', () => { if (SHARE && SHARE.effect !== 'custom') commPublish(SHARE); });
+
+// ---- the constructor ([custom], effects.c comp_*): up to 8 layers of plain shapes, each a line of words (l1..l8),
+// and up to 3 of their settings shown on the effect panel (k1..k3: "layer setting from to name"; from > to runs it
+// backwards, setting c is the layer's own colour). The editor keeps its own undo (the lines before each change);
+// every change is also an ordinary setting, so the window's undo and the presets see it as any other.
+const fxc = fxPreview.comp, CMP_LP = Object.fromEntries(fxc.LPD.map((d, i) => [d[0], i]));
+const CMP_P = { fill: ['v'], grad: ['a', 'sz', 'v'], wave: ['a', 'sz', 'v'], noise: ['a', 'sz', 'v'], dots: ['n', 'w', 'sf', 'v'],
+  ring: ['x', 'y', 'sz', 'w', 'sf', 'dur', 'per'], spark: ['n', 'life', 'tail', 'v', 'w'] };
+const CMP_TUT = {   // knob names are i18n keys, written in the window's language when the composition is taken
+  reactor: { l: fxc.DEFAULT, k: ['2 c 0 0 cmp.k.colour', '2 per 6 2 cmp.k.waves', '3 n 1 30 cmp.k.sparks'] },
+  lights: { l: ['s:grad c:p v:20', 's:dots n:12 w:35 sf:40 b:mask'], k: ['1 v -100 100 cmp.k.speed', '2 n 4 30 cmp.k.lights'] },
+  music: { l: ['s:noise c:p sz:80 v:8 o:40 mp:o ma:60 ms:level', 's:ring c:#ffffff dur:0.6 per:0.9 w:8 sf:80 o:0 mp:o ma:100 ms:beat b:add'], k: ['2 c 0 0 cmp.k.beat', '1 ma 0 100 cmp.k.react'] },
+};
+const cmpNum = v => String(+(+v).toFixed(2));
+const cmpLabel = s => String(s || '').replace(/[;#\[\]=\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+const cmpName = L => t('cmp.s.' + fxc.SHAPES[L.shape]);
+// a knob from its words, on the layers it was saved with (null: not one)
+function knobParse(s, layers) {
+  const m = /^([1-8]) (\w+) (-?[\d.]+) (-?[\d.]+) ?(.*)$/.exec(String(s || '').trim()); if (!m) return null;
+  const L = layers[m[1] - 1], lo = +m[3], hi = +m[4];
+  if (!L || !(m[2] === 'c' || Object.hasOwn(CMP_LP, m[2])) || !isFinite(lo) || !isFinite(hi)) return null;
+  return { L, p: m[2], lo, hi, label: cmpLabel(m[5]) };
+}
+const knobStr = (K, layers) => [layers.indexOf(K.L) + 1, K.p, cmpNum(K.lo), cmpNum(K.hi), K.label].join(' ').trim();
+const cmpWords = (L, K) => [L.map(fxc.line), K.map(x => knobStr(x, L))];
+function cmpTut(id) {
+  const T = CMP_TUT[id], L = T.l.map(fxc.parse);
+  return { L, K: T.k.map(s => knobParse(s.replace(/cmp\.k\.\w+$/, x => t(x)), L)).filter(Boolean) };
+}
+// [custom] as the core reads it (nothing made: the reactor, with its knobs); get(k) is one saved key
+function cmpLoad(get) {
+  const raw = [], L = [];
+  for (let i = 1; i <= fxc.MAX; i++) { const v = get('l' + i), x = v ? fxc.parse(v) : null; raw.push(x); if (x) L.push(x); }
+  return L.length ? { L, K: [1, 2, 3].map(i => knobParse(get('k' + i), raw)).filter(Boolean) } : cmpTut('reactor');
+}
+const cmpNow = () => cmpLoad(k => cv('custom', k, ''));
+// the lines and knobs to [custom], only the keys that change
+function cmpWrite(lines, knobs, soon) {
+  const set = soon ? setCfgSoon : setCfg, put = (k, v) => { if (cv('custom', k, '') !== v) set('custom', k, v); };
+  for (let i = 0; i < fxc.MAX; i++) put('l' + (i + 1), lines[i] || '');
+  for (let i = 0; i < 3; i++) put('k' + (i + 1), knobs[i] || '');
+}
+const cmpHex = L => L.col === -2 ? rgb2hex(...L.rgb) : (p => p[Math.max(0, L.col) % p.length])(effPal('custom'));
+
+// the effect panel: the knobs, and the button that opens the editor
+function cmpSide(box) {
+  const c = cmpNow();
+  const html = c.K.map((K, i) => K.p === 'c'
+    ? `<div class="set-row"><b>${esc(K.label || t('cmp.colour'))}</b><button type="button" class="sw" data-kn="${i}" aria-label="${esc(K.label || t('cmp.colour'))}"></button></div>`
+    : `<div class="field"><div class="lbl"><span>${esc(K.label || t('cmp.p.' + K.p))}</span><b data-kn="${i}"></b></div><input type="range" class="range" data-kn="${i}" min="0" max="100" step="1" aria-label="${esc(K.label || t('cmp.p.' + K.p))}"></div>`).join('') +
+    (c.K.length ? '' : `<p class="note">${t('cmp.knob.none')}</p>`) + `<button class="btn small" type="button" id="cmp-open">${t('cmp.open')}</button>`;
+  if (box.dataset.html !== LANG + 'custom' + html) {
+    box.dataset.html = LANG + 'custom' + html; box.innerHTML = html;
+    box.querySelector('#cmp-open').addEventListener('click', cmpOpen);
+    box.querySelectorAll('input[data-kn]').forEach(r => {
+      r.addEventListener('input', () => { cmpKnobSet(+r.dataset.kn, +r.value); fill(r); });
+      r.addEventListener('change', renderEffectSide);
+    });
+    box.querySelectorAll('button[data-kn]').forEach(b => b.addEventListener('click', () =>
+      openPicker(b, b.title, hex => { cmpKnobSet(+b.dataset.kn, hex); b.style.setProperty('--c', hex); b.title = hex; })));
+  }
+  c.K.forEach((K, i) => {
+    const sw = box.querySelector(`button[data-kn="${i}"]`), r = box.querySelector(`input[data-kn="${i}"]`);
+    if (sw) { const hex = cmpHex(K.L); sw.style.setProperty('--c', hex); sw.title = hex; }
+    if (r) { const v = K.L.p[CMP_LP[K.p]]; setRange(r, K.hi === K.lo ? 0 : Math.round((v - K.lo) / (K.hi - K.lo) * 100)); box.querySelector(`b[data-kn="${i}"]`).textContent = cmpNum(v); }
+  });
+}
+// a knob moved: v is 0..100 along from..to, or a colour
+function cmpKnobSet(i, v) {
+  const c = cmpNow(), K = c.K[i]; if (!K) return;
+  if (K.p === 'c') { K.L.col = -2; K.L.rgb = hex2rgb(v); }
+  else {
+    const j = CMP_LP[K.p], d = fxc.LPD[j];
+    K.L.p[j] = Math.min(d[3], Math.max(d[2], +(K.lo + (K.hi - K.lo) * v / 100).toFixed(2)));
+    const b = $(`#fx-params b[data-kn="${i}"]`); if (b) b.textContent = cmpNum(K.L.p[j]);
+  }
+  cmpWrite(...cmpWords(c.L, c.K), true);   // all of it: with nothing saved yet the reactor is written whole
+}
+
+// the editor window
+const CMP = { L: [], K: [], sel: 0, cur: '', hist: [], fut: [], ctl: '', at: 0, open: {}, raf: 0, last: 0 };
+const cmpSnap = () => JSON.stringify(cmpWords(CMP.L, CMP.K));
+function cmpOpen() {
+  const c = cmpNow();
+  Object.assign(CMP, { L: c.L, K: c.K, sel: 0, hist: [], fut: [], ctl: '', open: {} }); CMP.cur = cmpSnap();
+  $('#cdlg-tut').setAttribute('aria-label', t('cmp.tut'));
+  $('#cdlg-tut').innerHTML = `<option value="">${t('cmp.tut')}</option>` + Object.keys(CMP_TUT).map(id => `<option value="${id}">${t('cmp.tut.' + id)}</option>`).join('');
+  $('#cdlg').classList.remove('hidden');
+  cmpRender();
+  const s = $('#cdlg-strip'); s.width = s.clientWidth * devicePixelRatio; s.height = s.clientHeight * devicePixelRatio;
+  if (!CMP.raf) CMP.raf = requestAnimationFrame(cmpPreview);
+}
+const cmpClose = () => { $('#cdlg').classList.add('hidden'); closePicker(); flushSets(); renderEffectSide(); };
+// after each edit: a step of the editor's undo (one drag of one control is one), then the settings
+function cmpChanged(ctl, soon) {
+  const s = cmpSnap(); if (s === CMP.cur) return;
+  if (!ctl || ctl !== CMP.ctl || Date.now() - CMP.at > 1000) { CMP.hist.push(CMP.cur); if (CMP.hist.length > 50) CMP.hist.shift(); }
+  CMP.fut.length = 0; CMP.cur = s; CMP.ctl = ctl || ''; CMP.at = Date.now();
+  cmpWrite(...cmpWords(CMP.L, CMP.K), soon);
+  cmpTools();
+}
+function cmpUndo(redo) {
+  const from = redo ? CMP.fut : CMP.hist, to = redo ? CMP.hist : CMP.fut;
+  if (!from.length) return;
+  to.push(CMP.cur); CMP.cur = from.pop(); CMP.ctl = '';
+  const [l, k] = JSON.parse(CMP.cur);
+  CMP.L = l.map(fxc.parse); CMP.K = k.map(s => knobParse(s, CMP.L)).filter(Boolean); CMP.sel = Math.min(CMP.sel, CMP.L.length - 1);
+  flushSets(); cmpWrite(l, k, false); cmpRender();
+}
+function cmpTools() {
+  $('#cdlg-undo').disabled = !CMP.hist.length; $('#cdlg-redo').disabled = !CMP.fut.length;
+  $('#cdlg-add').disabled = CMP.L.length >= fxc.MAX;
+}
+function cmpRender() { cmpList(); cmpEdit(); cmpKnobs(); cmpTools(); }
+function cmpList() {
+  const n = CMP.L.length, off = L => L.p[CMP_LP.hide] >= 0.5;
+  $('#cdlg-list').innerHTML = CMP.L.map((L, i) => `<li class="${i === CMP.sel ? 'on' : ''}${off(L) ? ' off' : ''}" data-i="${i}">` +
+    `<button type="button" class="cdlg-eye" data-a="eye" title="${t(off(L) ? 'cmp.show' : 'cmp.hide')}" aria-pressed="${!off(L)}">${off(L) ? '○' : '●'}</button>` +
+    `<button type="button" class="cdlg-pick" data-a="pick" aria-current="${i === CMP.sel}">${i + 1} · ${cmpName(L)}${L.blend ? ` <i>${t('cmp.b.' + fxc.BLENDS[L.blend])}</i>` : ''}</button>` +
+    `<button type="button" data-a="up" title="${t('cmp.up')}"${i ? '' : ' disabled'}>▲</button><button type="button" data-a="down" title="${t('cmp.down')}"${i < n - 1 ? '' : ' disabled'}>▼</button>` +
+    `<button type="button" data-a="del" title="${t('cmp.del')}"${n > 1 ? '' : ' disabled'}>✕</button></li>`).join('');
+}
+$('#cdlg-list').addEventListener('click', e => {
+  const b = e.target.closest('button[data-a]'); if (!b) return;
+  const i = +b.closest('li').dataset.i, L = CMP.L, a = b.dataset.a;
+  if (a === 'pick') { CMP.sel = i; cmpRender(); return; }
+  if (a === 'eye') L[i].p[CMP_LP.hide] = L[i].p[CMP_LP.hide] >= 0.5 ? 0 : 1;
+  else if (a === 'del') { if (L.length < 2) return; const [x] = L.splice(i, 1); CMP.K = CMP.K.filter(K => K.L !== x); if (CMP.sel > i) CMP.sel--; CMP.sel = Math.min(CMP.sel, L.length - 1); }
+  else {
+    const j = a === 'up' ? i - 1 : i + 1; if (j < 0 || j >= L.length) return;
+    [L[i], L[j]] = [L[j], L[i]]; CMP.sel = CMP.sel === i ? j : CMP.sel === j ? i : CMP.sel;
+  }
+  cmpChanged(''); cmpRender();
+});
+// the chosen layer: its shape, colour, blending and settings, then what moves it (time, sound)
+function cmpEdit() {
+  const L = CMP.L[CMP.sel], box = $('#cdlg-edit'); if (!L) { box.innerHTML = ''; return; }
+  const sel = (f, opts, v, lbl) => `<select class="select" data-f="${f}" aria-label="${esc(lbl)}">${opts.map(([x, s]) => `<option value="${x}"${x === v ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>`;
+  const field = (lbl, ctl) => `<div class="field"><div class="lbl"><span>${lbl}</span></div>${ctl}</div>`;
+  const rng = k => {
+    const d = fxc.LPD[CMP_LP[k]], v = L.p[CMP_LP[k]], step = ['dur', 'per', 'life', 'at'].includes(k) ? 0.1 : 1;
+    return `<div class="field"><div class="lbl"><span>${t('cmp.p.' + k)}</span><b>${cmpNum(v)}</b></div><input type="range" class="range" data-p="${k}" min="${d[2]}" max="${d[3]}" step="${step}" value="${v}" aria-label="${t('cmp.p.' + k)}"></div>`;
+  };
+  const chk = k => `<div class="set-row"><b>${t('cmp.p.' + k)}</b><label class="switch"><input type="checkbox" data-p="${k}"${L.p[CMP_LP[k]] >= 0.5 ? ' checked' : ''}><span></span></label></div>`;
+  const cols = [[-1, t('cmp.c.grad')]].concat(Array.from({ length: 8 }, (_, i) => [i, t('cmp.c.pal', i + 1)]), [[-2, t('cmp.c.own')]]);
+  const mods = [[-1, t('cmp.none')]].concat(fxc.LPD.slice(0, fxc.MOD).map((d, i) => [i, t('cmp.p.' + d[0])]));
+  const shape = fxc.SHAPES[L.shape], open = (d, on) => on || CMP.open[d] ? ' open' : '';
+  box.innerHTML = field(t('cmp.shape'), sel('shape', fxc.SHAPES.map((s, i) => [i, t('cmp.s.' + s)]), L.shape, t('cmp.shape'))) +
+    field(t('cmp.colour'), `<div class="cdlg-col">${sel('col', cols, L.col, t('cmp.colour'))}${L.col === -2 ? `<button type="button" class="sw" id="cdlg-sw" style="--c:${cmpHex(L)}" title="${cmpHex(L)}" aria-label="${t('cmp.c.own')}"></button>` : ''}</div>`) +
+    field(t('cmp.blend'), sel('blend', fxc.BLENDS.map((s, i) => [i, t('cmp.b.' + s)]), L.blend, t('cmp.blend'))) +
+    (L.blend === 4 ? `<p class="note">${t('cmp.mask.note')}</p>` + chk('inv') : '') +
+    rng('o') + CMP_P[shape].map(rng).join('') + (shape === 'ring' ? chk('fade') : '') +
+    `<details class="fx-adv" data-d="anim"${open('anim', L.ap >= 0)}><summary>${t('cmp.anim')}</summary>${field(t('cmp.anim.what'), sel('ap', mods, L.ap, t('cmp.anim.what')))}${L.ap >= 0 ? rng('aa') + rng('at') : ''}</details>` +
+    `<details class="fx-adv" data-d="snd"${open('snd', L.mp >= 0)}><summary>${t('cmp.snd')}</summary>${field(t('cmp.snd.what'), sel('mp', mods, L.mp, t('cmp.snd.what')))}` +
+    (L.mp >= 0 ? field(t('cmp.ms'), sel('ms', [[0, t('cmp.ms.level')], [1, t('cmp.ms.bass')], [2, t('cmp.ms.beat')]], L.ms, t('cmp.ms'))) + rng('ma') : '') + `<p class="note">${t('cmp.snd.note')}</p></details>`;
+  box.querySelectorAll('input[type=range]').forEach(fill);
+  box.querySelectorAll('details').forEach(d => d.addEventListener('toggle', () => { CMP.open[d.dataset.d] = d.open; }));
+  const sw = box.querySelector('#cdlg-sw');
+  if (sw) sw.addEventListener('click', () => openPicker(sw, cmpHex(L), hex => { L.rgb = hex2rgb(hex); sw.style.setProperty('--c', hex); sw.title = hex; cmpChanged('rgb' + CMP.sel, true); }));
+}
+$('#cdlg-edit').addEventListener('input', e => {
+  const r = e.target, L = CMP.L[CMP.sel]; if (r.type !== 'range' || !L) return;
+  L.p[CMP_LP[r.dataset.p]] = +r.value;
+  r.parentElement.querySelector('b').textContent = cmpNum(r.value);
+  cmpChanged('p' + CMP.sel + r.dataset.p, true);
+});
+$('#cdlg-edit').addEventListener('change', e => {
+  const x = e.target, L = CMP.L[CMP.sel]; if (!L || x.type === 'range') return;
+  if (x.type === 'checkbox') L.p[CMP_LP[x.dataset.p]] = x.checked ? 1 : 0;
+  else if (x.dataset.f) {
+    const f = x.dataset.f; L[f] = +x.value;
+    // a setting just given to time or sound starts with a change that shows (a quarter, a half of its range)
+    const d = fxc.LPD[L[f]], amt = f === 'ap' ? CMP_LP.aa : f === 'mp' ? CMP_LP.ma : -1;
+    if (amt >= 0 && d && !L.p[amt]) L.p[amt] = Math.min(400, Math.round((d[3] - d[2]) / (f === 'ap' ? 4 : 2)));
+  }
+  cmpChanged(''); cmpRender();
+});
+// the knobs: which layer and setting, the range the panel's slider runs over, a name
+function cmpKnobs() {
+  const ps = [['c', t('cmp.colour')]].concat(fxc.LPD.filter(d => !['fade', 'inv', 'hide'].includes(d[0])).map(d => [d[0], t('cmp.p.' + d[0])]));
+  $('#cdlg-knobs').innerHTML = CMP.K.map((K, i) => `<div class="cdlg-knob" data-i="${i}">` +
+    `<input type="text" data-f="label" maxlength="40" spellcheck="false" value="${esc(K.label)}" placeholder="${t('cmp.knob.name')}" aria-label="${t('cmp.knob.name')}">` +
+    `<select class="select" data-f="L" aria-label="${t('cmp.knob.layer')}">${CMP.L.map((L, j) => `<option value="${j}"${L === K.L ? ' selected' : ''}>${j + 1} · ${cmpName(L)}</option>`).join('')}</select>` +
+    `<select class="select" data-f="p" aria-label="${t('cmp.knob.what')}">${ps.map(([v, s]) => `<option value="${v}"${v === K.p ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>` +
+    (K.p === 'c' ? '<span></span><span></span>' : `<input type="number" data-f="lo" value="${cmpNum(K.lo)}" step="any" title="${t('cmp.knob.from')}" aria-label="${t('cmp.knob.from')}"><input type="number" data-f="hi" value="${cmpNum(K.hi)}" step="any" title="${t('cmp.knob.to')}" aria-label="${t('cmp.knob.to')}">`) +
+    `<button type="button" class="btn small ghost" data-a="del" title="${t('cmp.del')}">✕</button></div>`).join('') +
+    (CMP.K.length < 3 ? `<button type="button" class="btn small ghost" data-a="add">${t('cmp.knob.add')}</button>` : '') + `<p class="note">${t('cmp.knob.note')}</p>`;
+}
+$('#cdlg-knobs').addEventListener('change', e => {
+  const x = e.target, row = x.closest('[data-i]'); if (!row || !x.dataset.f) return;
+  const K = CMP.K[+row.dataset.i], f = x.dataset.f;
+  if (f === 'label') K.label = cmpLabel(x.value);
+  else if (f === 'L') K.L = CMP.L[+x.value];
+  else if (f === 'p') { K.p = x.value; const d = fxc.LPD[CMP_LP[K.p]]; if (d) { K.lo = d[2]; K.hi = d[3]; } }
+  else if (x.value !== '' && isFinite(+x.value)) K[f] = +x.value;
+  cmpChanged(''); cmpKnobs();
+});
+$('#cdlg-knobs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-a]'); if (!b) return;
+  if (b.dataset.a === 'add') { if (CMP.K.length >= 3) return; CMP.K.push({ L: CMP.L[CMP.sel], p: 'o', lo: 0, hi: 100, label: '' }); }
+  else CMP.K.splice(+b.closest('[data-i]').dataset.i, 1);
+  cmpChanged(''); cmpKnobs();
+});
+// the picture (2D, as on a fan or a panel) and the strip (as on a line of LEDs), at the effect's speed and colours
+function cmpPreview(now) {
+  CMP.raf = 0;
+  if ($('#cdlg').classList.contains('hidden') || document.body.classList.contains('idle')) return;
+  CMP.raf = requestAnimationFrame(cmpPreview);
+  if (now - CMP.last < 33) return;
+  CMP.last = now;
+  const pal = effPal('custom').map(hex2rgb), lines = CMP.L.map(fxc.line);
+  const tt = stillMotion() ? 3 : now / 1000 * fxClockSpeed('custom', +cv('custom', 'speed', cv('general', 'speed', 5)), () => '');
+  const v = $('#cdlg-view');
+  v.getContext('2d').putImageData(new ImageData(fxc.frame(CMP.L, pal, v.width, v.height, tt), v.width, v.height), 0, 0);
+  const s = $('#cdlg-strip'); if (s.width) drawStrip(s, fxPreview('custom', pal, tt, 40, k => lines[+k.slice(1) - 1] || ''));
+}
+$('#cdlg-add').addEventListener('click', () => {
+  if (CMP.L.length >= fxc.MAX) return;
+  CMP.L.push(fxc.parse('s:grad c:p')); CMP.sel = CMP.L.length - 1; cmpChanged(''); cmpRender();
+});
+$('#cdlg-tut').addEventListener('change', e => {
+  const id = e.target.value; e.target.value = ''; if (!CMP_TUT[id]) return;
+  const c = cmpTut(id); CMP.L = c.L; CMP.K = c.K; CMP.sel = 0; cmpChanged(''); cmpRender();
+});
+$('#cdlg-undo').addEventListener('click', () => cmpUndo(false));
+$('#cdlg-redo').addEventListener('click', () => cmpUndo(true));
+$('#cdlg-done').addEventListener('click', cmpClose);
+$('#cdlg').addEventListener('pointerdown', e => { if (e.target.id === 'cdlg') cmpClose(); });
+$('#cdlg-save').addEventListener('click', () => { cmpClose(); presetDialog(0, t('fx.custom')); });
+$('#cdlg-export').addEventListener('click', () => {
+  const [l, k] = cmpWords(CMP.L, CMP.K);
+  cmpClose(); shareDialog({ name: t('fx.custom'), effect: 'custom', palette: palStr(effPal('custom')), speed: cv('custom', 'speed', ''), bri: '', c: { l, k } });
+});
+document.addEventListener('keydown', e => {
+  if ($('#cdlg').classList.contains('hidden') || !pk.classList.contains('hidden')) return;
+  if (e.key === 'Escape') { cmpClose(); return; }
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y') && !e.target.closest('input:not([type=range]):not([type=checkbox]), textarea, select')) { e.preventDefault(); cmpUndo(k === 'y' || e.shiftKey); }
+});
 
 // ---- the settings' backup (backup.c): saved / restored through the PC's own file dialogs
 function updateBackup() {
@@ -1639,6 +1900,7 @@ function renderEffectSide() {
 // Built again only when what is shown changes (a choice can show or hide others), so a drag is never cut.
 let FX_ADV = false;
 function renderFxParams(id, hasSpeed) {
+  if (id === 'custom') return cmpSide($('#fx-params'));
   const box = $('#fx-params'), defs = FX_PARAMS[id] || [], val = k => fxParamValue(id, k, cv(id, k, ''));
   const shown = defs.filter(d => !d[4].when || val(d[4].when[0]) === d[4].when[1]);
   const keys = defs.map(p => p[0]).concat(id === 'wave' ? ['dir', 'size'] : [], hasSpeed ? ['speed'] : []);
@@ -1772,13 +2034,14 @@ function animate(now) {
     if (cvs.width !== cvs.clientWidth * devicePixelRatio) { cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio; cvs._sig = ''; }
     const pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(id);
     if (calm || stillFx(id)) { const sig = id + pal + (C ? 'g' : 's'); if (cvs._sig === sig) continue; cvs._sig = sig; } else cvs._sig = '';
-    const PG = B ? k => fxParamValue(id, k, B.fx[k] ?? '') : fxGetter(id), spd = fxClockSpeed(id, P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5)), PG);
+    const PG = B ? k => fxParamValue(id, k, B.fx[k] ?? '') : id === 'custom' && P && P.id ? k => cv('preset.' + P.id, 'fx.' + k, '') : fxGetter(id), spd = fxClockSpeed(id, P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5)), PG);
     drawStrip(cvs, fxPreview(id, pal.map(hex2rgb), t * spd, 28, PG), C ? 'glow' : 'spill');
   }
 }
 function previewWake() {
   if (!ANIM.raf) ANIM.raf = requestAnimationFrame(animate);
   if (!PDLG.raf) PDLG.raf = requestAnimationFrame(pdlgPreview);
+  if (!CMP.raf && !$('#cdlg').classList.contains('hidden')) CMP.raf = requestAnimationFrame(cmpPreview);
 }
 ANIM.raf = requestAnimationFrame(animate);
 
@@ -3415,7 +3678,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   const typing = e.target.closest('input:not([type=range]):not([type=checkbox]), textarea, select, [contenteditable]');
   // (the group window has its own Cancel for what was changed in it)
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec') && $('#gdlg').classList.contains('hidden')) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec') && $('#gdlg').classList.contains('hidden') && $('#cdlg').classList.contains('hidden')) { e.preventDefault(); undo(); }
 });
 // ---- calibration guide: red and blue on the device's two ends (its LED count; a board's ARGB connectors one by one,
 // as they cannot tell it), then which way effects run, then everything white so its white can be matched to the

@@ -28,6 +28,23 @@ for (const id of new Set([...Object.keys(fxp), ...Object.keys(FX_PARAMS)])) {
 }
 check(same, 'FX_PARAMS has the keys, defaults and ranges of effects.c FXP');
 
+// ---- the constructor: its words, limits, shapes, blends and the reactor as in effects.c
+const comp = fxPreview.comp, tbl = s => src.match(new RegExp(s))[1];
+const lpd = [...tbl('LPD\\[LP_NUM\\] = \\{([\\s\\S]*?)\\n\\};').matchAll(/\{\s*"(\w+)",\s*([-\d.]+)f?,\s*([-\d.]+)f?,\s*([-\d.]+)f?\s*\}/g)].map(m => [m[1], +m[2], +m[3], +m[4]].join(' '));
+const names = s => [...tbl(s).matchAll(/"(\w+)"/g)].map(m => m[1]).join(' ');
+check(lpd.length === comp.LPD.length && lpd.join('; ') === comp.LPD.map(d => d.join(' ')).join('; '), `the layer settings match effects.c LPD (${lpd.length})`);
+check(names('CS_NAME\\[CS_N\\] = \\{([^}]*)\\}') === comp.SHAPES.join(' ') && names('CB_NAME\\[CB_N\\] = \\{([^}]*)\\}') === comp.BLENDS.join(' '), 'the shapes and blends match effects.c');
+check(JSON.stringify([...tbl('COMP_DEFAULT\\[\\] = \\{([^}]*)\\}').matchAll(/"([^"]*)"/g)].map(m => m[1])) === JSON.stringify(comp.DEFAULT), 'the reactor (the constructor with nothing made) matches effects.c COMP_DEFAULT');
+check(+tbl('#define LP_MOD (\\d+)') === comp.MOD && +tbl('#define COMP_MAX (\\d+)') === comp.MAX, 'the animated settings and the layer count match');
+// a layer written back to words reads the same, and stays a config line
+let rt = true;
+for (const s of [...comp.DEFAULT, 's:dots c:#12ab9F n:12 w:35 sf:40 b:mask inv:1 o:55', 's:wave c:p7 a:270 sz:400 v:-200 ap:sz aa:-400 at:0.2 mp:o ma:80 ms:beat b:screen',
+                 's:spark x:1e9 n:0 life:abc tail:-3 hide:1 c:#zzz b:what', 's:grad v:12.345678']) {
+  const a = comp.parse(s), b = comp.parse(comp.line(a));   // (written with 2 decimals: read once, then the same)
+  if (comp.line(a) !== comp.line(b) || JSON.stringify(b) !== JSON.stringify(comp.parse(comp.line(b))) || comp.line(a).length > 240) { rt = false; console.log('     ' + s + ' -> ' + comp.line(a)); }
+}
+check(rt && comp.parse('x:5') === null && comp.parse('') === null, 'a layer written back to words reads the same; no shape, no layer');
+
 // ---- colours
 const file = process.argv[2];
 if (!file) { console.log('usage: node preview_check.js <dump.json from effects_test.exe dump>'); process.exit(2); }

@@ -844,6 +844,35 @@
     </div>
   </form>
 </div>
+<!-- the constructor: up to 8 layers of plain shapes, drawn with the same words the core reads ([custom] l1..l8) -->
+<div class="sheet-wrap pdlg-wrap hidden" id="cdlg">
+  <div class="card pdlg cdlg" role="dialog" aria-modal="true" aria-labelledby="cdlg-title">
+    <div class="pdlg-head">
+      <h3 id="cdlg-title" data-i18n="cmp.title">Constructor</h3>
+      <div class="cdlg-tools">
+        <select class="select" id="cdlg-tut" aria-label="Start from"></select>
+        <button class="btn ghost small" type="button" id="cdlg-undo" data-i18n-title="cmp.undo" title="Undo (Ctrl+Z)">↶</button>
+        <button class="btn ghost small" type="button" id="cdlg-redo" data-i18n-title="cmp.redo" title="Redo (Ctrl+Y)">↷</button>
+      </div>
+    </div>
+    <canvas class="cdlg-view" id="cdlg-view" width="64" height="36"></canvas>
+    <canvas class="pdlg-prev" id="cdlg-strip"></canvas>
+    <div class="cdlg-body">
+      <div class="cdlg-side">
+        <ol class="cdlg-list" id="cdlg-list"></ol>
+        <button class="btn small ghost" type="button" id="cdlg-add"><span data-i18n="cmp.add">Add layer</span></button>
+      </div>
+      <div class="cdlg-edit" id="cdlg-edit"></div>
+    </div>
+    <details class="fx-adv" id="cdlg-knobs-box"><summary data-i18n="cmp.knobs">Settings on the effect panel</summary><div id="cdlg-knobs"></div></details>
+    <div class="btn-row">
+      <button class="btn primary" type="button" id="cdlg-done"><span data-i18n="cmp.done">Done</span></button>
+      <button class="btn ghost" type="button" id="cdlg-save"><span data-i18n="cmp.save">Save as preset</span></button>
+      <span class="grow"></span>
+      <button class="btn ghost" type="button" id="cdlg-export"><span data-i18n="preset.share">Share</span></button>
+    </div>
+  </div>
+</div>
 <!-- a group of devices in the preview: its name, who is in it and one look for all of them -->
 <!-- a report this PC sent, marked as done or answered by the developer: shown once -->
 <div class="sheet-wrap pdlg-wrap hidden" id="fixed">

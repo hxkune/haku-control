@@ -200,7 +200,8 @@ static void on_message(const std::string &js) {
         std::string bri = field(js, "brightness");
         if (bri.empty() && field(js, "bri") == "1") bri = "cur";
         int id = app_preset_save(atoi(field(js, "id").c_str()), field(js, "name").c_str(), field(js, "effect").c_str(),
-                                 field(js, "palette").c_str(), field(js, "speed").c_str(), bri.c_str(), field(js, "zones").c_str());
+                                 field(js, "palette").c_str(), field(js, "speed").c_str(), bri.c_str(), field(js, "zones").c_str(),
+                                 field(js, "fx") == "cur");
         if (id && field(js, "apply") == "1") app_preset_apply(id);   // shows what was just made
         post_state();
     }

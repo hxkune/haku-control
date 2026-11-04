@@ -394,6 +394,34 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .pdlg .check { display: flex; }
 .pdlg-zones-note { margin: 6px 0 0 !important; }
 .card.pdlg.txb { width: min(680px, 100%); }
+/* the constructor: the picture (64x36, scaled up as the LEDs would show it), the layers on the left, the chosen one on the right */
+.card.pdlg.cdlg { width: min(760px, 100%); }
+.cdlg-tools { display: flex; gap: 6px; align-items: center; }
+.cdlg-tools .select { margin-top: 0; padding-block: 6px; width: auto; max-width: 220px; }
+.cdlg-tools .btn:disabled { opacity: .35; cursor: default; }
+.cdlg-view { width: 100%; aspect-ratio: 16 / 9; display: block; background: #000; image-rendering: pixelated; }
+.cdlg-body { display: grid; grid-template-columns: minmax(180px, 230px) 1fr; gap: 16px; align-items: start; }
+@media (max-width: 560px) { .cdlg-body { grid-template-columns: 1fr; } }
+.cdlg-side { display: flex; flex-direction: column; gap: 8px; }
+.cdlg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cdlg-list li { display: flex; align-items: center; gap: 2px; border: 1px solid var(--line2); }
+.cdlg-list li.on { border-color: var(--strong); }
+.cdlg-list li.off .cdlg-pick { opacity: .45; }
+.cdlg-list button { background: transparent; border: 0; color: var(--muted); font: 12px var(--body); padding: 7px 5px; cursor: pointer; }
+.cdlg-list button:hover:not(:disabled) { color: var(--text); }
+.cdlg-list button:disabled { opacity: .3; cursor: default; }
+.cdlg-list .cdlg-pick { flex: 1; text-align: left; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cdlg-list .cdlg-pick i { color: var(--muted); font-style: normal; }
+.cdlg-edit { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cdlg-edit .fx-adv { margin: 0; }
+.cdlg-col { display: flex; gap: 10px; align-items: center; }
+.cdlg-col .select { flex: 1; }
+.cdlg-col .sw { flex: none; margin-top: 9px; }
+.cdlg-knob { display: grid; grid-template-columns: 1.2fr 1fr 1fr 64px 64px auto; gap: 6px; align-items: center; margin-top: 8px; }
+.cdlg-knob .select { margin-top: 0; padding: 6px 28px 6px 12px; background-position: right 10px center; }
+.cdlg-knob input[type=text], .cdlg-knob input[type=number] { padding: 6px 8px; min-width: 0; }
+.cdlg-knob input[type=number] { background-color: transparent; border: 1px solid var(--line2); color: var(--text); font: 13px var(--font); outline: none; width: 100%; }
+@media (max-width: 560px) { .cdlg-knob { grid-template-columns: 1fr 1fr; } }
 .txb-bar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; justify-content: space-between; }
 .txb-bar .num { min-width: 140px; }
 .txb-stage { display: block; width: 100%; height: auto; background: #000; cursor: grab; touch-action: none; outline-offset: 2px; }
