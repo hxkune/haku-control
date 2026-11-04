@@ -300,6 +300,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .btn.small { padding: 6px 13px; font-size: 12px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .card-head .hw-btns { margin-top: 0; justify-content: flex-end; flex-shrink: 0; }
+@media (max-width: 480px) { .card-head { flex-wrap: wrap; } }   /* a phone: the buttons go under a title they do not fit beside */
 
 .num { display: flex; flex-direction: column; gap: 7px; color: var(--muted); }
 .num span { font-size: 10.5px; }
@@ -635,7 +636,7 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .pub-line { display: flex; gap: 8px; margin-top: 6px; }
 .pub-line input { flex: 1; min-width: 0; }
 /* haku Pro */
-body.no-net #accounts, body.no-net #phone-card, body.no-net #nav [data-tab="nano"], body.no-net #nav [data-tab="bulbs"] { display: none !important; }
+body.no-net #accounts, body.no-net #phone-card { display: none !important; }
 .pro-chip { display: block; width: 100%; margin: 0 0 14px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line2);
   background: transparent; color: var(--muted); font-size: 11.5px; letter-spacing: .02em; text-align: center; }
 .pro-chip:hover { color: var(--text); border-color: var(--line3); }
@@ -1545,18 +1546,10 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .12s linear infinite; 
   nav button.active svg { color: var(--live, var(--strong)); filter: drop-shadow(0 0 5px var(--live, transparent)); }
 }
 @media (max-width: 700px) { nav button.active svg { color: var(--live, var(--strong)); } }
-/* a phone: Effects / Devices / Settings below; PC, Nanoleaf, bulbs and the brands are a row at the top of Devices */
-.dev-jump { display: none; }
-@media (max-width: 700px) {
-  nav button:is([data-tab="pc"], [data-tab="fans"], [data-tab="nano"], [data-tab="bulbs"], [data-brand]) { display: none; }
-  nav button.sub { color: var(--strong); }
-  .dev-jump.on { display: flex; gap: 6px; margin: -4px 0 16px; overflow-x: auto; scrollbar-width: none; }
-  .dev-jump button { flex: none; height: 36px; padding: 0 14px; border: 1px solid var(--line2); background: var(--panel); color: var(--muted); white-space: nowrap; }
-  .dev-jump button[aria-current="true"] { border-color: var(--line3); color: var(--strong); font-weight: 600; box-shadow: inset 0 -2px 0 var(--strong); }
-}
-/* a short window with many brand tabs: the tabs scroll, brightness, power and the timer stay in view below them */
+/* a short window: the pages scroll, brightness, power and the timer stay in view below them; Help and Settings at the bottom */
 @media (min-width: 701px) {
-  nav { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-bottom: 6px; }
+  nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-bottom: 6px; }
+  nav .nav-end { margin-top: auto; }
   nav > * { flex: none; }
   .side-foot { flex: none; padding-top: 12px; }
 }
@@ -1571,13 +1564,6 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .12s linear infinite; 
 .card.lead { --lc: var(--line2); box-shadow: inset 0 2px 0 var(--live, var(--line3));
   background-image: var(--g1), var(--g1), linear-gradient(180deg, color-mix(in srgb, var(--live, transparent) 10%, transparent), transparent 160px);
   background-size: var(--cut) var(--cut), var(--cut) var(--cut), 100% 100%; }
-/* brand page with one or two lights: the light big on the left, its settings on the right */
-@media (min-width: 900px) {
-  .bulb-grid.few { grid-template-columns: 1fr; }
-  .few .dev-card { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); column-gap: 30px; align-items: start; }
-  .few .dev-card > * { grid-column: 1; }
-  .few .dev-card > .opts { grid-column: 2; grid-row: 1 / span 4; margin-top: 0; }
-}
 
 /* a LAN device's technical settings, folded away under "Advanced" */
 .dev-adv .adv-body { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
@@ -1713,3 +1699,70 @@ svg .f { fill: currentColor; stroke: none; }
 .gd-probs .btn { white-space: normal; text-align: left; }
 .gd-tip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-top: 12px; padding: 10px 12px; border-left: 2px solid var(--line3); }
 .gd-tip p { margin: 0; flex: 1 1 260px; }
+
+/* ---- the header: the page's name on the left, the one profile switcher and the chips on the right */
+header { flex-wrap: wrap; row-gap: 12px; }
+.head-t { min-width: min(100%, min-content); }   /* the page's name never gives way: the switcher and chips drop below it */
+header h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.head-r { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+header .prof { margin: 0; min-width: 0; max-width: 100%; }
+header .prof-menu { left: auto; right: 0; }
+@media (max-width: 700px) {
+  header { flex-wrap: wrap; align-items: flex-start; }
+  .head-r { width: 100%; justify-content: flex-start; }
+  header .prof-menu { left: 0; right: auto; }
+}
+
+/* ---- the nav: one mark slides to the page shown (app.js sets --ny/--nh); no queue, a new page retargets it */
+@media (min-width: 701px) {
+  nav { position: relative; }
+  nav::before { content: ""; position: absolute; left: 0; top: 0; width: 3px; height: var(--nh, 0); border-radius: 3px; pointer-events: none;
+    background: var(--live, var(--strong)); transform: translateY(var(--ny, 0)); transition: transform .18s cubic-bezier(.2, .7, .2, 1), height .18s; }
+  nav button.active { box-shadow: none; }
+  body.calm nav::before { transition: none; }
+}
+
+/* ---- Devices: the catalogue */
+.cat-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cat-q { flex: 1 1 220px; min-width: 0; height: 36px; padding: 0 14px; border: 1px solid var(--line2); border-radius: 999px; background: var(--panel); color: var(--text); font: 13px var(--font); }
+.cat-q:focus { outline: none; border-color: var(--strong); }
+.cat-bar .seg { margin: 0; flex: none; }
+.cat-bar .seg button { flex: none; padding: 6px 12px; }
+.cat-sel { width: auto; max-width: 170px; flex: none; }
+.cat-count { margin: 0 0 12px; font-size: 12px; min-height: 1em; }
+.cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.cat-grid:empty { display: none; }
+.cat-tile { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.cat-tile[data-st="off"], .cat-tile[data-st="offline"], .cat-tile[data-st="nosup"] { background: transparent; }
+.cat-open { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.cat-open canvas { width: 100%; margin-bottom: 6px; border-radius: 8px; pointer-events: none; }
+.cat-open:focus-visible { outline: 2px solid var(--strong); outline-offset: 4px; border-radius: 8px; }
+.cat-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cat-model { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cat-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.cat-st, .cat-own { font-size: 11.5px; color: var(--muted); padding: 2px 9px; border: 1px solid var(--line2); border-radius: 999px; white-space: nowrap; }
+.cat-st.st-on { color: var(--text); border-color: var(--line3); }
+.cat-st.st-on::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--live, var(--strong)); vertical-align: 1px; }
+.cat-st.st-connecting { border-style: dashed; }
+.cat-st.st-offline, .cat-st.st-setup, .cat-st.st-nosup { color: #f0b44a; border-color: rgba(240, 180, 74, .45); }
+.cat-st.st-pro { color: var(--strong); }
+.cat-own.on { color: var(--text); border-color: var(--line3); }
+.cat-hint { margin: 0; font-size: 12px; color: var(--muted); flex: 1 1 100%; }
+.cat-tile .btn.small { padding: 5px 12px; font-size: 12px; }
+.dev-store { display: none; }
+
+/* ---- Settings: one group at a time */
+.set-cats { margin: 0 0 18px; flex-wrap: wrap; border-radius: 14px; }   /* wraps when zoomed in RU/FR, nothing hides off the edge */
+.set-cats button { flex: none; padding: 7px 14px; }
+.cat-off { display: none !important; }
+
+/* a profile asked for and not yet confirmed by the core: its name pulses until the state says it is on */
+.prof-btn.busy b { animation: prof-busy .9s ease-in-out infinite alternate; }
+@keyframes prof-busy { to { opacity: .45; } }
+body.calm .prof-btn.busy b { animation: none; opacity: .6; }
+
+/* details open and close with a smooth height (Chromium 131+; older engines just snap) */
+details { interpolate-size: allow-keywords; }
+details::details-content { block-size: 0; overflow: clip; transition: block-size .2s ease, content-visibility .2s allow-discrete; }
+details[open]::details-content { block-size: auto; }
+body.calm details::details-content { transition: none; }

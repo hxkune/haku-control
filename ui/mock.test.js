@@ -135,13 +135,18 @@
     setCfg('profile.1', 'apps', ''); closeSheet();
   });
 
-  test('a phone keeps the kinds of devices in a row on Devices; the AI offer waits for a try or a download', async () => {
+  test('the old pages land on the new ones: a brand or the PC tab opens the catalogue filtered; the AI offer waits for a try or a download', async () => {
     await fresh();
-    showTab('nano');
-    ok($('#dev-jump').classList.contains('on') && $('#dev-jump [aria-current="true"]')?.dataset.tab === 'nano', 'row not on nano');
-    ok($('#nav [data-tab="devices"]').classList.contains('sub'), 'Devices not marked');
-    showTab('effects');
-    ok(!$('#dev-jump').classList.contains('on') && !$('#nav [data-tab="devices"]').classList.contains('sub'), 'row left on Effects');
+    for (const [p, want] of [['nano', { brand: 'Nanoleaf' }], ['bulbs', { brand: 'AiDot' }], ['pc', { where: 'pc' }], ['brand-divoom', { brand: 'Divoom' }]]) {
+      showTab(p);
+      const fits = x => Object.entries(want).every(([k, v]) => x[k] === v);
+      ok(tab === 'devices' && $('#tab-devices').classList.contains('active') && fits(CAT) && !CAT.q && $('#title').textContent === t('nav.devices'), p + ': ' + tab + ' ' + JSON.stringify(CAT));
+      ok(CATV.length && CATV.every(fits) && $$('#cat-grid .cat-tile').length === CATV.length, p + ': not its devices: ' + CATV.map(x => x.name));
+    }
+    showTab('effects'); ok(tab === 'effects' && $('#tab-effects').classList.contains('active'), 'Lighting moved: ' + tab);
+    showTab('fans'); ok(tab === 'fans', 'Cooling moved: ' + tab);
+    showTab('nosuch'); ok(tab === 'home', 'an unknown page: ' + tab);
+    $('#cat-reset').click();
     const was = S.ollama;
     S.ollama = { exe: 0, model: 0, stage: 0 }; MOOD.err = ''; updateAi();
     ok($('#mood-setup').classList.contains('hidden'), 'offer shown before a try');
@@ -200,10 +205,10 @@
     setCfg('profile.2', 'name', name); renderProfiles();
   });
 
-  test('the PC tab: the light cards come first, the found hardware folds once haku lights some, what needs a step stays out', async () => {
-    await fresh();
-    const g = $('#tab-pc .pc-grid'), kids = [...g.children];
-    ok(kids.indexOf($('#ram-card')) < kids.indexOf($('.hw-card')) && kids.indexOf($('#gpu-card')) < kids.indexOf($('.hw-card')), 'the hardware list is above the light cards');
+  test('this PC on Devices: the light tiles come first, the found hardware folds once haku lights some, what needs a step stays out', async () => {
+    await fresh(); showTab('devices');
+    const kids = [...$('#tab-devices').children];
+    ok(kids.indexOf($('#cat-grid')) < kids.indexOf($('#pc-tools')) && $('#pc-tools .hw-card') && $('#ram-card').closest('#dev-store') && $('#gpu-card').closest('#dev-store'), 'the hardware list is above the light tiles, or a light card left its store');
     const was = S.hw;
     S.hw = { busy: 0, done: 1, items: [{ cat: 'ram', maker: 'G.Skill', name: 'F4', id: '' }, { cat: 'gpu', maker: 'NVIDIA', name: 'RTX 4070', id: '' }, { cat: 'usb', maker: 'Corsair', name: 'Hub', id: '1B1C0C3F' }] };
     const o = S.orgb; S.orgb = { state: 4, ctls: [] };
@@ -411,7 +416,7 @@
 
   test('the theme code is folded behind a small Code button', async () => {
     await fresh();
-    showTab('settings');
+    showTab('settings'); setCat('look');
     ok($('#code').classList.contains('hidden') && !$('#code-open').classList.contains('hidden'), 'the code field shows by itself');
     $('#code-open').click();
     ok(!$('#code').classList.contains('hidden') && document.activeElement === $('#code-in') && $('#code-open').classList.contains('hidden'), 'Code did not open the field');
@@ -481,7 +486,7 @@
   test('fans: a lost link keeps the page and says so; the readings show as old', async () => {
     await fresh(); await fanReset();
     STATE.fans.link = 0; STATE.fans.age = 12000; await fanEmit();
-    ok(NAV_NEED.fans(), 'the tab went away');
+    ok(fansOn(), 'the tab went away');
     ok($('#fans-status').textContent === t('fans.nolink', 12), 'status: ' + $('#fans-status').textContent);
     ok($('#fan-panel').classList.contains('stale') && $$('#fan-panel [data-live-f]').length === 4, 'the tiles are gone or not marked old');
     ok($('#fan-panel [data-live-f]').textContent.includes(t('fans.st.stale')), 'a tile does not say the reading is old');
@@ -809,21 +814,23 @@
     }
   });
 
-  test('fans: the tab is there for any fan controller, a Lian Li receiver alone too, and never on a phone', async () => {
+  test('fans: Cooling is there on a PC, empty until a fan controller or a Lian Li receiver alone is found, and never on a phone', async () => {
     await fresh(); await fanReset();
     const F = STATE.fans, L = STATE.ll, keep = { on: F.on, q: F.q, st: L.st }, vis = s => !$(s).classList.contains('hidden') && !!$(s).offsetParent;
     // [the QUADRO or the board found, the QUADRO, the board chip, Lian Li state] -> tab
     for (const [on, q, chip, st, want] of [[0, 0, '', 'none', 0], [0, 0, '', 'ok', 1], [0, 0, '', 'err', 1], [0, 0, '', 'busy', 1], [1, 1, '', 'none', 1], [1, 0, 'NCT6799D', 'none', 1], [1, 1, 'NCT6799D', 'ok', 1]]) {
       Object.assign(F, { on, q }); if (chip) F.chip = chip; else delete F.chip; L.st = st; await fanEmit();
       const c = JSON.stringify([on, q, chip, st]);
-      ok(NAV_NEED.fans() === !!want, 'the tab: ' + c);
-      if (want) { showTab('fans'); await wait(30);
+      ok(fansOn() === !!want, 'the tab: ' + c);
+      showTab('fans'); await wait(30);
+      ok(tab === 'fans' && $('#nav [data-tab="fans"]').offsetParent && vis('#fans-none') === !want, 'Cooling, or its empty state: ' + c);
+      if (want) {
         ok(vis('#ll-card') === (st !== 'none') && vis('#fan-main') === !!on && vis('#tab-fans .fans-top') === !!on, 'the page: ' + c);
         if (!on) ok($('#ll-status').textContent === (st === 'ok' ? t('ll.st.ok', L.g.length) : t('ll.st.' + st, L.err || 0) + (st === 'busy' ? cfWhy('lianli') : '')), 'the receiver: ' + $('#ll-status').textContent);
       }
     }
-    document.documentElement.classList.add('remote');
-    ok(!NAV_NEED.fans(), 'a phone got the fans'); document.documentElement.classList.remove('remote');
+    document.documentElement.classList.add('remote'); showTab('fans');
+    ok(!fansOn() && tab === 'home' && !$('#nav [data-tab="fans"]').offsetParent, 'a phone got the fans: ' + tab); document.documentElement.classList.remove('remote');
     Object.assign(F, keep); delete F.chip; L.st = keep.st; await fanReset();
   });
 
@@ -1250,7 +1257,7 @@
     const row = [...$$('#home-attn-list .found-row')].find(r => r.textContent.includes('Bedside'));
     ok(!$('#home-attn').classList.contains('hidden') && row && row.textContent.includes(t('dev.offline')), 'the offline bulb not listed: ' + $('#home-attn-list').textContent);
     row.querySelector('[data-help]').click(); await wait(30);
-    ok($('#tab-settings').classList.contains('active') && $('#help-offline').open, 'Help does not open its topic in Settings');
+    ok($('#tab-help').classList.contains('active') && $('#help-offline').open, 'Help does not open its topic');
     $('#help-offline').open = false; showTab('home');
     ok(!$('#home-cool').classList.contains('hidden') && $('#home-cool').textContent.includes(STATE.fans.f[0].rpm + ' ' + t('home.rpm')), 'the fans not shown: ' + $('#home-cool').textContent);
     $('#home-cool').click();
@@ -1294,7 +1301,7 @@
     F.f.splice(0, F.f.length, ...q); delete F.chip; setCfg('fans', 'fan2', '');
     await fanReset(); showTab('home');
     $('#home-cool').nextElementSibling.querySelector('[data-help=""]').click(); await wait(30);
-    ok($('#tab-settings').classList.contains('active'), 'Help and diagnostics on Home opens nothing');
+    ok($('#tab-help').classList.contains('active'), 'Help and diagnostics on Home opens nothing');
     showTab('home');
   });
 
@@ -1345,7 +1352,7 @@
   test("help: the tray's Help opens the Help card, sends nothing", async () => {
     await fresh(); showTab('home'); sent.length = 0;
     emit({ type: 'go', to: 'help' }); await wait(80);
-    ok(tab === 'settings' && $('#tab-settings').classList.contains('active') && $('#help').offsetParent, 'not on the Help card: ' + tab);
+    ok(tab === 'help' && $('#tab-help').classList.contains('active') && $('#help').offsetParent, 'not on the Help card: ' + tab);
     ok(!sent.length, 'sent: ' + JSON.stringify(sent));
     showTab('home');
   });
@@ -1453,7 +1460,7 @@
     const w = motionWas(), inp = $('#code-in'), body = document.body;
     try {
       shown(true); setCfg('general', 'unlocked', 'verity'); motion('1'); setTheme('dark');
-      showTab('settings'); codeShow(true); inp.value = 'abc'; inp.focus();
+      showTab('settings'); setCat('look'); codeShow(true); inp.value = 'abc'; inp.focus();
       const title = $('#title').textContent, dt = document.title;
       const same = () => tab === 'settings' && $('#title').textContent === title && document.title === dt && inp.value === 'abc' && document.activeElement === inp;
       verityArrives(); await wait(400);
@@ -1675,6 +1682,130 @@
       setCfg('general', 'guide', 'dev'); document.documentElement.classList.add('remote'); updateGuide();
       ok($('#guide').classList.contains('hidden'), 'shown in the remote window');
     } finally { document.documentElement.classList.remove('remote'); setCfg('general', 'guide', ''); updateGuide(); }
+  });
+
+  test('devices: one catalogue, each device once in a steady order; search by name or model; no results told from no devices; the filter kept', async () => {
+    await fresh(); showTab('devices'); $('#cat-reset').click();
+    const all = CATV.length, tiles = () => $$('#cat-grid .cat-tile').length, q = $('#cat-q'), keys = () => CATV.map(x => x.key).join();
+    ok(all > 5 && tiles() === all && $('#cat-none').classList.contains('hidden') && $('#cat-nores').classList.contains('hidden'), 'not every device listed: ' + all);
+    ok(new Set(CATV.map(x => x.key)).size === all, 'a device listed twice');
+    const order = keys(); emit(STATE); await wait(80);
+    ok(keys() === order, 'the order moved on an update');
+    ok(['Times Gate', 'TimesFrame'].every(n => CATV.some(x => x.name === n && x.brand === 'Divoom')), 'two of one brand merged');
+    const bed = CATV.find(x => x.name === 'Bedside');
+    ok(bed && bed.state === 'offline' && $(`.cat-tile[data-key="${bed.key}"]`).dataset.st === 'offline', 'a bulb that does not answer left the catalogue');
+    ok(CATV.find(x => x.k === 'ram').where === 'pc' && CATV.filter(x => x.k === 'bulb').every(x => x.where === 'room'), 'PC or room wrong');
+    q.focus(); q.value = '300183039'; q.dispatchEvent(new Event('input'));
+    ok(CATV.length === 1 && CATV[0].name === 'Times Gate' && tiles() === 1 && $('#cat-count').textContent === t('cat.count', 1, all), 'search by model: ' + CATV.map(x => x.name));
+    q.value = 'timesframe'; q.dispatchEvent(new Event('input'));
+    ok(CATV.length === 1 && CATV[0].name === 'TimesFrame', 'search by name: ' + CATV.map(x => x.name));
+    emit(STATE); await wait(80);
+    ok(q.value === 'timesframe' && document.activeElement === q && CATV.length === 1, 'an update wiped the search or took the focus');
+    showTab('home'); showTab('devices');
+    ok(q.value === 'timesframe' && CATV.length === 1 && JSON.parse(localStorage.getItem('cat')).q === 'timesframe', 'the search lost on the way back');
+    q.value = 'zzzz'; q.dispatchEvent(new Event('input'));
+    ok(!tiles() && !$('#cat-nores').classList.contains('hidden') && $('#cat-none').classList.contains('hidden') && $('#cat-nores-t').textContent === t('cat.nores.t', all), 'no results not told apart from no devices');
+    $('#cat-reset').click();
+    ok(!q.value && CATV.length === all && document.activeElement === q && $('#cat-nores').classList.contains('hidden'), 'reset did not clear the filters');
+    $('#cat-where [data-v="room"]').click();
+    ok(CATV.length && CATV.every(x => x.where === 'room') && $('#pc-tools').classList.contains('hidden') && $('#cat-where [data-v="room"]').getAttribute('aria-pressed') === 'true', 'the Room filter');
+    $('#cat-where [data-v="pc"]').click();
+    ok(CATV.length && CATV.every(x => x.where === 'pc') && !$('#pc-tools').classList.contains('hidden'), 'the PC filter');
+    $('#cat-brand').value = 'Divoom'; $('#cat-brand').dispatchEvent(new Event('change'));
+    ok(!CATV.length && !$('#cat-nores').classList.contains('hidden'), 'PC and Divoom: ' + CATV.map(x => x.name));
+    $('#cat-reset').click();
+  });
+
+  test('devices: nothing found at all is its own empty state, with Add and Help', async () => {
+    await fresh(); showTab('devices'); $('#cat-reset').click();
+    const none = JSON.parse(JSON.stringify(STATE));
+    Object.assign(none, { bulbs: [], nano: { ctls: [] }, sticks: 0, msi: null }); none.ext.devs = [];
+    emit(none); await wait(80);
+    ok(!$('#cat-none').classList.contains('hidden') && $('#cat-nores').classList.contains('hidden') && !$$('#cat-grid .cat-tile').length && !$('#cat-count').textContent && $('#cat-none [data-help="start"]'), 'no devices: ' + $('#cat-count').textContent);
+    emit(STATE); await wait(80);
+    ok($('#cat-none').classList.contains('hidden') && $$('#cat-grid .cat-tile').length, 'the devices not back');
+  });
+
+  test('devices: a tile with its own look goes back to the common lighting, the inheritance only: its own colours stay', async () => {
+    await fresh(); showTab('devices'); $('#cat-reset').click();
+    const z = 'zone.gpu', keep = { effect: cv(z, 'effect', ''), mode: cv(z, 'mode', ''), palette: cv(z, 'palette', '') }, tile = () => $('.cat-tile[data-key="gpu"]');
+    try {
+      ok(keep.effect && tile().querySelector('.cat-own.on') && tile().querySelector('.cat-revert'), 'its own effect not shown');
+      tile().querySelector('.cat-revert').click();
+      ok(cv(z, 'effect', '') === '' && cv(z, 'mode', '') === 'effect' && cv(z, 'palette', '') === keep.palette, 'more than the inheritance changed: ' + cv(z, 'palette', ''));
+      ok(!tile().querySelector('.cat-own.on') && !tile().querySelector('.cat-revert') && tile().querySelector('.cat-own').textContent === t('cat.global'), 'the tile still says its own');
+    } finally { setCfg(z, 'effect', keep.effect); setCfg(z, 'mode', keep.mode); }
+  });
+
+  test('devices: a tile opens its own card in the sheet; on close the card goes home and the focus back to the tile', async () => {
+    await fresh(); showTab('devices'); $('#cat-reset').click();
+    const b = $('.cat-tile[data-key="ram"] .cat-open'); b.focus(); b.click(); await wait(80);
+    ok(!$('#sheet').classList.contains('hidden') && SHEET.kind === 'ram' && $('#sheet-body #ram-card'), 'the tile did not open its card');
+    emit(STATE); await wait(80);
+    closeSheet(); await wait(20);
+    ok(document.activeElement === $('.cat-tile[data-key="ram"] .cat-open'), 'focus not back on the tile: ' + (document.activeElement || {}).className);
+    ok($('#ram-card').closest('#dev-store'), 'the card did not go back to its place');
+  });
+
+  test('the nav: six pages, a new brand adds none; its one mark sits on the open page; tiles move only with motion on', async () => {
+    await fresh();
+    const pages = () => $$('#nav button[data-tab]').map(b => b.dataset.tab).join(), w = motionWas();
+    const moving = () => document.getAnimations().some(a => a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('#cat-grid'));
+    ok(pages() === PAGES.join(), 'nav: ' + pages());
+    STATE.ext.devs.push({ id: 77, kind: 'lifx', title: 'LIFX', name: 'Desk LIFX', host: '192.168.1.77', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1 });
+    try {
+      emit(STATE); await wait(80);
+      ok(pages() === PAGES.join(), 'a brand got a button: ' + pages());
+      for (const p of ['effects', 'devices', 'help', 'home']) {
+        showTab(p); const b = $(`#nav [data-tab="${p}"]`), n = $('#nav').style;
+        ok(n.getPropertyValue('--ny') === b.offsetTop + 'px' && n.getPropertyValue('--nh') === b.offsetHeight + 'px', 'the mark not on ' + p);
+      }
+      shown(true); motion('0'); showTab('devices'); $('#cat-reset').click();
+      $('#cat-where [data-v="room"]').click(); $('#cat-reset').click();
+      ok(!moving(), 'tiles move with motion off');
+      motion('1'); $('#cat-where [data-v="room"]').click(); $('#cat-reset').click();
+      ok(moving(), 'no tile moved with motion on');
+    } finally { motionBack(w); STATE.ext.devs.pop(); emit(STATE); await wait(80); }
+  });
+
+  test('settings: one category at a time, picked by its tab and kept', async () => {
+    await fresh(); showTab('settings');
+    for (const v of ['app', 'look', 'control', 'integr', 'data', 'about']) {
+      $(`#set-cats button[data-v="${v}"]`).click();
+      const on = $$('#tab-settings [data-cat]').filter(c => !c.classList.contains('cat-off'));
+      ok(on.length && on.every(c => c.dataset.cat === v) && $(`#set-cats [data-v="${v}"]`).getAttribute('aria-selected') === 'true' && localStorage.getItem('setcat') === v, 'category ' + v);
+    }
+    setCat('nosuch'); ok($('#set-cats [data-v="app"]').classList.contains('on'), 'an unknown category');
+  });
+
+  test('home: Alt+arrows swap a tile with its neighbour, the focus stays on it; an end does not wrap', async () => {
+    await fresh(); showTab('home'); await wait(60);
+    const was = cv('ui', 'hero_order', ''), keys = () => heroItems('any').map(it => it.key);
+    const btn = k => [...$('#hero-keys').children].find(x => x.dataset.k === k && !x.hasAttribute('data-pw'));
+    const alt = (el, k) => { const e = new KeyboardEvent('keydown', { key: k, altKey: true, bubbles: true, cancelable: true }); el.dispatchEvent(e); return e; };
+    try {
+      const k0 = keys(), first = HERO.hits.find(x => k0.includes(x.key)).key;
+      btn(first).focus();
+      ok(alt(btn(first), 'ArrowLeft').defaultPrevented && keys().join() === k0.join(), 'the first tile moved left');
+      alt(btn(first), 'ArrowRight'); await wait(60);
+      const k1 = keys();
+      ok(k1.join() !== k0.join() && k1.indexOf(first) > k0.indexOf(first) && cv('ui', 'hero_order', '') === k1.join(), 'not swapped: ' + k1);
+      ok(document.activeElement === btn(first), 'the focus left the tile: ' + (document.activeElement || {}).dataset?.k);
+      alt(btn(first), 'ArrowLeft'); await wait(60);
+      ok(keys().join() === k0.join(), 'back: ' + keys());
+      ok(!key(btn(first), 'ArrowRight').defaultPrevented && keys().join() === k0.join(), 'an arrow alone moved it');
+    } finally { setCfg('ui', 'hero_order', was); showTab('home'); }
+  });
+
+  test('a profile picked shows as asked until the core has it on, then as on', async () => {
+    await fresh();
+    const was = +cv('general', 'profile', 0), to = was === 2 ? 3 : 2; sent.length = 0;
+    try {
+      profGo(to);
+      ok(sent.some(m => m.cmd === 'profile' && m.id === String(to)) && $('#prof-btn').classList.contains('busy') && $('#prof-btn').getAttribute('aria-busy') === 'true', 'not shown as asked');
+      await wait(250);
+      ok(!$('#prof-btn').classList.contains('busy') && $('#prof-btn').getAttribute('aria-busy') === 'false' && $('#prof-cur').textContent === profCur().name && profCur().id === to, 'not shown as on: ' + $('#prof-cur').textContent);
+    } finally { profGo(was); await wait(250); }
   });
 
   const only =decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it

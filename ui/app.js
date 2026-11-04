@@ -13,7 +13,8 @@ const send = o => wv && wv.postMessage(JSON.stringify(o));
 const fxName = id => t('fx.' + id);
 // the ARGB header zone can be given its own name (e.g. "Water block")
 const stripName = () => cv('layout', 'strip_name', '') || t('pc.block');
-const TABS = ['home', 'effects', 'pc', 'nano', 'bulbs', 'devices', 'settings'];
+// the pages, in one list; the old ones (PC, Nanoleaf, AiDot, a brand's own tab) open the catalogue filtered (see route)
+const PAGES = ['home', 'effects', 'devices', 'fans', 'help', 'settings'];
 const HOTKEYS = ['next', 'prev', 'off', 'brighter', 'dimmer', 'profile'];
 const PRESETS = ['#FF0000', '#FF5A00', '#FFA000', '#FFE000', '#9DFF00', '#00FF6A', '#00FFD5', '#00C8FF',
   '#0068FF', '#2B2BFF', '#7A3CFF', '#B400FF', '#FF00D4', '#FF2D95', '#FFB070', '#FFFFFF'];
@@ -35,7 +36,12 @@ const nanoZone = slot => 'zone.' + nanoSec(slot);
 const nanoKey = slot => nanoSec(slot) + '_enabled';
 const nanoName = c => (c && c.name) || 'Nanoleaf';
 let tab = 'home';
-const SHEET = { kind: null, moved: [], page: '' };   // the open device sheet (see openSheet)
+const SHEET = { kind: null, moved: [], page: '', back: null };
+// the Devices catalogue's search and filters, kept across visits and restarts (see buildCatalog); CATV: the tiles shown
+const CAT = { q: '', where: '', brand: '', type: '', state: '' };
+try { Object.assign(CAT, JSON.parse(localStorage.getItem('cat') || '{}')); } catch (e) { }
+const saveCat = () => { try { localStorage.setItem('cat', JSON.stringify(CAT)); } catch (e) { } };
+let CATV = [], catScroll = 0;   // the open device sheet (see openSheet)
 let dragging = false;
 
 // ------------------------------------------------------------------ config helpers
@@ -579,82 +585,29 @@ document.addEventListener('pointerdown', e => { if (e.target.type === 'range') d
 document.addEventListener('pointerup', () => { dragging = false; });
 
 // ------------------------------------------------------------------ navigation
-// Sidebar: only the tabs for hardware this PC has (Effects, PC, Devices and Settings always; the open tab stays too).
-// PC stays because its hardware list and OpenRGB set-up are for every PC, not only MSI boards and ENE memory.
-// Nanoleaf and AiDot are reached from Devices until they are set up.
+// Sidebar: Home, Lighting, Devices, Cooling, then Help and Settings. Every device, whatever its brand, is a tile in
+// the Devices catalogue; a new brand adds no page.
 const llOn = () => !!(S.ll && S.ll.st && S.ll.st !== 'none');   // a Lian Li receiver found, working or not
-const NAV_NEED = { nano: nanoOn, bulbs: () => S.bulbs.length > 0, fans: () => (!!(S.fans || {}).on || llOn()) && !document.documentElement.classList.contains('remote') };
-
-// ---- a tab for every brand of lights added (as Nanoleaf has its own): their device cards move there. PC hardware
-// (OpenRGB, Wooting, the Nanoleaf desk dock) and everything to find and add devices stay under Devices.
-const BRAND_ICON = {
-  panel: '<path d="M7 3h13v8l-3 3H4V6z"/><path d="M12 14v5M8 21h8"/>',
-  bar: '<path d="M5 9h17v3l-2 3H2v-3z"/><path d="M6 18v2M18 18v2"/>',
-  strip: '<path d="M2 15l5-6 5 6 5-6 5 6"/><path class="f" d="M7 6l1.5 1.5L7 9 5.5 7.5zM17 6l1.5 1.5L17 9l-1.5-1.5z"/>',
-  grid: '<path d="M7 4h13v13l-3 3H4V7z"/><path d="M9.3 4.5v15M14.7 4.5v15M4.5 9.3h15M4.5 14.7h15"/>',
-  bulb: '<path d="M12 3l6 5-2.5 7h-7L6 8z"/><path d="M9.5 18.5h5M10.5 21h3"/>',
-  plug: '<path d="M9 3v5M15 3v5"/><path d="M6.5 8h11v4l-3.5 4h-4l-3.5-4z"/><path d="M12 16v5"/>',
-};
+const remote = () => document.documentElement.classList.contains('remote');
+const fansOn = () => (!!(S.fans || {}).on || llOn()) && !remote();   // phone mode never reaches the fans
 const BRANDS = {
   wled: ['wled', 'WLED', 'strip'], govee: ['govee', 'Govee', 'bar'], goveecloud: ['govee', 'Govee', 'bar'], lifx: ['lifx', 'LIFX', 'bulb'],
   yeelight: ['yeelight', 'Yeelight', 'bulb'], hue: ['hue', 'Philips Hue', 'bulb'], wiz: ['wiz', 'WiZ', 'bulb'], tuya: ['tuya', 'Tuya', 'plug'],
   elgato: ['elgato', 'Elgato', 'panel'], divoom: ['divoom', 'Divoom', 'grid'],
 };
-const brandOf = kind => BRANDS[kind] || null;   // null: PC hardware, under Devices
-const brandTab = d => { const b = brandOf(d.kind); return b ? 'brand-' + b[0] : 'devices'; };
-let wantTab = '';   // a brand tab remembered from last time, shown once its devices are there
-function buildBrandTabs() {
-  const seen = new Map();
-  S.ext.devs.forEach(d => { const b = brandOf(d.kind); if (b && !seen.has(b[0])) seen.set(b[0], b); });
-  const keys = [...seen.keys()].join(',');
-  if ($('#nav').dataset.brands === keys) return;
-  $('#nav').dataset.brands = keys;
-  $$('#nav [data-brand], .tab[data-brand]').forEach(e => e.remove());
-  let after = $('#nav [data-tab="bulbs"]');
-  const host = $('#tab-devices').parentElement;
-  if (seen.size) {   // the brands' own tabs under a caption of their own, apart from haku's
-    const cap = document.createElement('button');   // a click folds them away, all but the one open
-    cap.type = 'button'; cap.className = 'nav-cap'; cap.dataset.brand = '';
-    cap.innerHTML = `<span data-i18n="nav.lights">${t('nav.lights')}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`;
-    cap.addEventListener('click', () => { setCfg('ui', 'brands_fold', cv('ui', 'brands_fold', '') === '1' ? '' : '1'); updateNav(); });
-    after.after(cap); after = cap;
-  }
-  for (const [key, [, name, icon]] of seen) {
-    const b = document.createElement('button');
-    b.dataset.tab = 'brand-' + key; b.dataset.brand = key;
-    b.innerHTML = `<svg viewBox="0 0 24 24">${BRAND_ICON[icon]}</svg><span>${esc(name)}</span><i></i>`;
-    b.addEventListener('click', () => showTab(b.dataset.tab));
-    after.after(b); after = b;
-    const sec = document.createElement('section');
-    sec.className = 'tab'; sec.id = 'tab-brand-' + key; sec.dataset.brand = key;
-    sec.innerHTML = `<div class="bulb-grid dev-grid" data-brand-grid="${key}"></div>`;
-    host.appendChild(sec);
-  }
-  if (tab.startsWith('brand-') && !seen.has(tab.slice(6))) showTab('devices');
-  else if (wantTab && seen.has(wantTab.slice(6))) { const w = wantTab; wantTab = ''; showTab(w); }
-  else updateNav();
+const brandOf = kind => BRANDS[kind] || null;   // null: PC hardware
+// pages from older versions, saved links and the guide: each opens the catalogue with its filter
+const LEGACY = { pc: { where: 'pc' }, nano: { brand: 'Nanoleaf' }, bulbs: { brand: 'AiDot' } };
+function route(p) {
+  if (p === 'fans' && remote()) return 'home';   // the phone never reaches the fans
+  if (PAGES.includes(p)) return p;
+  const b = /^brand-/.test(p) && Object.values(BRANDS).find(x => 'brand-' + x[0] === p);
+  const f = LEGACY[p] || (b && { brand: b[1] });
+  if (!f) return 'home';
+  Object.assign(CAT, { q: '', where: '', brand: '', type: '', state: '' }, f); saveCat();
+  $('#cat-q').value = ''; catScroll = 0;
+  return 'devices';
 }
-const brandName = tb => { const b = Object.values(BRANDS).find(x => 'brand-' + x[0] === tb); return b ? b[1] : ''; };
-const devTab = t => ['devices', 'pc', 'fans', 'nano', 'bulbs'].includes(t) || t.startsWith('brand-');
-const wideNav = matchMedia('(min-width: 701px)');   // the bottom bar of a narrow window has no caption to unfold with
-wideNav.addEventListener('change', () => updateNav());
-function updateNav() {
-  const fold = cv('ui', 'brands_fold', '') === '1' && wideNav.matches, cap = $('#nav .nav-cap');
-  if (cap) cap.setAttribute('aria-expanded', !fold);
-  $$('#nav button').forEach(b => {
-    const need = NAV_NEED[b.dataset.tab], show = (!need || !!need() || b.dataset.tab === tab) && !(fold && /^brand-/.test(b.dataset.tab) && b.dataset.tab !== tab);
-    b.classList.toggle('gone', !show);
-    b.tabIndex = show ? 0 : -1;
-  });
-  // a narrow window's bottom bar keeps Effects / Devices / Settings: the kinds of devices are a row at the top of Devices
-  const jump = $$('#nav button[data-tab]').filter(b => devTab(b.dataset.tab) && !b.classList.contains('gone'))
-    .sort((a, b) => (b.dataset.tab === 'devices') - (a.dataset.tab === 'devices'));
-  $('#dev-jump').innerHTML = jump.length > 1 ? jump.map(b => `<button type="button" data-tab="${b.dataset.tab}" aria-current="${b.dataset.tab === tab}">${esc($('span', b).textContent)}</button>`).join('') : '';
-  $('#dev-jump').classList.toggle('on', devTab(tab));
-  $('#nav [data-tab="devices"]').classList.toggle('sub', devTab(tab) && tab !== 'devices');
-  updateAccounts();
-}
-$('#dev-jump').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { showTab(b.dataset.tab); $(`#dev-jump [data-tab="${b.dataset.tab}"]`)?.focus(); } });
 
 // ---- sign-ins and pairing (Devices tab): AiDot hands out its bulbs' local keys only to its own account
 const ACC = { shown: false, pending: false };
@@ -662,7 +615,7 @@ function updateAccounts() {
   const A = (S.accounts || {}).aidot || {}, nb = S.bulbs.length;
   const nc = nanoCtls(), non = nc.filter(c => c.online).length;
   $('#acc-nano').textContent = !nc.length ? t('acc.nano.none') : nc.length > 1 ? `${nc.map(nanoName).join(', ')} · ${non}/${nc.length}` : t(non ? 'acc.nano.on' : 'acc.nano.off');
-  $('[data-go="nano"]').classList.toggle('hidden', nc.length > 0);
+  $('#acc-nano-pair').classList.toggle('hidden', nc.length > 0);
   $('#acc-aidot').textContent = nb ? t('acc.aidot.ok', nb) : t('acc.aidot.none');
   $('#aidot-open-t').textContent = t(nb ? 'acc.signin.again' : 'acc.signin');
   const cc = $('#aidot-cc');
@@ -759,21 +712,49 @@ $('#aidot-form').addEventListener('submit', e => {
   updateAccounts();
 });
 
-function showTab(t) {
-  if (t !== 'home' && GUIDE.test) { gdTestEnd(); updateGuide(); }   // the test colour is only on while its step is in view
-  closeSheet();
-  tab = t;
-  $('main').scrollTop = 0;
-  $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
-  $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + t));
-  updateNav(); updateChips();
-  $('#nav button.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });   // the bottom bar of a narrow window scrolls
-  const bn = brandName(t);
-  $('#title').textContent = bn || window.t('nav.' + t);
-  $('#subtitle').textContent = bn ? window.t('sub.brand', S.ext.devs.filter(d => brandTab(d) === t).length) : window.t('sub.' + t + (t === 'fans' && !(S.fans || {}).q ? '.b' : ''));
-  requestAnimationFrame(sizeCanvases); previewWake();
-  try { localStorage.setItem('tab', t); } catch (e) { }
+// the nav's one sliding mark (style.css nav::before): a new page retargets it, nothing queues
+function navMark() {
+  const b = $('#nav button.active'), n = $('#nav');
+  n.style.setProperty('--ny', (b ? b.offsetTop : 0) + 'px'); n.style.setProperty('--nh', (b ? b.offsetHeight : 0) + 'px');
 }
+addEventListener('resize', navMark);
+function showTab(p) {
+  p = route(p);
+  if (p !== 'home' && GUIDE.test) { gdTestEnd(); updateGuide(); }   // the test colour is only on while its step is in view
+  SHEET.back = null; closeSheet();   // a page change keeps the focus where it went
+  if (tab === 'devices' && p !== 'devices') catScroll = $('main').scrollTop;   // back to the same place in the catalogue
+  tab = p;
+  $$('#nav button').forEach(b => { const on = b.dataset.tab === p; b.classList.toggle('active', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+  $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + p));
+  navMark(); buildCatalog(true);
+  $('main').scrollTop = p === 'devices' ? catScroll : 0;
+  updateAccounts(); updateChips();
+  $('#nav button.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });   // the bottom bar of a narrow window scrolls
+  $('#title').textContent = t(p === 'fans' ? 'nav.cooling' : 'nav.' + p);
+  $('#subtitle').textContent = t('sub.' + p + (p === 'fans' && !(S.fans || {}).q ? '.b' : ''));
+  requestAnimationFrame(sizeCanvases); previewWake();
+  try { localStorage.setItem('tab', p); } catch (e) { }
+}
+// the jumps from Help, Home and the guide: a page, the Add sheet (from where it is), the OpenRGB set-up in it, the
+// programs in the way (under Help)
+function go(w) {
+  if (w === 'add' || w === 'orgb') {
+    openSheet({ k: 'add' }, innerWidth / 2, innerHeight / 3);
+    if (w === 'orgb') setTimeout(() => $('#sheet .pc-more')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+    return;
+  }
+  if (w === 'cf') { showTab('help'); const c = $('#cf-card'); if (!c.classList.contains('hidden')) setTimeout(() => c.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); return; }
+  showTab(w);
+}
+// Settings in groups: one shown at a time (cat-off, as hidden is also set on some cards by what they show)
+function setCat(v) {
+  v = $(`#set-cats button[data-v="${v}"]`) ? v : 'app';
+  $$('#tab-settings [data-cat]').forEach(c => c.classList.toggle('cat-off', c.dataset.cat !== v));
+  $$('#set-cats button').forEach(b => { b.classList.toggle('on', b.dataset.v === v); b.setAttribute('aria-selected', b.dataset.v === v); });
+  try { localStorage.setItem('setcat', v); } catch (e) { }
+}
+$$('#set-cats button').forEach(b => b.addEventListener('click', () => setCat(b.dataset.v)));
+try { setCat(localStorage.getItem('setcat')); } catch (e) { setCat('app'); }
 
 // cursor spotlight on cards and effect tiles
 document.addEventListener('pointermove', e => {
@@ -784,7 +765,7 @@ document.addEventListener('pointermove', e => {
   c.style.setProperty('--my', (e.clientY - r.top) + 'px');
 }, { passive: true });
 $$('#nav button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
-$$('[data-go]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.go)));
+$$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
 
 // ------------------------------------------------------------------ colour picker
 const PK = { h: 0, s: 1, v: 1, onChange: null, onDelete: null, anchor: null };
@@ -1105,7 +1086,7 @@ function markEffect() {
 // the page only lists them. The switcher sits above the preview: a click on a profile switches to it, the pencil
 // renames it (and sets its hotkey or deletes it), "Save profile" makes a new one from what is set up now.
 const PROFILE_MAX = 16;
-const PROF = { edit: 0, sure: false };
+const PROF = { edit: 0, sure: false, go: 0, goT: 0 };   // go: the profile asked for, until the core has it on
 const profSec = id => 'profile.' + id;
 function profiles() {
   return Object.keys(S.cfg).map(k => /^profile\.(\d+)$/.exec(k)).filter(m => m && S.cfg[m[0]].name)
@@ -1125,6 +1106,7 @@ function renderProfiles() {
   const P = profiles(), cur = profCur();
   $('#prof-cur').textContent = cur ? cur.name : t('prof.none');
   $('#prof-btn').classList.toggle('none', !cur);
+  $('#prof-btn').classList.toggle('busy', !!PROF.go); $('#prof-btn').setAttribute('aria-busy', !!PROF.go);   // asked, not yet on
   // why the one in use came on, and the pause of the switching by programs and by the clock
   const why = cur && S.prof_why ? t('prof.why.' + S.prof_why) : '', paused = cv('general', 'auto_pause', '') === '1', auto = profAuto(P);
   $('#prof-btn').title = why;
@@ -1212,7 +1194,13 @@ function profChange(e) {
   profRenameDone(); setCfg(profSec(id), 'pin', e.target.checked ? '1' : ''); renderProfiles();
 }
 // the profile left keeps its last drag (sent before the switch); undo starts over, its changes belong to that profile
-function profGo(id) { if (id !== +cv('general', 'profile', 0)) { flushSets(); undoReset(); setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) }); renderProfiles(); } }
+function profGo(id) {
+  if (id === +cv('general', 'profile', 0)) return;
+  flushSets(); undoReset(); setCfgLocal('general', 'profile', String(id)); send({ cmd: 'profile', id: String(id) });
+  // shortcut: no reply means no; after 5 s the button just shows what the core has on, upgrade if the core gets a refusal message
+  PROF.go = id; clearTimeout(PROF.goT); PROF.goT = setTimeout(() => { PROF.go = 0; renderProfiles(); }, 5000);
+  renderProfiles();
+}
 $('#prof-state').addEventListener('click', e => {
   if (!e.target.closest('.prof-pause')) return;
   setCfg('general', 'auto_pause', cv('general', 'auto_pause', '') === '1' ? '' : '1'); renderProfiles(); $('#prof-state .prof-pause').focus();
@@ -2478,7 +2466,7 @@ function drawHero() {
 }
 // the preview's devices as real buttons over the canvas, so Tab and a screen reader reach them (the mouse stays on the canvas)
 function heroKeys(hits) {
-  const box = $('#hero-keys'), cvs = $('#hero'), ox = cvs.offsetLeft, oy = cvs.offsetTop, d = devicePixelRatio, id = b => b.dataset.i + (b.hasAttribute('data-pw') ? 'p' : '');
+  const box = $('#hero-keys'), cvs = $('#hero'), ox = cvs.offsetLeft, oy = cvs.offsetTop, d = devicePixelRatio, id = b => b.dataset.k + (b.hasAttribute('data-pw') ? 'p' : '');
   const vis = +$('#tab-home .hero').dataset.h || 1e9, shown = h => oy + h.y / d < vis - 2;   // a folded preview: the rows below the fold are not there for Tab either
   const fst = h => h.k === 'fan' && h.fan ? fanTileSt(h.fan.m) : null;   // a fan tile's problem is part of its name
   const sig = HERO.arrange ? '' : ox + ',' + oy + ',' + vis + ';' + hits.map(h => [h.key, h.x, h.y, h.w, h.h, h.pw && h.pw.on, (fst(h) || [])[1]].join()).join(';');
@@ -2487,8 +2475,8 @@ function heroKeys(hits) {
   const at = (x, y, w, h) => `style="left:${ox + x / d}px;top:${oy + y / d}px;width:${w / d}px;height:${h / d}px"`;
   const name = h => h.k === 'group' ? groupTitle(groups().find(g => g.n === h.g) || { n: h.g }) : h.k === 'add' ? t('hero.empty') : h.name + (fst(h) ? ', ' + fst(h)[1] : '');
   box.dataset.sig = sig;
-  box.innerHTML = HERO.arrange ? '' : hits.map((h, i) => !shown(h) ? '' : `<button type="button" data-i="${i}" ${at(h.x, h.y, h.w, h.h)} aria-label="${esc(name(h))}"></button>` + (!h.pw ? '' :
-    `<button type="button" data-i="${i}" data-pw ${at(h.pw.x - h.pw.r, h.pw.y - h.pw.r, 2 * h.pw.r, 2 * h.pw.r)} aria-label="${esc(name(h))}: ${t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on'))}"></button>`)).join('');
+  box.innerHTML = HERO.arrange ? '' : hits.map((h, i) => !shown(h) ? '' : `<button type="button" data-i="${i}" data-k="${esc(h.key)}" ${at(h.x, h.y, h.w, h.h)} aria-label="${esc(name(h))}"></button>` + (!h.pw ? '' :
+    `<button type="button" data-i="${i}" data-k="${esc(h.key)}" data-pw ${at(h.pw.x - h.pw.r, h.pw.y - h.pw.r, 2 * h.pw.r, 2 * h.pw.r)} aria-label="${esc(name(h))}: ${t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on'))}"></button>`)).join('');
   if (f) { const b = [...box.children].find(b => id(b) === f); if (b) b.focus(); }   // a power switch redraws the buttons: keep the one in use
 }
 $('#hero-keys').addEventListener('click', e => {
@@ -2497,6 +2485,16 @@ $('#hero-keys').addEventListener('click', e => {
   const r = b.getBoundingClientRect();
   heroOpen(h, r.left + r.width / 2, r.top + r.height / 2);
   const s = $('#sheet:not(.hidden)'), x = s && s.querySelector('button, input, select'); if (x) x.focus();
+});
+// Alt+Left / Alt+Right: the keyboard's way to swap a tile with its neighbour (dragging needs a mouse)
+$('#hero-keys').addEventListener('keydown', e => {
+  const b = e.target.closest('button'), h = b && !b.hasAttribute('data-pw') && HERO.hits[+b.dataset.i];
+  if (!h || !e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  const keys = heroItems('any').map(it => it.key), hs = HERO.hits.filter(x => keys.includes(x.key)), n = hs[hs.indexOf(h) + (e.key === 'ArrowLeft' ? -1 : 1)];
+  e.preventDefault();
+  if (!hs.includes(h) || !n) return;
+  heroMove(h.key, n.key); drawHero();
+  [...$('#hero-keys').children].find(x => x.dataset.k === h.key && !x.hasAttribute('data-pw'))?.focus();
 });
 $('#hero-keys').addEventListener('focusin', e => { const h = HERO.hits[+e.target.dataset.i]; if (h) { HERO.hover = h.key; drawHero(); } });
 $('#hero-keys').addEventListener('focusout', () => { HERO.hover = ''; drawHero(); });
@@ -2641,12 +2639,12 @@ function heroPowerButton(c, h) {
 // ---- device sheet: the real settings cards are moved in (placeholders mark their place) and back on close,
 // so everything keeps working exactly as on its own page
 function sheetCards(h) {
-  if (h.k === 'ram') return [[$('#ram-card')], 'pc'];
-  if (h.k === 'gpu') return [[$('#gpu-card')], 'pc'];
-  if (h.k === 'nano') { if (h.slot) { nanoSlot = h.slot; updateNano(); } return [nanoOn() ? $$('#nano-main > .card') : [$('#nano-empty')], 'nano']; }
-  if (h.k === 'bulb') return [[$('#bulb-grid').children[h.i]], 'bulbs'];
-  if (h.k === 'ext') { const d = S.ext.devs.find(x => x.id === h.id); return [[$(`#dev-st-${h.id}`)?.closest('.card')], d ? brandTab(d) : 'devices']; }
-  if (h.k === 'add') return [[], 'devices'];
+  if (h.k === 'ram') return [[$('#ram-card')], 'devices'];
+  if (h.k === 'gpu') return [[$('#gpu-card')], 'devices'];
+  if (h.k === 'nano') { if (h.slot) { nanoSlot = h.slot; updateNano(); } return [nanoOn() ? $$('#nano-main > .card') : [$('#nano-empty')], 'devices']; }
+  if (h.k === 'bulb') { const c = $('#bulb-grid').children[h.i]; return [c ? [$('.bulbs-head'), c] : [], 'devices']; }   // with the settings all bulbs share
+  if (h.k === 'ext') return [[$(`#dev-st-${h.id}`)?.closest('.card')], 'devices'];
+  if (h.k === 'add') return [[$('#add-store')], 'devices'];
   if (h.k === 'fx') return [[$('.fx-side')], 'effects'];
   if (h.k === 'prof') return [[$('#prof-panel')], 'home'];
   if (h.k === 'fan') return [[$('#fan-set')], 'fans'];
@@ -2654,6 +2652,8 @@ function sheetCards(h) {
 }
 function openSheet(h, cx, cy) {
   closeSheet();
+  const a = document.activeElement, tile = a && a.closest && a.closest('.cat-tile');
+  SHEET.back = { el: a, key: tile ? tile.dataset.key : '' };   // the focus goes back there on close
   const [cards, page] = sheetCards(h);
   if (!cards.length || !cards[0]) { showTab(page || 'effects'); return; }
   const body = $('#sheet-body');
@@ -2665,10 +2665,10 @@ function openSheet(h, cx, cy) {
   SHEET.kind = h.k; SHEET.page = page; SHEET.zone = h.zone || '';
   sheetGroup();
   const wrap = $('#sheet'), sh = wrap.querySelector('.sheet');
-  $('#sheet-page').classList.toggle('hidden', h.k === 'fx' || h.k === 'prof' || h.k === 'fan');   // the effect's, profile's or fan's own settings: no page of their own
+  $('#sheet-page').classList.add('hidden');   // every device's settings live in its sheet now, there is no page to go to
   if (h.k === 'fx' || h.k === 'prof' || h.k === 'fan') sh.setAttribute('aria-labelledby', { fx: 'fx-name', prof: 'prof-panel-h', fan: 'fs-title' }[h.k]); else sh.removeAttribute('aria-labelledby');
   sh.style.removeProperty('--dx'); sh.style.removeProperty('--dy');
-  sh.classList.toggle('wide', h.k === 'nano' && nanoOn());
+  sh.classList.toggle('wide', (h.k === 'nano' && nanoOn()) || h.k === 'add');
   wrap.classList.remove('hidden');
   const r = sh.getBoundingClientRect();   // grow out of the device that was clicked
   sh.style.transformOrigin = `${cx - r.left}px ${cy - r.top}px`;
@@ -2684,6 +2684,9 @@ function closeSheet() {
   $('#sheet').classList.add('hidden');
   if (prof) renderProfiles();
   requestAnimationFrame(sizeCanvases);
+  const b = SHEET.back; SHEET.back = null;   // the catalogue may have been drawn again meanwhile: its tile by key
+  const el = b && (b.el && b.el.isConnected && b.el !== document.body ? b.el : b.key && $(`.cat-tile[data-key="${b.key}"] .cat-open`));
+  if (el) el.focus({ preventScroll: true });
 }
 // which group the device is in, picked from a list (dragging onto a group needs a mouse)
 function sheetGroup() {
@@ -2752,7 +2755,7 @@ function buildHeroMenu() {
     const s = new Set(heroFans()); i.checked ? s.add(i.dataset.hf) : s.delete(i.dataset.hf);
     setCfg('ui', 'hero_fans', [...s].join(',')); drawHero();
   }));
-  $('#hero-add').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); showTab('devices'); send({ cmd: 'scan' }); });
+  $('#hero-add').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); go('add'); send({ cmd: 'scan' }); });
   $('#hero-arrange').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); heroArrange(true); });
   $('#hero-group').addEventListener('click', () => { $('#hero-menu').classList.add('hidden'); const n = groupNew(); if (n) groupDialog(n, true); });
 }
@@ -2833,12 +2836,13 @@ function drawCanvas(id, fn) {
 }
 
 function drawAll() {
-  const sh = SHEET.kind;   // the device sheet shows live canvases from other tabs
+  const sh = SHEET.kind;   // the device sheet shows the device's own live canvas
   if (tab === 'home') drawHero();
-  if (tab === 'pc' || sh === 'ram' || sh === 'gpu') { drawCanvas('#live-ram', drawRam); drawCanvas('#live-gpu', drawGpu); }
-  if (tab === 'nano' || sh === 'nano') drawCanvas('#live-nano', (c, x, y, w, h) => drawNano(c, x, y, w, h, curNano() || {}));
-  if (tab === 'devices' || tab.startsWith('brand-') || sh === 'ext') S.ext.devs.forEach((d, k) => { if (sh === 'ext' || brandTab(d) === tab) drawCanvas('#dev-live-' + d.id, (c, x, y, w, h) => drawExt(c, x, y, w, h, k)); });
-  if (tab === 'bulbs' || sh === 'bulb') S.bulbs.forEach((b, i) => {
+  if (tab === 'devices') CATV.forEach(h => drawCanvas('#cat-live-' + h.key, h.draw));
+  if (sh === 'ram' || sh === 'gpu') { drawCanvas('#live-ram', drawRam); drawCanvas('#live-gpu', drawGpu); }
+  if (sh === 'nano') drawCanvas('#live-nano', (c, x, y, w, h) => drawNano(c, x, y, w, h, curNano() || {}));
+  if (sh === 'ext') S.ext.devs.forEach((d, k) => drawCanvas('#dev-live-' + d.id, (c, x, y, w, h) => drawExt(c, x, y, w, h, k)));
+  if (sh === 'bulb') S.bulbs.forEach((b, i) => {
     const o = $('#bulb-orb-' + i); if (!o) return;
     const col = F.bulbs[i], on = lit(col) && b.online;
     o.classList.toggle('off', !on);
@@ -3091,18 +3095,12 @@ const DEV_SAVED = new Set();
 const devWaits = d => d.enabled && !d.own && !d.held && !d.covered && !d.online && !(d.pro && proLocked());
 function buildDevices() {
   if (SHEET.kind === 'ext') closeSheet();
-  buildBrandTabs();
   const grid = $('#dev-grid');
   grid.innerHTML = '';
-  $$('[data-brand-grid]').forEach(g => { g.innerHTML = ''; });
   $('#dev-empty').classList.toggle('hidden', S.ext.devs.length > 0);
-  // a brand page with one or two lights shows them big, the settings beside them
-  const per = {}; S.ext.devs.forEach(d => { const b = (brandOf(d.kind) || [])[0]; if (b) per[b] = (per[b] || 0) + 1; });
-  $$('[data-brand-grid]').forEach(g => g.classList.toggle('few', (per[g.dataset.brandGrid] || 0) <= 2));
   S.ext.devs.forEach(d => {
     const el = document.createElement('div');
     el.className = 'card dev-card';
-    const big = (per[(brandOf(d.kind) || [])[0]] || 9) <= 2;
     const sec = 'dev.' + d.id;
     // TRYX: a screen card only (theme, own picture); its fans light from the motherboard's ARGB header, not from here
     const scr = d.kind === 'tryx';
@@ -3110,7 +3108,7 @@ function buildDevices() {
         <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p></div>
         <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
       </div>
-      ${scr ? '' : `<canvas class="live" id="dev-live-${d.id}" data-h="${big ? 220 : d.per_led ? 70 : 90}"></canvas>
+      ${scr ? '' : `<canvas class="live" id="dev-live-${d.id}" data-h="${d.per_led ? 70 : 90}"></canvas>
       <div class="zone" data-zone="zone.dev${d.id}"></div>`}
       <div class="opts">
         <label class="num"><span>${t('strip.name')}</span><input type="text" class="dev-name" maxlength="40" spellcheck="false" value="${esc(cv(sec, 'name', d.name))}"></label>
@@ -3162,7 +3160,7 @@ function buildDevices() {
         <button class="btn danger small dev-del">${t('dev.remove')}</button></div>
         <p class="hint dev-chk" id="dev-chk-${d.id}" aria-live="polite"></p>
       </div>`;
-    ($(`[data-brand-grid="${(brandOf(d.kind) || [])[0]}"]`) || grid).appendChild(el);
+    grid.appendChild(el);
     if (!scr) renderZone(el.querySelector('.zone'));
     const saved = () => { DEV_SAVED.add(d.id); updateDevices(); };
     el.querySelector('.opts').addEventListener('change', saved);
@@ -3231,9 +3229,103 @@ function buildDevices() {
   nameSwitches(); updateDevices();
   requestAnimationFrame(sizeCanvases);
 }
+
+// ---- Devices: one catalogue of everything haku lights, whatever its brand and however it is reached (its own driver,
+// OpenRGB, the network). A tile opens the device's own card (the same cards as before) in the sheet; a device that
+// can't be reached keeps its tile. PC or room is the kind of connection (pcDev), not the brand.
+const CAT_STATES = ['on', 'connecting', 'offline', 'off', 'own', 'linked', 'setup', 'pro', 'nosup'];
+function catInfo(h) {
+  const L = k => cv('layout', k, '1') !== '0', pro = proLocked(), d = h.k === 'ext' ? S.ext.devs[h.i] : null;
+  if (d) {
+    const b = brandOf(d.kind);
+    return { where: pcDev(d) ? 'pc' : 'room', brand: b ? b[1] : kindTitle(d.kind), model: kindTitle(d.kind) + ' · ' + d.host, type: d.type || (d.per_led ? 'strip' : 'bulb'), tip: devStatus(d),
+      state: zonesNeed(d) ? 'setup' : !d.enabled ? 'off' : d.own ? 'own' : d.held || d.covered ? 'linked' : d.pro && pro ? 'pro' :
+        !d.online && d.kind === 'openrgb' && d.cap >= 4 ? 'nosup' : !d.online ? (d.fails === 0 ? 'connecting' : 'offline') : 'on' };
+  }
+  let x;
+  if (h.k === 'ram') x = { where: 'pc', brand: 'ENE', model: `${S.sticks} ${t('chip.pcs')}`, type: 'ram', state: !L('ram_enabled') ? 'off' : S.ram_own ? 'own' : 'on' };
+  else if (h.k === 'gpu') x = { where: 'pc', brand: 'MSI', model: '', type: 'board', state: !L('gpu_enabled') ? 'off' : S.msi_own ? 'own' : 'on' };
+  else if (h.k === 'nano') { const n = nanoCtls().find(c => c.slot === h.slot) || {}; x = { where: 'room', brand: 'Nanoleaf', model: n.model || '', type: 'panels', state: !L(nanoKey(h.slot)) ? 'off' : pro ? 'pro' : !n.online ? 'offline' : 'on' }; }
+  else { const b = S.bulbs[h.i] || {}; x = { where: 'room', brand: 'AiDot', model: b.ip || '', type: bulbType(h.i), state: !(L('lights_enabled') && L(`light${h.i + 1}_enabled`)) ? 'off' : pro ? 'pro' : !b.online ? 'offline' : 'on' }; }
+  x.tip = t('cat.st.' + x.state);
+  return x;
+}
+// follows the main look, or has its own effect or colours; null: a white-only or on/off light has nothing to follow
+const catOwn = z => z && !zoneCaps(z).kind ? !!cv(z, 'effect', '') || zoneMode(z) !== 'effect' : null;
+const fixName = v => t('fix.' + v) === 'fix.' + v ? v : t('fix.' + v);
+function catSelect(sel, key, vals, label) {
+  vals = [...new Set([...vals, CAT[key]].filter(Boolean))];
+  const sig = LANG + vals.join('|');
+  if (sel.dataset.sig !== sig) {   // rebuilt only when its choices change: an open list is not pulled from under the mouse
+    sel.dataset.sig = sig;
+    sel.innerHTML = `<option value="">${esc(t('cat.' + key))}</option>` + vals.map(v => `<option value="${esc(v)}">${esc(label(v))}</option>`).join('');
+  }
+  sel.value = CAT[key];
+  sel.classList.toggle('hidden', vals.length < 2 && !CAT[key]);   // nothing to choose between
+}
+function buildCatalog(fresh) {
+  if (tab !== 'devices') return;
+  const items = heroItems(true).map(h => Object.assign(h, catInfo(h)));
+  catSelect($('#cat-brand'), 'brand', items.map(x => x.brand).sort((a, b) => a.localeCompare(b)), v => v);
+  catSelect($('#cat-type'), 'type', items.map(x => x.type), fixName);
+  catSelect($('#cat-state'), 'state', CAT_STATES.filter(v => items.some(x => x.state === v)), v => t('cat.st.' + v));
+  $$('#cat-where button').forEach(b => { b.classList.toggle('on', b.dataset.v === CAT.where); b.setAttribute('aria-pressed', b.dataset.v === CAT.where); });
+  const q = CAT.q.trim().toLowerCase();
+  CATV = items.filter(x => (!CAT.where || x.where === CAT.where) && (!CAT.brand || x.brand === CAT.brand) && (!CAT.type || x.type === CAT.type) &&
+    (!CAT.state || x.state === CAT.state) && (!q || `${x.name} ${x.brand} ${x.model}`.toLowerCase().includes(q)));
+  $('#cat-none').classList.toggle('hidden', items.length > 0);
+  $('#cat-nores').classList.toggle('hidden', !items.length || CATV.length > 0);
+  $('#cat-nores-t').textContent = t('cat.nores.t', items.length);
+  $('#cat-count').textContent = items.length ? t('cat.count', CATV.length, items.length) : '';
+  $('#pc-tools').classList.toggle('hidden', CAT.where === 'room');
+  const html = CATV.map(x => {
+    const p = devicePower(x), own = catOwn(x.zone);
+    const hint = x.state === 'setup' ? `<p class="cat-hint">${esc(t('zones.need'))}</p><button class="btn small primary cat-fix" type="button"><span>${esc(t('cat.fix'))}</span></button>`
+      : x.state === 'offline' ? `<button class="btn small ghost" type="button" data-help="offline"><span>${esc(t('help.open'))}</span></button>`
+      : x.state === 'nosup' ? `<button class="btn small ghost" type="button" data-help="orgb"><span>${esc(t('help.open'))}</span></button>`
+      : x.state === 'pro' ? `<button class="btn small ghost cat-pro" type="button"><span>${esc(t('pro.lock.key'))}</span></button>` : '';
+    return `<div class="cat-tile" data-key="${x.key}" data-st="${x.state}">
+      <button type="button" class="cat-open" aria-label="${esc(t('cat.open', x.name))}"><canvas class="live" id="cat-live-${x.key}" data-h="58" aria-hidden="true"></canvas>
+        <span class="cat-name" id="cat-n-${x.key}" title="${esc(x.name)}">${esc(x.name)}</span><span class="cat-model" title="${esc([x.brand, x.model].filter(Boolean).join(' · '))}">${esc([x.brand, x.model].filter(Boolean).join(' · '))}</span></button>
+      <div class="cat-row"><span class="cat-st st-${x.state}" title="${esc(x.tip)}">${esc(t('cat.st.' + x.state))}</span>
+        ${p ? `<label class="switch"><input type="checkbox" class="cat-pw" role="switch" aria-labelledby="cat-n-${x.key}" ${p.on ? 'checked' : ''}><span></span></label>` : ''}</div>
+      ${own === null ? '' : `<div class="cat-row"><span class="cat-own${own ? ' on' : ''}">${esc(t(own ? 'cat.own' : 'cat.global'))}</span>${own ? `<button class="btn small ghost cat-revert" type="button"><span>${esc(t('cat.revert'))}</span></button>` : ''}</div>`}
+      ${hint ? `<div class="cat-row">${hint}</div>` : ''}</div>`;
+  }).join('');
+  const g = $('#cat-grid');
+  if (g.dataset.html === html) return;   // a status update with nothing new: the tiles, their focus and canvases stay
+  const a = document.activeElement, at = a && g.contains(a) ? [a.closest('.cat-tile').dataset.key, [...a.classList][0]] : null;
+  // FLIP: a tile that stays slides to its new place, a new one fades in; not on the page's own entrance or with motion off
+  const was = {}, flip = !fresh && g.dataset.html !== undefined && !document.body.classList.contains('calm');
+  if (flip) $$('.cat-tile', g).forEach(el => { was[el.dataset.key] = el.getBoundingClientRect(); });
+  g.dataset.html = html; g.innerHTML = html;
+  if (flip) $$('.cat-tile', g).forEach(el => {
+    const r = was[el.dataset.key], n = el.getBoundingClientRect();
+    if (!r) el.animate([{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 200, easing: 'ease-out' });
+    else if (r.left !== n.left || r.top !== n.top) el.animate([{ transform: `translate(${r.left - n.left}px, ${r.top - n.top}px)` }, { transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.2, .7, .2, 1)' });
+  });
+  if (at) $(`.cat-tile[data-key="${at[0]}"] .${at[1]}`)?.focus({ preventScroll: true });
+  requestAnimationFrame(sizeCanvases);
+}
+const catItem = el => { const k = el.closest('.cat-tile')?.dataset.key; return CATV.find(x => x.key === k); };
+$('#cat-grid').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const h = catItem(b); if (!h) return;
+  if (b.matches('.cat-open, .cat-fix')) { const r = b.getBoundingClientRect(); openSheet(h, r.left + r.width / 2, r.top + r.height / 2); }
+  else if (b.matches('.cat-revert')) { setCfg(h.zone, 'effect', ''); setCfg(h.zone, 'mode', 'effect'); renderZones(); renderOwnList(); buildCatalog(); }   // the inheritance only: its own colours stay saved
+  else if (b.matches('.cat-pro')) proGoKey();
+});
+$('#cat-grid').addEventListener('change', e => { if (!e.target.matches('.cat-pw')) return; const h = catItem(e.target); if (h) { togglePower(h); buildCatalog(); } });
+$('#cat-q').value = CAT.q;
+$('#cat-q').addEventListener('input', e => { CAT.q = e.target.value; saveCat(); buildCatalog(); });
+$$('#cat-where button').forEach(b => b.addEventListener('click', () => { CAT.where = b.dataset.v; saveCat(); buildCatalog(); }));
+['brand', 'type', 'state'].forEach(k => $('#cat-' + k).addEventListener('change', e => { CAT[k] = e.target.value; saveCat(); buildCatalog(); }));
+$('#cat-reset').addEventListener('click', () => { Object.assign(CAT, { q: '', where: '', brand: '', type: '', state: '' }); saveCat(); $('#cat-q').value = ''; buildCatalog(); $('#cat-q').focus(); });
+$('#cat-add').addEventListener('click', () => go('add'));
+$('#cat-find').addEventListener('click', () => { go('add'); S.ext.scanning = 1; updateDevices(); send({ cmd: 'scan' }); });
 // ---- undo the last change (Ctrl+Z, or the button that shows for a few seconds after one): a setting, the effect or the
 // brightness. The core then sends its whole state again, so every control shows the value back.
-const UNDO = [], UNDO_SKIP = /^(general\.(seen_version|welcome|unlocked|recent|guide)|ui\.brands_fold|community\..*)$/;
+const UNDO = [], UNDO_SKIP = /^(general\.(seen_version|welcome|unlocked|recent|guide)|community\..*)$/;
 // One entry is one action: everything written while one event is handled (a group's look on all its devices,
 // a device moved between groups) goes back together; each change keeps the value it replaced.
 let undoing = false, undoHide = 0, undoCur = null;
@@ -3844,7 +3936,7 @@ function updateHw() {
     else if (r.act === 'setup') { $('#orgb-setup').click(); $('#orgb-guide').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     else if (r.act === 'check') $('#orgb-check').click();
     else if (r.act === 'pawnio') { b.disabled = true; send({ cmd: 'open', what: 'pawnio' }); }
-    else if (r.act === 'scan') { send({ cmd: 'scan' }); showTab('devices'); }
+    else if (r.act === 'scan') { send({ cmd: 'scan' }); go('add'); }
   }));
 }
 $('#pc-own').addEventListener('click', () => {
@@ -3911,7 +4003,7 @@ $('#man-add').addEventListener('click', () => {
   if (!kind || !/^[\w.\-]+(:\d+)?$/.test(host)) { $('#man-host').focus(); return; }
   if (kind === 'nanoleaf') {   // pairing with that address; the Nanoleaf page shows what to press
     if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) { $('#man-host').focus(); return; }
-    S.nano.pair = 1; send({ cmd: 'pair', ip: host }); $('#man-host').value = ''; showTab('nano'); updateNano();
+    S.nano.pair = 1; send({ cmd: 'pair', ip: host }); $('#man-host').value = ''; updateNano();
     return;
   }
   send({ cmd: 'dev_add', kind, host, sub: kind === 'openrgb' ? (+$('#man-sub').value || 0) : -1, name: kindTitle(kind), leds: 0 });
@@ -4045,7 +4137,6 @@ function hotkeyButton(b, s, k) {
 
 let qrUrl = '';   // the address the QR code points at (the PC may be on several networks)
 // ---- haku Pro: the trial / key in Settings, the chip in the sidebar, a notice on the tabs whose lights wait for Pro
-const PRO_TABS = ['nano', 'bulbs'];
 function proLocked() { return !!(S.pro && !S.pro.on); }
 function updatePro() {
   // the open build has no network lights, sign-ins or phone control ("none" in their status): their places go
@@ -4074,8 +4165,9 @@ function updatePro() {
   $('#pro-buy').classList.toggle('hidden', P.state === 'key' && P.kind === 'gift');
   $('#pro-buy span').textContent = t(P.state === 'key' && P.kind === 'sub' ? 'pro.manage' : 'pro.buy');
   const err = $('#pro-err'); err.textContent = P.err || ''; err.classList.toggle('hidden', !P.err);
-  // a notice on top of the tabs whose lights need Pro, and on the phone card
-  const want = proLocked() ? [...PRO_TABS.map(x => '#tab-' + x), ...$$('.tab[data-brand]').filter(s => !['openrgb'].includes(s.dataset.brand)).map(s => '#' + s.id), '#phone-card'] : [];
+  // a notice on top of the catalogue while it has lights that need Pro (the room's), and on the phone card
+  const room = nanoOn() || S.bulbs.length > 0 || S.ext.devs.some(d => !pcDev(d));
+  const want = proLocked() ? [room ? '#tab-devices' : '', '#phone-card'].filter(Boolean) : [];
   $$('.pro-lock').forEach(e => { if (!want.includes('#' + e.parentElement.id)) e.remove(); });
   want.forEach(sel => {
     const host = $(sel); if (!host || host.querySelector(':scope > .pro-lock')) return;
@@ -4088,7 +4180,7 @@ function updatePro() {
     host.prepend(el);
   });
 }
-function proGoKey() { showTab('settings'); setTimeout(() => { $('#pro-card').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('#pro-key').focus(); }, 60); }
+function proGoKey() { showTab('settings'); setCat('about'); setTimeout(() => { $('#pro-card').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('#pro-key').focus(); }, 60); }
 $('#pro-chip').addEventListener('click', proGoKey);
 $('#pro-buy').addEventListener('click', () => send({ cmd: 'open', what: 'pro' }));
 $('#pro-form').addEventListener('submit', e => {
@@ -4489,7 +4581,7 @@ function homeAttn() {
 // the fans that need a look, the worst first, as their tiles tell it: the QUADRO's lost link once for all its channels
 // (the board's go on reading), then each channel in emergency, not taken or driven with no rpm read (not a no-tach one)
 function homeCool() {
-  const F = S.fans || {}; if (!F.on || !NAV_NEED.fans()) return [];
+  const F = S.fans || {}; if (!F.on || !fansOn()) return [];
   const vis = fanAll().filter(i => !fanHidden(i)), gs = fanGroups(), at = i => { const g = gs.find(g => g.m.includes(i)); return g ? { g: g.n, i } : { i }; };
   const r = [], old = vis.filter(fanOld), row = (n, k, why, i) => r.push({ n, kind: t('nav.fans'), why, help: 'fans', fan: at(i), k });
   if (old.length) row('QUADRO', F.link === 0 ? 0 : 1, t(F.link === 0 ? 'fans.st.stale' : 'fans.st.old'), old[0]);
@@ -4515,7 +4607,7 @@ function updateHome() {
     const [s, sc] = p ? [p[0], p[2] ? 'warn' : 'bad'] : [fanMode(i) + (st ? ' · ' + st : ''), c];
     return `<span data-hf="${i}"><b>${esc(fanName(i))}</b>${v}<small class="fan-st ${sc}">${esc(s)}</small></span>`; });
   const c = $('#home-cool');
-  c.classList.toggle('hidden', !F.on || !f.length || !NAV_NEED.fans());
+  c.classList.toggle('hidden', !F.on || !f.length || !fansOn());
   const ch = `<h3>${t('nav.fans')}</h3><div class="home-fans">${f.join('')}${F.gpu != null ? `<span><b>GPU</b> ${F.gpu}°</span>` : ''}</div>`;
   if (c.dataset.html !== ch) { c.dataset.html = ch; c.innerHTML = ch; }
 }
@@ -4525,13 +4617,13 @@ $('#home-attn-list').addEventListener('click', e => {
   if (b.dataset.a === 'open' && x.fan) fanOpen(x.fan, b);
   else if (b.dataset.a === 'open') { const r = b.getBoundingClientRect(); openSheet(x.h, r.left + r.width / 2, r.top); }
   else if (b.dataset.a === 'retry') { b.disabled = true; setTimeout(() => { b.disabled = false; }, 3000); send({ cmd: 'dev_retry' }); }
-  else if (b.dataset.a === 'cf') { showTab('pc'); setTimeout(() => $('#cf-card').scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }
+  else if (b.dataset.a === 'cf') go('cf');
 });
 $('#home-cool').addEventListener('click', () => showTab('fans'));
-$('#home-find').addEventListener('click', () => { showTab('devices'); S.ext.scanning = 1; updateDevices(); send({ cmd: 'scan' }); });
+$('#home-find').addEventListener('click', () => { go('add'); S.ext.scanning = 1; updateDevices(); send({ cmd: 'scan' }); });
 // help: a topic in Settings, opened from where the question comes up
 function helpOpen(topic) {
-  showTab('settings');
+  showTab('help');
   const d = $(topic ? '#help-' + topic : '#help'); if (!d) return;   // no topic: the whole card
   if (d.tagName === 'DETAILS') d.open = true;
   setTimeout(() => d.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
@@ -4632,7 +4724,7 @@ function gdBody(s) {
       ...nanoCtls().map(n => row('Nanoleaf', nanoName(n), n.online ? t('gd.lv.page') : t('dev.offline')))].join('');
     return { st, err: err || none, x: `${found ? `<div class="found">${found}</div>` : ''}${have ? `<p class="gd-sub">${t('gd.d.have')}</p><div class="found">${have}</div>` : ''}`,
       more: (gdAny() || err || none ? b('scan', t('gd.d.rescan'), ' ghost', E.scanning && !err ? ' disabled' : '') : '') +
-        b('manual', t('gd.d.manual')) + (err || none ? b('help-start', t('help.open')) : '') + (NAV_NEED.fans() ? b('fans', t('gd.d.fans')) : ''),
+        b('manual', t('gd.d.manual')) + (err || none ? b('help-start', t('help.open')) : '') + (fansOn() ? b('fans', t('gd.d.fans')) : ''),
       main: gdAny() ? b('next', t('wz.next'), ' primary') : err || none ? '' : b('scan', E.scanning ? t('dev.scanning') : t('dev.scan'), ' primary', E.scanning ? ' disabled' : '') };
   }
   if (s === 'path') {
@@ -4729,7 +4821,7 @@ $('#guide').addEventListener('click', e => {
     GUIDE.adding.add(k); setTimeout(() => { GUIDE.adding.delete(k); updateGuide(); }, 8000);
     send({ cmd: 'dev_add', kind: f.kind, host: f.host, sub: f.sub, name: f.name || f.title, leds: 0 }); updateGuide(); return;
   }
-  if (g === 'manual') { showTab('devices'); setTimeout(() => { $('#man-kind').scrollIntoView({ block: 'center' }); $('#man-kind').focus(); }, 60); return; }
+  if (g === 'manual') { go('add'); $('#manual').open = true; setTimeout(() => { $('#man-kind').scrollIntoView({ block: 'center' }); $('#man-kind').focus(); }, 60); return; }
   if (g === 'fans') return showTab('fans');
   if (g.startsWith('help-')) return helpOpen(g.slice(5));
   if (g.startsWith('tab-')) return showTab(g.slice(4));
@@ -5201,7 +5293,8 @@ function fanSheet() {
 const fanI18n = (sel, k) => { const el = $(sel); el.dataset.i18n = k; el.textContent = t(k); };
 function updateFans() {
   const F = S.fans || {};
-  $('#tab-fans .fans-top').classList.toggle('hidden', !F.on && llOn());   // a Lian Li receiver alone: its card is the page
+  $('#fans-none').classList.toggle('hidden', !!F.on || llOn());   // nothing to cool with yet
+  $('#tab-fans .fans-top').classList.toggle('hidden', !F.on);   // a Lian Li receiver alone: its card is the page
   if (!F.on) { $('#fans-status').textContent = t('fans.off'); $('#fans-sensors').textContent = ''; $('#fan-panel').innerHTML = ''; FAN.sig = ''; $('#fan-removed').classList.add('hidden'); $('#fans-back-msg').textContent = ''; $('#fan-main').classList.add('hidden'); if (SHEET.kind === 'fan') closeSheet(); return; }
   $('#fan-main').classList.remove('hidden');
   fanSample(F);
@@ -5474,7 +5567,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); }
   if (bulbsChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateNav(); updatePro(); updateHa(); updateBackup(); updateFans(); fixedCheck();
+  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck();
   if (nanoLayoutChanged) drawAll();
 }
 
@@ -5488,6 +5581,7 @@ if (wv) wv.addEventListener('message', e => {
   else if (m.type === 'state') {
     const prof = cv('general', 'profile', '');
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;
+    if (PROF.go && +cv('general', 'profile', 0) === PROF.go) { PROF.go = 0; clearTimeout(PROF.goT); }   // the core has it on
     // another profile came on (by the clock, a program, the tray, a hotkey): undo and unsent drags belonged to the old one
     if (cv('general', 'profile', '') !== prof) { pendingSets.clear(); undoReset(); }
     LANG = ['ru', 'fr'].includes(cv('general', 'lang', 'en')) ? cv('general', 'lang', 'en') : 'en';
@@ -5529,6 +5623,6 @@ $('#side-toggle').addEventListener('click', () => setSide(!document.body.classLi
 try { if (localStorage.getItem('side') === '1') { document.body.classList.add('no-anim'); setSide(true); requestAnimationFrame(() => document.body.classList.remove('no-anim')); } } catch (e) { }
 
 applyI18n();
-try { const tb = localStorage.getItem('tab') || ''; if (tb.startsWith('brand-')) wantTab = tb; showTab(TABS.includes(tb) ? tb : 'home'); } catch (e) { showTab('home'); }
+try { showTab(localStorage.getItem('tab') || 'home'); } catch (e) { showTab('home'); }   // route() takes the old pages' names too
 $$('.range').forEach(fill);
 send({ cmd: 'hello' });
