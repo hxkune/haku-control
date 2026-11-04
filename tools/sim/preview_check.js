@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The window's effect previews (ui/fxpreview.js) against the engine (src/effects.c): the same colours on a 28-LED
+// strip for every effect the preview ports, with several settings and moments, and FX_PARAMS with the same keys,
+// defaults and ranges as effects.c FXP.
+//   effects_test.exe dump %TEMP%\fxdump.json && node tools\sim\preview_check.js %TEMP%\fxdump.json
+'use strict';
+const fs = require('fs'), path = require('path'), vm = require('vm');
+const root = path.join(__dirname, '..', '..');
+const ctx = {}; vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(path.join(root, 'ui', 'fxpreview.js'), 'utf8') + '\nthis.FX_PARAMS = FX_PARAMS; this.fxPreview = fxPreview; this.fxParamValue = fxParamValue;', ctx);
+const { FX_PARAMS, fxPreview, fxParamValue } = ctx;
+
+let fails = 0;
+const check = (ok, what) => { console.log((ok ? 'ok   ' : 'FAIL ') + what); if (!ok) fails++; };
+
+// ---- FX_PARAMS = FXP
+const src = fs.readFileSync(path.join(root, 'src', 'effects.c'), 'utf8');
+const fxp = {};
+for (const m of src.matchAll(/\{\s*FX_(\w+),\s*"(\w+)",\s*([-\d.]+)f?,\s*([-\d.]+)f?,\s*([-\d.]+)f?\s*\}/g)) {
+  const id = m[1] === 'INTERF' ? 'interference' : m[1].toLowerCase();
+  (fxp[id] = fxp[id] || []).push([m[2], +m[3], +m[4], +m[5]]);
+}
+check(Object.keys(fxp).length >= 10, 'the FXP table is found in effects.c (' + Object.keys(fxp).length + ' effects)');
+let same = true;
+for (const id of new Set([...Object.keys(fxp), ...Object.keys(FX_PARAMS)])) {
+  const a = (fxp[id] || []).map(p => p.join(' ')).sort().join('; '), b = (FX_PARAMS[id] || []).map(p => p.slice(0, 4).join(' ')).sort().join('; ');
+  if (a !== b) { same = false; console.log('     ' + id + ': effects.c ' + a + ' | fxpreview.js ' + b); }
+}
+check(same, 'FX_PARAMS has the keys, defaults and ranges of effects.c FXP');
+
+// ---- colours
+const file = process.argv[2];
+if (!file) { console.log('usage: node preview_check.js <dump.json from effects_test.exe dump>'); process.exit(2); }
+const cases = JSON.parse(fs.readFileSync(file, 'utf8'));
+const TOL = 0.004;   // 1/255: float (C) against double (JS) rounding, nothing more
+const worst = {};
+for (const k of cases) {
+  const P = k.id === 'wave' ? (key => key === 'dir' ? k.p.dir || 'right' : +(k.p.size || 2)) : (key => fxParamValue(k.id, key, k.p[key]));
+  const js = fxPreview(k.id, k.pal.map(c => c.map(v => v * 255)), Math.fround(k.t), k.c.length, P);
+  let d = 0, at = -1;
+  k.c.forEach((c, i) => c.forEach((v, j) => { const e = Math.abs(v - js[i][j] / 255); if (e > d) { d = e; at = i; } }));
+  const name = k.id + (Object.keys(k.p).length ? ' ' + JSON.stringify(k.p) : '');
+  if (!worst[name] || d > worst[name].d) worst[name] = { d, at, t: k.t };
+}
+let bad = 0;
+for (const [name, w] of Object.entries(worst)) if (w.d > TOL) { bad++; console.log(`     ${name}: off by ${w.d.toFixed(4)} at LED ${w.at}, t=${w.t}`); }
+const all = Object.values(worst).reduce((m, w) => Math.max(m, w.d), 0);
+check(!bad, `the previews show the engine's colours (${Object.keys(worst).length} cases x 4 moments, worst ${all.toFixed(5)})`);
+process.exit(fails ? 1 : 0);

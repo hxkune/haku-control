@@ -659,9 +659,11 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
     if (!nm[0]) snprintf(nm, sizeof(nm), "Preset %d", id);
     int keep = zones && !_stricmp(zones, "keep") && cfg_geti(sec, "zones", 0), take = zones && !strcmp(zones, "1");
     static cfg_item kept[512];
-    int nkept = keep ? cfg_items(sec, kept, 512) : 0;
-    cfg_remove_section(sec);
+    int nkept = cfg_items(sec, kept, 512);
     const char *eff = effect && *effect ? g_effects[effect_index(effect)].id : g_effects[cur_effect].id;
+    // the effect's own settings: an edited preset of the same effect keeps its own, anything else takes the current ones
+    int fx_kept = !_stricmp(cfg_get(sec, "effect", ""), eff) && cfg_geti(sec, "fx", 0);
+    cfg_remove_section(sec);
     cfg_set(sec, "name", nm);
     cfg_set(sec, "effect", eff);
     const char *pal = palette_ok(palette) ? palette : cfg_get(eff, "palette", cfg_get("general", "palette", ""));
@@ -676,6 +678,18 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
         if (!_stricmp(bri, "cur") || v < 5 || v > 100) snprintf(b, sizeof(b), "%s", cfg_get("general", "brightness", "100"));
         else snprintf(b, sizeof(b), "%d", v);
         cfg_set(sec, "brightness", b);
+    }
+    cfg_set(sec, "fx", "1");   // marks a preset that carries the effect's settings (older ones leave them alone)
+    if (fx_kept) {
+        for (int i = 0; i < nkept; i++) if (!_strnicmp(kept[i].key, "fx.", 3)) cfg_set(sec, kept[i].key, kept[i].val);
+    } else {
+        static cfg_item cur[128];
+        int nc = cfg_items(eff, cur, 128);
+        for (int i = 0; i < nc; i++) {
+            if (!cur[i].val[0] || !_stricmp(cur[i].key, "palette") || !_stricmp(cur[i].key, "speed")) continue;
+            char key[80]; snprintf(key, sizeof(key), "fx.%s", cur[i].key);
+            cfg_set(sec, key, cur[i].val);
+        }
     }
     int with_zones = take || keep;
     if (keep) {
@@ -708,13 +722,19 @@ void app_preset_apply(int id) {
     if (*pal) cfg_set(e, "palette", pal);
     const char *sp = cfg_get(sec, "speed", "");
     if (*sp) cfg_set(e, "speed", sp);
+    static cfg_item it[512];
+    int n = cfg_items(sec, it, 512);
+    if (cfg_geti(sec, "fx", 0)) {   // the effect's settings as saved: the others back to their defaults
+        static cfg_item cur[128];
+        int nc = cfg_items(e, cur, 128);
+        for (int i = 0; i < nc; i++) if (_stricmp(cur[i].key, "palette") && _stricmp(cur[i].key, "speed")) cfg_set(e, cur[i].key, "");
+        for (int i = 0; i < n; i++) if (!_strnicmp(it[i].key, "fx.", 3)) cfg_set(e, it[i].key + 3, it[i].val);
+    }
     if (cfg_geti(sec, "zones", 0)) {
         char zs[64][64]; int nz = cfg_sections("zone.", zs, 64);
         for (int z = 0; z < nz; z++)
             for (int k = 0; k < (int)(sizeof(ZONE_KEYS) / sizeof(ZONE_KEYS[0])); k++)
                 if (cfg_get(zs[z], ZONE_KEYS[k], NULL)) cfg_set(zs[z], ZONE_KEYS[k], "");
-        static cfg_item it[512];
-        int n = cfg_items(sec, it, 512);
         for (int i = 0; i < n; i++) {
             if (_strnicmp(it[i].key, "z.", 2)) continue;
             char zone[64]; snprintf(zone, sizeof(zone), "%s", it[i].key + 2);
@@ -1149,9 +1169,9 @@ static int status_body(char *out, int cap) {
     char gt[16] = "null", tz[32] = "";
     if (test_zone >= 0 && GetTickCount() - (DWORD)test_at < TEST_MS) zone_section(test_zone, tz, sizeof(tz));
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"rev\":%ld,\"test\":\"%s\",\"bulbs\":[",
+    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"rev\":%ld,\"test\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
                      g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, app_pc_own_now(),
-                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, g_state_rev, tz);
+                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, g_state_rev, tz, effects_audio_state(), effects_temp_state());
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));

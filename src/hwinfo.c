@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // What PC hardware this is, for the diagnostics report: the motherboard and BIOS, the processor, the memory sticks
 // (SMBIOS), the graphics cards with the brand that made the card (PCI subsystem vendor), the SMBus controller (the
-// bus RAM lighting is on), the USB devices of RGB makers, PawnIO, and what OpenRGB sees. With this, support for
+// bus RAM lighting is on), the USB devices of RGB makers (with each HID interface's usage and report sizes), PawnIO,
+// and what OpenRGB sees. With this, support for
 // someone's hardware can be planned from one file. Read-only: nothing is written to any device.
 // The same sources, as a list for the window (hw_scan_*): the board, the memory, the graphics cards and the USB
 // devices of lighting makers; the window says for each which way haku lights it (itself, OpenRGB, nothing yet).
@@ -139,12 +140,31 @@ static const char *usb_maker(unsigned v) {
     }
 }
 
+// one HID interface's report sizes and usage, so a support request can be planned without a probe run: they come from
+// the descriptor Windows keeps (a handle with no access, nothing is sent to or read from the device)
+static void add_hid_caps(hw_buf *b, const wchar_t *path, const wchar_t *low, unsigned vid, unsigned pid) {
+    HANDLE h = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+    PHIDP_PREPARSED_DATA pd;
+    if (HidD_GetPreparsedData(h, &pd)) {
+        HIDP_CAPS c;
+        if (HidP_GetCaps(pd, &c) == HIDP_STATUS_SUCCESS) {
+            const wchar_t *mi = wcsstr(low, L"mi_"), *col = wcsstr(low, L"&col");
+            put(b, "usb-if: %04X:%04X mi %.2ls col %.2ls usage %04X:%04X in %u out %u feature %u\r\n", vid, pid,
+                mi ? mi + 3 : L"-", col ? col + 4 : L"-", c.UsagePage, c.Usage,
+                c.InputReportByteLength, c.OutputReportByteLength, c.FeatureReportByteLength);
+        }
+        HidD_FreePreparsedData(pd);
+    }
+    CloseHandle(h);
+}
+
 static void add_usb(hw_buf *b) {
     GUID hid; HidD_GetHidGuid(&hid);
     HDEVINFO set = SetupDiGetClassDevsW(&hid, NULL, NULL, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
     if (set == INVALID_HANDLE_VALUE) return;
     SP_DEVICE_INTERFACE_DATA ifd = { sizeof(ifd) };
-    unsigned seen[128]; int ns = 0, shown = 0;
+    unsigned seen[128]; int ns = 0, shown = 0, ifs = 0;
     for (DWORD i = 0; SetupDiEnumDeviceInterfaces(set, NULL, &hid, i, &ifd) && ns < 128; i++) {
         BYTE buf[1024]; SP_DEVICE_INTERFACE_DETAIL_DATA_W *det = (void *)buf;
         det->cbSize = sizeof(*det);
@@ -155,6 +175,7 @@ static void add_usb(hw_buf *b) {
         unsigned vid = wcstoul(v + 4, NULL, 16), pid = wcstoul(p + 4, NULL, 16), key = vid << 16 | pid;
         const char *maker = usb_maker(vid);
         if (!maker) continue;
+        if (ifs++ < 96) add_hid_caps(b, det->DevicePath, low, vid, pid);   // every interface, the device's name once
         int dup = 0; for (int k = 0; k < ns; k++) if (seen[k] == key) dup = 1;
         if (dup) continue;
         seen[ns++] = key;

@@ -429,6 +429,22 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .fx-side h3.fx-title { font: 600 20px var(--display); }
 .fx-side h3.fx-title::before { display: none; }
 .fx-side .muted { margin-top: 6px; }
+/* effect cards: what an effect needs, and "demo" on the previews that run on a made-up signal */
+.fx .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.fx .tag { font: 500 10px var(--font); color: var(--muted); border: 1px solid var(--line2); border-radius: 999px; padding: 1px 7px; }
+.fx .tag.demo { border-style: dashed; color: var(--faint); }
+/* the effect's own settings */
+.fx-side .note { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin-top: 10px; }
+#fx-state { color: var(--text); border-left: 2px solid var(--line2); padding-left: 10px; }
+#fx-params .set-row { padding: 12px 0; }
+#fx-params .seg { flex-wrap: wrap; }
+.fx-adv { margin-top: 12px; }
+.fx-adv summary { cursor: pointer; color: var(--muted); font-size: 12.5px; list-style: none; }
+.fx-adv summary::before { content: "+ "; color: var(--faint); }
+.fx-adv[open] summary::before { content: "– "; }
+.fx-adv summary:hover { color: var(--text); }
+.fx-reset { margin-top: 14px; }
+.fx-reset:disabled { opacity: .4; cursor: default; }
 
 /* ---------------- live canvases */
 canvas.live { width: 100%; display: block; border: 1px solid var(--line); background-color: #0c0c0c; }

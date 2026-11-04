@@ -82,6 +82,8 @@ int  effects_bake(int effect, const scene_t *sc, int dev, int zone, int max_fram
 void zone_section(int zone, char *out, int cap);
 int  effects_need_gpu_temp(void);
 int  effects_need_audio(void);
+int  effects_audio_state(void);   // -2 not shown, -1 no capture, 0 silence, 1 sound
+int  effects_temp_state(void);    // -2 not shown, 0 no reading, 1 reading
 int  effects_zone_white(int zone, int *kelvin);      // 1 if the zone is in "white light" mode   // "zone.ram", "zone.gpu", "zone.light1"...
 
 // ---- dev_msi.c (MSI Mystic Light: onboard LED + JRAINBOW1 ARGB header)
@@ -216,6 +218,7 @@ int  screen_area(float u0, float v0, float u1, float v1, rgbf *out);   // averag
 int  screen_json(char *out, int cap);
 void audio_stop(void);
 void audio_read(float *level, float *bass);
+int  audio_ok(void);                       // the capture is running (else the level is not a real silence)
 void sensors_close(void);
 
 // ---- fans.c: Aqua Computer QUADRO fan hub (own thread)

@@ -2,7 +2,9 @@
 // Sound level for the audio effect: WASAPI loopback of the default output device (what you hear).
 // The capture thread runs only while some zone shows the audio effect (sensors.c starts / stops it).
 // Output: level (whole signal) and bass (below ~150 Hz), 0..1, with an automatic gain so quiet and loud
-// music both fill the range.
+// music both fill the range. A capture that fails (no output device, a driver error) is retried every second, and
+// a change of the default output device moves the capture to the new one. Nothing is recorded or sent anywhere:
+// only the two numbers leave this file.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmdeviceapi.h>
@@ -16,14 +18,24 @@ extern "C" void logf_(const char *fmt, ...);
 
 static HANDLE th;
 static volatile LONG run;
-static volatile LONG level_x1000, bass_x1000;
+static volatile LONG level_x1000, bass_x1000, ok;
+static bool fail_logged;
 
-static unsigned __stdcall capture(void *) {
-    CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    IMMDeviceEnumerator *en = NULL; IMMDevice *dev = NULL; IAudioClient *ac = NULL; IAudioCaptureClient *cc = NULL;
-    WAVEFORMATEX *wf = NULL;
-    HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void **)&en);
-    if (SUCCEEDED(hr)) hr = en->GetDefaultAudioEndpoint(eRender, eConsole, &dev);
+static void zero(void) { InterlockedExchange(&level_x1000, 0); InterlockedExchange(&bass_x1000, 0); }
+
+// the default output device's id (to free with CoTaskMemFree), NULL if there is none
+static LPWSTR default_id(IMMDeviceEnumerator *en) {
+    IMMDevice *d = NULL; LPWSTR id = NULL;
+    if (SUCCEEDED(en->GetDefaultAudioEndpoint(eRender, eConsole, &d))) { d->GetId(&id); d->Release(); }
+    return id;
+}
+
+// one capture of the current default output; returns when stopped, when the device goes or changes, or on a failure
+static void session(IMMDeviceEnumerator *en) {
+    IMMDevice *dev = NULL; IAudioClient *ac = NULL; IAudioCaptureClient *cc = NULL;
+    WAVEFORMATEX *wf = NULL; LPWSTR id = NULL;
+    HRESULT hr = en->GetDefaultAudioEndpoint(eRender, eConsole, &dev);
+    if (SUCCEEDED(hr)) hr = dev->GetId(&id);
     if (SUCCEEDED(hr)) hr = dev->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void **)&ac);
     if (SUCCEEDED(hr)) hr = ac->GetMixFormat(&wf);
     if (SUCCEEDED(hr)) hr = ac->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, 200000 /* 20 ms */, 0, wf, NULL);
@@ -40,8 +52,8 @@ static unsigned __stdcall capture(void *) {
         }
     }
     if (SUCCEEDED(hr) && !is_float && wf->wBitsPerSample != 16) hr = E_FAIL;
-    if (FAILED(hr)) logf_("audio: loopback capture unavailable (0x%08lX)", (unsigned long)hr);
-    else logf_("audio: capturing %lu Hz, %d ch", wf->nSamplesPerSec, wf->nChannels);
+    if (FAILED(hr)) { if (!fail_logged) logf_("audio: loopback capture unavailable (0x%08lX), retrying", (unsigned long)hr); fail_logged = true; }
+    else { logf_("audio: capturing %lu Hz, %d ch", wf->nSamplesPerSec, wf->nChannels); fail_logged = false; InterlockedExchange(&ok, 1); }
 
     const int ch = wf ? wf->nChannels : 2;
     const float rate = wf ? (float)wf->nSamplesPerSec : 48000.0f;
@@ -49,12 +61,19 @@ static unsigned __stdcall capture(void *) {
     float lp = 0, sum2 = 0, bsum2 = 0; int nwin = 0;
     const int win = (int)(rate / 100);                                        // 10 ms windows
     float env = 0.05f, benv = 0.02f;                                          // automatic gain envelopes
-    DWORD last_data = GetTickCount();
+    DWORD last_data = GetTickCount(), last_check = last_data;
 
     while (run && SUCCEEDED(hr)) {
         Sleep(8);
+        if (GetTickCount() - last_check > 2000) {   // the default output changed (headphones plugged in, ...)
+            last_check = GetTickCount();
+            LPWSTR now = default_id(en);
+            bool moved = !now || lstrcmpW(now, id) != 0;
+            if (now) CoTaskMemFree(now);
+            if (moved) { logf_("audio: default output changed, following it"); break; }
+        }
         UINT32 packet = 0;
-        while (SUCCEEDED(cc->GetNextPacketSize(&packet)) && packet) {
+        while (SUCCEEDED(hr = cc->GetNextPacketSize(&packet)) && packet) {
             BYTE *data; UINT32 frames; DWORD flags;
             if (FAILED(cc->GetBuffer(&data, &frames, &flags, NULL, NULL))) break;
             last_data = GetTickCount();
@@ -82,17 +101,31 @@ static unsigned __stdcall capture(void *) {
             }
             cc->ReleaseBuffer(frames);
         }
+        if (FAILED(hr)) { logf_("audio: capture lost (0x%08lX), retrying", (unsigned long)hr); fail_logged = true; break; }   // device gone
         // nothing playing: the loopback stream delivers no packets at all
-        if (GetTickCount() - last_data > 100) { InterlockedExchange(&level_x1000, 0); InterlockedExchange(&bass_x1000, 0); }
+        if (GetTickCount() - last_data > 100) zero();
     }
+    InterlockedExchange(&ok, 0);
+    zero();
     if (ac) ac->Stop();
     if (cc) cc->Release();
     if (ac) ac->Release();
     if (dev) dev->Release();
-    if (en) en->Release();
     if (wf) CoTaskMemFree(wf);
+    if (id) CoTaskMemFree(id);
+}
+
+static unsigned __stdcall capture(void *) {
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    IMMDeviceEnumerator *en = NULL;
+    if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void **)&en))) {
+        while (run) {
+            session(en);
+            for (int i = 0; i < 100 && run; i++) Sleep(10);   // a second before the next try
+        }
+        en->Release();
+    } else logf_("audio: no audio device enumerator");
     CoUninitialize();
-    InterlockedExchange(&level_x1000, 0); InterlockedExchange(&bass_x1000, 0);
     return 0;
 }
 
@@ -109,6 +142,8 @@ extern "C" void audio_stop(void) {
     CloseHandle(th); th = NULL;
     logf_("audio: capture stopped (not in use)");
 }
+
+extern "C" int audio_ok(void) { return ok != 0; }
 
 extern "C" void audio_read(float *level, float *bass) {
     *level = level_x1000 / 1000.0f;

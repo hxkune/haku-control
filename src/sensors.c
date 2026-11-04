@@ -84,7 +84,7 @@ void sensors_poll(sensors_t *s, int need_gpu, int need_audio) {
         last_audio_need = now;
         if (!audio_on) { audio_start(); audio_on = 1; }
     } else if (audio_on && now - last_audio_need > 30000) { audio_stop(); audio_on = 0; }
-    if (audio_on) audio_read(&cache.audio_level, &cache.audio_bass);
+    if (audio_on && audio_ok()) audio_read(&cache.audio_level, &cache.audio_bass);   // no capture: not a number, not a fake silence
     else cache.audio_level = cache.audio_bass = NAN;
     if (need_gpu) {
         last_need = now;

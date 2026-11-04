@@ -67,6 +67,7 @@ const FX_DEFAULT_PAL = {
   ocean: ['#000820', '#003070', '#0070B0', '#00B0D0', '#A0F0FF'], twinkle: ['#FFFFFF', '#FFE8A0', '#A0C8FF'], meteor: ['#FFFFFF', '#80C0FF', '#3040FF'],
   plasma: ['#FF0080', '#8000FF', '#0080FF', '#00FFC0'], aurora: ['#00FF90', '#00C0FF', '#7040FF', '#FF40C0'], ripple: ['#40E0FF', '#4060FF', '#C040FF'],
   matrix: ['#00FF40', '#C0FFC0'], candle: ['#FF7A1A', '#FFB347', '#FF5500'],
+  pendulum: ['#00E0FF', '#8040FF', '#FF40A0'], interference: ['#000830', '#0060FF', '#00E0FF', '#E0FFFF'], steps: ['#FF3060', '#FFA000', '#30E070', '#3090FF'],
 };
 const effPal = id => { const p = parsePal(cv(id, 'palette')); if (p.length) return p; if (FX_DEFAULT_PAL[id]) return FX_DEFAULT_PAL[id]; const g = parsePal(cv('general', 'palette')); return g.length ? g : DEFAULT_PAL; };
 
@@ -996,8 +997,57 @@ function fxTab(v) {
   buildEffects();
 }
 $('#fx-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.v !== FX_TAB) fxTab(b.dataset.v); });
-const FX_GROUP = { breathe: 'calm', ocean: 'calm', aurora: 'calm', candle: 'calm', static: 'calm', caustic: 'calm', caustics: 'calm',
-  audio: 'reactive', screen: 'reactive', temperature: 'reactive', pump: 'reactive', off: 'off' };
+// the Effects tab's groups; an effect the map does not know goes with the waves
+const FX_GROUP = { breathe: 'calm', candle: 'calm', static: 'calm', aurora: 'calm', caustic: 'calm', caustics: 'calm',
+  flow: 'waves', wave: 'waves', rainbow: 'waves', ocean: 'waves', lava: 'waves', plasma: 'waves', interference: 'waves', fire: 'waves',
+  bubbles: 'particles', twinkle: 'particles', meteor: 'particles', ripple: 'particles', matrix: 'particles',
+  comet: 'sequences', pendulum: 'sequences', steps: 'sequences',
+  audio: 'music', temperature: 'system', pump: 'system', screen: 'system', off: 'off' };
+const FX_GROUPS = ['calm', 'waves', 'particles', 'sequences', 'music', 'system', 'off'];
+// what an effect shows nothing without (a badge on its card); the cards of the first two run on a made-up signal
+const FX_NEEDS = { audio: 'need.audio', temperature: 'need.temp', screen: 'need.screen', pump: 'need.pump' }, FX_DEMO = { audio: 1, temperature: 1 };
+// ready-made looks: an effect with colours, speed and settings that suit each other, not an algorithm of their own.
+// Applying one writes them to the effect, so everything stays adjustable; the copy button makes it a preset of one's
+// own (never over one). Brightness: what the look is meant for, kept low where the colours are dark anyway.
+const BUILTIN = [
+  { id: 'moon', effect: 'breathe', palette: '#B8C8F0, #7890D0, #E0E8FF', speed: 3, fx: { depth: 20, wave: 30 }, bri: 45 },
+  { id: 'sunset', effect: 'lava', palette: '#FF7A30, #FF4F7B, #9B3FD0, #FFB060', speed: 2, fx: {}, bri: 60 },
+  { id: 'ocean', effect: 'ocean', palette: '#000616, #002050, #004878, #007C90, #6FD8E8', speed: 3, fx: {}, bri: 55 },
+  { id: 'forest', effect: 'caustic', palette: '#0E3A14, #3F8F2E, #D6C860', speed: 2, fx: {}, bri: 0 },
+  { id: 'neon', effect: 'pendulum', palette: '#FF1E8C, #00E5FF, #8A2BFF', speed: 5, fx: { width: 24, tail: 40, mirror: 1 }, bri: 70 },
+  { id: 'embers', effect: 'twinkle', palette: '#FF6A10, #FF3A00, #FFA040, #200400', speed: 3, fx: { density: 30, life: 6, halo: 40, variety: 60, bg: 20 }, bri: 0 },
+  { id: 'polar', effect: 'aurora', palette: '#00FF90, #00D0C0, #0060FF', speed: 3, fx: { layers: 3 }, bri: 65 },
+  { id: 'mono', effect: 'breathe', palette: '#7A5CFF', speed: 3, fx: { single: 1, depth: 70, wave: 60 }, bri: 60 },
+];
+// the ready-made look that is showing: its effect with exactly its colours, speed and settings (not stored: an edit
+// makes it the effect again); an own preset that is on comes first
+function builtinActive() {
+  if (!S.effect || activePreset()) return null;
+  const same = b => palStr(parsePal(cv(b.effect, 'palette', ''))) === palStr(parsePal(b.palette)) && +cv(b.effect, 'speed', cv('general', 'speed', 5)) === b.speed &&
+    (FX_PARAMS[b.effect] || []).every(([k]) => fxParamValue(b.effect, k, cv(b.effect, k, '')) === fxParamValue(b.effect, k, b.fx[k] ?? ''));
+  return BUILTIN.find(b => b.effect === S.effect && same(b)) || null;
+}
+function builtinApply(B) {
+  undoPush('', 'fx', S.effect);
+  if (B.bri) undoPush('', 'br', S.brightness);
+  for (const [k] of FX_PARAMS[B.effect] || []) if (String(B.fx[k] ?? '') !== cv(B.effect, k, '')) setCfg(B.effect, k, B.fx[k] ?? '');
+  setCfg(B.effect, 'palette', B.palette); setCfg(B.effect, 'speed', B.speed);
+  setCfgLocal('general', 'preset', ''); S.effect = B.effect;
+  if (B.bri) send({ cmd: 'brightness', v: B.bri });
+  send({ cmd: 'effect', id: B.effect });
+  renderEffectSide(); markEffect();
+}
+let FXQ = '';   // the effect search, for this window only
+function fxFilter() {
+  const q = FXQ.toLowerCase();
+  $$('#fx-grid .fx[data-id]').forEach(b => b.classList.toggle('hidden', !!q && !b.textContent.toLowerCase().includes(q) && !t('desc.' + b.dataset.id).toLowerCase().includes(q)));
+  $$('#fx-grid .fx-head').forEach(h => {
+    let n = 0;
+    for (let e = h.nextElementSibling; e && e.classList.contains('fx') && !(e.dataset.id === 'off' && h.dataset.g !== 'fav'); e = e.nextElementSibling) if (!e.classList.contains('hidden')) n++;   // Off has no head of its own
+    h.classList.toggle('hidden', !n); h.querySelector('i').textContent = n;
+  });
+  const none = $('#fx-grid .fx-none'); if (none) none.classList.toggle('hidden', !q || !!$('#fx-grid .fx[data-id]:not(.hidden)'));
+}
 const favs = () => cv('general', 'fav', '').split(',').filter(Boolean);
 function buildEffects() {
   const grid = $('#fx-grid');
@@ -1009,17 +1059,23 @@ function buildEffects() {
   tabs[1].querySelector('i').textContent = presets().length || '';
   if (FX_TAB === 'community') { buildCommunity(grid); return; }
   if (FX_TAB === 'fx') {
-    // in groups (the starred ones first); an effect the map does not know goes with the lively ones
+    // in groups (the starred ones first), each effect once
     const fav = favs();
-    const groups = [['fav', S.effects.filter(e => fav.includes(e.id))]].concat(['calm', 'lively', 'reactive', 'off'].map(g =>
-      [g, S.effects.filter(e => !fav.includes(e.id) && (FX_GROUP[e.id] || 'lively') === g)]));
+    const bar = document.createElement('div');
+    bar.className = 'comm-bar';
+    bar.innerHTML = `<input type="text" class="comm-q" id="fx-q" aria-label="${t('fx.search')}" placeholder="${t('fx.search')}" value="${esc(FXQ)}" spellcheck="false">`;
+    bar.querySelector('input').addEventListener('input', e => { FXQ = e.target.value.trim(); fxFilter(); });
+    grid.appendChild(bar);
+    const groups = [['fav', S.effects.filter(e => fav.includes(e.id))]].concat(FX_GROUPS.map(g =>
+      [g, S.effects.filter(e => !fav.includes(e.id) && (FX_GROUP[e.id] || 'waves') === g)]));
     for (const [g, list] of groups) {
       if (!list.length) continue;
-      if (g !== 'off') { const h = document.createElement('div'); h.className = 'fx-head'; h.innerHTML = `${t('fx.g.' + g)}<i>${list.length}</i>`; grid.appendChild(h); }
+      if (g !== 'off') { const h = document.createElement('div'); h.className = 'fx-head'; h.dataset.g = g; h.innerHTML = `${t('fx.g.' + g)}<i>${list.length}</i>`; grid.appendChild(h); }
       for (const e of list) {
         const b = document.createElement('button'), on = fav.includes(e.id);
         b.className = 'fx'; b.dataset.id = e.id;
-        b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><i class="star${on ? ' on' : ''}" title="${t(on ? 'fx.unfav' : 'fx.fav')}">${on ? '★' : '☆'}</i></div><small>${t('short.' + e.id)}</small><canvas></canvas>`;
+        const tags = (FX_NEEDS[e.id] ? `<span class="tag" title="${t(FX_NEEDS[e.id] + '.t')}">${t(FX_NEEDS[e.id])}</span>` : '') + (FX_DEMO[e.id] ? `<span class="tag demo" title="${t('fx.demo.t')}">${t('fx.demo')}</span>` : '');
+        b.innerHTML = `<div class="top"><b>${fxName(e.id)}</b><i class="star${on ? ' on' : ''}" title="${t(on ? 'fx.unfav' : 'fx.fav')}">${on ? '★' : '☆'}</i></div><small>${t('short.' + e.id)}</small>${tags ? `<div class="tags">${tags}</div>` : ''}<canvas></canvas>`;
         b.addEventListener('click', ev => {
           if (ev.target.closest('.star')) { ev.stopPropagation(); setCfg('general', 'fav', (on ? fav.filter(x => x !== e.id) : fav.concat(e.id)).join(',')); buildEffects(); return; }
           undoPush('', 'fx', S.effect); S.effect = e.id; setCfgLocal('general', 'preset', ''); send({ cmd: 'effect', id: e.id }); renderEffectSide(); markEffect();
@@ -1027,6 +1083,24 @@ function buildEffects() {
         grid.appendChild(b);
       }
     }
+    const none = document.createElement('p'); none.className = 'comm-note fx-none hidden'; none.textContent = t('fx.none'); grid.appendChild(none);
+    fxFilter();
+  }
+  // the ready-made looks, then one's own presets
+  if (FX_TAB === 'presets') {
+    const h = document.createElement('div'); h.className = 'fx-head'; h.innerHTML = `${t('bp.head')}<i>${BUILTIN.length}</i>`; grid.appendChild(h);
+    for (const B of BUILTIN) {
+      const b = document.createElement('button');
+      b.className = 'fx preset builtin'; b.dataset.builtin = B.id;
+      b.innerHTML = `<div class="top"><b>${t('bp.' + B.id)}</b>${presets().length < 32 ? `<i class="pmenu" title="${t('bp.copy')}">+</i>` : ''}</div><small>${esc(fxName(B.effect))}</small><canvas></canvas>`;
+      b.addEventListener('click', e => {
+        builtinApply(B);
+        if (e.target.closest('.pmenu')) send({ cmd: 'preset_save', id: '0', name: t('bp.' + B.id), effect: B.effect, palette: B.palette, speed: String(B.speed),
+          brightness: B.bri ? String(B.bri) : '', zones: '0', apply: '1' });   // a new number; the core copies the effect's settings just written
+      });
+      grid.appendChild(b);
+    }
+    const h2 = document.createElement('div'); h2.className = 'fx-head'; h2.innerHTML = `${t('bp.own')}<i>${presets().length}</i>`; grid.appendChild(h2);
   }
   // own presets, then the + tile that makes a new one
   if (FX_TAB === 'presets') presets().forEach(P => {
@@ -1072,10 +1146,10 @@ function activePreset() {
   return P && P.effect === S.effect ? P : null;
 }
 function markEffect() {
-  const P = activePreset();
-  $$('.fx').forEach(b => b.classList.toggle('on', b.dataset.preset ? !!P && +b.dataset.preset === P.id : !P && b.dataset.id === S.effect));
+  const P = activePreset(), B = builtinActive();
+  $$('.fx').forEach(b => b.classList.toggle('on', b.dataset.preset ? !!P && +b.dataset.preset === P.id : b.dataset.builtin ? !!B && B.id === b.dataset.builtin : !P && !B && b.dataset.id === S.effect));
   // a dot on the other group's switch when what is showing lives there
-  $$('#fx-tabs button').forEach(b => b.classList.toggle('lit', b.dataset.v === 'presets' ? !!P : !P && S.effect !== 'off'));
+  $$('#fx-tabs button').forEach(b => b.classList.toggle('lit', b.dataset.v === 'presets' ? !!(P || B) : !P && !B && S.effect !== 'off'));
   const off = S.effect === 'off';
   $('#power').classList.toggle('off', off);
   $('#power span').textContent = off ? t('power.on') : t('power.off');
@@ -1312,7 +1386,8 @@ function pdlgPreview(now) {
   const still = stillMotion() || stillFx(PDLG.effect), sig = still ? PDLG.effect + pal + cvs.width : '';
   if (still && PDLG.sig === sig) return;
   PDLG.sig = sig;
-  if (cvs.width && pal.length) drawStrip(cvs, preview(PDLG.effect, pal, still ? 3 : now / 1000 * PDLG.speed / 5, 40));
+  const PG = fxGetter(PDLG.effect);
+  if (cvs.width && pal.length) drawStrip(cvs, fxPreview(PDLG.effect, pal, still ? 3 : now / 1000 * fxClockSpeed(PDLG.effect, PDLG.speed, PG), 40, PG));
 }
 $('#pdlg-fx').addEventListener('click', e => {
   const b = e.target.closest('[data-fx]'); if (!b) return;
@@ -1525,14 +1600,14 @@ $('#pdlg').addEventListener('pointerdown', e => { if (e.target.id === 'pdlg') cl
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#pdlg').classList.contains('hidden') && pk.classList.contains('hidden')) closePresetDialog(); });
 
 function renderEffectSide() {
-  const id = S.effect, P = activePreset();
-  $('#fx-name').textContent = $('#fx-tune-name').textContent = P ? P.name : fxName(id);
-  $('#fx-desc').textContent = (P ? t('preset.based', fxName(id)) + ' ' : '') + t('desc.' + id);
+  const id = S.effect, P = activePreset(), B = builtinActive();
+  $('#fx-name').textContent = $('#fx-tune-name').textContent = P ? P.name : B ? t('bp.' + B.id) : fxName(id);
+  $('#fx-desc').textContent = (P ? t('preset.based', fxName(id)) + ' ' : B ? t('bp.based', fxName(id)) + ' ' : '') + t('desc.' + id);
   $('#fx-pal-field').classList.toggle('hidden', id === 'off' || id === 'screen');
   renderPalette($('#fx-pal'), id, false, effPal(id));
   renderQuick();
   const hasSpeed = !['static', 'off', 'temperature'].includes(id);
-  $('#fx-speed-field').classList.toggle('hidden', !hasSpeed);
+  $('#fx-speed-field').classList.toggle('hidden', !hasSpeed || (id === 'breathe' && fxParamValue(id, 'cycle', cv(id, 'cycle', '')) >= 1));   // a breath set in seconds
   const sp = +cv(id, 'speed', cv('general', 'speed', 5));
   setRange($('#fx-speed'), sp); $('#fx-speed-val').textContent = sp;
   $('#fx-temp').classList.toggle('hidden', id !== 'temperature');
@@ -1544,6 +1619,8 @@ function renderEffectSide() {
     $$('#wave-size button').forEach(b => b.classList.toggle('on', b.dataset.v === sz));
   }
   if (id === 'screen') updateScreen();
+  renderFxParams(id, hasSpeed);
+  updateFxState();
   if (id === 'temperature') {
     const src = cv('temperature', 'source', 'gpu');
     $$('#temp-src button').forEach(b => b.classList.toggle('on', b.dataset.v === src));
@@ -1556,6 +1633,56 @@ function renderEffectSide() {
   $('#fx-sync').checked = sync;
   $('#fx-sync-note').textContent = sync ? t('sync.on') : t('sync.off');
   renderOwnList();
+  markEffect();   // a changed colour or setting can make a ready-made look the plain effect again
+}
+// the effect's own settings (FX_PARAMS): the usual ones, the rare ones under Advanced, a reset to the defaults.
+// Built again only when what is shown changes (a choice can show or hide others), so a drag is never cut.
+let FX_ADV = false;
+function renderFxParams(id, hasSpeed) {
+  const box = $('#fx-params'), defs = FX_PARAMS[id] || [], val = k => fxParamValue(id, k, cv(id, k, ''));
+  const shown = defs.filter(d => !d[4].when || val(d[4].when[0]) === d[4].when[1]);
+  const keys = defs.map(p => p[0]).concat(id === 'wave' ? ['dir', 'size'] : [], hasSpeed ? ['speed'] : []);
+  const row = ([k, , lo, hi, o]) => {
+    const lbl = t('fxp.' + id + '.' + k);
+    if (o.b) return `<div class="set-row"><b>${lbl}</b><label class="switch"><input type="checkbox" data-k="${k}"><span></span></label></div>`;
+    if (o.o) return `<div class="field"><div class="lbl"><span>${lbl}</span></div><div class="seg" data-k="${k}">${Array.from({ length: o.o }, (_, n) => `<button data-v="${n}">${t('fxp.' + id + '.' + k + '.' + n)}</button>`).join('')}</div></div>`;
+    return `<div class="field"><div class="lbl"><span>${lbl}</span><b data-k="${k}"></b></div><input type="range" class="range" data-k="${k}" min="${lo}" max="${hi}" step="${o.st || 1}"></div>`;
+  };
+  const adv = shown.filter(d => d[4].a);
+  const html = shown.filter(d => !d[4].a).map(row).join('') + (adv.length ? `<details class="fx-adv"><summary>${t('fxp.adv')}</summary>${adv.map(row).join('')}</details>` : '') +
+    (id === 'interference' ? `<p class="note">${t('fxp.interference.2d')}</p>` : '') + (keys.length ? `<button class="btn small ghost fx-reset" type="button" title="${t('fxp.reset.t')}">${t('fxp.reset')}</button>` : '');
+  if (box.dataset.html !== LANG + id + html) {
+    box.dataset.html = LANG + id + html; box.innerHTML = html;
+    const d = box.querySelector('details'); if (d) { d.open = FX_ADV; d.addEventListener('toggle', () => { FX_ADV = d.open; }); }
+    box.querySelectorAll('input[type=range]').forEach(r => {
+      r.addEventListener('input', () => { setCfgSoon(id, r.dataset.k, r.value); box.querySelector(`b[data-k="${r.dataset.k}"]`).textContent = fxParamText(id, r.dataset.k, +r.value); fill(r); });
+      r.addEventListener('change', renderEffectSide);
+    });
+    box.querySelectorAll('input[type=checkbox]').forEach(c => c.addEventListener('change', () => { setCfg(id, c.dataset.k, c.checked ? 1 : 0); renderEffectSide(); }));
+    box.querySelectorAll('.seg[data-k] button').forEach(b => b.addEventListener('click', () => { setCfg(id, b.parentElement.dataset.k, b.dataset.v); renderEffectSide(); }));
+    const rs = box.querySelector('.fx-reset');
+    if (rs) rs.addEventListener('click', () => { flushSets(); keys.forEach(k => { if (cv(id, k, '') !== '') setCfg(id, k, ''); }); renderEffectSide(); });
+  }
+  for (const [k] of shown) {
+    const v = val(k), r = box.querySelector(`input[type=range][data-k="${k}"]`), c = box.querySelector(`input[type=checkbox][data-k="${k}"]`);
+    if (r) { setRange(r, v); box.querySelector(`b[data-k="${k}"]`).textContent = fxParamText(id, k, v); }
+    if (c) c.checked = !!v;
+    box.querySelectorAll(`.seg[data-k="${k}"] button`).forEach(b => b.classList.toggle('on', +b.dataset.v === v));
+  }
+  const rs = box.querySelector('.fx-reset');
+  if (rs) rs.disabled = !keys.some(k => cv(id, k, '') !== '');
+}
+// a setting's value with its unit; 0 can have a name of its own (a breath of 0 s follows the speed)
+function fxParamText(id, k, v) {
+  const o = ((FX_PARAMS[id] || []).find(p => p[0] === k) || [])[4] || {};
+  return v === 0 && o.zero ? t(o.zero) : o.u ? (o.u === '%' || o.u === '°' ? v + o.u : v + ' ' + t('u.' + o.u)) : String(v);
+}
+// a line under the settings when an effect that follows a reading has nothing to follow: no sound playing (or no
+// capture), the sensor gone. A state of the input only, never a warning about the hardware.
+function updateFxState() {
+  const id = S.effect, el = $('#fx-state'); if (!el) return;
+  const k = id === 'audio' ? (S.fx_audio === -1 ? 'fxs.nocap' : S.fx_audio === 0 ? 'fxs.silent' : '') : id === 'temperature' && S.fx_temp === 0 ? 'fxs.notemp' : '';
+  el.classList.toggle('hidden', !k); el.textContent = k ? t(k) : '';
 }
 function zoneName(z) {
   if (z === 'zone.ram') return t('pc.memory');
@@ -1594,113 +1721,8 @@ $$('#wave-size button').forEach(b => b.addEventListener('click', () => { setCfg(
 
 function updateBrand() { }   // monochrome UI: the brand does not follow the palette
 
-// ---- effect previews (JS versions of the core's effects, on a strip)
-const fract = x => x - Math.floor(x);
-const smooth01 = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
-function palc(pal, p) { p = fract(p) * pal.length; const i = Math.floor(p); return mix(pal[i % pal.length], pal[(i + 1) % pal.length], p - i); }
-function grad(pal, p) {
-  if (pal.length === 1) return pal[0];
-  p = Math.max(0, Math.min(1, p)) * (pal.length - 1);
-  const i = Math.floor(p); return i >= pal.length - 1 ? pal[pal.length - 1] : mix(pal[i], pal[i + 1], p - i);
-}
-// chance without state, as in effects.c: a hash of whole numbers and smooth noise over it
-const hashf = n => { let x = Math.imul((n | 0) ^ 0x9E3779B9, 0x85EBCA6B); x ^= x >>> 13; x = Math.imul(x, 0xC2B2AE35); x ^= x >>> 16; return (x >>> 8) / 16777216; };
-const vnoise = (x, seed) => { const i = Math.floor(x), f = x - i; const a = hashf(i * 7919 + seed), b = hashf((i + 1) * 7919 + seed); return a + (b - a) * smooth01(f); };
-const hsvRgb = (h, s, v) => { h = fract(h) * 6; const i = Math.floor(h), f = h - i, p = v * (1 - s), q = v * (1 - s * f), u = v * (1 - s * (1 - f));
-  return [[v, u, p], [q, v, p], [p, v, u], [p, q, v], [u, p, v], [v, p, q]][i % 6].map(k => k * 255); };
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const causticN = (x, y, t) => { const n = 0.5 + 0.5 * Math.sin(x * 13 + t * 1.7) * Math.sin(y * 9 - t * 1.3 + Math.sin(x * 5 + t)); return n * n; };
-function preview(id, pal, t, n) {
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const x = i / (n - 1);
-    let c;
-    switch (id) {
-      case 'flow': c = palc(pal, x - t * 0.12); break;
-      case 'pump': c = palc(pal, x - t * (0.12 + 0.08 * Math.sin(t * 0.5))); break;
-      case 'caustic': c = scale(palc(pal, x * 0.6 + t * 0.03), 0.25 + 0.75 * causticN(x, 0.5, t)); break;
-      case 'bubbles': {
-        c = scale(pal[0], 0.12);
-        for (let k = 0; k < 4; k++) {
-          const pos = fract(t * 0.18 + k * 0.29) * 1.3 - 0.15, d = (pos - x) / 0.06;
-          const bc = palc(pal, 0.33 + k * 0.21);
-          c = [c[0] + bc[0] * Math.exp(-d * d), c[1] + bc[1] * Math.exp(-d * d), c[2] + bc[2] * Math.exp(-d * d)];
-        }
-        break;
-      }
-      case 'comet': {
-        const head = fract(t * 0.2) * 1.35, d = head - x;
-        c = scale(pal[Math.min(2, pal.length - 1)], 0.05);
-        if (d >= 0 && d < 0.3) { const k = 1 - d / 0.3; const hc = mix(pal[0], pal[Math.min(1, pal.length - 1)], d / 0.3); c = [c[0] + hc[0] * k * k, c[1] + hc[1] * k * k, c[2] + hc[2] * k * k]; }
-        break;
-      }
-      case 'lava': { const v = Math.sin(x * 6 + t * 0.8) + Math.sin(2.5 - t * 0.6) + Math.sin((x + 0.5) * 4 + t * 0.4); c = palc(pal, v / 6 + t * 0.02); break; }
-      case 'breathe': { const ph = t * 0.35, k = Math.floor(ph); c = mix(pal[k % pal.length], pal[(k + 1) % pal.length], smooth01(ph - k)); break; }
-      case 'temperature': c = scale(grad(pal, 0.5 + 0.5 * Math.sin(t * 0.25)), 0.8 + 0.2 * causticN(x, 0.5, t * 0.5)); break;
-      case 'audio': { const lv = Math.abs(Math.sin(t * 2.3) * Math.sin(t * 0.9 + 1)); c = scale(grad(pal, x), x < lv ? 1 : 0.1); break; }
-      case 'rainbow': c = hsvRgb(x * 0.9 - t * 0.15, 1, 1); break;
-      case 'wave': {   // as effects.c: the palette in bands sweeping one way (the strip read left to right)
-        const d = cv('wave', 'dir', 'right'), b = Math.max(1, Math.min(4, +cv('wave', 'size', 2))), u = d === 'left' ? 1 - x : d === 'out' ? Math.abs(x - 0.5) * 1.4 : d === 'in' ? 1 - Math.abs(x - 0.5) * 1.4 : x;
-        c = palc(pal, u * b - t * 0.18); break;
-      }
-      case 'fire': {   // the strip as the middle of a flame
-        const n = vnoise(x * 7 + t * 1.9, 3), h = Math.max(0, Math.min(1, 0.55 + (n - 0.5) * 0.9 + 0.12 * vnoise(t * 9 + x * 13, i)));
-        c = grad(pal, h); break;
-      }
-      case 'ocean': {
-        const u = x + 0.17, w = 0.4 * Math.sin(u * 9 + t * 0.71) + 0.3 * Math.sin(u * 13 - t * 1.13 + 1.3) + 0.2 * Math.sin(u * 21 + t * 1.7 + 2.1) + 0.1 * Math.sin(u * 31 - t * 2.3), v = 0.5 + 0.5 * w;
-        c = grad(pal, v * 0.85); if (v > 0.8) c = add(c, scale(pal[pal.length - 1], (v - 0.8) * 2.5)); break;
-      }
-      case 'twinkle': {
-        const ph = hashf(i * 31) * 6.2832, rate = 0.6 + hashf(i * 31 + 5) * 1.6, sn = Math.sin(t * rate * 1.6 + ph);
-        c = add(scale(pal[pal.length - 1], 0.025), scale(palc(pal, hashf(i * 31 + 9)), sn > 0 ? Math.pow(sn, 7) : 0)); break;
-      }
-      case 'meteor': {
-        c = scale(pal[pal.length - 1], 0.02);
-        for (let m = 0; m < 2; m++) {
-          const head = fract(t * 0.22 + m * 0.5) * 1.5 - 0.1, d = head - x;
-          if (d < 0 || d > 0.4) continue;
-          const k = 1 - d / 0.4, crumb = d < 0.03 ? 1 : 0.35 + 0.65 * hashf(i * 131 + Math.floor(t * 14));
-          c = add(c, scale(mix(pal[0], pal[Math.min(1, pal.length - 1)], d / 0.4), k * k * crumb));
-        }
-        break;
-      }
-      case 'plasma': { const v = Math.sin(x * 10 + t) + Math.sin(4 - t * 1.3) + Math.sin((x + 0.5) * 7 + t * 0.7) + Math.sin(Math.abs(x - 0.5) * 14 - t * 1.6); c = palc(pal, v * 0.125 + 0.5 + t * 0.04); break; }
-      case 'aurora': {
-        const wave = Math.sin(x * 6 + t * 0.5 + 2 * Math.sin(x * 2.3 - t * 0.3)); let cu = smooth01((wave + 1) * 0.5); cu *= cu;
-        const sh = 0.75 + 0.25 * vnoise(x * 30 + t * 3, 7), col = grad(pal, 0.5 + 0.5 * Math.sin(x * 2 + t * 0.2 + 0.4));
-        c = add(scale(pal[0], 0.03), scale(col, cu * sh * 0.8)); break;
-      }
-      case 'ripple': {
-        c = scale(pal[0], 0.03);
-        for (let k = 0; k < 4; k++) {
-          const tt = t * 0.45 + k * 0.25, slot = Math.floor(tt), age = tt - slot, id = slot * 4 + k;
-          const cx = hashf(id * 97), d = Math.abs(x - cx), e = (d - age * 0.9) / 0.06, ring = Math.exp(-e * e) * (1 - age) * (1 - age);
-          c = add(c, scale(palc(pal, hashf(id * 97 + 3)), ring));
-        }
-        break;
-      }
-      case 'matrix': {   // the strip as a row of columns: each lights up as its drop passes the middle
-        const col = Math.floor(x * 24), sp = 0.35 + hashf(col * 31) * 0.5, head = fract(t * sp * 0.6 + hashf(col * 17)) * 1.6 - 0.3, dist = head - 0.5;
-        c = scale(pal[0], 0.01);
-        if (dist >= 0 && dist < 0.45) { const b = (1 - dist / 0.45) ** 2; c = scale(dist < 0.03 && pal.length > 1 ? pal[1] : pal[0], b * (0.7 + 0.3 * hashf(i * 13 + Math.floor(t * 15)))); }
-        break;
-      }
-      case 'candle': {
-        const f = vnoise(t * 6, 1) * 0.6 + vnoise(t * 13, 2) * 0.4, dip = vnoise(t * 1.3, 5) < 0.18 ? 0.6 : 1;
-        c = scale(mix(pal[0], pal[Math.min(1, pal.length - 1)], vnoise(t * 2, 9)), (0.55 + 0.45 * f) * dip * (0.93 + 0.07 * hashf(i))); break;
-      }
-      case 'screen': {   // a moving picture, seen along the edge
-        const v = 0.5 + 0.5 * Math.sin(x * 5 + t * 0.9) * Math.sin(t * 0.37 + x * 2);
-        c = hsvRgb(0.58 + 0.25 * Math.sin(t * 0.21 + x * 1.5), 0.55, 0.25 + 0.6 * v); break;
-      }
-      case 'static': c = pal[0]; break;
-      default: c = [14, 15, 19];
-    }
-    out.push(c);
-  }
-  return out;
-}
+// the saved settings of an effect as its preview reads them (wave keeps its own dir and size)
+const fxGetter = id => id === 'wave' ? k => k === 'dir' ? cv('wave', 'dir', 'right') : +cv('wave', 'size', 2) : k => fxParamValue(id, k, cv(id, k, ''));
 // glow: the band takes the top 70% and its light falls off under it (cheaper than a blur at 30 fps);
 // spill: a lit line along the card's bottom edge and its light rising softly up the card
 function drawStrip(cv2, cols, mode) {
@@ -1744,13 +1766,14 @@ function animate(now) {
     const cvs = b.querySelector('canvas'); if (!cvs) continue;
     const r = cvs.getBoundingClientRect(); if (r.bottom <= 0 || r.top >= innerHeight) continue;   // only the cards on screen (hidden ones measure 0)
     const C = b.dataset.comm ? COMM.items.find(x => x.id === b.dataset.comm) : null;
-    const P = C ? { effect: C.effect, palette: (C.palette || []).join(', '), speed: C.speed } : b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null, id = P ? P.effect : b.dataset.id;
+    const B = b.dataset.builtin ? BUILTIN.find(x => x.id === b.dataset.builtin) : null;
+    const P = C ? { effect: C.effect, palette: (C.palette || []).join(', '), speed: C.speed } : B || (b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null), id = P ? P.effect : b.dataset.id;
     if (!id) continue;
     if (cvs.width !== cvs.clientWidth * devicePixelRatio) { cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio; cvs._sig = ''; }
     const pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(id);
     if (calm || stillFx(id)) { const sig = id + pal + (C ? 'g' : 's'); if (cvs._sig === sig) continue; cvs._sig = sig; } else cvs._sig = '';
-    const spd = +(P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5))) / 5;
-    drawStrip(cvs, preview(id, pal.map(hex2rgb), t * spd, 28), C ? 'glow' : 'spill');
+    const PG = B ? k => fxParamValue(id, k, B.fx[k] ?? '') : fxGetter(id), spd = fxClockSpeed(id, P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5)), PG);
+    drawStrip(cvs, fxPreview(id, pal.map(hex2rgb), t * spd, 28, PG), C ? 'glow' : 'spill');
   }
 }
 function previewWake() {
@@ -3903,7 +3926,8 @@ function hwRoute(it) {
   if (O.state === 4) return { cls: 'warn', text: t('hw.orgb.need'), act: 'setup' };
   if (O.state === 3) return { cls: 'warn', text: t('hw.orgb.off'), act: 'check' };
   if (O.state < 2) return { cls: 'off', text: t('hw.looking') };
-  return { cls: 'off', text: t('hw.orgb.nothing') };
+  // nothing lights it yet: a device with an id can be asked for, through the usual report the user sends
+  return Object.assign({ cls: 'off', text: t('hw.orgb.nothing') }, it.id ? { act: 'ask' } : {});
 }
 let orgbFetched = false;
 function updateHw() {
@@ -3917,7 +3941,7 @@ function updateHw() {
   $('#hw-scan').disabled = !!H.busy;
   const row = i => {
     const it = items[i], r = routes[i];
-    const btn = r.act === 'add' ? t('dev.add') : r.act === 'setup' ? t('orgb.setup') : r.act === 'pawnio' ? t('hw.pawnio.install') : r.act === 'scan' ? t('hw.find') : r.act === 'check' ? t('orgb.check') : '';
+    const btn = r.act === 'add' ? t('dev.add') : r.act === 'setup' ? t('orgb.setup') : r.act === 'pawnio' ? t('hw.pawnio.install') : r.act === 'scan' ? t('hw.find') : r.act === 'check' ? t('orgb.check') : r.act === 'ask' ? t('hw.ask') : '';
     return `<div class="found-row"><span class="kind">${t('hw.cat.' + it.cat)}</span>
       <div class="what"><b>${esc([it.maker, it.name].filter(Boolean).join(' · ') || it.id)}</b><small><span class="dot ${r.cls}"></span> ${esc(r.text)}${it.id ? ' · ' + esc(it.id) : ''}</small></div>
       ${btn ? `<button class="btn small${r.act === 'add' || r.act === 'setup' ? '' : ' ghost'}" data-hw="${i}">${esc(btn)}</button>` : ''}</div>`;
@@ -3937,6 +3961,7 @@ function updateHw() {
     else if (r.act === 'check') $('#orgb-check').click();
     else if (r.act === 'pawnio') { b.disabled = true; send({ cmd: 'open', what: 'pawnio' }); }
     else if (r.act === 'scan') { send({ cmd: 'scan' }); go('add'); }
+    else if (r.act === 'ask') askSupport(items[+b.dataset.hw]);
   }));
 }
 $('#pc-own').addEventListener('click', () => {
@@ -4366,6 +4391,15 @@ function reportDialog() {
   $('#report-dlg').classList.remove('hidden');
   updateDiag();
   setTimeout(() => $('#report-text').focus(), 30);
+}
+// a support request is a report like any other: filled in here, read and sent by the user, with the diagnostics' hardware list
+// the last line is the same in every language, the site counts requests by it
+function askSupport(it) {
+  reportDialog();
+  const text = t('hw.ask.text', [it.maker, it.name].filter(Boolean).join(' ') || it.id, it.id);
+  $('#report-text').value = text + '\n\n[support ' + it.cat + ' ' + it.id + ']';
+  $('#report-attach').checked = true;
+  setTimeout(() => $('#report-text').setSelectionRange(text.length, text.length), 40);   // the cursor where the user writes
 }
 const closeReport = () => { REPORT.open = false; $('#report-dlg').classList.add('hidden'); };
 $('#report-open').addEventListener('click', reportDialog);
@@ -5564,7 +5598,7 @@ function applyStatus(m) {
   S.ext = S.ext || { devs: [], found: [], kinds: [], scanning: 0 };
   const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type, d.zones, d.same, d.held]));
   if (!dragging) { setRange($('#bright'), S.brightness); $('#bright-val').textContent = S.brightness + '%'; }
-  if (effectChanged) { markEffect(); renderEffectSide(); }
+  if (effectChanged) { markEffect(); renderEffectSide(); } else updateFxState();
   if (bulbsChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
   updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck();

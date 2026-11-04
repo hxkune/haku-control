@@ -24,13 +24,16 @@ const effect_info g_effects[] = {
     { "wave",        L"Colour wave",  L"Цветная волна",   L"Vague de couleurs" },
     { "fire",        L"Fire",         L"Огонь",           L"Feu" },
     { "ocean",       L"Ocean",        L"Океан",           L"Océan" },
-    { "twinkle",     L"Twinkle",      L"Мерцание",        L"Scintillement" },
-    { "meteor",      L"Meteor",       L"Метеор",          L"Météore" },
+    { "twinkle",     L"Constellation", L"Созвездие",      L"Constellation" },   // the ids stay: saved settings name them
+    { "meteor",      L"Meteor shower", L"Метеорный дождь", L"Pluie de météores" },
     { "plasma",      L"Plasma",       L"Плазма",          L"Plasma" },
     { "aurora",      L"Aurora",       L"Северное сияние", L"Aurore" },
     { "ripple",      L"Ripple",       L"Капли",           L"Gouttes" },
     { "matrix",      L"Matrix",       L"Матрица",         L"Matrice" },
     { "candle",      L"Candle",       L"Свеча",           L"Bougie" },
+    { "pendulum",    L"Pendulum",     L"Маятник",         L"Pendule" },
+    { "interference", L"Interference", L"Интерференция",  L"Interférences" },
+    { "steps",       L"Steps",        L"Ступени",         L"Paliers" },
     { "screen",      L"Screen",       L"Экран",           L"Écran" },
     { "temperature", L"Temperature",  L"Температура",     L"Température" },
     { "pump",        L"Pump flow",    L"Поток по насосу", L"Flux de la pompe" },
@@ -41,7 +44,8 @@ const effect_info g_effects[] = {
 const int g_effect_count = sizeof(g_effects) / sizeof(g_effects[0]);
 
 enum { FX_FLOW, FX_CAUSTIC, FX_BUBBLES, FX_COMET, FX_LAVA, FX_BREATHE,
-       FX_RAINBOW, FX_WAVE, FX_FIRE, FX_OCEAN, FX_TWINKLE, FX_METEOR, FX_PLASMA, FX_AURORA, FX_RIPPLE, FX_MATRIX, FX_CANDLE, FX_SCREEN,
+       FX_RAINBOW, FX_WAVE, FX_FIRE, FX_OCEAN, FX_TWINKLE, FX_METEOR, FX_PLASMA, FX_AURORA, FX_RIPPLE, FX_MATRIX, FX_CANDLE,
+       FX_PENDULUM, FX_INTERF, FX_STEPS, FX_SCREEN,
        FX_TEMP, FX_PUMP, FX_AUDIO, FX_STATIC, FX_OFF, FX_N };
 
 // the newer effects' own colours when they have none set (fire is not blue and pink); the others take [general]
@@ -57,7 +61,67 @@ static const struct { int fx; int n; unsigned rgb[6]; } FX_DEFAULT[] = {
     { FX_RIPPLE,  3, { 0x40E0FF, 0x4060FF, 0xC040FF } },
     { FX_MATRIX,  2, { 0x00FF40, 0xC0FFC0 } },
     { FX_CANDLE,  3, { 0xFF7A1A, 0xFFB347, 0xFF5500 } },
+    { FX_PENDULUM, 3, { 0x00E0FF, 0x8040FF, 0xFF40A0 } },
+    { FX_INTERF,  4, { 0x000830, 0x0060FF, 0x00E0FF, 0xE0FFFF } },
+    { FX_STEPS,   4, { 0xFF3060, 0xFFA000, 0x30E070, 0x3090FF } },
 };
+
+// Effect settings, [<effect>] key=value, in the units the window shows them (seconds, percent, a choice by number).
+// Out of range (or not a number) is clamped, so a hand-edited config cannot break an effect. ui/fxpreview.js FX_PARAMS
+// shows the same keys with the same defaults.
+enum { P_BR_CYCLE, P_BR_DEPTH, P_BR_SINGLE, P_BR_WAVE,
+       P_PE_MOTION, P_PE_AXIS, P_PE_WIDTH, P_PE_SOFT, P_PE_TAIL, P_PE_MIRROR, P_PE_BG,
+       P_TW_DENSITY, P_TW_LIFE, P_TW_HALO, P_TW_VARIETY, P_TW_BG,
+       P_ME_RATE, P_ME_TAIL, P_ME_SPREAD, P_ME_DIR, P_ME_BG,
+       P_IN_SOURCES, P_IN_SCALE, P_IN_CONTRAST, P_IN_ANGLE,
+       P_AU_LAYERS, P_ST_SEGMENTS, P_ST_PAUSE, P_ST_DIR, P_ST_HARD,
+       P_FI_HEIGHT, P_CA_FLICKER, P_MX_STYLE,
+       P_AD_MODE, P_AD_SENS, P_AD_DIR, P_AD_PEAK, P_AD_DECAY, P_AD_GAP, P_AD_SHAPE, P_N };
+static const struct { int fx; const char *key; float def, lo, hi; } FXP[P_N] = {
+    { FX_BREATHE, "cycle", 0, 0, 30 },          // seconds per breath; 0: from the speed, as before
+    { FX_BREATHE, "depth", 50, 0, 100 },        // % it dims; 0: the old endless crossfade
+    { FX_BREATHE, "single", 0, 0, 1 },          // 1: only the first colour
+    { FX_BREATHE, "wave", 0, 0, 100 },          // % of a breath it lags from one end of the chain to the other
+    { FX_PENDULUM, "motion", 0, 0, 1 },         // 0 swing (slows at the ends), 1 bounce (even speed)
+    { FX_PENDULUM, "axis", 0, 0, 2 },           // 0 along the chain, 1 left-right, 2 up-down
+    { FX_PENDULUM, "width", 18, 3, 60 },        // % of the length
+    { FX_PENDULUM, "soft", 80, 0, 100 },
+    { FX_PENDULUM, "tail", 25, 0, 100 },
+    { FX_PENDULUM, "mirror", 0, 0, 1 },
+    { FX_PENDULUM, "bg", 4, 0, 30 },
+    { FX_TWINKLE, "density", 35, 5, 100 },      // % of the LEDs holding a star at a time
+    { FX_TWINKLE, "life", 3, 1, 10 },           // seconds a star lives
+    { FX_TWINKLE, "halo", 30, 0, 100 },
+    { FX_TWINKLE, "variety", 100, 0, 100 },     // 0: all the first colour
+    { FX_TWINKLE, "bg", 3, 0, 20 },
+    { FX_METEOR, "rate", 4, 1, 20 },            // meteors per 10 s (fewer when they are slow: one at a time per lane)
+    { FX_METEOR, "tail", 35, 5, 60 },
+    { FX_METEOR, "spread", 40, 0, 100 },        // % their speeds differ
+    { FX_METEOR, "dir", 0, 0, 2 },              // 0 forward, 1 back, 2 both
+    { FX_METEOR, "bg", 2, 0, 20 },
+    { FX_INTERF, "sources", 2, 2, 3 },
+    { FX_INTERF, "scale", 8, 2, 20 },           // rings across the room
+    { FX_INTERF, "contrast", 60, 0, 100 },
+    { FX_INTERF, "angle", 0, 0, 360 },          // where the sources sit (2D only)
+    { FX_AURORA, "layers", 2, 1, 3 },
+    { FX_STEPS, "segments", 6, 2, 16 },
+    { FX_STEPS, "pause", 1, 0, 5 },             // seconds the full chain holds
+    { FX_STEPS, "dir", 0, 0, 2 },               // 0 forward, 1 back, 2 from the middle
+    { FX_STEPS, "hard", 0, 0, 1 },
+    { FX_FIRE, "height", 75, 30, 100 },
+    { FX_CANDLE, "flicker", 50, 0, 100 },
+    { FX_MATRIX, "style", 0, 0, 1 },            // 0 code, 1 rain
+    { FX_AUDIO, "mode", 0, 0, 1 },              // 0 level, 1 beat
+    { FX_AUDIO, "sens", 50, 0, 100 },
+    { FX_AUDIO, "dir", 0, 0, 3 },               // 0 by device, 1 up, 2 down, 3 from the middle
+    { FX_AUDIO, "peak", 1, 0, 1 },
+    { FX_AUDIO, "decay", 350, 100, 1000 },      // ms a beat's flash takes to fade
+    { FX_AUDIO, "gap", 250, 100, 800 },         // ms at least between two beats
+    { FX_AUDIO, "shape", 0, 0, 1 },             // 0 the whole light flashes, 1 a wave from the middle
+};
+static float pv[P_N];
+#define P(i) pv[i]
+static int wrapi(int k, int n) { k %= n; return k < 0 ? k + n : k; }
 
 const wchar_t *effect_title(int i) { return TR(g_effects[i].title, g_effects[i].title_ru, g_effects[i].title_fr); }
 
@@ -133,6 +197,13 @@ static bubble bub[64];
 static int    nbub;
 static float  temp_smooth = NAN, level_smooth, bass_smooth;
 static int    loaded;
+static int    scene_flat;                 // all LEDs on (nearly) one line: 2D effects run along the chain
+static float  temp_gap; static int temp_lost = 1;
+static float  peak_lv, peak_hold, beat_age = 9, bass_avg, since_sound, quiet_for = 99;
+static float  audio_in;                   // 0..1: the sound picture fading in (sound starting) and out (silence, capture lost)
+static int    beat_n, audio_have, was_temp, was_audio, beat_armed = 1;
+static unsigned rng_s = 12345;             // bubbles' chance: own, so a run can be repeated (tests)
+static float rnd(void) { rng_s = rng_s * 1664525U + 1013904223U; return (rng_s >> 8) / 16777216.0f; }
 
 static void load_params(void) {
     for (int e = 0; e < FX_N; e++) {
@@ -148,8 +219,14 @@ static void load_params(void) {
             }
         if (!fx_npal[e]) fx_npal[e] = cfg_palette("general", fx_pal[e], MAX_PALETTE);
         if (!fx_npal[e]) { rgbf d[3] = { { 0, .78f, 1 }, { .48f, .24f, 1 }, { 1, .18f, .58f } }; memcpy(fx_pal[e], d, sizeof(d)); fx_npal[e] = 3; }
-        fx_speed[e] = cfg_getf(sec, "speed", cfg_getf("general", "speed", 5)) / 5.0f;
+        float sp = cfg_getf(sec, "speed", cfg_getf("general", "speed", 5)) / 5.0f;
+        fx_speed[e] = sp >= 0 ? (sp <= 4 ? sp : 4) : 1;   // (also not a number)
     }
+    for (int i = 0; i < P_N; i++) {
+        float v = cfg_getf(g_effects[FXP[i].fx].id, FXP[i].key, FXP[i].def);
+        pv[i] = v >= FXP[i].lo ? (v <= FXP[i].hi ? v : FXP[i].hi) : FXP[i].lo;
+    }
+    if (P(P_BR_CYCLE) >= 1) fx_speed[FX_BREATHE] = 1 / (0.35f * P(P_BR_CYCLE));   // a set breath length takes over from the speed
     for (int z = 0; z < MAX_ZONES; z++) {
         char zs[32]; zone_section(z, zs, sizeof(zs));
         const char *m = cfg_get(zs, "mode", "effect");
@@ -177,7 +254,10 @@ static void load_params(void) {
     loaded = 1;
 }
 
-void effects_reset(void) { loaded = 0; nbub = 0; }
+void effects_reset(void) { loaded = 0; nbub = 0; rng_s = 12345; }
+
+int effects_audio_state(void) { return !used_audio ? -2 : !audio_have ? -1 : quiet_for > 1.5f ? 0 : 1; }
+int effects_temp_state(void) { return !used_temp ? -2 : temp_lost ? 0 : 1; }
 
 // cyclic palette lookup
 static rgbf palc(float p) {
@@ -256,6 +336,16 @@ static float caustic_n(float x, float y, float t) {
     return n * n;
 }
 
+// Constellation: an LED's life in slots of its own length; in a slot it holds a star or not (density), which fades
+// in, shines and fades out, so nothing pops on or off. hue: the star's place in the palette.
+static float star(unsigned k, float t, float life, float dens, float *hue) {
+    float q = t / (life * (0.7f + 0.6f * hashf(k ^ 0x51u))) + hashf(k ^ 0x93u), f = q - floorf(q);
+    unsigned id = hash32(k ^ ((unsigned)(int)floorf(q) * 0x9E3779B1U));
+    *hue = hashf(id ^ 0xC0u);
+    if (hashf(id) >= dens) return 0;
+    return smooth01(f / 0.25f) * smooth01((1 - f) / 0.25f);
+}
+
 // One LED's colour for the effect clocks clk[] and a bubble list: the live ones, or local ones when baking ahead.
 static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *bb, int nb) {
     float x = l->x, y = l->y;
@@ -272,6 +362,7 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
     int solo = zeffect[z] >= 0 || !sync_all;
     float path = solo ? l->zpath : l->path;
     float t = (float)clk[e] + (solo ? z * 2.37f : 0);
+    int one = zn[z] == 1;   // a single light (a bulb, a one-LED zone): no pattern to show along it
 
     switch (e) {
     case FX_FLOW:
@@ -305,22 +396,37 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
         break;
     }
     case FX_BREATHE: {
-        // fades colour -> next colour -> ... (never through black)
-        float ph = t * 0.35f;
-        int k = (int)floorf(ph);
-        c = mixc(pal[k % npal], pal[(k + 1) % npal], smooth01(ph - k));
+        // one breath per colour: it dims to (1 - depth) and the colour changes around the darkest point, in a window
+        // that narrows as it gets darker; depth 0 is the old endless crossfade. Both are periodic: no seam.
+        float mn = 1 - P(P_BR_DEPTH) / 100, w = 0.2f + 0.8f * mn;
+        float ph = t * 0.35f - P(P_BR_WAVE) / 100 * path, cp = ph + 0.5f;
+        int k = (int)floorf(cp);
+        c = P(P_BR_SINGLE) >= 0.5f ? pal[0] : mixc(pal[wrapi(k, npal)], pal[wrapi(k + 1, npal)], smooth01((cp - k - 0.5f) / w + 0.5f));
+        c = scalec(c, mn + (1 - mn) * 0.5f * (1 - cosf(6.2831853f * fractf(ph))));
         break;
     }
     case FX_TEMP: {
-        float p = isnan(temp_smooth) ? 0 : (temp_smooth - param_cold) / (param_hot - param_cold);
+        if (temp_lost) { rgbf g = { 0.55f, 0.55f, 0.6f }; c = scalec(g, 0.09f + 0.04f * sinf(t * 1.2f)); break; }   // no reading: a dim grey, not a made-up cold colour
+        float p = (temp_smooth - param_cold) / (param_hot - param_cold);
         c = scalec(grad(p), 0.8f + 0.2f * caustic_n(x, y, t * 0.5f));
         break;
     }
     case FX_AUDIO: {
-        // VU: RAM fills bottom->top, GPU from the centre outwards; bass lifts brightness
-        float pos = l->dev == DEV_GPU || l->dev == DEV_EXT ? fabsf(l->fill - 0.5f) * 2 : l->fill;
-        float lit = smooth01((level_smooth * 1.15f - pos) / 0.12f + 0.5f);
-        c = scalec(grad(pos * 0.7f + bass_smooth * 0.3f), 0.1f + 0.9f * lit * (0.6f + 0.4f * bass_smooth));
+        // by device: RAM fills bottom->top, GPU and the others from the centre outwards
+        int dm = (int)P(P_AD_DIR), mid = dm == 3 || (dm == 0 && (l->dev == DEV_GPU || l->dev == DEV_EXT));
+        float pos = mid ? fabsf(l->fill - 0.5f) * 2 : dm == 2 ? 1 - l->fill : l->fill, lv = clampf(level_smooth * 1.15f, 0, 1);
+        if (P(P_AD_MODE) >= 0.5f) {   // beat: a flash on each bass hit, the next palette colour each time
+            float pulse = expf(-beat_age / (P(P_AD_DECAY) / 1000)), b = pulse;
+            if (P(P_AD_SHAPE) >= 0.5f && !one) b = pulse * smooth01(1 - fabsf(fabsf(l->fill - 0.5f) * 2 - (1 - pulse) * 1.2f) / 0.3f);
+            c = scalec(pal[beat_n % npal], 0.06f + 0.94f * b * audio_in);
+        } else if (one) {             // a single light: its brightness is the level
+            c = scalec(grad(lv), 0.08f + 0.92f * lv);
+        } else {                      // level: a bar, coloured by height; the bass lifts it
+            float lit = smooth01((lv - pos) / 0.12f + 0.5f) * smooth01(lv / 0.06f);   // (nothing lit at silence)
+            c = scalec(grad(pos * 0.85f + bass_smooth * 0.15f), 0.08f + 0.92f * lit * (0.7f + 0.3f * bass_smooth) * audio_in);
+            float pk = clampf(peak_lv * 1.15f, 0, 1), d = fabsf(pos - pk) / 0.04f;
+            if (P(P_AD_PEAK) >= 0.5f && pk > 0.05f && d < 1) c = addc(c, scalec(pal[npal - 1], (1 - d) * (1 - d) * audio_in));
+        }
         break;
     }
     case FX_RAINBOW:   // the whole hue circle along the chain, turning
@@ -337,7 +443,7 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
     }
     case FX_FIRE: {    // flames from the bottom (y = 1) up, flickering; the palette runs from embers to the hottest
         float n = vnoise2(x * 7 + vnoise(t * 0.7f, 11) * 2, y * 5 + t * 1.9f, 3);
-        float h = clampf(y * 1.15f - 0.3f + (n - 0.5f) * 0.75f + 0.12f * vnoise(t * 9 + x * 13, led_key(l) & 1023), 0, 1);
+        float h = clampf(0.85f - (1 - y) * 0.85f * 75 / P(P_FI_HEIGHT) + (n - 0.5f) * 0.75f + 0.12f * vnoise(t * 9 + x * 13, led_key(l) & 1023), 0, 1);
         c = grad(h);
         break;
     }
@@ -349,20 +455,33 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
         if (v > 0.8f) c = addc(c, scalec(pal[npal - 1], (v - 0.8f) * 2.5f));
         break;
     }
-    case FX_TWINKLE: { // every LED twinkles on its own, a palette colour on a dark sky
-        unsigned k = led_key(l);
-        float ph = hashf(k) * 6.2832f, rate = 0.6f + hashf(k ^ 0x55u) * 1.6f, s = sinf(t * rate * 1.6f + ph);
-        float b = s > 0 ? powf(s, 7) : 0;
-        c = addc(scalec(pal[npal - 1], 0.025f), scalec(palc(hashf(k ^ 0xAAu)), b));
+    case FX_TWINKLE: { // constellation: stars come and go on a dark sky, with a faint halo on their neighbours
+        // a single light always holds a star (else it would sit dark most of the time)
+        float life = P(P_TW_LIFE), dens = one ? 1 : P(P_TW_DENSITY) / 100, var = P(P_TW_VARIETY) / 100, halo = P(P_TW_HALO) / 100, hue;
+        float b = star(led_key(l), t, life, dens, &hue);
+        c = addc(scalec(pal[npal - 1], P(P_TW_BG) / 100), scalec(palc(hue * var), b));
+        // shortcut: neighbours by LED number, which on a panel or keyboard is only roughly "next to"
+        for (int o = -2; halo > 0 && !one && o <= 2; o++) {
+            if (!o) continue;
+            float nb = star(hash32((unsigned)l->dev * 100003U + (unsigned)l->zone * 1009U + (unsigned)(l->index + o)), t, life, dens, &hue);
+            if (nb > 0) c = addc(c, scalec(palc(hue * var), nb * halo * (o == 1 || o == -1 ? 0.35f : 0.12f)));
+        }
         break;
     }
-    case FX_METEOR: {  // two meteors through the chain, their tails breaking up
-        c = scalec(pal[npal - 1], 0.02f);
-        for (int m = 0; m < 2; m++) {
-            float head = fractf(t * 0.22f + m * 0.5f) * 1.5f - 0.1f, d = head - path;
-            if (d < 0 || d > 0.4f) continue;
-            float k = 1 - d / 0.4f, crumb = d < 0.03f ? 1 : 0.35f + 0.65f * hashf(led_key(l) ^ (unsigned)(int)floorf(t * 14) * 2654435761U);
-            c = addc(c, scalec(mixc(pal[0], pal[npal > 1 ? 1 : 0], d / 0.4f), k * k * crumb));
+    case FX_METEOR: {  // a shower: four lanes, each sends a meteor in turn, each at its own speed and moment
+        c = scalec(pal[npal - 1], P(P_ME_BG) / 100);
+        float tail = P(P_ME_TAIL) / 100, spread = P(P_ME_SPREAD) / 100;
+        // a lane's next meteor waits for the last one to leave (so the rate tops out when they are slow)
+        float slot = fmaxf(40 / P(P_ME_RATE), (1.15f + tail) / (0.45f * (1 - 0.5f * spread)));
+        int dir = (int)P(P_ME_DIR);
+        for (int m = 0; m < 4; m++) {
+            float q = t / slot + m * 0.25f, qs = floorf(q);
+            unsigned id = hash32((unsigned)(int)qs * 4U + (unsigned)m + 0x3A1u);
+            float v = 0.45f * (1 + spread * (hashf(id) - 0.5f)), start = hashf(id ^ 5u) * (slot - (1.15f + tail) / v);
+            float u = dir == 1 || (dir == 2 && (id & 0x100)) ? 1 - path : path, d = ((q - qs) * slot - start) * v - 0.05f - u;
+            if (d < -0.02f || d > tail) continue;
+            float k = d < 0 ? 1 + d / 0.02f : 1 - d / tail;   // a soft front, then the fading tail
+            c = addc(c, scalec(mixc(pal[0], pal[npal > 1 ? 1 : 0], fmaxf(d, 0) / tail), k * k));
         }
         break;
     }
@@ -371,13 +490,19 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
         c = palc(v * 0.125f + 0.5f + t * 0.04f);
         break;
     }
-    case FX_AURORA: {  // curtains of light drifting along, brighter at the top
-        float u = path;
-        float wave = sinf(u * 6 + t * 0.5f + 2 * sinf(u * 2.3f - t * 0.3f));
-        float curtain = smooth01((wave + 1) * 0.5f); curtain *= curtain;
-        float shimmer = 0.75f + 0.25f * vnoise(u * 30 + t * 3, 7);
-        rgbf col = grad(clampf(0.5f + 0.5f * sinf(u * 2 + t * 0.2f + y * 1.5f), 0, 1));
-        c = addc(scalec(pal[0], 0.03f), scalec(col, curtain * shimmer * (0.35f + 0.65f * (1 - y))));
+    case FX_AURORA: {  // layers of curtains drifting along at their own slow pace, brighter at the top
+        int nl = (int)P(P_AU_LAYERS);
+        float u = path, tt = t * 0.6f;
+        rgbf acc = { 0, 0, 0 };
+        for (int i = 0; i < nl; i++) {
+            float sp = 1 - i * 0.3f;
+            float wave = sinf(u * (6 + 2.5f * i) + tt * 0.5f * sp + i * 1.9f + 2 * sinf(u * (2.3f + 0.6f * i) - tt * 0.3f * sp));
+            float curtain = smooth01((wave + 1) * 0.5f); curtain *= curtain;
+            float shimmer = 0.85f + 0.15f * sinf(u * 23 + tt * 1.1f + i * 2.3f);
+            rgbf col = grad(clampf(0.5f + 0.5f * sinf(u * 2 + tt * 0.2f + y * 1.5f + i * 2.1f), 0, 1));
+            acc = addc(acc, scalec(col, curtain * shimmer * (i ? 0.6f : 1)));
+        }
+        c = addc(scalec(pal[0], 0.03f), scalec(acc, (0.35f + 0.65f * (1 - y)) / (1 + 0.2f * (nl - 1))));
         break;
     }
     case FX_RIPPLE: {  // drops: rings spreading from places in the room
@@ -395,7 +520,12 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
         unsigned col = (unsigned)(int)floorf(x * 24);
         float sp = 0.35f + hashf(col * 31u) * 0.5f, head = fractf(t * sp * 0.6f + hashf(col * 17u)) * 1.6f - 0.3f, dist = head - y;
         c = scalec(pal[0], 0.01f);
-        if (dist >= 0 && dist < 0.45f) {
+        if (P(P_MX_STYLE) >= 0.5f) {   // rain: calm drops, each its own palette colour, short tails, some columns resting
+            float q = t * sp * 0.6f + hashf(col * 17u), qs = floorf(q);
+            unsigned id = hash32(col * 31u ^ (unsigned)(int)qs * 0x9E3779B1U);
+            float dd = (q - qs) * 1.6f - 0.3f - y;
+            if (hashf(id) < 0.65f && dd >= 0 && dd < 0.25f) { float b = 1 - dd / 0.25f; c = scalec(palc(hashf(id ^ 0xD1u)), b * b); }
+        } else if (dist >= 0 && dist < 0.45f) {
             float b = 1 - dist / 0.45f; b *= b;
             float flick = 0.7f + 0.3f * hashf(led_key(l) ^ (unsigned)(int)floorf(t * 15) * 2246822519U);
             c = scalec(dist < 0.03f && npal > 1 ? pal[1] : pal[0], b * flick);
@@ -404,10 +534,54 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
     }
     case FX_CANDLE: {  // a warm flame: each device flickers on its own, now and then it dips
         unsigned zs = (unsigned)z * 13u;
-        float f = vnoise(t * 6, zs + 1) * 0.6f + vnoise(t * 13, zs + 2) * 0.4f;
-        float dip = vnoise(t * 1.3f, zs + 5) < 0.18f ? 0.6f : 1;
-        float b = (0.55f + 0.45f * f) * dip * (0.93f + 0.07f * hashf(led_key(l)));
+        float fl = P(P_CA_FLICKER) / 100, f = vnoise(t * 5, zs + 1) * 0.6f + vnoise(t * 9, zs + 2) * 0.4f;
+        float dip = 1 - 0.8f * fl * smooth01((0.22f - vnoise(t * 1.3f, zs + 5)) / 0.16f);   // eases down and back, no jump
+        float b = (1 - 0.9f * fl + 0.9f * fl * f) * dip * (0.93f + 0.07f * hashf(led_key(l)));
         c = scalec(mixc(pal[0], pal[npal > 1 ? 1 : 0], vnoise(t * 2, zs + 9)), b);
+        break;
+    }
+    case FX_PENDULUM: {   // a band swinging end to end (or bouncing at an even speed), lighting the palette laid along the length
+        int ax = (int)P(P_PE_AXIS), bounce = P(P_PE_MOTION) >= 0.5f;
+        float u = solo || scene_flat || ax == 0 ? path : ax == 1 ? x : y;
+        if (P(P_PE_MIRROR) >= 0.5f) u = fabsf(2 * u - 1);   // two bands, meeting in the middle
+        float ph = fractf(t * 0.25f), pos = bounce ? 1 - fabsf(2 * ph - 1) : 0.5f - 0.5f * cosf(6.2831853f * ph);
+        float half = P(P_PE_WIDTH) / 200, soft = P(P_PE_SOFT) / 100, d = fabsf(u - pos);
+        float band = 1 - smooth01((d - half * (1 - soft)) / fmaxf(2 * half * soft, 0.004f));
+        // the trail: how long ago the band last went over this point (twice a cycle: going and coming back)
+        float tail = P(P_PE_TAIL) / 200, tr = 0;
+        if (tail > 0) {
+            float p1 = bounce ? u / 2 : acosf(clampf(1 - 2 * u, -1, 1)) / 6.2831853f, ago = fminf(fractf(ph - p1), fractf(ph + p1));
+            if (ago < tail) { tr = 1 - ago / tail; tr *= tr * 0.7f; }
+        }
+        c = scalec(grad(u), P(P_PE_BG) / 100 + (1 - P(P_PE_BG) / 100) * fmaxf(band, tr));
+        break;
+    }
+    case FX_INTERF: {     // waves from two or three points crossing: still fringes with ripples running through
+        float k = 6.2831853f * P(P_IN_SCALE), v = 0;
+        if (solo || scene_flat) {   // on a line: two waves running opposite ways at slightly different pitches
+            v = 0.5f * (sinf(k * path - t * 2) + sinf(k * 1.13f * path + t * 1.7f));
+        } else {
+            int ns = (int)P(P_IN_SOURCES);
+            float a0 = P(P_IN_ANGLE) * 0.0174533f + t * 0.05f;
+            for (int i = 0; i < ns; i++) {
+                float a = a0 + i * 6.2831853f / ns, sx = 0.5f + 0.38f * cosf(a) - x, sy = 0.5f + 0.38f * sinf(a) - y;
+                v += sinf(k * sqrtf(sx * sx + sy * sy) - t * 2 + i * 1.1f);
+            }
+            v /= ns;
+        }
+        float m = clampf(0.5f + 0.5f * v * (0.5f + 1.5f * P(P_IN_CONTRAST) / 100), 0, 1);
+        c = scalec(grad(m), 0.12f + 0.88f * m);
+        break;
+    }
+    case FX_STEPS: {      // the chain fills segment by segment with the next colour, holds, then the next one
+        int sg = (int)P(P_ST_SEGMENTS), dir = (int)P(P_ST_DIR);
+        float u = dir == 1 ? 1 - path : dir == 2 ? fabsf(2 * path - 1) : path;
+        float cyc = sg * 0.5f + P(P_ST_PAUSE), q = t / cyc, qs = floorf(q), lit = (q - qs) * cyc / 0.5f, g = fminf(floorf(u * sg), sg - 1.0f);
+        float f = P(P_ST_HARD) >= 0.5f ? (lit > g + 0.5f ? 1.0f : 0.0f) : smooth01(lit - g);
+        int k = (int)qs;
+        rgbf dark = scalec(pal[0], 0.04f);   // one colour: it fills in and then out
+        rgbf a = npal > 1 ? pal[wrapi(k, npal)] : (k & 1) ? pal[0] : dark, b = npal > 1 ? pal[wrapi(k + 1, npal)] : (k & 1) ? dark : pal[0];
+        c = mixc(a, b, f);
         break;
     }
     case FX_SCREEN:
@@ -421,7 +595,8 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
         break;
     }
     c = scalec(c, zlevel[z]);
-    c.r = clampf(c.r, 0, 1); c.g = clampf(c.g, 0, 1); c.b = clampf(c.b, 0, 1);
+    // 0..1, and a NaN (it fails every comparison) becomes 0
+    c.r = c.r > 0 ? (c.r < 1 ? c.r : 1) : 0; c.g = c.g > 0 ? (c.g < 1 ? c.g : 1) : 0; c.b = c.b > 0 ? (c.b < 1 ? c.b : 1) : 0;
     return c;
 }
 
@@ -441,42 +616,73 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
     }
     used_temp = uses[FX_TEMP];
     used_audio = uses[FX_AUDIO];
-    if (uses[FX_SCREEN]) {
-        screen_use();
-        // each zone's LED count and extent, for the screen's mosaic / edge / average choice
+    if (uses[FX_SCREEN]) screen_use();
+    {
+        // each zone's LED count and extent (the screen's mosaic / edge / average choice, single lights), and whether
+        // the whole scene is one line
+        float bx0 = 1e9f, by0 = 1e9f, bx1 = -1e9f, by1 = -1e9f;
         for (int z = 0; z < MAX_ZONES; z++) { zn[z] = 0; zbox[z][0] = zbox[z][1] = 1e9f; zbox[z][2] = zbox[z][3] = -1e9f; }
         for (int i = 0; i < sc->count; i++) {
             const led_t *l = &sc->leds[i]; int z = l->zone;
+            if (l->x < bx0) bx0 = l->x; if (l->y < by0) by0 = l->y; if (l->x > bx1) bx1 = l->x; if (l->y > by1) by1 = l->y;
             if (z < 0 || z >= MAX_ZONES) continue;
             zn[z]++;
             if (l->x < zbox[z][0]) zbox[z][0] = l->x; if (l->y < zbox[z][1]) zbox[z][1] = l->y;
             if (l->x > zbox[z][2]) zbox[z][2] = l->x; if (l->y > zbox[z][3]) zbox[z][3] = l->y;
         }
+        scene_flat = bx1 - bx0 < 0.05f || by1 - by0 < 0.05f;
     }
 
+    // a jump in time (sleep, clock change, a stalled frame) moves the effects on by at most a second
+    if (!(dt >= 0)) dt = 0; else if (dt > 1) dt = 1;
     // effect clocks; the pump effect follows the flow sensor (0..1) when there is one
     for (int e = 0; e < FX_N; e++) {
         float spd = fx_speed[e];
         if (e == FX_PUMP && !isnan(sn->flow)) spd = 0.3f + 2.2f * clampf(sn->flow, 0, 1);
         fx_t[e] += dt * spd;
+        // effects read their clock as a float: kept small so it stays fine-grained after days on
+        // shortcut: one small jump every ~4.5 h of the effect's clock, a seamless wrap would need every effect's period
+        if (fx_t[e] >= 16384) fx_t[e] -= 16384;
     }
 
+    // an effect that was not on screen starts from no reading: no old value, no flash of old sound
+    if (uses[FX_TEMP] && !was_temp) { temp_smooth = NAN; temp_gap = 0; }
+    if (uses[FX_AUDIO] && !was_audio) { level_smooth = bass_smooth = peak_lv = peak_hold = bass_avg = since_sound = audio_in = 0; beat_age = 9; quiet_for = 99; beat_armed = 1; }
+    was_temp = uses[FX_TEMP]; was_audio = uses[FX_AUDIO];
     if (uses[FX_TEMP]) {
         float v = temp_water ? sn->water_temp : sn->gpu_temp;
-        if (!isnan(v)) temp_smooth = isnan(temp_smooth) ? v : temp_smooth + (v - temp_smooth) * clampf((float)dt * 0.8f, 0, 1);
+        if (!isnan(v)) { temp_smooth = isnan(temp_smooth) ? v : temp_smooth + (v - temp_smooth) * clampf((float)dt * 0.8f, 0, 1); temp_gap = 0; }
+        else temp_gap += (float)dt;
+        temp_lost = isnan(temp_smooth) || temp_gap > 5;   // a short gap keeps the last value; a long one is said so
     }
     if (uses[FX_AUDIO]) {
-        float lv = isnan(sn->audio_level) ? 0 : sn->audio_level, bs = isnan(sn->audio_bass) ? 0 : sn->audio_bass;
+        audio_have = !isnan(sn->audio_level);
+        float g = powf(2, (P(P_AD_SENS) - 50) / 25);   // sensitivity: x0.25 .. x4
+        float lv = audio_have ? fminf(sn->audio_level * g, 1) : 0, bs = audio_have && !isnan(sn->audio_bass) ? fminf(sn->audio_bass * g, 1) : 0;
+        quiet_for = lv > 0.01f ? 0 : quiet_for + (float)dt;
+        since_sound = quiet_for > 0.5f ? 0 : since_sound + (float)dt;
+        float in = clampf(since_sound / 0.4f, 0, 1);    // sound starting (or the capture) comes in softly, no flash
+        audio_in = in > audio_in ? in : audio_in + (in - audio_in) * clampf((float)dt * 4, 0, 1);
         // fast attack, slow release
-        level_smooth += (lv - level_smooth) * clampf((float)dt * (lv > level_smooth ? 25.0f : 4.0f), 0, 1);
-        bass_smooth  += (bs - bass_smooth)  * clampf((float)dt * (bs > bass_smooth ? 30.0f : 5.0f), 0, 1);
+        level_smooth += (lv * in - level_smooth) * clampf((float)dt * (lv * in > level_smooth ? 25.0f : 4.0f), 0, 1);
+        bass_smooth  += (bs * in - bass_smooth)  * clampf((float)dt * (bs * in > bass_smooth ? 30.0f : 5.0f), 0, 1);
+        // the level's peak: follows at once, holds a moment, then falls slowly
+        if (level_smooth >= peak_lv) { peak_lv = level_smooth; peak_hold = 0.6f; }
+        else if ((peak_hold -= (float)dt) < 0) peak_lv = fmaxf(peak_lv - (float)dt * 0.4f, level_smooth);
+        // a beat: the bass jumping well above its own recent average (not a tempo: no BPM is worked out)
+        bass_avg += (bs - bass_avg) * clampf((float)dt * 2, 0, 1);
+        beat_age += (float)dt;
+        // one beat per jump: the next needs the bass to have dropped back near its average first
+        if (bs < bass_avg * 1.1f) beat_armed = 1;
+        if (beat_armed && since_sound > 0.5f && bs > 0.2f && bs > bass_avg * (1.25f + 0.01f * (100 - P(P_AD_SENS))) && beat_age > P(P_AD_GAP) / 1000) { beat_age = 0; beat_n++; beat_armed = 0; }
+        if (beat_age > 60) beat_age = 60;
     }
     {
         // bubbles rise in the "lanes" (distinct x positions) of the LEDs showing them
         float spd = fx_speed[FX_BUBBLES];
-        if (nbl && nbub < 64 && (float)rand() / RAND_MAX < dt * spd * (2 + 2.0f * nbl / (sc->count ? sc->count : 1))) {
-            const led_t *l = &sc->leds[bub_leds[rand() % nbl]];
-            bubble b = { l->x, 1.15f, 0.25f + 0.2f * rand() / RAND_MAX, 0.33f + 0.5f * rand() / RAND_MAX };
+        if (nbl && nbub < 64 && rnd() < dt * spd * (2 + 2.0f * nbl / (sc->count ? sc->count : 1))) {
+            const led_t *l = &sc->leds[bub_leds[(int)(rnd() * nbl) % nbl]];
+            bubble b = { l->x, 1.15f, 0.25f + 0.2f * rnd(), 0.33f + 0.5f * rnd() };
             bub[nbub++] = b;
         }
         for (int i = 0; i < nbub; i++) bub[i].y -= bub[i].v * (float)dt * spd;
@@ -492,7 +698,8 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
 // not touched. out[frame * stride + led index]; returns the frame count, 0 when the device shows something live
 // (temperature, audio) that has to be streamed.
 int effects_bake(int fx, const scene_t *sc, int dev, int zone, int max_frames, int stride, rgbf *out, float *step_s) {
-    if (!loaded) load_params();
+    if (!loaded || fx != last_fx) { load_params(); if (fx != last_fx) nbub = 0; }   // zones following the main effect follow this one
+    last_fx = fx;
     int idx[MAX_LEDS], n = 0, e0 = -1, mixed = 0, z0 = 0;
     for (int i = 0; i < sc->count; i++) {
         const led_t *l = &sc->leds[i];
@@ -511,6 +718,8 @@ int effects_bake(int fx, const scene_t *sc, int dev, int zone, int max_frames, i
     case FX_FLOW: case FX_PUMP: period = 1 / 0.12; break;
     case FX_COMET:   period = 5; break;
     case FX_BREATHE: period = (np > 0 ? np : 1) / 0.35; break;
+    case FX_PENDULUM: period = 4; break;
+    case FX_STEPS:   period = (P(P_ST_SEGMENTS) * 0.5 + P(P_ST_PAUSE)) * (np > 1 ? np : 2); break;
     case FX_LAVA:    period = 2 * 3.14159265 / 0.2; break;   // the waves repeat; the slow palette drift makes a soft seam
     default:         period = 24 * spd; break;
     }
@@ -532,9 +741,9 @@ int effects_bake(int fx, const scene_t *sc, int dev, int zone, int max_frames, i
     for (double t = -3; t < (nf - 1) * step + 1e-6; t += sub) {
         if (e0 == FX_BUBBLES || mixed) {
             float bs = fx_speed[FX_BUBBLES];
-            if (nlb < 64 && (float)rand() / RAND_MAX < sub * bs * 4) {
-                const led_t *l = &sc->leds[idx[rand() % n]];
-                bubble b = { l->x, 1.15f, 0.25f + 0.2f * rand() / RAND_MAX, 0.33f + 0.5f * rand() / RAND_MAX };
+            if (nlb < 64 && rnd() < sub * bs * 4) {
+                const led_t *l = &sc->leds[idx[(int)(rnd() * n) % n]];
+                bubble b = { l->x, 1.15f, 0.25f + 0.2f * rnd(), 0.33f + 0.5f * rnd() };
                 lb[nlb++] = b;
             }
             for (int i = 0; i < nlb; i++) lb[i].y -= lb[i].v * (float)sub * bs;

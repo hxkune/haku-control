@@ -222,6 +222,24 @@
     S.hw = was; S.orgb = o; updateHw();
   });
 
+  test('hardware nothing lights: Ask for support fills the report with the device and the diagnostics, and sends nothing', async () => {
+    await fresh(); showTab('devices');
+    const was = S.hw, o = S.orgb;
+    try {
+      S.hw = { busy: 0, done: 1, items: [{ cat: 'usb', maker: 'Lian Li', name: 'Strimer', id: '0CF2:A200' }, { cat: 'board', maker: 'ASRock', name: 'B650', id: '' }] };
+      S.orgb = { state: 2, ctls: [] }; updateHw();
+      ok(hwRoute(S.hw.items[0]).act === 'ask' && !hwRoute(S.hw.items[1]).act, 'routes: ' + JSON.stringify(S.hw.items.map(hwRoute)));
+      const b = $('.hw-card [data-hw="0"]');   // folded under the rest when haku lights something else
+      ok(b && b.textContent === t('hw.ask') && !$('.hw-card [data-hw="1"]'), 'the button: ' + (b && b.textContent));
+      $('#report-attach').checked = false; sent.length = 0;
+      b.click(); await wait(80);
+      const x = $('#report-text').value;
+      ok(!$('#report-dlg').classList.contains('hidden') && $('#report-attach').checked, 'the report is not open with the diagnostics');
+      ok(x.includes('Lian Li Strimer') && x.includes('0CF2:A200') && /\n\[support usb 0CF2:A200\]$/.test(x) && !/hw\.ask/.test(x), 'text: ' + x);
+      ok(x.length > 10 && !sent.some(m => m.cmd === 'report'), 'sent on its own: ' + JSON.stringify(sent));
+    } finally { closeReport(); $('#report-text').value = ''; S.hw = was; S.orgb = o; updateHw(); }
+  });
+
   test('OpenRGB is fetched unasked, once, when something here lights only through it', async () => {
     await fresh();
     const was = S.hw, o = S.orgb, n = () => sent.filter(x => x.cmd === 'orgb_setup').length, n0 = n();
@@ -1806,6 +1824,104 @@
       await wait(250);
       ok(!$('#prof-btn').classList.contains('busy') && $('#prof-btn').getAttribute('aria-busy') === 'false' && $('#prof-cur').textContent === profCur().name && profCur().id === to, 'not shown as on: ' + $('#prof-cur').textContent);
     } finally { profGo(was); await wait(250); }
+  });
+
+  // ---- the effects library: catalogue, search, settings, ready-made looks, the input's state
+  const fxOpen = () => { showTab('effects'); FX_TAB = 'fx'; FXQ = ''; buildEffects(); };
+  test('effects: each one once in a named group, no empty group, every card with its name, line, preview and needs', async () => {
+    await fresh(); fxOpen();
+    const cards = $$('#fx-grid .fx[data-id]'), ids = cards.map(b => b.dataset.id);
+    ok(new Set(ids).size === ids.length && S.effects.every(e => ids.includes(e.id)), 'cards: ' + ids.join(','));
+    for (const id of ['pendulum', 'interference', 'steps', 'twinkle', 'meteor']) ok(ids.includes(id), id + ' missing');
+    for (const h of $$('#fx-grid .fx-head')) {
+      const n = cards.filter(b => h.dataset.g === 'fav' ? favs().includes(b.dataset.id) : !favs().includes(b.dataset.id) && (FX_GROUP[b.dataset.id] || 'waves') === h.dataset.g).length;
+      ok(n > 0 && +h.querySelector('i').textContent === n && !/fx\.g\./.test(h.textContent), 'group ' + h.dataset.g + ': ' + h.textContent + ', ' + n + ' cards');
+    }
+    for (const b of cards) {
+      const id = b.dataset.id, txt = b.querySelector('b').textContent + ' ' + b.querySelector('small').textContent;
+      ok(!/(^|\s)(fx|short)\./.test(txt) && b.querySelector('canvas') && !/^desc\./.test(t('desc.' + id)), 'card ' + id + ': ' + txt);
+      ok(!!b.querySelector('.tag:not(.demo)') === !!FX_NEEDS[id] && !!b.querySelector('.tag.demo') === !!FX_DEMO[id], 'badges of ' + id);
+    }
+    ok(fxName('twinkle') === t('fx.twinkle') && fxName('meteor') === t('fx.meteor'), 'names');
+  });
+
+  test('effect search: by name or description, empty groups hidden, a line when nothing matches', async () => {
+    await fresh(); fxOpen();
+    try {
+      const q = $('#fx-q'), shown = () => $$('#fx-grid .fx[data-id]:not(.hidden)').map(b => b.dataset.id);
+      q.value = fxName('meteor'); q.dispatchEvent(new Event('input', { bubbles: true }));
+      ok(shown().includes('meteor') && shown().length < S.effects.length, 'shown: ' + shown());
+      ok($$('#fx-grid .fx-head:not(.hidden)').every(h => +h.querySelector('i').textContent > 0), 'an empty group shows');
+      ok($('#fx-grid .fx-none').classList.contains('hidden'), 'the nothing-found line shows with results');
+      q.value = 'zzqqxx'; q.dispatchEvent(new Event('input', { bubbles: true }));
+      ok(!shown().length && !$$('#fx-grid .fx-head:not(.hidden)').length && !$('#fx-grid .fx-none').classList.contains('hidden'), 'nothing found is not said');
+    } finally { FXQ = ''; buildEffects(); }
+  });
+
+  test('effect settings: the usual ones, rare ones under More, units, choices that show others, a reset', async () => {
+    await fresh(); showTab('effects');
+    const was = S.effect, box = $('#fx-params');
+    try {
+      S.effect = 'pendulum'; renderEffectSide();
+      const top = [...box.children].filter(e => e.matches('.field, .set-row')).map(e => e.querySelector('[data-k]').dataset.k);
+      const adv = [...box.querySelectorAll('details.fx-adv [data-k]')].map(e => e.dataset.k);
+      ok(top.join() === 'motion,width,tail,mirror' && [...new Set(adv)].join() === 'axis,soft,bg', 'shown: ' + top + ' | ' + adv);
+      ok(/%$/.test(box.querySelector('b[data-k="width"]').textContent) && !/fxp\./.test(box.textContent), 'units or labels: ' + box.textContent);
+      ok(box.querySelector('.fx-reset').disabled, 'reset on with nothing set');
+      const r = box.querySelector('input[data-k="width"]'); r.value = 40; r.dispatchEvent(new Event('input')); r.dispatchEvent(new Event('change')); flushSets();
+      ok(cv('pendulum', 'width', '') === '40' && $('#fx-params b[data-k="width"]').textContent === '40%', 'width not set: ' + cv('pendulum', 'width', ''));
+      S.effect = 'meteor'; renderEffectSide(); S.effect = 'pendulum'; renderEffectSide();
+      ok(cv('pendulum', 'width', '') === '40' && +$('#fx-params input[data-k="width"]').value === 40, 'lost on an effect switch');
+      sent.length = 0; $('#fx-params .fx-reset').click();
+      ok(sets('pendulum', 'width').some(o => o.v === '') && cv('pendulum', 'width', '') === '' && $('#fx-params .fx-reset').disabled, 'reset: ' + JSON.stringify(sent));
+      // audio: the level's settings, then the beat's
+      S.effect = 'audio'; renderEffectSide();
+      const ks = () => [...box.querySelectorAll('[data-k]')].map(e => e.dataset.k);
+      ok(ks().includes('dir') && ks().includes('peak') && !ks().includes('gap'), 'level: ' + ks());
+      box.querySelector('.seg[data-k="mode"] [data-v="1"]').click();
+      ok(!ks().includes('peak') && ks().includes('gap') && ks().includes('decay'), 'beat: ' + ks());
+      ok(/ms$/.test(box.querySelector('b[data-k="gap"]').textContent), 'gap without ms: ' + box.querySelector('b[data-k="gap"]').textContent);
+      box.querySelector('.fx-reset').click();
+      // breathe: a cycle in seconds hides the speed
+      S.effect = 'breathe'; renderEffectSide();
+      ok(!$('#fx-speed-field').classList.contains('hidden') && box.querySelector('b[data-k="cycle"]').textContent === t('fxp.byspeed'), 'cycle 0');
+      setCfg('breathe', 'cycle', '8'); renderEffectSide();
+      ok($('#fx-speed-field').classList.contains('hidden') && box.querySelector('b[data-k="cycle"]').textContent === '8 ' + t('u.s'), 'cycle 8 s');
+      setCfg('breathe', 'cycle', '');
+    } finally { S.effect = was; renderEffectSide(); }
+  });
+
+  test('ready-made looks: one click puts it on and lights it, an edit makes it the effect again, + saves a new copy', async () => {
+    await fresh(); showTab('effects');
+    const was = S.effect, br = STATE.brightness, keep = JSON.stringify(S.cfg), before = presets().map(p => p.id);
+    try {
+      FX_TAB = 'presets'; buildEffects();
+      ok($$('#fx-grid .fx[data-builtin]').length === 8 && !/bp\./.test($('#fx-grid').textContent), 'cards: ' + $$('#fx-grid .fx[data-builtin]').length);
+      $('#fx-grid .fx[data-builtin="neon"]').click(); await wait(60);
+      ok(S.effect === 'pendulum' && cv('pendulum', 'width', '') === '24' && cv('pendulum', 'mirror', '') === '1' && sent.some(o => o.cmd === 'effect' && o.id === 'pendulum'), 'not applied');
+      ok(builtinActive() && builtinActive().id === 'neon' && $('#fx-grid .fx[data-builtin="neon"]').classList.contains('on') && $('#fx-name').textContent === t('bp.neon'), 'not lit');
+      setCfg('pendulum', 'tail', '70'); renderEffectSide();
+      ok(!builtinActive() && !$('#fx-grid .fx[data-builtin="neon"]').classList.contains('on') && $('#fx-name').textContent === fxName('pendulum'), 'still lit after an edit');
+      sent.length = 0;
+      $('#fx-grid .fx[data-builtin="embers"] .pmenu').click(); await wait(80);
+      const ps = sent.filter(o => o.cmd === 'preset_save');
+      ok(ps.length === 1 && ps[0].id === '0' && ps[0].effect === 'twinkle', 'save: ' + JSON.stringify(ps));
+      const added = presets().filter(p => !before.includes(p.id));
+      ok(added.length === 1 && S.cfg['preset.' + added[0].id]['fx.density'] === '30' && before.every(id => S.cfg['preset.' + id].name), 'copy: ' + JSON.stringify(added));
+    } finally { STATE.cfg = JSON.parse(keep); STATE.brightness = br; S.effect = was; bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(120); FX_TAB = 'fx'; buildEffects(); }
+  });
+
+  test('an effect that follows a reading says when there is none: no sound device, silence, the sensor lost', async () => {
+    await fresh(); showTab('effects');
+    const was = S.effect, st = () => $('#fx-state').classList.contains('hidden') ? '' : $('#fx-state').textContent;
+    try {
+      S.effect = 'audio'; S.fx_audio = -1; renderEffectSide(); ok(st() === t('fxs.nocap'), 'no capture: ' + st());
+      S.fx_audio = 0; updateFxState(); ok(st() === t('fxs.silent'), 'silence: ' + st());
+      S.fx_audio = 1; updateFxState(); ok(!st(), 'sound: ' + st());
+      S.effect = 'temperature'; S.fx_temp = 0; renderEffectSide(); ok(st() === t('fxs.notemp'), 'lost: ' + st());
+      S.fx_temp = 1; updateFxState(); ok(!st(), 'reading: ' + st());
+      S.effect = 'flow'; S.fx_temp = 0; renderEffectSide(); ok(!st(), 'shown for another effect');
+    } finally { S.fx_audio = S.fx_temp = -2; S.effect = was; renderEffectSide(); }
   });
 
   const only =decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it
