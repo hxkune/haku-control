@@ -185,7 +185,8 @@ int main(void) {
     pace_checks();
     fate_checks(); event_checks(); ram_checks();
     unsigned count = 0;
-    ctl = orgb_connect(HOST, &count);
+    // the server is started just before (run-tests.cmd) and a slow CI runner may not be listening yet: up to 15 s
+    for (int i = 0; i < 30 && (ctl = orgb_connect(HOST, &count)) == INVALID_SOCKET; i++) Sleep(500);
     if (ctl == INVALID_SOCKET || count < 13) { printf("FAIL no fake server with --orgb-test on %s\n", HOST); return 1; }
     for (unsigned i = 0; i < count; i++) { fault(i, 9002, i == 9 ? 0 : 1); counts(i); }   // as the server starts, at every run
 
