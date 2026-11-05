@@ -302,7 +302,7 @@ int main(void) {
         on_thread(open_once, m);
         on_thread(scan_once, NULL);
     }
-    SIZE_T grew = private_bytes() - before;
+    SIZE_T after = private_bytes(), grew = after > before ? after - before : 0;   // it may shrink: unsigned, no wrap
     char what[120]; snprintf(what, sizeof(what), "memory: 40 connects and 40 scans on their threads, %d KiB more (under 4 MiB)", (int)(grew >> 10));
     CHECK(grew < (4u << 20), what);
     free(m);
