@@ -200,8 +200,9 @@ static struct { HANDLE f; WINUSB_INTERFACE_HANDLE w; BYTE master[6]; int ch, bea
 static struct { BYTE pl[240]; int ch, rx; } sent[LL_GROUPS];   // what went out last tick, for the full-speed send when the receiver is lost
 static int nsent;
 // the groups haku lights (drv_lianli): colours from the devices worker, sent from this thread. todo after close: 1 an
-// upload of black still to go, 2 the board's sync to turn back on; fx: the last upload's id, at its time
-static struct { BYTE mac[6]; int on, todo, tries, synced, stries; BYTE rgb[LL_LEDS * 3], fx[4]; DWORD at; } L[LL_GROUPS];
+// upload of black still to go, 2 the board's sync to turn back on; fx: the last upload's id, at its time. sfail: the
+// board's sync did not go 1 off (asked on), 2 back on (given up), after 10 asks: the window says so
+static struct { BYTE mac[6]; int on, todo, tries, synced, stries, sfail; BYTE rgb[LL_LEDS * 3], fx[4]; DWORD at; } L[LL_GROUPS];
 static HANDLE rgb_ev;
 static int lit(const BYTE *mac) {   // under cs: the slot of a group haku lights, or -1
     for (int k = 0; k < LL_GROUPS; k++) if ((L[k].on || L[k].todo) && !memcmp(L[k].mac, mac, 6)) return k;
@@ -311,6 +312,7 @@ static void lights(const ll_dev *d, int n, int check) {
         int k = lit(d[i].mac);
         BYTE rgb[LL_LEDS * 3], was[4]; int todo = 0, tries = 0, stries = 0; DWORD at = 0;
         if (k >= 0) { memcpy(rgb, L[k].rgb, sizeof(rgb)); memcpy(was, L[k].fx, 4); todo = L[k].todo; tries = L[k].tries; stries = L[k].stries; at = L[k].at; }
+        if (k >= 0 && L[k].sfail == 1 && todo != 2 && !d[i].sync) L[k].sfail = 0;   // its sync went off after all
         LeaveCriticalSection(&cs);
         if (k < 0 || !leds) continue;
         BYTE pl[LL_UPFRAMES][240], fx[4];
@@ -325,7 +327,10 @@ static void lights(const ll_dev *d, int n, int check) {
             }
             EnterCriticalSection(&cs);
             if (!on) L[k].synced = 1;
-            if (done || ++L[k].stries > 10) { L[k].stries = 0; if (on) L[k].todo = 0; }   // shortcut: given up after 10 s; nothing tells the window
+            if (done || ++L[k].stries > 10) {   // asking off goes on in rounds of 10; asking on gives up after one
+                if (!done && !L[k].sfail) logf_("lianli: %02x:%02x:%02x:%02x:%02x:%02x board ARGB sync did not go %s after 10 asks", d[i].mac[0], d[i].mac[1], d[i].mac[2], d[i].mac[3], d[i].mac[4], d[i].mac[5], on ? "on" : "off");
+                L[k].sfail = done ? 0 : on ? 2 : 1; L[k].stries = 0; if (on) L[k].todo = 0;
+            }
             LeaveCriticalSection(&cs);
             continue;
         }
@@ -469,7 +474,8 @@ void ll_stop(void) {
 }
 
 static int mac_s(char *o, const BYTE *m) { return sprintf(o, "%02x:%02x:%02x:%02x:%02x:%02x", m[0], m[1], m[2], m[3], m[4], m[5]); }
-// {"st":..,"err":..,"rep":..,"g":[{"mac","own":bound to this dongle (or the reply named no dongle: TL receivers leave it out),"ch","type","n","rpm":[],"pct":[]}]}
+// {"st":..,"err":..,"rep":..,"g":[{"mac","own":bound to this dongle (or the reply named no dongle: TL receivers leave it out),"ch","type","n","rpm":[],"pct":[],
+// "sync":1 its board ARGB sync would not go off for haku's colours, 2 would not go back on when haku let go (only then)}]}
 int ll_json(char *out, int cap) {
     if (!th) return snprintf(out, cap, "{\"st\":\"none\"}");
     EnterCriticalSection(&cs);
@@ -481,7 +487,10 @@ int ll_json(char *out, int cap) {
         for (int f = 0; f < v->n; f++) n += snprintf(out + n, cap - n, "%s%d", f ? "," : "", v->rpm[f]);
         n += snprintf(out + n, cap - n, "],\"pct\":[");
         for (int f = 0; f < v->n; f++) n += snprintf(out + n, cap - n, "%s%d", f ? "," : "", (v->duty[f] * 100 + 127) / 255);
-        n += snprintf(out + n, cap - n, "]}");
+        n += snprintf(out + n, cap - n, "]");
+        for (int k = 0; k < LL_GROUPS; k++)
+            if (!memcmp(L[k].mac, v->mac, 6) && (L[k].sfail == 1 && L[k].on && v->sync || L[k].sfail == 2 && !v->sync)) { n += snprintf(out + n, cap - n, ",\"sync\":%d", L[k].sfail); break; }
+        n += snprintf(out + n, cap - n, "}");
     }
     n += snprintf(out + n, cap - n, "]}");
     LeaveCriticalSection(&cs);
@@ -507,6 +516,7 @@ static int lo_open(ext_dev *d) {
     if (v && (leds = ll_leds(v)) > 0) {
         fans = v->n; model = ll_model(v->model);
         if ((k = lit(m)) < 0) for (k = 0; k < LL_GROUPS && (L[k].on || L[k].todo); k++) {}
+        for (int j = 0; j < LL_GROUPS; j++) if (!memcmp(L[j].mac, m, 6)) L[j].sfail = 0;   // lit again: an old give-up is past
         if (k < LL_GROUPS) { memset(&L[k], 0, sizeof(L[k])); memcpy(L[k].mac, m, 6); L[k].on = 1; } else k = -1;
     }
     LeaveCriticalSection(&cs);

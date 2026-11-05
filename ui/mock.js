@@ -44,7 +44,8 @@ window.chrome = { webview: {
     }
     if (o.cmd === 'fans_set') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); (C.fans = C.fans || {})[l.slice(0, e)] = l.slice(e + 1); });
     // window.mockTryxFail = 'open' | 'write' | 'replace': the save fails as tryx_save does, the settings untouched
-    if (o.cmd === 'tryx_build') { const no = window.mockTryxFail; if (!no) Object.assign(C['dev.' + o.id] = C['dev.' + o.id] || {}, { media: 'C:\\Users\\me\\AppData\\Roaming\\haku-control\\tryx-' + o.id + '.' + o.ext, theme: '-1' }); setTimeout(() => { emit(STATE); emit({ type: 'tryx_built', req: o.req, ok: no ? 0 : 1, err: no || '' }); }, 60); }
+    // a Corsair LCD's pack: corsairlcd-<N>.hlcd, no theme (ui_web.cpp); window.mockLastBuild keeps what came, for the tests
+    if (o.cmd === 'tryx_build') { window.mockLastBuild = o; const no = window.mockTryxFail, lcd = o.ext === 'hlcd'; if (!no) Object.assign(C['dev.' + o.id] = C['dev.' + o.id] || {}, { media: 'C:\\Users\\me\\AppData\\Roaming\\haku-control\\' + (lcd ? 'corsairlcd-' : 'tryx-') + o.id + '.' + o.ext }, lcd ? {} : { theme: '-1' }); setTimeout(() => { emit(STATE); emit({ type: 'tryx_built', req: o.req, ok: no ? 0 : 1, err: no || '' }); }, 60); }
     // cf_close: a program with stay: 1 only hides in the tray (fail 1); cf_end ends it whatever it is
     if (o.cmd === 'cf_close' || o.cmd === 'cf_end') { const x = STATE.cf.a.find(a => a.id === o.id); STATE.cf.busy = o.id; emit(STATE);
       setTimeout(() => { STATE.cf.busy = ''; if (o.cmd === 'cf_close' && x.stay) x.fail = 1; else x.run = 0, x.fail = 0; emit(STATE); }, 600); }
@@ -70,7 +71,7 @@ window.chrome = { webview: {
     if (o.cmd === 'get') setTimeout(() => emit(STATE), 30);
     if (o.cmd === 'diag') setTimeout(() => { STATE.diag = { busy: 0, ok: 1, file: 'haku-diagnostics-20261022-1200.txt', report: { busy: 0, ok: -1, id: '', err: '' } }; emit(STATE); }, 300);
     if (o.cmd === 'report') setTimeout(() => { STATE.diag = { busy: 0, ok: -1, file: '', report: { busy: 0, ok: o.text.includes('fail') ? 0 : 1, id: '3fa2c9d01e', err: o.text.includes('fail') ? 'offline' : '' } }; emit(STATE); }, 900);
-    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
+    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli', 'corsairlcd'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'dev_retry') setTimeout(() => emit(STATE), 60);   // the devices not connected try again (here: they all answer)
     if (o.cmd === 'dev_check') { STATE.netchk = { id: +o.id, busy: 1, res: '' }; emit(STATE); setTimeout(() => { STATE.netchk = { id: +o.id, busy: 0, res: o.id % 2 ? 'silent' : 'answers', ms: 0 }; emit(STATE); }, 1500); }
     // profile.c's refusals (prof_json): window.mockProfFail = 2 (the one in use can't be written), 3 (missing), 4 (damaged)

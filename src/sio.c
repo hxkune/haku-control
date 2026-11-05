@@ -56,22 +56,8 @@ static void open_io(void) {
     outb(port, 0xAA);
 }
 
-int sio_open(char *chip, int cap) {
-    HMODULE lib = LoadLibraryW(L"C:\\Program Files\\PawnIO\\PawnIOLib.dll");
-    if (!lib) { logf_("sio: PawnIO not installed"); return 0; }
-    pfn_open p_open = (pfn_open)GetProcAddress(lib, "pawnio_open");
-    pfn_load p_load = (pfn_load)GetProcAddress(lib, "pawnio_load");
-    p_exec = (pfn_exec)GetProcAddress(lib, "pawnio_execute");
-    p_close = (pfn_close)GetProcAddress(lib, "pawnio_close");
-    wchar_t mp[MAX_PATH]; GetModuleFileNameW(NULL, mp, MAX_PATH);
-    wchar_t *s = wcsrchr(mp, L'\\'); if (s) s[1] = 0;
-    wcscat_s(mp, MAX_PATH, L"LpcIO.bin");
-    FILE *f = _wfopen(mp, L"rb");
-    if (!f) { logf_("sio: LpcIO.bin missing next to exe"); return 0; }
-    static BYTE blob[256 * 1024]; SIZE_T len = fread(blob, 1, sizeof(blob), f); fclose(f);
-    if (!p_open || !p_load || !p_exec || !p_close || p_open(&h)) { logf_("sio: pawnio_open failed (not elevated?)"); h = NULL; return 0; }
-    if (p_load(h, blob, len)) { logf_("sio: module load failed"); p_close(h); h = NULL; return 0; }
-    mtx = CreateMutexA(NULL, FALSE, "Global\\Access_ISABUS.HTP.Method");
+// the chip on port 2E or 4E: a known id and revision, a sane hardware monitor base, Nuvoton's vendor id there
+static int find_chip(char *chip, int cap) {
     for (slot = 0; slot < 2; slot++) {
         port = slot ? 0x4E : 0x2E;
         if (!lock()) continue;
@@ -99,8 +85,28 @@ int sio_open(char *chip, int cap) {
         logf_("sio: %s at %04X, %d fan controls", chip, a, n);
         return n;
     }
-    p_close(h); h = NULL;
     return 0;
+}
+
+int sio_open(char *chip, int cap) {
+    HMODULE lib = LoadLibraryW(L"C:\\Program Files\\PawnIO\\PawnIOLib.dll");
+    if (!lib) { logf_("sio: PawnIO not installed"); return 0; }
+    pfn_open p_open = (pfn_open)GetProcAddress(lib, "pawnio_open");
+    pfn_load p_load = (pfn_load)GetProcAddress(lib, "pawnio_load");
+    p_exec = (pfn_exec)GetProcAddress(lib, "pawnio_execute");
+    p_close = (pfn_close)GetProcAddress(lib, "pawnio_close");
+    wchar_t mp[MAX_PATH]; GetModuleFileNameW(NULL, mp, MAX_PATH);
+    wchar_t *s = wcsrchr(mp, L'\\'); if (s) s[1] = 0;
+    wcscat_s(mp, MAX_PATH, L"LpcIO.bin");
+    FILE *f = _wfopen(mp, L"rb");
+    if (!f) { logf_("sio: LpcIO.bin missing next to exe"); return 0; }
+    static BYTE blob[256 * 1024]; SIZE_T len = fread(blob, 1, sizeof(blob), f); fclose(f);
+    if (!p_open || !p_load || !p_exec || !p_close || p_open(&h)) { logf_("sio: pawnio_open failed (not elevated?)"); h = NULL; return 0; }
+    if (p_load(h, blob, len)) { logf_("sio: module load failed"); p_close(h); h = NULL; return 0; }
+    mtx = CreateMutexA(NULL, FALSE, "Global\\Access_ISABUS.HTP.Method");
+    int r = find_chip(chip, cap);
+    if (!r) { p_close(h); h = NULL; }
+    return r;
 }
 
 void sio_close(void) { if (h) { p_close(h); h = NULL; n = 0; } }
@@ -125,7 +131,7 @@ int sio_get(int i, int *mode, int *cmd) {
     return ok;
 }
 
-#ifdef HAKU_DEV   // the test build only looks
+#if defined(HAKU_DEV) && !defined(SIO_TEST)   // the test build only looks
 int sio_put(int i, int mode, int cmd) { (void)i; (void)mode; (void)cmd; return 0; }
 #else
 // the whole mode byte, then the duty: 0 and a duty takes it (manual), the saved pair gives it back
@@ -134,5 +140,93 @@ int sio_put(int i, int mode, int cmd) {
     wr(MODE[i], mode & 0xFF); wr(CMD[i], cmd & 0xFF);
     int ok = !err; unlock();
     return ok;
+}
+#endif
+
+#ifdef SIO_TEST   // cl /DSIO_TEST src\sio.c: detection, reads and writes against a simulated chip; PawnIO is not loaded
+#include <assert.h>
+#include <process.h>
+void logf_(const char *fmt, ...) { (void)fmt; }
+// the simulated Super I/O: per slot its config registers (of the hardware monitor's device), then its banked registers
+static struct { int cfg[256], lockable; } sl[2];
+static int cur, idx, bank, hw[0x10000], fail_at = -1, calls;   // fail_at: the call that returns an error
+static int cfgv(int r) { return sl[cur].cfg[r]; }
+static int locked(void) { return sl[cur].lockable && (sl[cur].cfg[0x28] & 0x10); }
+static int hbase(void) { return (cfgv(0x60) << 8 | cfgv(0x61)) & 0xFFF8; }
+static HRESULT WINAPI fake_exec(HANDLE hh, PCSTR fn, const ULONG64 *in, SIZE_T nin, PULONG64 out, SIZE_T nout, PSIZE_T rs) {
+    (void)hh; (void)nin; (void)nout; (void)rs;
+    if (calls++ == fail_at) return E_FAIL;
+    int a = (int)in[0], v = nin > 1 ? (int)in[1] & 0xFF : 0;
+    if (!strcmp(fn, "ioctl_select_slot")) cur = a;
+    else if (!strcmp(fn, "ioctl_superio_inb")) out[0] = cfgv(a);
+    else if (!strcmp(fn, "ioctl_superio_outb")) sl[cur].cfg[a] = v;
+    else if (!strcmp(fn, "ioctl_pio_outb")) {
+        if (locked() || !hbase()) return 0;
+        if (a == hbase() + 5) idx = v;
+        else if (a == hbase() + 6) { if (idx == 0x4E) bank = v; else hw[bank << 8 | idx] = v; }
+    } else if (!strcmp(fn, "ioctl_pio_inb"))
+        out[0] = locked() || !hbase() || a != hbase() + 6 ? 0xFF : idx == 0x4E ? bank : hw[bank << 8 | idx];
+    return 0;
+}
+static void chip_at(int s, int id, int rev, int b, int lockable) {
+    memset(&sl[s], 0, sizeof(sl[s])); sl[s].cfg[0x20] = id; sl[s].cfg[0x21] = rev;
+    sl[s].cfg[0x60] = b >> 8; sl[s].cfg[0x61] = b & 0xFF; sl[s].lockable = lockable;
+}
+static void reset(void) { memset(sl, 0, sizeof(sl)); memset(hw, 0, sizeof(hw)); hw[0x804F] = 0x5C; hw[0x004F] = 0xA3; n = 0; fail_at = -1; }
+static int found(char *c) { calls = 0; return find_chip(c, 16); }
+static unsigned __stdcall hold(void *e) {   // another monitor holds the Super I/O mutex until told
+    HANDLE *x = e; WaitForSingleObject(mtx, INFINITE); SetEvent(x[0]); WaitForSingleObject(x[1], INFINITE); ReleaseMutex(mtx); return 0;
+}
+int main(void) {
+    char c[16]; int rpm[7], pct[7], m, d;
+    p_exec = fake_exec; h = (HANDLE)1; mtx = CreateMutexA(NULL, FALSE, NULL);
+    // nothing on 2E, an NCT6798D on 4E: its 7 controls and the newer duty registers
+    reset(); chip_at(1, 0xD4, 0x2B, 0x290, 1);
+    assert(found(c) == 7 && !strcmp(c, "NCT6798D") && port == 0x4E && base == 0x290 && newpwm && iolock);
+    // an unknown chip on 2E does not stop the look on 4E
+    reset(); chip_at(0, 0xB4, 0x70, 0x290, 0); chip_at(1, 0xD4, 0x2B, 0x290, 1); assert(found(c) == 7 && port == 0x4E);
+    // the NCT6779D: any revision 6x, 5 controls; a revision outside it is not taken
+    reset(); chip_at(0, 0xC5, 0x62, 0x290, 0); assert(found(c) == 5 && !strcmp(c, "NCT6779D") && !newpwm && !iolock);
+    reset(); chip_at(0, 0xC5, 0x72, 0x290, 0); assert(!found(c));
+    // a revision of a known id that is not in the table: left alone
+    reset(); chip_at(0, 0xD4, 0x99, 0x290, 1); assert(!found(c));
+    // the base: low bits 5 as LHM reads them, not under 100, not misaligned, not above FFF
+    reset(); chip_at(0, 0xD4, 0x2B, 0x295, 1); assert(found(c) == 7 && base == 0x290);
+    reset(); chip_at(0, 0xD4, 0x2B, 0x0050, 1); assert(!found(c));
+    reset(); chip_at(0, 0xD4, 0x2B, 0x0292, 1); assert(!found(c));
+    reset(); chip_at(0, 0xD4, 0x2B, 0x1290, 1); assert(!found(c));
+    // another vendor's id at the base: left alone
+    reset(); chip_at(0, 0xD4, 0x2B, 0x290, 1); hw[0x804F] = 0x12; assert(!found(c));
+    // its I/O locked at the start: unlocked once, then read
+    reset(); chip_at(0, 0xD4, 0x2B, 0x290, 1); sl[0].cfg[0x28] = 0x10; assert(found(c) == 7 && !(sl[0].cfg[0x28] & 0x10));
+    // a failing PawnIO call during the look: not taken
+    reset(); chip_at(0, 0xD4, 0x2B, 0x290, 1); fail_at = 9; assert(!found(c));
+    // reads: rpm from the 13-bit count (stopped, not reading), the duty in %
+    reset(); chip_at(0, 0xD4, 0x2B, 0x290, 1); assert(found(c) == 7);
+    hw[0x4B0] = 1000 >> 5; hw[0x4B1] = 1000 & 0x1F; hw[0x4B2] = 0xFF; hw[0x4B3] = 0x1F; hw[0x4B4] = 0; hw[0x4B5] = 0x10;
+    hw[0x001] = 128; hw[0x003] = 255; hw[0xA09] = 0; hw[0x011] = 77;
+    assert(sio_read(rpm, pct) && rpm[0] == 1350 && rpm[1] == 0 && rpm[2] == -1 && pct[0] == 50 && pct[1] == 100 && pct[2] == 30 && pct[5] == 0);
+    // a write and its read back: the mode byte, then the duty, at the control's own registers
+    hw[0x102] = 5; hw[0x109] = 0x80;
+    assert(sio_get(0, &m, &d) && m == 5 && d == 0x80);
+    assert(sio_put(0, 0, 102) && hw[0x102] == 0 && hw[0x109] == 102 && sio_get(0, &m, &d) && m == 0 && d == 102);
+    assert(sio_put(6, 0, 51) && hw[0xB02] == 0 && hw[0xB09] == 51 && hw[0x202] == 0);
+    assert(!sio_put(7, 0, 1) && !sio_put(-1, 0, 1) && !sio_get(7, &m, &d));    // outside its controls
+    // locked again after sleep: reads find the vendor id gone, unlock, and read on
+    sl[0].cfg[0x28] |= 0x10; assert(sio_read(rpm, pct) && rpm[0] == 1350 && !(sl[0].cfg[0x28] & 0x10));
+    // a PawnIO call fails: the read or write says so
+    calls = 0; fail_at = 2; assert(!sio_get(0, &m, &d)); fail_at = -1;
+    calls = 0; fail_at = 5; assert(!sio_put(0, 5, 0x80)); fail_at = -1;
+    assert(sio_put(0, 5, 0x80) && hw[0x102] == 5 && hw[0x109] == 0x80);
+    // another monitor holds the Super I/O mutex: nothing read or written while it does
+    HANDLE e[2] = { CreateEventW(NULL, TRUE, FALSE, NULL), CreateEventW(NULL, TRUE, FALSE, NULL) };
+    HANDLE t = (HANDLE)_beginthreadex(NULL, 0, hold, e, 0, NULL); WaitForSingleObject(e[0], INFINITE);
+    assert(!sio_get(0, &m, &d) && !sio_put(0, 0, 1) && !sio_read(rpm, pct) && hw[0x102] == 5);
+    SetEvent(e[1]); WaitForSingleObject(t, INFINITE); CloseHandle(t);
+    assert(sio_get(0, &m, &d) && m == 5);
+    // closed: nothing
+    h = NULL; assert(!sio_get(0, &m, &d) && !sio_read(rpm, pct));
+    puts("sio: ok");
+    return 0;
 }
 #endif

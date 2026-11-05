@@ -64,6 +64,9 @@ static wchar_t bsec[24];
 static HANDLE bth;
 static struct { int n, rpm[BF], pct[BF]; char chip[16]; } bd;   // cs: the board's readings
 static volatile LONG need_gpu, gpu_c = -1000, gpu_at, need_since;   // gpu_c: whole degrees, fed by the render loop
+#define WD_MS 15000   // a control thread whose loop has not come round for this long has stalled: its channels go back
+static volatile LONG beat[2];   // 0 the QUADRO's thread, 1 the board's: when its loop last came round (0: not running)
+static HANDLE wdth;
 
 static int be16(const BYTE *p) { return p[0] << 8 | p[1]; }
 static int crc16usb(const BYTE *p, int n) {   // poly 0xA001 reflected, init 0xFFFF, xorout 0xFFFF
@@ -443,7 +446,8 @@ static unsigned __stdcall board_thread(void *arg) {
     swprintf(bsec, 24, L"board-%hs", chip); bn = n < BF ? n : BF; bstate_load();
     LeaveCriticalSection(&io);
     EnterCriticalSection(&cs); strcpy_s(bd.chip, sizeof(bd.chip), chip); bd.n = bn; LeaveCriticalSection(&cs);
-    do board_round(); while (WaitForSingleObject(stop_ev, 2000) == WAIT_TIMEOUT);
+    do { InterlockedExchange(&beat[1], (LONG)(GetTickCount() | 1)); board_round(); } while (WaitForSingleObject(stop_ev, 2000) == WAIT_TIMEOUT);
+    InterlockedExchange(&beat[1], 0);
     EnterCriticalSection(&io); board_restore(); LeaveCriticalSection(&io);
     sio_close();
     return 0;
@@ -455,6 +459,7 @@ static unsigned __stdcall fans_thread(void *arg) {
     static BYTE r[2048]; int in_len = 0, misses = 0;
     DWORD last_ctl = 0;
     for (;;) {
+        InterlockedExchange(&beat[0], (LONG)(GetTickCount() | 1));
         if (rd == INVALID_HANDLE_VALUE) {
             HANDLE h = open_quadro(&rd, &in_len);
             if (h == INVALID_HANDLE_VALUE) { rd = INVALID_HANDLE_VALUE; if (WaitForSingleObject(stop_ev, 10000) == WAIT_OBJECT_0) break; continue; }
@@ -487,6 +492,7 @@ static unsigned __stdcall fans_thread(void *arg) {
         }
         if (GetTickCount() - last_ctl >= 2000) { last_ctl = GetTickCount(); control(); }
     }
+    InterlockedExchange(&beat[0], 0);
     EnterCriticalSection(&io);
     restore_all();
     if (hc != INVALID_HANDLE_VALUE) CloseHandle(hc);
@@ -497,19 +503,68 @@ static unsigned __stdcall fans_thread(void *arg) {
     return 0;
 }
 
+// io within ms (a stalled or crashing thread may hold it); the caller leaves it
+static int io_try(int ms) {
+    for (int t = 0; !TryEnterCriticalSection(&io); t += 20) { if (t >= ms) return 0; Sleep(20); }
+    return 1;
+}
+
+// the watchdog: a control thread stuck somewhere (a driver call that never returns, a loop gone wrong) would leave its
+// channels at haku's last speed whatever the temperature does, so after WD_MS they go back to the device's own setting.
+// Once per stall; when the thread comes round again it takes them on as usual. Not while asleep (paused).
+static int wd_out[2];   // 1 handled, 2 the device was busy (tried again on the next check)
+static const char *const wd_name[] = { "QUADRO", "board" };
+static void wd_check(DWORD now) {
+    for (int k = 0; k < 2; k++) {
+        DWORD b = (DWORD)beat[k];
+        if (!b || now - b < WD_MS) { wd_out[k] = 0; continue; }
+        if (wd_out[k] == 1 || paused) continue;
+        unsigned s = (now - b) / 1000;
+        if (!io_try(1000)) {
+            if (!wd_out[k]) flog("fan control of the %s has not run for %u s and the device is busy; nothing given back", wd_name[k], s);
+            wd_out[k] = 2; continue;
+        }
+        int any = 0;
+        if (k) for (int i = 0; i < bn; i++) any |= btaken[i];
+        else for (int f = 0; f < FANS; f++) any |= taken[f];
+        if (any && !paused) {
+            flog("fan control of the %s has not run for %u s; its channels go back to its own setting", wd_name[k], s);
+            if (k) board_restore(); else restore_all();
+        }
+        LeaveCriticalSection(&io);
+        wd_out[k] = 1;
+    }
+}
+static unsigned __stdcall wd_thread(void *arg) {
+    (void)arg;
+    while (WaitForSingleObject(stop_ev, 2000) == WAIT_TIMEOUT) wd_check(GetTickCount());
+    return 0;
+}
+
 void fans_start(void) {
     InitializeCriticalSection(&cs); InitializeCriticalSection(&io);
     stop_ev = CreateEventW(NULL, TRUE, FALSE, NULL);
     th = (HANDLE)_beginthreadex(NULL, 0, fans_thread, NULL, 0, NULL);
     bth = (HANDLE)_beginthreadex(NULL, 0, board_thread, NULL, 0, NULL);
+    wdth = (HANDLE)_beginthreadex(NULL, 0, wd_thread, NULL, 0, NULL);
 }
 
 void fans_stop(void) {
     if (!th) return;
     SetEvent(stop_ev);
+    if (wdth) { WaitForSingleObject(wdth, 3000); CloseHandle(wdth); wdth = NULL; }
     WaitForSingleObject(th, 3000);
     CloseHandle(th); th = NULL;
     if (bth) { WaitForSingleObject(bth, 3000); CloseHandle(bth); bth = NULL; }
+}
+
+// an unhandled exception (main.c): every channel back to the QUADRO's and the board's own setting before the process
+// goes. The crashing thread may hold io (it is recursive then); another one may: up to 2 s. Nothing is taken after.
+void fans_crash(void) {
+    if (!th || !io_try(2000)) return;
+    paused = 1;
+    restore_all(); board_restore();
+    LeaveCriticalSection(&io);
 }
 
 // sleep: the QUADRO's and the board's own settings back now (the machine may not wake with haku); after waking, taken again
@@ -518,7 +573,8 @@ void fans_suspend(int on) {
     EnterCriticalSection(&io);
     paused = on;
     if (on) { restore_all(); board_restore(); }
-    else {   // one that could not go back: look again before writing
+    else {   // one that could not go back: look again before writing. The time asleep is not a stall.
+        for (int k = 0; k < 2; k++) if (beat[k]) InterlockedExchange(&beat[k], (LONG)(GetTickCount() | 1));
         for (int f = 0; f < FANS; f++) chk[f] = taken[f];
         for (int b = 0; b < bn; b++) bchk[b] = btaken[b];
     }
@@ -626,6 +682,9 @@ int sio_get(int i, int *m, int *c) { if (sget_fail) return 0; *m = smode[i]; *c 
 int sio_put(int i, int m, int c) { if (sput_fail) return 0; if (i != sdrop) { smode[i] = m; scmd[i] = c; } return 1; }
 static int bsaved(int b) { wchar_t p[MAX_PATH], v[8], k[8]; state_path(p); swprintf(k, 8, L"fan%d", FANS + b + 1); GetPrivateProfileStringW(bsec, k, L"", v, 8, p); return v[0] != 0; }
 static int bis(int b, int m, int c) { return smode[b] == m && scmd[b] == c; }
+static unsigned __stdcall hold_io(void *a) {   // holds io until told: a stalled or crashing thread
+    HANDLE *e = a; EnterCriticalSection(&io); SetEvent(e[0]); WaitForSingleObject(e[1], INFINITE); LeaveCriticalSection(&io); return 0;
+}
 int main(void) {
     InitializeCriticalSection(&cs); InitializeCriticalSection(&io);
     wchar_t ini[MAX_PATH]; state_path(ini); DeleteFileW(ini);
@@ -749,6 +808,36 @@ int main(void) {
     // giving back fails: reported, kept on disk; then it goes back
     sput_fail = 1; assert(board_restore() == 1 && brfail == 1 && btaken[0] && bsaved(0)); sput_fail = 0;
     assert(!board_restore() && !brfail && bis(0, 5, 0x80) && !bsaved(0));
+    // the watchdog: a stalled QUADRO thread gives its channels back once; the board's, alive, keeps its own
+    set("fan5", "fix"); board_round(); assert(btaken[0]);
+    set("fan1", "fix"); control(); assert(dev_is(0, 30) && taken[0]);
+    now = GetTickCount(); beat[0] = (LONG)(now - WD_MS - 1000); beat[1] = (LONG)now;
+    wd_check(now); assert(!memcmp(dev + ctl_fan[0], O1, 3) && !taken[0] && !saved(0) && btaken[0] && wd_out[0] == 1 && strstr(lg[lgn - 1].m, "QUADRO has not run"));
+    int lgc = lg[lgn - 1].n; control(); assert(dev_is(0, 30) && taken[0]);   // the round that came takes on again
+    wd_check(now); assert(taken[0] && lg[lgn - 1].n == lgc);                // the same stall is handled once
+    beat[0] = (LONG)now; wd_check(now); assert(!wd_out[0]);      // came round: the next stall counts again
+    // asleep: not a stall; not running (0): nothing to watch
+    paused = 1; beat[0] = (LONG)(now - WD_MS - 1000); wd_check(now); assert(taken[0]); paused = 0;
+    beat[0] = 0; wd_check(now); assert(taken[0]);
+    // the stalled thread holds io: nothing written, said once, tried again
+    beat[1] = (LONG)(now - WD_MS - 1000);
+    HANDLE hb[2] = { CreateEventW(NULL, TRUE, FALSE, NULL), CreateEventW(NULL, TRUE, FALSE, NULL) };   // held, let go
+    HANDLE ht = (HANDLE)_beginthreadex(NULL, 0, hold_io, hb, 0, NULL); WaitForSingleObject(hb[0], INFINITE);
+    wd_check(now); assert(btaken[0] && bis(0, 0, 102) && wd_out[1] == 2 && strstr(lg[lgn - 1].m, "busy"));
+    SetEvent(hb[1]); WaitForSingleObject(ht, INFINITE); CloseHandle(ht);
+    wd_check(now); assert(!btaken[0] && bis(0, 5, 0x80) && wd_out[1] == 1);
+    beat[0] = beat[1] = 0; wd_out[0] = wd_out[1] = 0;
+    // a crash: both devices get their own setting back and nothing is taken after
+    board_round(); assert(btaken[0]);
+    th = (HANDLE)1; fans_crash(); th = NULL;
+    assert(paused && !taken[0] && !memcmp(dev + ctl_fan[0], O1, 3) && !btaken[0] && bis(0, 5, 0x80));
+    control(); board_round(); assert(!taken[0] && !btaken[0]); paused = 0;
+    // another thread holds io and never lets go: the crash path does not wait for ever
+    ResetEvent(hb[0]); ResetEvent(hb[1]); control(); assert(taken[0]);
+    ht = (HANDLE)_beginthreadex(NULL, 0, hold_io, hb, 0, NULL); WaitForSingleObject(hb[0], INFINITE);
+    th = (HANDLE)1; DWORD t0 = GetTickCount(); fans_crash(); th = NULL; assert(GetTickCount() - t0 < 4000 && taken[0] && !paused);
+    SetEvent(hb[1]); WaitForSingleObject(ht, INFINITE); CloseHandle(ht); CloseHandle(hb[0]); CloseHandle(hb[1]);
+    set("fan1", ""); set("fan5", ""); control(); board_round(); assert(!taken[0] && !btaken[0]);
     set("fan5_pct", NULL);
     // the page's view
     static char js[8192]; th = (HANDLE)1; strcpy_s(bd.chip, sizeof(bd.chip), "TEST"); bd.n = 2; fans_json(js, sizeof(js));

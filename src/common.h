@@ -247,6 +247,7 @@ void sensors_close(void);
 void fans_start(void);
 void fans_stop(void);                    // its channels get their own settings back
 void fans_suspend(int on);
+void fans_crash(void);                   // a crash: every channel its own setting back, nothing taken after
 void fans_feed(float gpu_temp, DWORD at); // the render loop's GPU reading and when it was taken, for curves
 int  fans_need_gpu(void);
 float fans_water(void);                 // the first connected temperature sensor, NAN when none

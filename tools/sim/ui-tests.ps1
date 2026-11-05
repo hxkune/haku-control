@@ -19,7 +19,8 @@ try {
   Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue
   Remove-Item $profileDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-$log = [regex]::Matches($dom, '(?m)^(ok   |FAIL )[^<\r\n]*') | ForEach-Object { [Net.WebUtility]::HtmlDecode($_.Value) }
+# the first result follows <pre ...> on its line, the rest start lines
+$log = [regex]::Matches($dom, '(?m)(?:^|(?<=<pre[^>]*>))(ok   |FAIL )[^<\r\n]*') | ForEach-Object { [Net.WebUtility]::HtmlDecode($_.Value) }
 $log | ForEach-Object { Write-Output $_ }
 $bad = @($log | Where-Object { $_ -like 'FAIL *' })
 if (-not $log) { Write-Output 'the tests never finished (no result box in the page)'; exit 1 }

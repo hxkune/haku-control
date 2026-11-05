@@ -72,6 +72,68 @@ Note each device's LED count, how it is laid out and the haku version.
 10. **Off.** Lights off during any new effect: everything goes dark at once and stays dark. Lights on brings the effect back with a fade.
 11. **Another lighting program** on together with haku while a new effect runs. haku does not take the device from it, and the card says the device is held.
 
+## Fans: what keeps the beta badge on
+
+The self-tests run the QUADRO, the board chip, Lian Li and iCUE LINK against simulated devices. They do not prove how a real device takes a write, or what it does once haku is gone.
+Each part loses its beta badge only after this check passes on real hardware. Note the device, its firmware and the haku version.
+Send back `haku-control.log` (Settings → Help and diagnostics → the log), plus `haku-control.prev.log` after a crash. The lines that matter start with `fans:`, `sio:` and `lianli:`.
+
+### Aqua Computer QUADRO
+
+1. **Draft.** Change a curve point, then do not apply it.
+   - The fans keep following the last applied curve, and the page says so.
+   - Apply: "Applied · the QUADRO confirmed it". Cancel: the points go back.
+2. **Curves.** One fan on a curve by GPU temperature, one by a QUADRO sensor. Load the GPU and warm the sensor: the speed follows each one's own curve, never below 20%.
+3. **USB unplugged while the PC runs.**
+   - Within about 10 s the page says the link is lost.
+   - Plug it back: haku finds it again and takes the channels again.
+   - The fans run on the QUADRO's own setting while it is away.
+4. **Exit.** Close haku from the tray: every fan goes back to what aquasuite set (curve or speed) within a few seconds.
+5. **Sleep.** Put the PC to sleep and wake it: the fans are on the QUADRO's own setting while asleep, and haku takes them again after the wake.
+6. **End task.** End haku in Task Manager.
+   - The fans stay at haku's last speed, because Windows gives haku no time to act.
+   - Start haku, then close it from the tray: the fans go back to what aquasuite set, not to haku's last speed (fans-state.ini kept it).
+7. **Crash and watchdog.** Nothing forces either in the release build; check the log whenever haku has crashed or a fan hung.
+   - A crash logs `crash: exception …` (in haku-control.prev.log after the restart), and the fans are back on their own setting before the process ends.
+   - A stalled control thread logs `fans: fan control of the QUADRO has not run for … s; its channels go back to its own setting` after about 15 s.
+
+### Board fan chip (Nuvoton NCT67xx, through PawnIO)
+
+1. **Readings.** The rpm on the page matches the BIOS and HWiNFO for each header, within a few percent. The log names the chip: `sio: NCT… at …, N fan controls`.
+2. **Manual.** Set one header to a fixed speed: it holds for 10 minutes, and HWiNFO shows the same duty.
+3. **Exit and sleep.** Close haku, or sleep and wake: the header goes back to its BIOS mode (curve or Smart Fan).
+4. **Another monitor** (HWiNFO, FanControl) running alongside: readings go on, and no header jumps between two speeds.
+5. A chip the log calls "not a known fan chip" or "not Nuvoton's vendor id" is left alone. Send that line.
+
+### Lian Li UNI FAN wireless
+
+1. **Speeds.** Set each group to 30%, 60% and 100%: the rpm follows, and every fan in the group goes together. Nothing below 30% is offered.
+2. **Fans' own.** Back to "Fans' own": the transmitter closes and the fans run on their own setting.
+3. **Haku closed or crashed.** Close haku, then end it in Task Manager. Write down what the fans do in each case (their last speed, their own setting, full speed).
+4. **Receiver unplugged** while a speed is set: the set groups go to full speed, then run on their own.
+5. **Lighting with board ARGB sync on.** Light a group from haku.
+   - The board's sync goes off, and haku's colours show.
+   - If it does not go off after 10 asks, the group row says so.
+   - Remove the light: sync comes back on, or the row says it did not.
+6. The first `lianli: asked …` lines in the log are the receiver's raw replies. Send them, as they show how your firmware answers.
+
+### Corsair iCUE LINK
+
+Read only: haku shows the hub's fans and temperatures and sends nothing to them.
+- Compare the rpm and the coolant temperature with iCUE, both open in turn.
+- With iCUE running, the page says iCUE holds the hub, and haku waits.
+
+### Corsair LCD screen (iCUE LINK LCD, ELITE LCD, XC7 ELITE LCD)
+
+Experimental: built from OpenLinkHub's description of the protocol, not yet run on a real screen. Close iCUE, OpenLinkHub and SignalRGB first.
+1. **Found.** Find devices lists the screen, and its card has the builder.
+2. **Picture.** Build a still with a text over it: the screen shows it within a few seconds, round and not stretched.
+3. **Animation.** Build from a GIF or a short video: it moves at about the same speed as in the builder.
+4. **Lights off.** Switch the lights off: the screen goes dark (the XC7 ELITE shows black, as it has no backlight). Turn them on again, then change the app's brightness: the screen follows it.
+5. **Giving it back.** Close haku, put the PC to sleep and wake it, and end haku in Task Manager. In each case, write down what the screen shows (its own display, black, the last picture).
+6. **Another program.** Start iCUE with haku open: the card says iCUE has the screen, and haku sends nothing until iCUE is closed.
+7. Send the `corsairlcd:` lines from the log, as they show the screen's reports and how it answered.
+
 ## Not to do as part of this check
 
 - No calibration and no load tests.

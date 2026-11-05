@@ -26,6 +26,12 @@ call :one profile  /W3 tools\sim\profile_test.c src\profile.c src\config.c
 call :one backup   /DHAKU_DEV tools\sim\backup_test.c src\backup.c src\config.c comdlg32.lib
 rem the remote check takes only the allowlist from ui_web.cpp; the rest of the program is left unlinked on purpose
 call :one remote   /std:c++17 /EHsc tools\sim\remote_test.cpp /link /FORCE:UNRESOLVED
+rem the fan, iCUE LINK and Lian Li parts test themselves against simulated devices (no USB or Super I/O is opened)
+call :one fans     /DFANS_TEST src\fans.c setupapi.lib hid.lib
+call :one link     /DLINK_TEST src\link.c
+call :one lianli   /DLL_TEST src\lianli.c
+call :one sio      /DSIO_TEST src\sio.c
+call :one corsairlcd /DCORSAIR_LCD_TEST src\drv_corsairlcd.c
 
 echo === orgb (against the fake OpenRGB server)
 del /q "%T%\orgb_test.exe" 2>nul

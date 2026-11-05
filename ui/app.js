@@ -3622,7 +3622,9 @@ const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).tit
 // TRYX PANORAMA's built-in themes, in the order the cooler numbers them (drv_tryx.c); 0: as TRYX KANALI left it
 const TRYX_THEMES = ['', 'Cooling delivery', 'Migration', 'Quantum time capsule', 'Exo-Ecologies', 'Racing', 'Shuttle', 'Gift of TRYX',
   'Sweet Cool Acrylic', 'Catch Me If You Can', 'The Battle of Ice and Fire', 'Oasis', 'Cyber Bunker', 'Edge Of Dream', 'Thermal Energy Prohibited'];
-const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli'].includes(d.kind);
+const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli', 'corsairlcd'].includes(d.kind);
+// a screen, not a light: its card has the screen's settings only (TRYX PANORAMA, a Corsair LCD cap)
+const isScreen = d => d.kind === 'tryx' || d.kind === 'corsairlcd';
 // the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max}]
 const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max, at] = z.split(':'); return { name, count: +count, min: +min, max: +max, at: +at || 0 }; });
 // OpenRGB starts a board's ARGB connectors at 0 LEDs: nothing to light (not offline) until their counts are set
@@ -3642,6 +3644,8 @@ function devStatus(d) {
   if (d.covered) { const o = devById(d.covered); return t('orgb.covered', o ? o.name : '?'); }
   if (d.pro && proLocked()) return t('dev.pro');
   if (!d.online && d.kind === 'tryx' && / busy$/.test(d.info)) return t('tx.busy') + cfWhy('tryx');
+  // drv_corsairlcd.c names the program that has the screen: "<exe> busy"
+  if (!d.online && d.kind === 'corsairlcd' && / busy$/.test(d.info)) return t('cl.busy', d.info.replace(/(\.exe)? busy$/i, ''));
   if (d.online && d.kind === 'tryx' && / upload (\d+)%/.test(d.info)) return t('tx.up', RegExp.$1);
   if (d.online && d.kind === 'tryx' && / upload failed/.test(d.info)) return t(/ no adb/.test(d.info) ? 'tx.up.noadb' : 'tx.up.fail');
   // OpenRGB: what the controller takes (drv_openrgb.c, CAP_*), or why it is not lit
@@ -3706,7 +3710,7 @@ function buildDevices() {
     el.className = 'card dev-card';
     const sec = 'dev.' + d.id;
     // TRYX: a screen card only (theme, own picture); its fans light from the motherboard's ARGB header, not from here
-    const scr = d.kind === 'tryx';
+    const scr = isScreen(d);
     el.innerHTML = `<div class="card-head">
         <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p></div>
         <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
@@ -3736,6 +3740,9 @@ function buildDevices() {
           <div class="pc-only" style="display:flex;gap:10px;align-items:center;margin:4px 0;flex-wrap:wrap"><button class="btn small ghost dev-media" type="button"><span>${t('tx.pick')}</span></button><button class="btn small ghost dev-build" type="button"><span>${t('tx.build')}</span></button><span class="muted dev-media-name">${esc(cv(sec, 'media', '').split(/[\\/]/).pop())}</span></div>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('tx.follow')}</em></label>
           <p class="hint">${t('tx.note')}</p>` : ''}
+        ${d.kind === 'corsairlcd' ? `<div class="pc-only" style="display:flex;gap:10px;align-items:center;margin:4px 0;flex-wrap:wrap"><button class="btn small ghost dev-media" type="button"><span>${t('tx.pick')}</span></button><button class="btn small ghost dev-build" type="button"><span>${t('tx.build')}</span></button><span class="muted dev-media-name">${esc(cv(sec, 'media', '').split(/[\\/]/).pop())}</span></div>
+          <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('tx.follow')}</em></label>
+          <p class="hint">${t('cl.note')}</p>` : ''}
         ${d.kind === 'openrgb' && pathPairs(d).length ? `<label class="num"><span>${t('path.title')}</span><select class="select dev-path"><option value="">${t('path.none')}</option>${pathPairs(d).map(n =>
           ['direct', 'orgb', 'own'].map(v => `<option value="${v}:${n.id}"${pathCur(d) === v + ':' + n.id ? ' selected' : ''}>${esc(t('path.' + v, n.name))}</option>`).join('')).join('')}</select></label>
           <p class="hint">${t('path.note')}</p>` : ''}
@@ -4060,14 +4067,19 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && CAL) calCl
 // as the device's own file and sends it like a picked one.
 // shortcut: what is over the picture is baked into the file; live figures need the cooler's own layout (sysinfoDisplay), not known yet
 // a video at this size, a still at 1.5x (2:1: the PANORAMA SE's 2240x1080 panel, 2160x1080 for a still)
-const TXB_SHAPES = { '2:1': [1440, 720], '16:9': [1280, 720], '4:3': [1024, 768], '3:2': [1080, 720], '1:1': [720, 720] };
+// round: a Corsair LCD cap, 480x480 and round; its file is a pack of JPEG frames (txbPack), not an mp4
+const TXB_SHAPES = { '2:1': [1440, 720], '16:9': [1280, 720], '4:3': [1024, 768], '3:2': [1080, 720], '1:1': [720, 720], round: [480, 480] };
 const TXB_MAX = 30;   // seconds of video at most: ~8 MB at 2 Mbit/s
 let TXB = null;
 function txbOpen(d, from) {
-  TXB = { d, from, shape: /2D04$/i.test(d.host || '') ? '2:1' : '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now() };
+  const lcd = d.kind === 'corsairlcd';
+  TXB = { d, from, lcd, shape: lcd ? 'round' : /2D04$/i.test(d.host || '') ? '2:1' : '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now() };
+  $('#txb-shape').closest('label').classList.toggle('hidden', lcd);   // the LCD has one shape
+  const note = $('#txb [data-i18n^="txb.note"]'); note.dataset.i18n = lcd ? 'txb.note.lcd' : 'txb.note'; note.textContent = t(note.dataset.i18n);
   $('#txb-title').textContent = t('txb.title', cv('dev.' + d.id, 'name', d.name));
   $('#txb-stage').setAttribute('aria-label', t('txb.stage'));
-  $('#txb-shape').value = TXB.shape; $('#txb-msg').textContent = ''; $('#txb-msg').classList.remove('warn'); $('#txb-go').disabled = false;   // a load the last close overtook left it off
+  if (!lcd) $('#txb-shape').value = TXB.shape;
+  $('#txb-msg').textContent = ''; $('#txb-msg').classList.remove('warn'); $('#txb-go').disabled = false;   // a load the last close overtook left it off
   $('#txb').classList.remove('hidden'); txbSize(); txbZoom(1); txbLayers(); txbLoop(); $('#txb-src').focus();
 }
 const txbFreeSrc = s => { if (!s) return; if (s.el) { s.el.pause(); URL.revokeObjectURL(s.el.src); } (s.frames || []).forEach(f => f.bmp.close()); s.bmp?.close(); };
@@ -4124,7 +4136,7 @@ async function txbLoad(file) {
   B.ld = 0; $('#txb-go').disabled = false;
   if (!s || !s.w) { txbFreeSrc(s); msg.textContent = t('txb.bad'); msg.classList.add('warn'); return; }   // what was there before stays
   txbFreeSrc(B.src); B.src = s; B.cx = B.cy = .5; txbZoom(1);
-  msg.textContent = s.dur ? t(cut ? 'txb.cut' : 'txb.anim', Math.round(s.dur * 10) / 10) : ''; msg.classList.toggle('warn', !!cut);
+  msg.textContent = s.dur ? t(cut ? 'txb.cut' : B.lcd ? 'txb.anim.lcd' : 'txb.anim', Math.round(s.dur * 10) / 10) : ''; msg.classList.toggle('warn', !!cut);
 }
 function txbFrame(s, t) {
   const tt = t % s.dur; let i = 0;
@@ -4149,6 +4161,7 @@ function txbDraw(c, t, sel) {
     l.box = [l.x - w / 2 / W, l.y - h / 2 / H, w / W, h / H];
     if (sel && i === B.sel) { x.setLineDash([6, 4]); x.strokeStyle = '#fff'; x.lineWidth = 1.5; x.strokeRect(l.x * W - w / 2 - 4, l.y * H - h / 2 - 4, w + 8, h + 8); x.setLineDash([]); }
   });
+  if (B.lcd) { x.beginPath(); x.rect(0, 0, W, H); x.arc(W / 2, H / 2, Math.min(W, H) / 2, 0, 2 * Math.PI); x.fillStyle = '#000'; x.fill('evenodd'); }   // a round screen
 }
 function txbLoop() { if (!TXB || TXB.busy) return; txbDraw($('#txb-stage'), (performance.now() - TXB.t0) / 1000, 1); requestAnimationFrame(txbLoop); }
 function txbSize() { const [w, h] = TXB_SHAPES[TXB.shape], c = $('#txb-stage'); c.width = 640; c.height = Math.round(640 * h / w); txbClamp(); }
@@ -4209,17 +4222,41 @@ function txbMp4(w, h, avcc, chunks, dur) {
   for (const c of chunks) { out.set(c.b, p); p += c.b.length; }
   return out;
 }
+// A Corsair LCD's file (drv_corsairlcd.c cl_parse): "HKLCD1\0\0", then for each frame its JPEG's length (u32 LE), how long
+// it shows in ms (u16 LE) and the JPEG. Frame 0 is black (the screen with the lights off), then the still, or an animation
+// at 25 frames a second at most. Each JPEG fits the 256 reports of 1016 bytes the screen takes.
+const TXB_LCD_FRAMES = 300, TXB_LCD_JPG = 256 * 1016;
+async function txbPack(B, s, c, msg) {
+  const x = c.getContext('2d'), jpg = () => new Promise((r, no) => c.toBlob(b => b ? r(b) : no(t('txb.fail', 'jpeg')), 'image/jpeg', .85));
+  x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
+  const parts = [[await jpg(), 1000]], dur = s?.dur || 0, n = dur ? Math.max(2, Math.min(TXB_LCD_FRAMES, Math.round(dur * 25))) : 1, step = dur / n;
+  if (s?.el) s.el.pause();
+  for (let i = 0; i < n; i++) {
+    if (B.stop) throw t('txb.stopped');
+    if (s?.el) { s.el.currentTime = i * step; await new Promise(r => { s.el.onseeked = r; }); }
+    txbDraw(c, i * step); parts.push([await jpg(), Math.max(40, Math.round(step * 1000))]);
+    if (dur) msg.textContent = t('txb.rec.lcd', Math.round((i + 1) / n * 100));
+  }
+  const out = [new Uint8Array([72, 75, 76, 67, 68, 49, 0, 0])];   // HKLCD1
+  for (const [b, ms] of parts) {
+    if (b.size > TXB_LCD_JPG) throw t('txb.big');
+    const h = new DataView(new ArrayBuffer(6)); h.setUint32(0, b.size, true); h.setUint16(4, Math.min(65535, ms), true);
+    out.push(h.buffer, b);
+  }
+  return new Blob(out);
+}
 async function txbMake() {
   if (!TXB || TXB.busy || TXB.ld) return;   // a save already on its way, or a picture still loading
   const B = TXB, s = B.src, [w0, h0] = TXB_SHAPES[B.shape], vid = !!(s && s.dur), msg = $('#txb-msg');
-  const c = document.createElement('canvas'); c.width = vid ? w0 : w0 * 1.5; c.height = vid ? h0 : h0 * 1.5;
+  const c = document.createElement('canvas'); c.width = vid || B.lcd ? w0 : w0 * 1.5; c.height = vid || B.lcd ? h0 : h0 * 1.5;
   // while the video is made, Cancel and the cross stay on: they stop it (txbClose); once sent, the save is the core's
   const busy = on => { B.busy = on; $('#txb').querySelectorAll('button, input, select').forEach(e => { e.disabled = on && !(B.rec && (e.id === 'txb-cancel' || e.id === 'txb-x')); }); };
   let enc = null;
   B.stop = 0; B.rec = vid; busy(1); msg.classList.remove('warn');
   try {
     let blob;
-    if (!vid) { txbDraw(c, 0); blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .9)); }
+    if (B.lcd) blob = await txbPack(B, s, c, msg);
+    else if (!vid) { txbDraw(c, 0); blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .9)); }
     else {
       // WebCodecs, the software encoder first: MediaRecorder's mp4 came out empty on some PCs (its hardware encoder failing quietly)
       const base = { width: c.width, height: c.height, bitrate: 2e6, framerate: 30, avc: { format: 'avc' } };
@@ -4259,11 +4296,11 @@ async function txbMake() {
     const r = await new Promise(done => {
       const tm = setTimeout(() => done({ ok: 0, err: 'wait' }), 20000);
       B.wait = { req, done: m => { clearTimeout(tm); done(m); } };
-      send({ cmd: 'tryx_build', id: String(B.d.id), ext: vid ? 'mp4' : 'jpg', data, req });
+      send({ cmd: 'tryx_build', id: String(B.d.id), ext: B.lcd ? 'hlcd' : vid ? 'mp4' : 'jpg', data, req });
     });
     B.wait = null;
     if (!r.ok) throw t('txb.nosave', t('txb.e.' + (['open', 'write', 'replace', 'wait'].includes(r.err) ? r.err : 'bad')));
-    msg.textContent = t('txb.saved');   // on this PC; the cable upload to the screen shows on the device card
+    msg.textContent = t(B.lcd ? 'txb.saved.lcd' : 'txb.saved');   // on this PC; TRYX: the cable upload to the screen shows on the device card
   } catch (e) { msg.textContent = typeof e === 'string' ? e : t('txb.fail', e?.message || e); msg.classList.toggle('warn', e !== t('txb.stopped')); }
   finally {
     if (enc && enc.state !== 'closed') enc.close();
@@ -4406,7 +4443,7 @@ function updateLL() {
       `<option value="${p}"${String(p) === cur ? ' selected' : ''}>${p} %</option>`).join('')}</select>`; };
   // shortcut: every fan group drawn as UNI FAN SL (lit edges); the receiver does not tell SL from TL, a per-group pick if TL owners ask
   const html = g.map(d => `<div class="found-row"><span class="kind${d.type ? '' : ' kind-ic'}">${d.type ? '' : fanIcon('sl')}${t(d.type ? 'link.k.dev' : 'link.k.fan')}</span>
-    <div class="what"><b>${esc(t('ll.n', d.n))}</b><small>${esc(d.mac + (d.own ? '' : ' · ' + t('ll.other')))}</small></div>
+    <div class="what"><b>${esc(t('ll.n', d.n))}</b><small>${esc(d.mac + (d.own ? '' : ' · ' + t('ll.other')) + (d.sync ? ' · ' + t('ll.sync.' + d.sync) : ''))}</small></div>
     <span class="added">${esc((d.rpm || []).map((r, i) => t('link.rpm', r) + ' ' + (d.pct || [])[i] + ' %').join(' · '))}</span>${d.own && !d.type && d.n ? sel(d) : ''}</div>`).join('');
   const list = $('#ll-list');
   if (list.dataset.html !== html && !list.contains(document.activeElement)) { list.dataset.html = html; list.innerHTML = html; }
@@ -4428,6 +4465,8 @@ const cfWhy = id => ' · ' + (cfRun(id) ? t('cf.why.run', cfApp(id).name) : t('c
 function cfDev(x) {
   if (x.id === 'lianli') { const s = (S.ll || {}).st; return s === 'busy' ? 'held' : s === 'err' ? 'down' : ''; }
   if (x.id === 'tryx') { const d = S.ext.devs.filter(d => d.kind === 'tryx' && d.enabled && !d.online); return d.some(d => / busy$/.test(d.info)) ? 'held' : d.length ? 'down' : ''; }
+  // a Corsair LCD waits while the program runs (drv_corsairlcd.c)
+  if (/^(icue|openlinkhub|signalrgb)$/.test(x.id) && x.run && S.ext.devs.some(d => d.kind === 'corsairlcd' && d.enabled && !d.online && / busy$/.test(d.info))) return 'wait';
   if (/^(icue|openlinkhub|signalrgb)$/.test(x.id) && cv('link', 'on', '0') === '1') { const s = (S.link || {}).st; return s === 'app' && x.run ? 'wait' : s === 'err' ? 'down' : ''; }
   return '';
 }
@@ -5333,14 +5372,14 @@ function gdDirect() {
 const gdCan = () => [...gdDirect().filter(x => !x.why), ...S.ext.devs.filter(d => !gdWhyNot(d)).map(d => ({ id: d.id, name: d.name, zone: 'zone.dev' + d.id }))];
 // why a device can't show the test colour here (then its own card or page is the way), '' when it can
 function gdWhyNot(d) {
-  if (d.kind === 'tryx') return t('gd.t.screen');
+  if (isScreen(d)) return t('gd.t.screen');
   if (cv('dev.' + d.id, 'caps', '') === 'white') return t('gd.t.white');
   if (zonesNeed(d) || !d.online || !d.enabled || d.own || d.held || d.covered || (d.pro && proLocked()) || (d.kind === 'openrgb' && d.cap >= 4)) return devStatus(d);
   return '';
 }
 // what it takes from haku, as the core reports it (drv_openrgb.c CAP_*, the device status)
 function gdLevel(d) {
-  if (d.kind === 'tryx') return t('gd.lv.screen');
+  if (isScreen(d)) return t('gd.lv.screen');
   if (cv('dev.' + d.id, 'caps', '') === 'white') return t('gd.lv.white');
   const w = gdWhyNot(d);
   if (w) return w;

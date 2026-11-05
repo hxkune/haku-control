@@ -13,6 +13,7 @@
 #include <timeapi.h>
 #include <share.h>
 #include <tlhelp32.h>
+#include <signal.h>
 #include "../res/version.h"
 
 // visual styles for the settings window controls
@@ -193,8 +194,9 @@ static void log_rotate(void) {
     logfile = _wfsopen(cur, L"w", _SH_DENYNO);
 }
 
+static volatile LONG crashing;   // the crash handler runs: the thread that crashed may be holding log_lk
 void logf_(const char *fmt, ...) {
-    AcquireSRWLockExclusive(&log_lk);
+    if (crashing) { if (!TryAcquireSRWLockExclusive(&log_lk)) return; } else AcquireSRWLockExclusive(&log_lk);
     if (logfile && ftell(logfile) > 4 * 1024 * 1024) { log_rotate(); if (logfile) fprintf(logfile, "(log continued, earlier lines in haku-control.prev.log)\n"); }
     if (logfile) {
         SYSTEMTIME t; GetLocalTime(&t);
@@ -1621,6 +1623,16 @@ static HICON make_icon(void) {
                              GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
 }
 
+// a crash: the fans get their own settings back before Windows ends the process. End task, a stack overflow and a
+// fail-fast end it without this; fans-state.ini gives them back at the next start then.
+static LONG WINAPI on_crash(EXCEPTION_POINTERS *e) {
+    if (InterlockedExchange(&crashing, 1)) return EXCEPTION_CONTINUE_SEARCH;
+    logf_("crash: exception %08lX at %p (exe at %p)", e->ExceptionRecord->ExceptionCode, e->ExceptionRecord->ExceptionAddress, (void *)GetModuleHandleW(NULL));
+    fans_crash();
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+static void on_abort(int sig) { (void)sig; if (!InterlockedExchange(&crashing, 1)) { logf_("crash: abort"); fans_crash(); } }
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     (void)prev; (void)cmd; (void)show;
     app_inst = inst;
@@ -1640,6 +1652,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     wchar_t p[MAX_PATH];
     log_rotate();
     { SYSTEMTIME t; GetLocalTime(&t); logf_("haku control %s, started %04d-%02d-%02d", HAKU_VER_STR, t.wYear, t.wMonth, t.wDay); }
+    SetUnhandledExceptionFilter(on_crash); signal(SIGABRT, on_abort);
     app_data_path(L"settings.ini", p);
     if (GetFileAttributesW(p) == INVALID_FILE_ATTRIBUTES) {
         FILE *f = _wfopen(p, L"wb"); if (f) { fwrite(default_ini, 1, sizeof(default_ini) - 1, f); fclose(f); }

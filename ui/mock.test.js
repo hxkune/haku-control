@@ -540,6 +540,12 @@
     ok(!lit($('#fan-panel [data-g="1"] .fanic')), 'a mixed group shows a plain one');
     updateLL(); const ll = $$('#ll-list .found-row');
     ok(ll.length === 2 && ll.every(r => r.querySelectorAll('.fi-lit rect').length === 2), 'Lian Li groups: lit edges');
+    // lianli.c's give-up after 10 asks: the group says its board ARGB sync would not go off, or back on
+    const g0 = S.ll.g[0], sm = () => $('#ll-list .found-row small').textContent;
+    ok(!sm().includes(t('ll.sync.1')) && !sm().includes(t('ll.sync.2')), 'a group that synced as asked says nothing: ' + sm());
+    g0.sync = 1; updateLL(); ok(sm().includes(t('ll.sync.1')), 'sync would not go off: ' + sm());
+    g0.sync = 2; updateLL(); ok(sm().includes(t('ll.sync.2')) && !sm().includes(t('ll.sync.1')), 'sync would not go back on: ' + sm());
+    delete g0.sync; updateLL(); ok(!sm().includes(t('ll.sync.2')), 'the note goes with it: ' + sm());
     await fanReset();
   });
 
@@ -1047,6 +1053,73 @@
     const err = await new Promise(r => { v.onloadeddata = () => r(''); v.onerror = () => r('error ' + v.error?.message); });
     ok(!err && v.videoWidth === 1440 && v.videoHeight === 720 && Math.abs(v.duration - .6) < .15, `the mp4: ${err} ${v.videoWidth}x${v.videoHeight} ${v.duration} s`);
     txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+  });
+
+  // a Corsair LCD (drv_corsairlcd.c): its pack "HKLCD1\0\0" + [u32 length, u16 ms, JPEG]..., read back as the driver does
+  const clDev = info => ({ id: 15, kind: 'corsairlcd', title: 'Corsair LCD', name: 'Corsair iCUE LINK LCD', host: '1B1C:0C4E', sub: 0, leds: 1, per_led: 0, online: /busy$/.test(info) ? 0 : 1, enabled: 1, type: 'screen', info });
+  const clFrames = b64 => {
+    const b = Uint8Array.from(atob(b64), c => c.charCodeAt(0)), v = new DataView(b.buffer), out = [];
+    if (new TextDecoder().decode(b.slice(0, 8)) !== 'HKLCD1\0\0') return null;
+    for (let o = 8; o + 6 <= b.length;) { const n = v.getUint32(o, true); out.push({ ms: v.getUint16(o + 4, true), jpg: b.slice(o + 6, o + 6 + n) }); o += 6 + n; }
+    return out;
+  };
+  const clPixel = async (jpg, x, y) => { const c = document.createElement('canvas'); c.width = c.height = 480; const g = c.getContext('2d'); g.drawImage(await createImageBitmap(new Blob([jpg], { type: 'image/jpeg' })), 0, 0); return [...g.getImageData(x, y, 1, 1).data.slice(0, 3)]; };
+
+  test('Corsair LCD: a screen card with the builder and the follow switch, no theme; the program holding it is named', async () => {
+    await fresh();
+    STATE.ext.devs.push(clDev('Corsair iCUE LINK LCD · screen · USB')); STATE.cfg['dev.15'] = { kind: 'corsairlcd' }; await fanEmit();
+    const card = () => $('#dev-st-15').closest('.card');
+    ok(card().querySelector('.dev-build') && card().querySelector('.dev-media') && card().querySelector('.dev-follow')?.checked && !card().querySelector('.dev-theme'), 'the card: ' + card().innerHTML.slice(0, 200));
+    ok(!card().querySelector('.live, .zone, .dev-type, .dev-cal, .dev-ident') && t('cl.note') !== 'cl.note' && card().textContent.includes(t('cl.note')), 'the screen card has light settings or no note');
+    ok(gdWhyNot(STATE.ext.devs.at(-1)) === t('gd.t.screen'), 'the test colour offered for a screen');
+    card().querySelector('.dev-follow').click(); ok(sets('dev.15', 'screen_follow').some(o => +o.v === 0), 'the switch did not save: ' + JSON.stringify(sent));
+    STATE.ext.devs[STATE.ext.devs.length - 1] = clDev('iCUE.exe busy'); await fanEmit();
+    ok($('#dev-st-15').textContent === t('cl.busy', 'iCUE'), 'busy: ' + $('#dev-st-15').textContent);
+    ok(cfDev({ id: 'icue', run: 1 }) === 'wait' && cfDev({ id: 'icue', run: 0 }) !== 'wait', 'iCUE running not shown as making the screen wait');
+    STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit();
+  });
+
+  test('Corsair LCD: the builder makes a round 480x480 pack, black first, and hands it to the core; a TRYX after it has its shapes back', async () => {
+    await fresh();
+    STATE.ext.devs.push(clDev('Corsair iCUE LINK LCD · screen · USB')); STATE.cfg['dev.15'] = { kind: 'corsairlcd' }; await fanEmit();
+    $('#dev-st-15').closest('.card').querySelector('.dev-build').click();
+    ok(!$('#txb').classList.contains('hidden') && TXB.lcd && TXB.shape === 'round' && $('#txb-shape').closest('label').classList.contains('hidden'), 'the builder did not open round');
+    const note = () => $('#txb [data-i18n^="txb.note"]').textContent;
+    ok(t('txb.note.lcd') !== 'txb.note.lcd' && note() === t('txb.note.lcd'), 'the hint: ' + note());
+    const c = document.createElement('canvas'); c.width = c.height = 400; c.getContext('2d').fillStyle = '#c33'; c.getContext('2d').fillRect(0, 0, 400, 400);
+    await txbLoad(new File([await new Promise(r => c.toBlob(r, 'image/png'))], 'red.png', { type: 'image/png' }));
+    sent.length = 0; await txbMake();
+    const o = sent.find(x => x.cmd === 'tryx_build'), f = o && clFrames(o.data);
+    ok(o && o.id === '15' && o.ext === 'hlcd' && f && f.length === 2 && f[0].ms === 1000, 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 12) }) + ' ' + JSON.stringify(f?.map(x => x.ms)));
+    const black = await clPixel(f[0].jpg, 240, 240), mid = await clPixel(f[1].jpg, 240, 240), edge = await clPixel(f[1].jpg, 4, 4);
+    ok(black.every(v => v < 16) && mid[0] > 160 && mid[1] < 90 && edge.every(v => v < 16), `frames: black ${black}, the middle ${mid}, the corner ${edge}`);
+    ok($('#txb-msg').textContent === t('txb.saved.lcd'), 'the message: ' + $('#txb-msg').textContent);
+    txbClose(); await fanEmit();
+    ok($('#dev-st-15').closest('.card').querySelector('.dev-media-name').textContent === 'corsairlcd-15.hlcd' && !STATE.cfg['dev.15'].theme, 'the file: ' + JSON.stringify(STATE.cfg['dev.15']));
+    STATE.ext.devs.pop(); delete STATE.cfg['dev.15'];
+    STATE.ext.devs.push({ id: 14, kind: 'tryx', title: 'TRYX PANORAMA', name: 'TRYX PANORAMA', host: '18D1:2D04', sub: 0, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'screen', info: 'TRYX PANORAMA · COM5 · USB' });
+    STATE.cfg['dev.14'] = { kind: 'tryx' }; await fanEmit();
+    $('#dev-st-14').closest('.card').querySelector('.dev-build').click();
+    ok(!TXB.lcd && TXB.shape === '2:1' && $('#txb-shape').value === '2:1' && !$('#txb-shape').closest('label').classList.contains('hidden') && note() === t('txb.note'), 'the TRYX builder after the LCD: ' + note());
+    txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+  });
+
+  test('Corsair LCD: an animation goes frame by frame at 25 a second, each with its time, black first', async () => {
+    await fresh();
+    STATE.ext.devs.push(clDev('Corsair iCUE LINK LCD · screen · USB')); STATE.cfg['dev.15'] = { kind: 'corsairlcd' }; await fanEmit();
+    $('#dev-st-15').closest('.card').querySelector('.dev-build').click();
+    const frames = [];
+    for (const [i, col] of ['#c33', '#3c3', '#33c'].entries()) {
+      const c = document.createElement('canvas'); c.width = c.height = 100; const x = c.getContext('2d'); x.fillStyle = col; x.fillRect(0, 0, 100, 100);
+      frames.push({ bmp: await createImageBitmap(c), at: i * .2, dur: .2 });
+    }
+    TXB.src = { frames, w: 100, h: 100, dur: .6 };
+    sent.length = 0; await txbMake();
+    const o = sent.find(x => x.cmd === 'tryx_build'), f = o && clFrames(o.data);
+    ok(f && f.length === 16 && f[0].ms === 1000 && f.slice(1).every(x => x.ms === 40), 'frames: ' + JSON.stringify(f?.map(x => x.ms)));
+    const first = await clPixel(f[1].jpg, 240, 240), last = await clPixel(f[15].jpg, 240, 240);
+    ok(first[0] > 160 && last[2] > 160, `the animation: first ${first}, last ${last}`);
+    txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit();
   });
 
   // the builder open on a TRYX, and a stand-in ImageDecoder: a file's text names its plan { n, w, h, fail, hold }, frame i
