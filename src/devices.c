@@ -25,7 +25,7 @@ static int     ndevs;
 
 // ---- shared (lock)
 static SRWLOCK lk = SRWLOCK_INIT;
-typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held, covered, cap; char name[64], host[64], info[96], kind[16], type[12]; int sub, nev; ext_ev ev[EXT_EV]; } slot_t;
+typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held, covered, cap; volatile LONG sent; char name[64], host[64], info[96], kind[16], type[12]; int sub, nev; ext_ev ev[EXT_EV]; } slot_t;
 static slot_t  slots[EXT_MAX];
 static int     nslots;
 static rgbf    frame[EXT_MAX][EXT_MAX_LEDS];
@@ -89,7 +89,7 @@ static void publish_slots(void) {
         if (s->id != d->id || s->nleds != n || strcmp(s->type, ty)) InterlockedExchange(&layout_new, 1);
         strcpy_s(s->type, sizeof(s->type), ty);
         s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->fails = d->fails; s->enabled = d->enabled; s->own = d->own; s->same = d->same; s->held = d->held;
-        s->covered = d->covered; s->cap = d->cap;
+        s->covered = d->covered; s->cap = d->cap; InterlockedExchange(&s->sent, (LONG)d->sent_at);
         s->sub = d->sub; s->nev = d->nev; memcpy(s->ev, d->ev, sizeof(s->ev));
         strcpy_s(s->name, sizeof(s->name), d->name); strcpy_s(s->host, sizeof(s->host), d->host);
         strcpy_s(s->info, sizeof(s->info), d->info); strcpy_s(s->kind, sizeof(s->kind), d->drv->kind);
@@ -337,6 +337,7 @@ static unsigned __stdcall worker(void *p) {
                 memcpy(last8[k], q, n * 3);
                 due[k] = ext_pace_next(now, due[k], interval);
                 last_send[k] = now;
+                d->sent_at = now ? now : 1; InterlockedExchange(&slots[k].sent, (LONG)d->sent_at);   // slots[k] is devs[k] since the last publish
                 if (strcmp(was, d->info)) changed_state = 1;   // the driver's own news (TRYX: the upload's %)
             } else {
                 // lost soon after connecting (another program takes it back, a device that drops each frame):
@@ -578,8 +579,8 @@ int ext_json(char *out, int cap) {
         json_escape_to(zs, sizeof(zs), cfg_get(sec, "zones_found", ""));   // resizable zones (OpenRGB), "name:count:min:max|..."
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"covered\":%d,\"cap\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\",\"ev\":[%s]}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->covered, s->cap, s->type, inf, pro_kind(s->kind), zs, ev);
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"covered\":%d,\"cap\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\",\"sent\":%ld,\"ev\":[%s]}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->covered, s->cap, s->type, inf, pro_kind(s->kind), zs, s->sent ? (long)(GetTickCount() - (DWORD)s->sent) : -1L, ev);
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {

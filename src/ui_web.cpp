@@ -167,13 +167,39 @@ static void profile_app_pick(int id) {
     app_auto_recheck();
 }
 
+// "key=value" lines -> key, value pairs; false on a key that isn't alnum/_, a value with control characters or
+// longer than a setting holds, or more than max lines
+static bool kv_lines(const std::string &kv, size_t max, std::vector<std::string> &part) {
+    for (size_t a = 0, b; a < kv.size(); a = b + 1) {
+        b = kv.find('\n', a); if (b == std::string::npos) b = kv.size();
+        std::string l = kv.substr(a, b - a); size_t eq = l.find('=');
+        if (eq == std::string::npos || eq == 0 || part.size() >= 2 * max || l.size() - eq > 256) return false;
+        for (size_t i = 0; i < l.size(); i++) {
+            unsigned char c = (unsigned char)l[i];
+            if (i < eq ? !(isalnum(c) || c == '_') : c < 0x20) return false;
+        }
+        part.push_back(l.substr(0, eq)); part.push_back(l.substr(eq + 1));
+    }
+    return true;
+}
+
+// the page says which profile a change was made in ("p"); one of a profile's own keys that arrives after another
+// profile took over belongs to the one left, not to this one
+static bool other_profile(const std::string &p, const char *sec, const char *key) {
+    return !p.empty() && atoi(p.c_str()) != cfg_geti("general", "profile", 0) && (!sec || (prof_keep && prof_keep(sec, key)));
+}
+
 static void on_message(const std::string &js) {
     std::string cmd = field(js, "cmd");
     if (cmd == "hello") { page_ready = true; send_state(); post_focus(GetForegroundWindow() == wnd); if (go_help) { go_help = false; post("{\"type\":\"go\",\"to\":\"help\"}"); } }
     else if (cmd == "get") send_state();
     else if (cmd == "effect") { app_set_effect(effect_index(field(js, "id").c_str())); post_status(); }
     else if (cmd == "brightness") { app_set_brightness(atoi(field(js, "v").c_str()) / 100.0f, 0); app_save_soon(); }
-    else if (cmd == "set") app_set(field(js, "s").c_str(), field(js, "k").c_str(), field(js, "v").c_str());
+    else if (cmd == "set") {
+        std::string s = field(js, "s"), k = field(js, "k");
+        if (other_profile(field(js, "p"), s.c_str(), k.c_str())) post_state();   // dropped: the page catches up with the profile in use
+        else app_set(s.c_str(), k.c_str(), field(js, "v").c_str());
+    }
     else if (cmd == "fans_set") {   // "key=value" lines, all written as one change; not in remote_allowed: the fans stay with this PC
         std::string kv = field(js, "kv"); std::vector<std::string> part; std::vector<const char *> p; bool ok = true;
         for (size_t a = 0, b; a < kv.size() && ok; a = b + 1) {
@@ -184,6 +210,20 @@ static void on_message(const std::string &js) {
             if (ok) { part.push_back(l.substr(0, eq)); part.push_back(l.substr(eq + 1)); }
         }
         if (ok && !part.empty()) { for (const std::string &x : part) p.push_back(x.c_str()); app_set_fans(p.data(), (int)p.size() / 2); }
+    }
+    else if (cmd == "comp_apply") {   // the constructor's Apply: its 8 layers and 3 knobs as one change. Not in remote_allowed
+        std::string req = field(js, "req"), err; std::vector<std::string> part; std::vector<const char *> p;
+        for (char &c : req) if (!isdigit((unsigned char)c)) c = '0';   // goes back into JSON as is
+        if (req.size() > 12) req.resize(12);
+        static const char *keys[] = { "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "k1", "k2", "k3" };
+        bool ok = kv_lines(field(js, "kv"), 11, part) && part.size() == 22;
+        for (int i = 0; ok && i < 11; i++) ok = part[2 * i] == keys[i];   // all of them, in order: an empty one is a cleared layer
+        if (!ok) err = "bad";
+        else if (other_profile(field(js, "p"), NULL, NULL)) err = "prof";
+        else { for (const std::string &x : part) p.push_back(x.c_str()); if (!app_comp_apply(p.data(), 11)) err = "save"; }
+        post_state();
+        char b[96]; snprintf(b, sizeof(b), "{\"type\":\"comp_done\",\"req\":\"%s\",\"err\":\"%s\"}", req.c_str(), err.c_str());
+        post(b);
     }
     else if (cmd == "toggle") { app_toggle_device(field(js, "k").c_str()); post_status(); }
     else if (cmd == "power") { app_power(); post_status(); }
@@ -199,13 +239,19 @@ static void on_message(const std::string &js) {
         // the preset window's values; "bri":"1" (older pages) keeps the current brightness
         std::string bri = field(js, "brightness");
         if (bri.empty() && field(js, "bri") == "1") bri = "cur";
+        // "fxkv": the effect's settings as "key=value" lines, for a constructor's draft that isn't the live one
+        std::string fxkv = field(js, "fxkv"); std::vector<std::string> part; std::vector<const char *> p;
+        bool has = js.find("\"fxkv\":") != std::string::npos;
+        if (has && !kv_lines(fxkv, 64, part)) { post_state(); return; }
+        for (const std::string &x : part) p.push_back(x.c_str());
         int id = app_preset_save(atoi(field(js, "id").c_str()), field(js, "name").c_str(), field(js, "effect").c_str(),
                                  field(js, "palette").c_str(), field(js, "speed").c_str(), bri.c_str(), field(js, "zones").c_str(),
-                                 field(js, "fx") == "cur");
+                                 field(js, "fx") == "cur", p.data(), has ? (int)p.size() / 2 : -1);
         if (id && field(js, "apply") == "1") app_preset_apply(id);   // shows what was just made
         post_state();
     }
     else if (cmd == "preset_delete") { app_preset_delete(atoi(field(js, "id").c_str())); post_state(); }
+    else if (cmd == "preset_copy") { app_preset_copy(atoi(field(js, "id").c_str()), field(js, "name").c_str()); post_state(); }
     else if (cmd == "profile") { app_profile_apply(atoi(field(js, "id").c_str())); post_state(); }
     else if (cmd == "profile_save") { app_profile_save(atoi(field(js, "id").c_str()), field(js, "name").c_str()); post_state(); }
     else if (cmd == "profile_app") { profile_app_pick(atoi(field(js, "id").c_str())); post_state(); }

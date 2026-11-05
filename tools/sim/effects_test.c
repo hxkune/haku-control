@@ -514,6 +514,9 @@ int main(int argc, char **argv) {
         CHECK(ok && ncl == 6, what);
         // a line longer than a config line: cut, not overrun
         { static char lng[2000]; memset(lng, 'x', sizeof(lng) - 1); memcpy(lng, "s:fill c:p0 ", 12); clayer L; CHECK(comp_parse(lng, &L) && L.col == 0, "a 2000-character layer line: read up to its limit, nothing overrun"); }
+        // a layer's name (the window's nm: word, last on the line): the core reads the layer exactly as without it
+        { clayer A, B; int sa = comp_parse("s:ring c:p1 x:20 dur:1.5 w:30 b:add", &A), sb = comp_parse("s:ring c:p1 x:20 dur:1.5 w:30 b:add nm:Кольцо_x:5_№2", &B);
+          CHECK(sa && sb && !memcmp(&A, &B, sizeof(A)), "a named layer reads the same as without its name"); }
         // the sound: only a layer that asks for it turns the capture on, and it is then live (not baked)
         strip(12); reset_cfg(); fresh(); effects_render(fx, &sc, &sn, 1 / 30.0, out);
         int quiet = effects_need_audio();

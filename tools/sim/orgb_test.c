@@ -147,6 +147,22 @@ static void event_checks(void) {
     CHECK(d.nev == EXT_EV && d.ev[EXT_EV - 1].n == 255, "events: the count stops at 255");
 }
 
+// ---- which of OpenRGB's devices is this PC's own memory stick (main.c yields the stick to it): place, bus, address
+static void ram_checks(void) {
+    const char *p0 = "I2C: PIIX4 SMBus port 0 at 0B00, address 0x70";
+    CHECK(orgb_ram_match("127.0.0.1", p0, 0x70) == 1, "RAM: this PC, PIIX4 port 0, the same address: the same stick");
+    CHECK(orgb_ram_match("localhost", p0, 0x70) == 1, "RAM: localhost is this PC too");
+    CHECK(orgb_ram_match("192.168.1.20", p0, 0x70) == 0, "RAM: another PC's OpenRGB at the same bus and address is never this PC's stick");
+    CHECK(orgb_ram_match("", p0, 0x70) == 0 && orgb_ram_match(NULL, p0, 0x70) == 0, "RAM: no host is not this PC");
+    CHECK(orgb_ram_match("127.0.0.1", p0, 0x71) == 0, "RAM: another address is another stick");
+    CHECK(orgb_ram_match("127.0.0.1", "I2C: PIIX4 SMBus port 0, address 0x7", 0x70) == 0, "RAM: 0x7 is not 0x70");
+    CHECK(orgb_ram_match("127.0.0.1", "I2C: PIIX4 SMBus port 1 at 0B20, address 0x70", 0x70) == 0, "RAM: the other PIIX4 port is another bus");
+    CHECK(orgb_ram_match("127.0.0.1", "I2C: SMBus, address 0x70", 0x70) == 2, "RAM: a bus not named: it may be, said so");
+    CHECK(orgb_ram_match("127.0.0.1", "I2C: SMBus", 0x70) == 2, "RAM: no address: it may be");
+    CHECK(orgb_ram_match("127.0.0.1", "HID: \\\\?\\hid#vid_1b1c", 0x70) == 0, "RAM: a USB device is not memory");
+    CHECK(orgb_ram_match("127.0.0.1", "", 0x70) == 0, "RAM: no location (an older settings file) is not a match");
+}
+
 // ---- memory: connects and scans as the app runs them, each on a thread of its own
 static unsigned __stdcall open_once(void *p) {
     ext_dev *d = p;
@@ -167,7 +183,7 @@ static SIZE_T private_bytes(void) {
 
 int main(void) {
     pace_checks();
-    fate_checks(); event_checks();
+    fate_checks(); event_checks(); ram_checks();
     unsigned count = 0;
     ctl = orgb_connect(HOST, &count);
     if (ctl == INVALID_SOCKET || count < 13) { printf("FAIL no fake server with --orgb-test on %s\n", HOST); return 1; }

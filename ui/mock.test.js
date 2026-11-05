@@ -24,6 +24,28 @@
     ok($('#undo').classList.contains('hidden'), 'the undo button still shows');
   });
 
+  test('a profile switch the core refuses: said, the one in use stays, its unsaved change kept, closed by hand', async () => {
+    const was = cv('general', 'profile', ''), other = profiles().find(p => String(p.id) !== was);
+    try {
+      await fresh(); profErrShow('');
+      setCfg('flow', 'speed', '6');
+      window.mockProfFail = 2; profGo(other.id); await wait(30);
+      ok($('#prof-btn').classList.contains('busy'), 'not shown as on its way');
+      await wait(150);
+      const box = $('#prof-err'), cur = profiles().find(p => String(p.id) === was);
+      ok(!box.classList.contains('hidden') && $('span', box).textContent === t('prof.err.leave', cur.name), 'the refusal: ' + $('span', box).textContent);
+      ok(box.getAttribute('role') === 'alert' && $('.x', box).getAttribute('aria-label') === t('close'), 'not read out or no name on its close');
+      ok(cv('general', 'profile', '') === was && $('#prof-cur').textContent === cur.name && !$('#prof-btn').classList.contains('busy'), 'the switcher shows the refused one: ' + $('#prof-cur').textContent);
+      ok(cv('flow', 'speed', '') === '6', 'the unsaved change is gone');
+      $('.x', box).click();
+      ok(box.classList.contains('hidden') && document.activeElement === $('#prof-btn'), 'not closed or the focus lost');
+      window.mockProfFail = 4; profGo(other.id); await wait(180);
+      ok($('span', box).textContent === t('prof.err.bad', other.name), 'a damaged file: ' + $('span', box).textContent);
+      window.mockProfFail = 0; profGo(other.id); await wait(220);
+      ok(cv('general', 'profile', '') === String(other.id) && box.classList.contains('hidden'), 'the retry did not switch or the old error stays');
+    } finally { window.mockProfFail = 0; profErrShow(''); if (was) { profGo(+was); await wait(220); } }
+  });
+
   test('a switch made by the core (clock, program) also starts undo over', async () => {
     await fresh();
     setCfg('flow', 'speed', '8');
@@ -220,6 +242,26 @@
     S.hw = Object.assign({}, S.hw, { done: 0 }); updateHw();
     ok($('#hw-more').classList.contains('hidden') && $$('#hw-list .found-row').length === 3, 'not everything shows before the first look is done');
     S.hw = was; S.orgb = o; updateHw();
+  });
+
+  test('memory: the card and the hardware row say who lights each stick, from the core\'s ram_src; a maybe is explained', async () => {
+    await fresh(); showTab('devices');
+    const keep = { src: STATE.ram_src, own: STATE.ram_own }, it = { cat: 'ram', maker: 'G.Skill', name: 'F4', id: '' };
+    const at = async (src, own) => { STATE.ram_src = src; STATE.ram_own = own; emit(STATE); await wait(60); };
+    try {
+      await at([0, 0], 0);
+      ok($('#ram-status').textContent.endsWith(t('ram.src.haku')) && $('#ram-unsure').classList.contains('hidden') && hwRoute(it).cls === 'on', 'haku: ' + $('#ram-status').textContent);
+      await at([1, 1], 0);
+      ok($('#ram-status').textContent.endsWith(t('ram.src.orgb')) && hwRoute(it).text === t('ram.src.orgb'), 'OpenRGB: ' + $('#ram-status').textContent);
+      await at([0, 2], 0);
+      const x = $('#ram-status').textContent;
+      ok(x.includes(t('ram.stick', 1, t('ram.src.haku'))) && x.includes(t('ram.stick', 2, t('ram.src.unsure'))), 'per stick: ' + x);
+      ok(!$('#ram-unsure').classList.contains('hidden') && hwRoute(it).cls === 'warn', 'the maybe is not explained');
+      await at([0, 0], 1);
+      ok($('#ram-status').textContent.endsWith(t('ram.src.other')) && hwRoute(it).cls === 'off', 'given back: ' + $('#ram-status').textContent);
+      STATE.ram_src = undefined; await at(undefined, 0);
+      ok($('#ram-status').textContent.endsWith(t('ram.src.haku')), 'an older core without ram_src');
+    } finally { await at(keep.src, keep.own); }
   });
 
   test('hardware nothing lights: Ask for support fills the report with the device and the diagnostics, and sends nothing', async () => {
@@ -1287,7 +1329,7 @@
     emit(none); await wait(80);
     ok(!$('#home-first').classList.contains('hidden') && $('#home-attn').classList.contains('hidden') && $('#home-cool').classList.contains('hidden'), 'nothing found: where to start not shown alone');
     emit(STATE); await wait(80);
-    ok(['en', 'ru', 'fr'].every(l => ['home.first', 'home.attn', 'help.title', 'help.start.text', 'help.offline.text', 'help.orgb.text', 'help.conflict.text', 'help.fans.text', 'help.diag.text', 'help.diag.open'].every(k => STR[l][k])), 'a language misses the help texts');
+    ok(['en', 'ru', 'fr'].every(l => ['home.first', 'home.attn', 'help.title', 'help.start.text', 'help.terms', 'help.terms.text', 'help.offline.text', 'help.orgb.text', 'help.conflict.text', 'help.fans.text', 'help.diag.text', 'help.diag.open'].every(k => STR[l][k])), 'a language misses the help texts');
   });
 
   test('home cooling: old readings not shown as now, a lost QUADRO is one row while the board reads on; problems first, worst first, each opens its fan and goes once fixed', async () => {
@@ -1535,11 +1577,13 @@
   });
 
   // the first-run guide: each test sets its own devices and puts the sample ones back
-  const gdKeep = () => JSON.stringify({ devs: STATE.ext.devs, found: STATE.ext.found, bulbs: STATE.bulbs, ctls: STATE.nano.ctls, prof: STATE.cfg.general.profile });
-  const gdBack = async k => { const o = JSON.parse(k); Object.assign(STATE.ext, { devs: o.devs, found: o.found, scanning: 0 }); STATE.bulbs = o.bulbs; STATE.nano.ctls = o.ctls;
+  const gdKeep = () => JSON.stringify({ devs: STATE.ext.devs, found: STATE.ext.found, bulbs: STATE.bulbs, ctls: STATE.nano.ctls, prof: STATE.cfg.general.profile, sticks: STATE.sticks, msi: STATE.msi, msi_own: STATE.msi_own, ram_src: STATE.ram_src });
+  const gdBack = async k => { const o = JSON.parse(k); Object.assign(STATE.ext, { devs: o.devs, found: o.found, scanning: 0 }); STATE.bulbs = o.bulbs; STATE.nano.ctls = o.ctls; Object.assign(STATE, { sticks: o.sticks, msi: o.msi, msi_own: o.msi_own, ram_src: o.ram_src });
     STATE.test = ''; STATE.cfg.general.profile = o.prof; window.mockScanStuck = window.mockSaveFail = 0; GUIDE.tips = null; GUIDE.saving = null; GUIDE.adding.clear(); GUIDE.test = '';
     setCfg('general', 'guide', ''); emit(STATE); await wait(120); };
-  const gdSet = async (devs, step) => { Object.assign(STATE.ext, { devs, found: [], scanning: 0 }); STATE.bulbs = []; STATE.nano.ctls = []; emit(STATE); await wait(80);
+  // direct: haku's own memory and MSI drivers, off unless a test is about them
+  const gdSet = async (devs, step, direct) => { Object.assign(STATE.ext, { devs, found: [], scanning: 0 }); STATE.bulbs = []; STATE.nano.ctls = [];
+    Object.assign(STATE, { sticks: 0, msi: 0, msi_own: 0, ram_src: [] }, direct); emit(STATE); await wait(80);
     showTab('home'); setCfg('general', 'guide', step); updateGuide(); await wait(60); };
   const gd = g => $(`#guide [data-g="${g}"]`), gdSt = () => $('#guide .gd-st').textContent, gdH = () => $('#gd-h').textContent;
   const noHw = () => ok(!sent.some(o => /^fans|^cf_|^orgb_stop|^pc_own|^profile$/.test(o.cmd) || o.cmd === 'set' && o.s === 'fans'), 'fans, programs or the own lighting touched: ' + JSON.stringify(sent));
@@ -1658,6 +1702,41 @@
     } finally { await gdBack(k); }
   });
 
+  test('guide with only haku\'s own memory and MSI: found, testable, continue; an unclear or given-back one is explained; none goes on without lights', async () => {
+    const k = gdKeep();
+    try {
+      await fresh(); await gdSet([], 'dev', { sticks: 2, msi: 1, ram_src: [0, 0] });
+      ok(gdAny() && gd('next') && gd('next').classList.contains('primary'), 'direct devices not counted as found');
+      const txt = $('#guide').textContent;
+      ok(txt.includes(t('pc.memory')) && txt.includes(stripName()) && txt.includes(t('ram.src.haku')), 'memory and MSI not listed: ' + txt.slice(0, 200));
+      gd('next').click(); await wait(40);
+      ok(gdH() === t('gd.test.h') && $('#gd-dev') && [...$('#gd-dev').options].map(o => o.value).join() === 'ram,gpu', 'the test not offered for them: ' + ($('#gd-dev') ? [...$('#gd-dev').options].map(o => o.value) : 'no list'));
+      const tests = () => sent.filter(o => o.cmd === 'dev_test').map(o => o.zone);
+      sent.length = 0; gd('check').click(); await wait(80);
+      ok(tests().join() === 'zone.ram' && gdSt() === t('gd.t.on', `ENE · 2 ${t('chip.pcs')}`), 'Check on memory: ' + tests() + ' / ' + gdSt());
+      gd('stop').click(); await wait(20);
+      ok(tests().join() === 'zone.ram,' && gdSt() === t('gd.t.back'), 'Stop on memory: ' + tests() + ' / ' + gdSt());
+      const sel = $('#gd-dev'); sel.value = 'gpu'; sel.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
+      sent.length = 0; gd('check').click(); await wait(80); gd('works').click(); await wait(40);
+      ok(tests().join() === 'zone.gpu,' && gdSt() === t('gd.t.ok'), 'Check on MSI: ' + tests() + ' / ' + gdSt());
+      // OpenRGB might own both sticks, and another program has the MSI: not tested, each with its reason and card
+      // (one stick haku's own is still tested: the colour goes to that one only, main.c build_scene)
+      await gdSet([], 'test', { sticks: 2, msi: 1, msi_own: 1, ram_src: [2, 2] });
+      ok(!$('#gd-dev') && !gd('check') && $('#guide').textContent.includes(t('gd.t.none')), 'an unclear device offered for the test');
+      const g = $('#guide').textContent;
+      ok(g.includes(ramSrcText()) && g.includes(t('ram.src.other')) && $$('#guide [data-g="card"]').length === 2, 'the reasons or cards missing');
+      // nothing at all: the search ends empty, and the guide still goes on
+      await gdSet([], 'dev'); gd('scan').click(); await wait(400);
+      ok(gdSt() === t('gd.d.none') && gd('next') && gd('next').textContent === t('gd.d.go'), 'no way on without lights: ' + gdSt());
+      gd('next').click(); await wait(40);
+      ok(gdH() === t('gd.test.h') && $('#guide').textContent.includes(t('gd.t.none')) && gd('next'), 'continue without lights did not reach the next step');
+      window.mockScanStuck = 1; await gdSet([], 'dev'); gd('scan').click(); await wait(30); GUIDE.scanAt -= 31000; updateGuide();
+      ok(gdSt() === t('gd.d.err') && gd('next') && gd('next').textContent === t('gd.d.go'), 'a search error leaves no way on');
+      ok(!sent.some(o => o.cmd === 'set' && /^zone\.|^layout$/.test(o.s)), 'the guide changed the lighting settings: ' + JSON.stringify(sent));
+      noHw();
+    } finally { await gdBack(k); }
+  });
+
   test('guide save step: a new profile only, sent once, the name kept on an error, done only when the core has it; tips', async () => {
     const k = gdKeep(), before = profiles().map(p => p.id + p.name);
     let made = 0;
@@ -1665,12 +1744,18 @@
       await fresh(); await gdSet(STATE.ext.devs, 'save');
       ok($('#gd-name').value === gdName() && !profiles().some(p => p.name === $('#gd-name').value), 'the suggested name is taken: ' + $('#gd-name').value);
       window.mockSaveFail = 1; $('#gd-name').value = 'My setup'; $('#gd-name').focus();
-      key($('#gd-name'), 'Enter'); gd('save').click(); gd('save').click(); await wait(80);
+      key($('#gd-name'), 'Enter'); gd('save').click(); gd('save').click(); await wait(20);
       const saves = sent.filter(o => o.cmd === 'profile_save');
       ok(saves.length === 1 && saves[0].id === '0' && saves[0].name === 'My setup', 'saves sent: ' + JSON.stringify(saves));
       ok(gdSt() === t('gd.s.saving') && gd('save').disabled && !$('#guide').textContent.includes(t('gd.done.h')), 'shown done before the core has it');
+      await wait(100);   // the core's refusal (prof.err 1): said at once, not after the wait
+      ok(gdSt() === t('prof.err.write') && $('#guide .gd-st.bad') && $('#gd-name').value === 'My setup' && gd('save').textContent === t('gd.s.retry'), 'the refusal: ' + gdSt());
+      ok(profiles().length === before.length, 'a profile shows that the core did not save');
+      // a core that says nothing: after the wait the same retry
+      window.mockSaveFail = 'silent'; gd('save').click(); await wait(100);
+      ok(gdSt() === t('gd.s.saving'), 'no answer yet, not saving: ' + gdSt());
       GUIDE.saving.at -= 7000; updateGuide();
-      ok(gdSt() === t('gd.s.fail', PROFILE_MAX) && $('#guide .gd-st.bad') && $('#gd-name').value === 'My setup' && gd('save').textContent === t('gd.s.retry'), 'the error: ' + gdSt());
+      ok(gdSt() === t('gd.s.fail', PROFILE_MAX) && $('#gd-name').value === 'My setup' && gd('save').textContent === t('gd.s.retry'), 'the error: ' + gdSt());
       window.mockSaveFail = 0; gd('save').click(); await wait(200); made = 1;
       ok(gdH() === t('gd.done.h') && $('#guide').textContent.includes(t('gd.done.t', 'My setup')) && cv('general', 'guide') === 'done', 'not done: ' + gdH());
       ok(before.every(x => profiles().some(p => p.id + p.name === x)) && profiles().length === before.length + 1, 'the profiles there were changed');
@@ -1926,6 +2011,8 @@
 
   // the constructor: [custom] l1..l8 and k1..k3 as effects.c comp_load reads them
   const cmpLines = () => [1, 2, 3, 4, 5, 6, 7, 8].map(i => cv('custom', 'l' + i, '')).filter(Boolean);
+  // what is lit: [custom], or the reactor when it is empty (effects.c comp_load)
+  const litLines = () => cmpLines().length ? cmpLines() : fxPreview.comp.DEFAULT.map(s => fxPreview.comp.line(fxPreview.comp.parse(s)));
   const cmpKeep = async fn => {
     const was = S.effect, keep = JSON.stringify(S.cfg);
     try { await fn(); } finally {
@@ -1933,60 +2020,167 @@
       flushSets(); STATE.cfg = JSON.parse(keep); STATE.effect = S.effect = was; bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(120); renderEffectSide();
     }
   };
-  test('constructor: add, hide, move and delete layers; its own undo and redo; every step is the [custom] lines', async () => {
+  // the editor's draft as [lines, knobs]
+  const dl = () => JSON.parse(CMP.cur)[0], dk = () => JSON.parse(CMP.cur)[1];
+  const tutPick = v => { const s = $('#cdlg-tut'); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); };
+  const cmpSets = () => sent.filter(o => o.cmd === 'set' && o.s === 'custom' || o.cmd === 'comp_apply');
+  test('constructor: add, hide, move and delete layers; its own undo and redo; a draft until Apply, then [custom] at once', async () => {
     await fresh(); showTab('effects');
     await cmpKeep(async () => {
       for (let i = 1; i <= 8; i++) setCfg('custom', 'l' + i, ''); for (let i = 1; i <= 3; i++) setCfg('custom', 'k' + i, '');
-      S.effect = 'custom'; renderEffectSide();
+      STATE.effect = S.effect = 'custom'; renderEffectSide(); flushSets();
       ok($$('#fx-params input[data-kn]').length === 2 && $('#fx-params button[data-kn]'), 'side panel: the reactor knobs');
-      $('#cmp-open').click(); await wait(80);
-      const li = () => $$('#cdlg-list li'), names = () => li().map(x => x.querySelector('.cdlg-pick').textContent);
-      ok(li().length === 3 && $('#cdlg-undo').disabled && $('#cdlg-redo').disabled, 'opens on the reactor, nothing to undo');
+      $('#cmp-open').click(); await wait(80); sent.length = 0;
+      const li = () => $$('#cdlg-list li');
+      ok(li().length === 3 && $('#cdlg-undo').disabled && $('#cdlg-redo').disabled && $('#cdlg-apply').disabled && $('#cdlg-revert').disabled, 'opens on the reactor, nothing to undo or apply');
       $('#cdlg-add').click(); await wait(20);
-      ok(li().length === 4 && li()[3].classList.contains('on') && cmpLines().length === 4 && cmpLines()[3].startsWith('s:grad'), 'add: ' + cmpLines().join(' | '));
-      ok(cmpLines()[0] === fxPreview.comp.DEFAULT[0] && cv('custom', 'k3', '').startsWith('3 n '), 'the reactor written whole with its knobs');
+      ok(li().length === 4 && li()[3].classList.contains('on') && dl().length === 4 && dl()[3].startsWith('s:grad'), 'add: ' + dl().join(' | '));
+      ok(dl()[0] === fxPreview.comp.DEFAULT[0] && dk()[2].startsWith('3 n '), 'the reactor whole with its knobs');
+      ok(!cmpLines().length && !$('#cdlg-apply').disabled && $('#cdlg-st').classList.contains('draft') && $('#cdlg-st').textContent === t('cmp.st.draft'), 'a draft: the lighting untouched, Apply offered');
       li()[3].querySelector('[data-a="up"]').click(); await wait(20);
-      ok(cmpLines()[2].startsWith('s:grad') && cmpLines()[3].startsWith('s:spark') && li()[2].classList.contains('on'), 'up: ' + cmpLines().join(' | '));
-      ok(cv('custom', 'k3', '').startsWith('4 n '), 'a knob follows its layer when the order changes: ' + cv('custom', 'k3', ''));
+      ok(dl()[2].startsWith('s:grad') && dl()[3].startsWith('s:spark') && li()[2].classList.contains('on'), 'up: ' + dl().join(' | '));
+      ok(dk()[2].startsWith('4 n '), 'a knob follows its layer when the order changes: ' + dk()[2]);
       li()[0].querySelector('[data-a="eye"]').click(); await wait(20);
-      ok(/hide:1/.test(cmpLines()[0]) && li()[0].classList.contains('off'), 'hide: ' + cmpLines()[0]);
+      ok(/hide:1/.test(dl()[0]) && li()[0].classList.contains('off'), 'hide: ' + dl()[0]);
       // a setting dragged is one step however many inputs it sends
       li()[2].querySelector('[data-a="pick"]').click(); await wait(20);
       const r = $('#cdlg-edit input[data-p="v"]'); ok(r, 'no speed slider on the gradient');
       for (const v of [30, 45, 60]) { r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })); }
       await wait(300); flushSets();
-      ok(/ v:60/.test(cmpLines()[2]), 'drag: ' + cmpLines()[2]);
+      ok(/ v:60/.test(dl()[2]), 'drag: ' + dl()[2]);
       li()[3].querySelector('[data-a="del"]').click(); await wait(20);
-      ok(cmpLines().length === 3 && !cv('custom', 'k3', ''), 'delete takes its knob too: ' + cv('custom', 'k3', ''));
-      const steps = [cmpLines().join('|')], top = UNDO[UNDO.length - 1];
-      key(document.body, 'z', true); await wait(20); steps.push(cmpLines().join('|'));
-      ok(cmpLines().length === 4 && cv('custom', 'k3', '').startsWith('4 n ') && / v:60/.test(cmpLines()[2]), 'undo the delete');
+      ok(dl().length === 3 && !dk()[2], 'delete takes its knob too: ' + dk()[2]);
+      const steps = [dl().join('|')], top = UNDO[UNDO.length - 1];
+      key(document.body, 'z', true); await wait(20); steps.push(dl().join('|'));
+      ok(dl().length === 4 && dk()[2].startsWith('4 n ') && / v:60/.test(dl()[2]), 'undo the delete');
       key(document.body, 'z', true); await wait(20);
-      ok(!/ v:60/.test(cmpLines()[2]), 'undo the drag in one step: ' + cmpLines()[2]);
+      ok(!/ v:60/.test(dl()[2]), 'undo the drag in one step: ' + dl()[2]);
       key(document.body, 'y', true); key(document.body, 'y', true); await wait(20);
-      ok(cmpLines().join('|') === steps[0] && $('#cdlg-redo').disabled, 'redo back to the last');
+      ok(dl().join('|') === steps[0] && $('#cdlg-redo').disabled, 'redo back to the last');
       ok(top && UNDO.includes(top), 'Ctrl+Z in the constructor is its own: the window undo did not run');
       // the shape and the colour: own colour shows a swatch; time and sound open their parts with a visible amount
       const sel = (f, v) => { const s = $(`#cdlg-edit select[data-f="${f}"]`); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); };
       sel('shape', 3); await wait(20); ok($('#cdlg-edit input[data-p="dur"]') && $('#cdlg-edit input[type=checkbox][data-p="fade"]'), 'ring settings');
       sel('col', -2); await wait(20); ok($('#cdlg-sw'), 'own colour swatch');
-      sel('ap', fxPreview.comp.LPD.findIndex(d => d[0] === 'sz')); await wait(20); ok(/ap:sz/.test(cmpLines()[2]) && /aa:\d/.test(cmpLines()[2]) && $('#cdlg-edit details[data-d="anim"]').open, 'animate: ' + cmpLines()[2]);
-      sel('mp', 0); await wait(20); ok(/mp:o/.test(cmpLines()[2]) && /ma:\d/.test(cmpLines()[2]) && $('#cdlg-edit select[data-f="ms"]'), 'sound: ' + cmpLines()[2]);
+      sel('ap', fxPreview.comp.LPD.findIndex(d => d[0] === 'sz')); await wait(20); ok(/ap:sz/.test(dl()[2]) && /aa:\d/.test(dl()[2]) && $('#cdlg-edit details[data-d="anim"]').open, 'animate: ' + dl()[2]);
+      sel('mp', 0); await wait(20); ok(/mp:o/.test(dl()[2]) && /ma:\d/.test(dl()[2]) && $('#cdlg-edit select[data-f="ms"]'), 'sound: ' + dl()[2]);
+      ok(!cmpLines().length && !cmpSets().length, 'nothing written while editing: ' + JSON.stringify(cmpSets()));
+      // Apply: one comp_apply with all 11 lines for the profile in use; then [custom] is the draft
+      $('#cdlg-apply').click(); await wait(10);
+      ok($('#cdlg-apply').disabled && $('#cdlg-st').textContent === t('cmp.st.sent'), 'applying: ' + $('#cdlg-st').textContent);
+      await wait(120);
+      const ca = sent.filter(o => o.cmd === 'comp_apply');
+      ok(ca.length === 1 && ca[0].p === cv('general', 'profile', '') && ca[0].kv.split('\n').length === 11 && !sent.some(o => o.cmd === 'set' && o.s === 'custom'), 'one comp_apply: ' + JSON.stringify(cmpSets()));
+      ok(cmpLines().join('|') === dl().join('|') && cv('custom', 'k3', '') === '' && $('#cdlg-st').classList.contains('ok') && $('#cdlg-apply').disabled, 'applied: ' + cmpLines().join(' | '));
+      // Esc with nothing new closes at once
       key(document.body, 'Escape'); await wait(20);
       ok($('#cdlg').classList.contains('hidden'), 'Esc closes');
+    });
+  });
+
+  test('constructor: closing with changes asks; Save the draft keeps it in Drafts; Undo the changes is one undo step; errors of Apply', async () => {
+    await fresh(); showTab('effects');
+    await cmpKeep(async () => {
+      try {
+        STATE.effect = S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+        const live = cmpLines().join('|'), drafts = () => Object.keys(S.cfg).filter(s => /^cdraft\.\d+$/.test(s) && S.cfg[s].at);
+        const n0 = drafts().length;
+        tutPick('lights'); await wait(20);
+        ok(dl().length === 2 && cmpLines().join('|') === live, 'the tutorial is in the draft only');
+        // Esc asks; Esc again goes back to editing; the close button asks again
+        key(document.body, 'Escape'); await wait(20);
+        ok(!$('#cdlg').classList.contains('hidden') && !$('#cdlg-ask').classList.contains('hidden') && $('#cdlg-row').classList.contains('hidden') && document.activeElement === $('#cdlg-ask-keep'), 'Esc asks first');
+        key(document.body, 'Escape'); await wait(20);
+        ok($('#cdlg-ask').classList.contains('hidden') && !$('#cdlg-row').classList.contains('hidden') && dl().length === 2, 'Esc again: back to editing');
+        $('#cdlg-close').click(); await wait(20); $('#cdlg-ask-back').click(); await wait(20);
+        ok(!$('#cdlg').classList.contains('hidden') && $('#cdlg-ask').classList.contains('hidden'), 'Keep editing');
+        $('#cdlg-close').click(); await wait(20); $('#cdlg-ask-drop').click(); await wait(40);
+        ok($('#cdlg').classList.contains('hidden') && drafts().length === n0 && cmpLines().join('|') === live, 'Don\'t save: closed, no draft, the lighting as it was');
+        // Save the draft: kept with the profile it was for, offered in the menu, loads back as a step
+        $('#cmp-open').click(); await wait(60); tutPick('lights'); await wait(20);
+        $('#cdlg-close').click(); await wait(20); $('#cdlg-ask-keep').click(); await wait(60);
+        const D = drafts();
+        ok($('#cdlg').classList.contains('hidden') && D.length === n0 + 1 && cmpLines().join('|') === live, 'Save the draft: ' + JSON.stringify(D));
+        const sec = D.find(s => /s:dots/.test(S.cfg[s].l2 || ''));
+        ok(sec && S.cfg[sec].prof === cv('general', 'profile', '') && S.cfg[sec].name.startsWith(t('cmp.draft.name', '').trim()), 'the draft section: ' + JSON.stringify(S.cfg[sec]));
+        $('#cmp-open').click(); await wait(60);
+        ok($$('#cdlg-tut optgroup option').some(o => o.value === 'd' + sec.split('.')[1]), 'the draft is in the menu');
+        tutPick('d' + sec.split('.')[1]); await wait(20);
+        ok(dl().length === 2 && /s:dots/.test(dl()[1]) && !$('#cdlg-undo').disabled && cmpLines().join('|') === live, 'the draft loads into the editor, not the lighting');
+        $('#cdlg-revert').click(); await wait(20);
+        ok(JSON.stringify(dl()) === JSON.stringify(litLines()) && $('#cdlg-revert').disabled && $('#cdlg-apply').disabled, 'Undo the changes: back to the lighting');
+        key(document.body, 'z', true); await wait(20);
+        ok(dl().length === 2 && /s:dots/.test(dl()[1]), 'Undo the changes is itself one step');
+        // Apply refused: nothing taken, the draft still to apply
+        window.mockCompFail = 'bad'; $('#cdlg-apply').click(); await wait(120);
+        ok($('#cdlg-st').classList.contains('bad') && $('#cdlg-st').textContent === t('cmp.st.err.bad') && !$('#cdlg-apply').disabled && cmpLines().join('|') === live, 'refused: ' + $('#cdlg-st').textContent);
+        // in use but not on disk: said so, not shown as plainly applied
+        window.mockCompFail = 'save'; $('#cdlg-apply').click(); await wait(120);
+        ok($('#cdlg-st').textContent === t('cmp.st.err.save') && $('#cdlg-st').classList.contains('bad') && cmpLines().length === 2 && $('#cdlg-apply').disabled, 'not saved: ' + $('#cdlg-st').textContent);
+        // no answer: said after a while, the draft kept
+        tutPick('reactor'); await wait(20);
+        window.mockCompFail = 'silent'; $('#cdlg-apply').click(); await wait(4200);
+        ok($('#cdlg-st').textContent === t('cmp.st.err.noreply') && !$('#cdlg-apply').disabled && cmpLines().length === 2, 'no answer: ' + $('#cdlg-st').textContent);
+        // a reply that comes after the window was closed and opened again is not taken for the new one
+        const req = CMP.req || String(cmpReq); cmpClose(); $('#cmp-open').click(); await wait(60);
+        emit({ type: 'comp_done', req, err: '' }); await wait(20);
+        ok($('#cdlg-st').textContent === '' && $('#cdlg-apply').disabled, 'a late reply did nothing: ' + $('#cdlg-st').textContent);
+      } finally { window.mockCompFail = undefined; }
+    });
+  });
+
+  test('constructor: a profile switch under the editor keeps the draft in Drafts, never applies it; the slider still on its way is dropped', async () => {
+    await fresh(); showTab('effects');
+    const was = cv('general', 'profile', ''), other = profiles().find(p => String(p.id) !== was);
+    await cmpKeep(async () => {
+      try {
+        STATE.effect = S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+        const live = cmpLines().join('|'), k1 = cv('custom', 'k1', '');
+        tutPick('lights'); await wait(20);
+        window.mockCompFail = 'silent'; $('#cdlg-apply').click(); await wait(20);
+        const req = CMP.req;
+        setCfgSoon('custom', 'k1', '9 x 0 1 late');   // a panel knob still waiting to go when the profile changes
+        sent.length = 0; window.mockCompFail = undefined;
+        bridge.postMessage(JSON.stringify({ cmd: 'profile', id: String(other.id) })); await wait(250);
+        ok(cv('general', 'profile', '') === String(other.id) && CMP.prof === String(other.id), 'the editor follows the profile: ' + CMP.prof);
+        ok(!$('#cdlg-moved').classList.contains('hidden') && $('#cdlg-moved-text').textContent === t('cmp.moved'), 'said: ' + $('#cdlg-moved-text').textContent);
+        const sec = Object.keys(S.cfg).find(s => /^cdraft\.\d+$/.test(s) && S.cfg[s].prof === was && /s:dots/.test(S.cfg[s].l2 || ''));
+        ok(sec, 'the draft kept for the old profile: ' + JSON.stringify(Object.keys(S.cfg).filter(s => s.startsWith('cdraft'))));
+        ok(!sent.some(o => o.cmd === 'comp_apply' || o.cmd === 'set' && o.s === 'custom' && o.p !== was), 'nothing sent for the new profile\'s [custom]: ' + JSON.stringify(sent.filter(o => o.cmd !== 'get')));
+        await wait(100); flushSets();
+        ok(cv('custom', 'k1', '') === k1 && cmpLines().join('|') === live, 'the slider and the draft did not reach the new profile');
+        ok($('#cdlg-undo').disabled && $('#cdlg-redo').disabled && CMP.req === '', 'no undo, no pending Apply across profiles');
+        emit({ type: 'comp_done', req, err: '' }); await wait(20);
+        ok(!$('#cdlg-st').classList.contains('ok'), 'the old Apply\'s answer is not taken');
+        // the old profile's setting sent late is dropped by the core (ui_web.cpp other_profile) and the page catches up
+        bridge.postMessage(JSON.stringify({ cmd: 'set', s: 'custom', k: 'k1', v: 'stale', p: was })); await wait(80);
+        ok(cv('custom', 'k1', '') === k1, 'a set for the old profile was taken');
+        // the draft stays in the editor until asked: as a preset (nothing applied), or the current profile's composition
+        ok(dl().length === 2 && /s:dots/.test(dl()[1]), 'the draft still shown');
+        $('#cdlg-moved-preset').click(); await wait(60);
+        ok(!$('#pdlg').classList.contains('hidden') && $('#cdlg').classList.contains('hidden'), 'the preset window');
+        sent.length = 0; $('#pdlg-form').requestSubmit(); await wait(120);
+        const ps = sent.find(o => o.cmd === 'preset_save');
+        ok(ps && ps.apply === '0' && /l2=s:dots/.test(ps.fxkv) && cmpLines().join('|') === live, 'saved as a preset, not applied: ' + JSON.stringify(ps));
+        ok(!$('#cdlg').classList.contains('hidden') && $('#cdlg-st').textContent.includes(ps.name), 'back in the editor, said: ' + $('#cdlg-st').textContent);
+        $('#cdlg-moved-open').click(); await wait(20);
+        ok($('#cdlg-moved').classList.contains('hidden') && dl().join('|') === litLines().join('|') && $('#cdlg-apply').disabled, 'the current profile\'s composition');
+      } finally { window.mockCompFail = undefined; }
     });
   });
 
   test('constructor: the tutorials are plain layers; a panel knob moves its layer\'s setting; Save as preset sends the layers', async () => {
     await fresh(); showTab('effects');
     await cmpKeep(async () => {
-      S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
-      const tut = $('#cdlg-tut'); tut.value = 'lights'; tut.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
-      ok(cmpLines().length === 2 && cmpLines()[0].startsWith('s:grad') && /s:dots.*b:mask/.test(cmpLines()[1]) && !cv('custom', 'l3', ''), 'lights: ' + cmpLines().join(' | '));
-      ok(cv('custom', 'k2', '') === '2 n 4 30 ' + t('cmp.k.lights'), 'knob: ' + cv('custom', 'k2', ''));
-      tut.value = 'reactor'; tut.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
-      ok(JSON.stringify(cmpLines()) === JSON.stringify(fxPreview.comp.DEFAULT.map(s => fxPreview.comp.line(fxPreview.comp.parse(s)))), 'reactor: ' + cmpLines().join(' | '));
-      $('#cdlg-done').click(); await wait(20);
+      STATE.effect = S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+      tutPick('lights'); await wait(20);
+      ok(dl().length === 2 && dl()[0].startsWith('s:grad') && /s:dots.*b:mask/.test(dl()[1]), 'lights: ' + dl().join(' | '));
+      ok(dk()[1] === '2 n 4 30 ' + t('cmp.k.lights'), 'knob: ' + dk()[1]);
+      tutPick('reactor'); await wait(20);
+      $('#cdlg-apply').click(); await wait(120);
+      ok(JSON.stringify(litLines()) === JSON.stringify(fxPreview.comp.DEFAULT.map(s => fxPreview.comp.line(fxPreview.comp.parse(s)))), 'reactor: ' + litLines().join(' | '));
+      $('#cdlg-close').click(); await wait(20);
+      ok($('#cdlg').classList.contains('hidden'), 'applied: Close closes without asking');
       // Sparks 1..30: the slider at 100 is 30 sparks
       const r = $('#fx-params input[data-kn="2"]'); r.value = 100; r.dispatchEvent(new Event('input', { bubbles: true })); await wait(300); flushSets();
       ok(/ n:30/.test(cv('custom', 'l3', '')) && $('#fx-params b[data-kn="2"]').textContent === '30', 'knob: ' + cv('custom', 'l3', ''));
@@ -1994,9 +2188,17 @@
       ok($('#cdlg').classList.contains('hidden') && !$('#pdlg').classList.contains('hidden'), 'the preset window');
       $('#pdlg-form').requestSubmit(); await wait(80);
       const ps = sent.filter(o => o.cmd === 'preset_save');
-      ok(ps.length === 1 && ps[0].effect === 'custom' && ps[0].id === '0' && ps[0].fx === '', 'save: ' + JSON.stringify(ps));
+      ok(ps.length === 1 && ps[0].effect === 'custom' && ps[0].id === '0' && ps[0].fx === '' && ps[0].apply === '1' && ps[0].fxkv.split('\n').length === 11, 'save (nothing unapplied: the preset in use): ' + JSON.stringify(ps));
       const P = presets().filter(p => p.effect === 'custom').pop();
       ok(P && / n:30/.test(cv('preset.' + P.id, 'fx.l3', '')), 'the preset keeps the layers');
+      ok(!$('#cdlg').classList.contains('hidden') && $('#cdlg-st').textContent.includes(P.name), 'back in the constructor: ' + $('#cdlg-st').textContent);
+      // a draft saved as a preset: the preset has the draft, the lighting does not
+      const live = cmpLines().join('|'); tutPick('lights'); await wait(20);
+      sent.length = 0; $('#cdlg-save').click(); await wait(60); $('#pdlg-form').requestSubmit(); await wait(120);
+      ok(sent.filter(o => o.cmd === 'preset_save').map(o => o.apply).join() === '0', 'a draft saved as a preset was applied');
+      const Q =presets().filter(p => p.effect === 'custom').pop();
+      ok(Q && Q.id !== P.id && /s:dots/.test(cv('preset.' + Q.id, 'fx.l2', '')) && !cv('preset.' + Q.id, 'fx.l3', '') && cmpLines().join('|') === live && dl().length === 2, 'the draft as a preset, the lighting kept');
+      cmpClose();
       // the preset showing, saved again: the core is told to take the layers as they are now
       sent.length = 0; presetDialog(P.id, P.name); await wait(40); $('#pdlg-form').requestSubmit(); await wait(60);
       ok(sent.some(o => o.cmd === 'preset_save' && o.id === String(P.id) && o.fx === 'cur'), 'resave: ' + JSON.stringify(sent.filter(o => o.cmd === 'preset_save')));
@@ -2007,8 +2209,8 @@
     await fresh(); showTab('effects');
     await cmpKeep(async () => {
       for (let i = 1; i <= 8; i++) setCfg('custom', 'l' + i, ''); for (let i = 1; i <= 3; i++) setCfg('custom', 'k' + i, '');
-      S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
-      const tut = $('#cdlg-tut'); tut.value = 'lights'; tut.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
+      STATE.effect = S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+      tutPick('lights'); await wait(20);
       $('#cdlg-export').click(); await wait(60);
       const code = $('#share-code').value;
       ok(!$('#share-dlg').classList.contains('hidden') && $('#pub-row').classList.contains('hidden') && $('#share-note').textContent.includes(t('cmp.comm')), 'share window, no Publish');
@@ -2020,15 +2222,253 @@
       ok(!presetFromCode(raw({ ...base, c: { l: Array(9).fill('s:fill'), k: [] } })), 'nine layers are refused');
       ok(!presetFromCode(raw({ ...base, c: { l: ['s:fill'], k: ['2 o 0 100'] } })), 'a knob on a missing layer is refused');
       ok(!presetFromCode(raw(base)), 'a constructor code without layers is refused');
-      closeShare();
-      // importing: the layers go to [custom], then a new preset of them
+      // strict: what is not known or out of range refuses the whole code, a newer version is said so
+      const why = o => codeRead(typeof o === 'string' ? o : raw(o)).err;
+      ok(why('haku:' + 'A'.repeat(20000)) === 'bad', 'an oversized code is not decoded');
+      ok(why({ ...base, v: 2, c: { l: ['s:fill'], k: [] } }) === 'new', 'a newer version is said as one');
+      ok(why({ ...base, c: { l: ['s:ring x:900'], k: [] } }) === 'bad', 'a number out of range');
+      ok(why({ ...base, c: { l: ['s:ring zz:1'], k: [] } }) === 'bad', 'an unknown layer word');
+      ok(why({ ...base, c: { l: ['s:ring x:1e3'], k: [] } }) === 'bad' && why({ ...base, c: { l: ['s:ring x:NaN'], k: [] } }) === 'bad', 'not a plain number');
+      ok(why({ ...base, c: { l: ['s:ring s:fill'], k: [] } }) === 'bad', 'two shapes in a layer');
+      ok(why({ ...base, s: '5', c: { l: ['s:fill'], k: [] } }) === 'bad' && why({ ...base, s: 99, c: { l: ['s:fill'], k: [] } }) === 'bad', 'a speed as text or out of range');
+      ok(why({ v: 1, n: 'x', e: 'rainbow', c: { l: ['s:fill'], k: [] } }) === 'bad', 'layers on an effect that has none');
+      ok(why({ v: 1, n: 'x', e: 'rainbow', p: ['red'] }) === 'bad' && why([1, 2]) === 'bad' && why('haku:%%') === 'bad', 'a bad colour, an array, not base64');
+      ok(!why({ v: 1, n: 'old', e: 'rainbow', p: ['#FF0000', '#00FF00'], s: 7 }) && !why(code), 'an old plain code and this one still read');
+      closeShare(); await wait(60);
+      ok(!$('#cdlg').classList.contains('hidden') && dl().length === 2, 'the constructor back with its draft');
+      cmpClose();
+      // importing: a new preset with the layers in it, not applied: the lit composition and the effect stay
       for (let i = 1; i <= 8; i++) setCfg('custom', 'l' + i, ''); flushSets();
+      const fx0 = STATE.effect;
       sent.length = 0; shareDialog(null); $('#share-code').value = code; $('#share-form').requestSubmit(); await wait(80);
-      const ps = sent.filter(o => o.cmd === 'preset_save'), last = sent.map(o => o.cmd).lastIndexOf('set');
-      ok(ps.length === 1 && ps[0].effect === 'custom' && sent.indexOf(ps[0]) > last && cmpLines().length === 2, 'import: ' + JSON.stringify(sent.map(o => o.cmd + ' ' + (o.k || ''))));
+      const ps = sent.filter(o => o.cmd === 'preset_save');
+      ok(ps.length === 1 && ps[0].effect === 'custom' && ps[0].apply === '0' && /l2=s:dots/.test(ps[0].fxkv) && !sent.some(o => o.cmd === 'set' && o.s === 'custom'), 'import: ' + JSON.stringify(sent));
+      ok(!cmpLines().length && STATE.effect === fx0, 'the lighting untouched');
+      ok($('#share-msg').textContent === t('import.done', p.name) && !$('#share-code').value, 'said: ' + $('#share-msg').textContent);
       const P = presets().filter(x => x.effect === 'custom').pop();
       ok(P && /s:dots/.test(cv('preset.' + P.id, 'fx.l2', '')), 'the imported preset has the layers');
+      sent.length = 0; $('#share-code').value = raw({ ...base, v: 3, c: { l: ['s:fill'], k: [] } }); $('#share-form').requestSubmit(); await wait(40);
+      ok(!sent.length && $('#share-msg').textContent === t('import.new'), 'a newer code: nothing saved, said why');
+      closeShare(); await wait(40);
     });
+  });
+
+  test('constructor layers: names travel and are escaped, duplicate, solo only in the preview, dead bindings said, undo by gesture, the preview clock', async () => {
+    await fresh(); showTab('effects');
+    await cmpKeep(async () => {
+      for (let i = 1; i <= 8; i++) setCfg('custom', 'l' + i, ''); for (let i = 1; i <= 3; i++) setCfg('custom', 'k' + i, '');
+      STATE.effect = S.effect = 'custom'; renderEffectSide(); flushSets();
+      $('#cmp-open').click(); await wait(80); sent.length = 0;
+      const fxc = fxPreview.comp, li = () => $$('#cdlg-list li');
+      const nm = $('#cdlg-edit input[data-f="name"]'); ok(nm && nm.placeholder === t('cmp.s.' + fxc.SHAPES[CMP.L[0].shape]), 'a name field, the shape as its placeholder');
+      nm.value = '<b>Ring;#[x]=1</b>'; nm.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
+      ok(!/[;#\[\]=]/.test(CMP.L[0].name) && / nm:\S+$/.test(dl()[0]) && !li()[0].querySelector('b'), 'cleaned and escaped: ' + dl()[0]);
+      const back = fxc.parse(dl()[0]); ok(back.name === CMP.L[0].name && fxc.line(back) === dl()[0], 'the name reads back from the line');
+      ok(fxc.parse('s:ring c:p1 x:20').name === '' && !/nm:/.test(fxc.line(fxc.parse('s:ring c:p1 x:20'))), 'an old line without a name stays without');
+      const long = fxc.parse(fxc.line(CMP.L[0])); long.name = 'x'.repeat(40); ok(fxc.line(long).length <= 240 && fxc.parse(fxc.line(long)).name.length === 24, 'a name is cut to 24');
+      // duplicate: a copy under it with the same name, one undo step
+      const n0 = dl().length; li()[0].querySelector('[data-a="dup"]').click(); await wait(20);
+      ok(dl().length === n0 + 1 && dl()[1] === dl()[0] && li()[1].classList.contains('on'), 'duplicate: ' + dl().slice(0, 2).join(' | '));
+      key(document.body, 'z', true); await wait(20); ok(dl().length === n0, 'undo the duplicate');
+      key(document.body, 'y', true); await wait(20);
+      // the name in a draft and in a code
+      $('#cdlg-export').click(); await wait(60); const code = $('#share-code').value; closeShare(); await wait(60);
+      const pc = presetFromCode(code); ok(pc && fxc.parse(pc.comp.l[0]).name === CMP.L[0].name, 'the name in a haku: code');
+      // solo: the preview only, no undo step, never sent
+      const cur = CMP.cur, h = CMP.hist.length; li()[2].querySelector('[data-a="solo"]').click(); await wait(20);
+      ok(CMP.solo === CMP.L[2] && li()[2].querySelector('[data-a="solo"]').getAttribute('aria-pressed') === 'true' && CMP.cur === cur && CMP.hist.length === h, 'solo is not an edit');
+      ok($('#cdlg-cap').textContent.includes(t('cmp.solo.on', 3)) && $('#cdlg-cap').textContent.includes(t('cmp.view.model')), 'said: ' + $('#cdlg-cap').textContent);
+      const shown = cmpShow(); ok(shown.length === CMP.L.length && shown.filter(L => L.p[CMP_LP.hide] < 0.5).length === 1 && shown[2].p[CMP_LP.hide] < 0.5, 'the others hidden in the preview');
+      li()[2].querySelector('[data-a="solo"]').click(); await wait(20); ok(!CMP.solo, 'solo off');
+      ok(!cmpSets().length, 'nothing sent by names, duplicate or solo: ' + JSON.stringify(cmpSets()));
+      // a mask in black and white
+      tutPick('lights'); await wait(20); li()[1].querySelector('[data-a="pick"]').click(); await wait(20);
+      $('#cdlg-edit [data-a="maskview"]').click(); await wait(20);
+      ok(CMP.solo === CMP.L[1] && cmpShow().length === 3 && $('#cdlg-cap').textContent.includes(t('cmp.mask.bw')), 'mask view: ' + $('#cdlg-cap').textContent);
+      // only the settings the shape reads; one chosen before a shape change is said to do nothing
+      const sel = (f, v) => { const x = $(`#cdlg-edit select[data-f="${f}"]`); x.value = v; x.dispatchEvent(new Event('change', { bubbles: true })); };
+      sel('shape', fxc.SHAPES.indexOf('ring')); await wait(20);
+      const dur = fxc.LPD.findIndex(d => d[0] === 'dur'), opts = () => [...$('#cdlg-edit select[data-f="ap"]').options].map(o => +o.value);
+      ok(opts().includes(dur), 'a ring offers its duration'); sel('ap', dur); await wait(20);
+      sel('shape', fxc.SHAPES.indexOf('fill')); await wait(20);
+      ok(opts().includes(dur) && $('#cdlg-edit .cdlg-dead') && $('#cdlg-edit .cdlg-dead').textContent.includes(t('cmp.dead.note')), 'the dead binding stays and is said');
+      ok(!opts().includes(fxc.LPD.findIndex(d => d[0] === 'w')) || CMP_P.fill.includes('w'), 'a setting the fill does not read is not offered');
+      // undo by gesture: a pointer drag is one step, two key presses are two, a new change clears redo
+      li()[0].querySelector('[data-a="pick"]').click(); await wait(20);
+      const r = $('#cdlg-edit input[data-p="o"]'), inp = v => { r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })); };
+      const h0 = CMP.hist.length;
+      r.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); inp(20); inp(40); inp(60); r.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      ok(CMP.hist.length === h0 + 1, 'one drag, one step: ' + (CMP.hist.length - h0));
+      for (const v of [61, 62]) { r.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); inp(v); r.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true })); }
+      ok(CMP.hist.length === h0 + 3, 'two key presses, two steps: ' + (CMP.hist.length - h0));
+      r.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); inp(70); window.dispatchEvent(new Event('blur')); inp(80);
+      ok(CMP.hist.length === h0 + 5, 'leaving the window ends a gesture: ' + (CMP.hist.length - h0));
+      key(document.body, 'z', true); await wait(20); ok(!$('#cdlg-redo').disabled, 'redo offered');
+      const r2 = $('#cdlg-edit input[data-p="o"]');   // the undo drew the box again
+      r2.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); r2.value = 10; r2.dispatchEvent(new Event('input', { bubbles: true })); ok($('#cdlg-redo').disabled && !CMP.fut.length, 'a new change clears redo');
+      // the text field keeps its own undo
+      const nm2 = $('#cdlg-edit input[data-f="name"]'), hh = CMP.hist.length; key(nm2, 'z', true); await wait(20); ok(CMP.hist.length === hh, 'Ctrl+Z in the name field is the field\'s');
+      // the preview: paused and scrubbed, the same picture twice; the speed is not saved
+      const pix = () => { cmpDraw(); return Array.from($('#cdlg-view').getContext('2d').getImageData(0, 0, $('#cdlg-view').width, $('#cdlg-view').height).data).join(); };
+      if (CMP.play) $('#cdlg-pp').click(); ok(!CMP.play && $('#cdlg-pp').getAttribute('aria-pressed') === 'false' && $('#cdlg-pp').title === t('cmp.play'), 'paused');
+      const tr = $('#cdlg-t'); tr.value = 5; tr.dispatchEvent(new Event('input', { bubbles: true })); await wait(80);
+      const a = pix(); await wait(120); const b = pix(); ok(a === b && CMP.t === 5 && $('#cdlg-tv').textContent === '5.0', 'scrubbed to 5: the same frame');
+      $('#cdlg-rs').click(); ok(CMP.t === 0 && $('#cdlg-tv').textContent === '0.0', 'from the start');
+      tr.value = 5; tr.dispatchEvent(new Event('input', { bubbles: true })); ok(pix() === a, 'back at 5: the same frame again');
+      const rt = $('#cdlg-rate'); rt.value = '2'; rt.dispatchEvent(new Event('change', { bubbles: true }));
+      ok(CMP.rate === 2 && !JSON.stringify(S.cfg).includes('rate') && !sent.some(o => JSON.stringify(o).includes('rate')), 'the preview speed is not saved');
+      $('#cdlg-pp').click(); await wait(200); ok(CMP.play && CMP.t > 0, 'playing again: ' + CMP.t);
+      rt.value = '1'; rt.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  });
+
+  test('library: Built-in, My effects, Drafts; a draft opens without lighting, is renamed, kept as a preset, shared and deleted; a preset copy', async () => {
+    await fresh(); showTab('effects');
+    await cmpKeep(async () => {
+      const fxc = fxPreview.comp, L = ['s:dots c:p1 nm:Base', 's:ring c:p2'].map(x => fxc.line(fxc.parse(x)));
+      for (let n = 1; n <= 16; n++) delete STATE.cfg['cdraft.' + n];
+      STATE.cfg['cdraft.3'] = { name: 'Old one', at: String(Date.now() - 1000), prof: '', l1: L[0], l2: L[1], k1: '' };
+      bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(150);
+      fxTab('presets'); await wait(30);
+      const heads = $$('#fx-grid .fx-head').map(h => h.firstChild.textContent);
+      ok([t('bp.head'), t('bp.own'), t('bp.drafts')].every(x => heads.includes(x)), 'the three groups: ' + heads.join(' | '));
+      const tile = () => $('#fx-grid [data-draft="3"]');
+      ok(tile() && tile().querySelector('small').textContent.includes(t('draft.layers', 2)), 'the draft tile says its layers');
+      // a click opens it in the constructor; nothing is lit or written
+      const fx0 = STATE.effect, lit0 = cmpLines().join('|'); sent.length = 0;
+      tile().click(); await wait(80);
+      ok(!$('#cdlg').classList.contains('hidden') && dl().join('|') === L.join('|'), 'opened in the constructor: ' + dl().join(' | '));
+      ok(!sent.some(o => o.cmd === 'comp_apply' || o.cmd === 'set' || /^preset_/.test(o.cmd)) && STATE.effect === fx0 && cmpLines().join('|') === lit0, 'nothing lit: ' + JSON.stringify(sent));
+      cmpClose(); await wait(40); fxTab('presets'); await wait(30);
+      // rename: [cdraft.3] name, cleaned, no profile
+      tile().querySelector('.pmenu').click(); await wait(40);
+      ok(!$('#ddlg').classList.contains('hidden') && $('#ddlg-name').value === 'Old one' && $('#ddlg-note').textContent.includes(t('draft.note')), 'the draft window');
+      sent.length = 0; $('#ddlg-name').value = 'New;[x]'; $('#ddlg-save').click(); await wait(60);
+      const rn = sets('cdraft.3', 'name');
+      ok(rn.length === 1 && !rn[0].p && !/[;\[\]]/.test(rn[0].v) && rn[0].v.startsWith('New') && $('#ddlg').classList.contains('hidden'), 'renamed: ' + JSON.stringify(rn));
+      ok(tile() && tile().querySelector('b').textContent === rn[0].v, 'the tile has the new name');
+      // kept as a preset: its own layers, not applied; the draft stays
+      tile().querySelector('.pmenu').click(); await wait(40); sent.length = 0;
+      $('#ddlg-preset').click(); await wait(40);
+      ok(!$('#pdlg').classList.contains('hidden') && $('#pdlg-name').value === rn[0].v, 'the preset window, with the draft name');
+      $('#pdlg-save').click(); await wait(80);
+      const ps = sent.find(o => o.cmd === 'preset_save');
+      ok(ps && ps.effect === 'custom' && ps.apply === '0' && ps.fxkv.includes('l1=' + L[0]) && ps.fxkv.includes('l2=' + L[1]), 'saved, not applied: ' + JSON.stringify(ps));
+      ok(!sent.some(o => o.cmd === 'comp_apply' || o.cmd === 'set' && o.s === 'custom') && cv('cdraft.3', 'at', ''), 'nothing lit, the draft stays');
+      // shared: a code with the draft's layers
+      fxTab('presets'); await wait(30); tile().querySelector('.pmenu').click(); await wait(40);
+      $('#ddlg-share').click(); await wait(80);
+      const pc = presetFromCode($('#share-code').value);
+      ok(!$('#share-dlg').classList.contains('hidden') && pc && pc.effect === 'custom' && pc.comp.l.join('|') === L.join('|'), 'the code: ' + JSON.stringify(pc && pc.comp));
+      closeShare(); await wait(40);
+      // delete: asked twice, every key emptied, no profile, the tile gone
+      fxTab('presets'); await wait(30); tile().querySelector('.pmenu').click(); await wait(40); sent.length = 0;
+      $('#ddlg-del').click(); await wait(20);
+      ok(!sent.length && $('#ddlg-del').textContent === t('preset.delete.sure') && !$('#ddlg').classList.contains('hidden'), 'asks first');
+      $('#ddlg-del').click(); await wait(60);
+      const dd = sent.filter(o => o.cmd === 'set' && o.s === 'cdraft.3');
+      ok(dd.length === 14 && dd.every(o => o.v === '' && !o.p) && !tile() && $('#ddlg').classList.contains('hidden'), 'deleted: ' + dd.length);
+      ok(!$$('#fx-grid [data-draft]').length && $('#fx-grid .comm-note') && $('#fx-grid').textContent.includes(t('draft.none')), 'no drafts said');
+      // copy of a preset of one's own: preset_copy, every key kept under the new name, nothing applied
+      const P = presets()[0], src = Object.assign({}, STATE.cfg['preset.' + P.id], { 'fx.x': '1', 'z.1': '#123456' });
+      STATE.cfg['preset.' + P.id] = src; bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(150);
+      const g0 = cv('general', 'preset', ''), n0 = presets().length;
+      presetDialog(P.id); await wait(40);
+      ok(!$('#pdlg-copy').classList.contains('hidden'), 'Copy offered for a preset of one\'s own');
+      sent.length = 0; $('#pdlg-copy').click(); await wait(150);
+      const cp = sent.find(o => o.cmd === 'preset_copy'), Q = presets().find(q => q.name === t('preset.copy.name', P.name));
+      ok(cp && cp.id === String(P.id) && $('#pdlg').classList.contains('hidden'), 'sent: ' + JSON.stringify(cp));
+      ok(Q && presets().length === n0 + 1 && cv('preset.' + Q.id, 'fx.x', '') === '1' && cv('preset.' + Q.id, 'z.1', '') === '#123456', 'the copy keeps its keys');
+      ok(cv('general', 'preset', '') === g0 && !sent.some(o => o.cmd === 'preset' || o.cmd === 'effect'), 'nothing applied');
+      presetDialog(0); ok($('#pdlg-copy').classList.contains('hidden'), 'no Copy for a new preset'); closePresetDialog();
+    });
+  });
+
+  test('device card: What controls its lighting, folded, from real data; sent is never called confirmed', async () => {
+    await fresh(); showTab('devices'); await wait(30);
+    const d = S.ext.devs.find(x => x.id === 1), det = id => $('#dev-st-' + id).closest('.card').querySelector('.dev-why');
+    const body = id => $('#dev-why-' + id).textContent, open = async id => { det(id).open = true; await wait(40); };
+    ok(det(1) && !det(1).open && !$('#dev-why-1').textContent, 'folded and empty until asked');
+    ok(!$$('.why-list').some(x => !x.closest('#dev-grid')), 'shown on the device cards only');
+    await open(1);
+    ok(body(1).includes(t('why.prof')) && body(1).includes(fxName(S.effect)) && body(1).includes(t('why.own.none')) && body(1).includes(t('why.simple.none')), 'the rows: ' + body(1));
+    ok(d.sent >= 0 && body(1).includes(t('why.st.sent', '<1')) && body(1).includes(t('why.noack')), 'sent, and said not to be a confirmation');
+    ok(!/confirmed|подтвержден|confirmé/i.test(body(1).replace(t('why.noack'), '')), 'nothing called confirmed');
+    // its own brightness: the share of the overall one
+    setCfgLocal('zone.dev1', 'brightness', '50'); updateDevices();
+    ok(body(1).includes(t('why.bri.of', Math.round(S.brightness / 2), S.brightness, 50)), 'own brightness: ' + body(1));
+    setCfgLocal('zone.dev1', 'effect', 'rainbow'); updateDevices();
+    ok(body(1).includes(fxName('rainbow')), 'own effect shown');
+    setCfgLocal('zone.dev1', 'brightness', '100'); setCfgLocal('zone.dev1', 'effect', '');
+    // unreachable, nothing sent yet, given back to its own lighting
+    d.online = 0; d.fails = 2; updateDevices();
+    ok(body(1).includes(t('why.st.off')) && body(1).includes(t('dev.offline')), 'unreachable: ' + body(1));
+    Object.assign(d, { online: 1, fails: 0, sent: -1 }); updateDevices();
+    ok(body(1).includes(t('why.st.wait')), 'no frame yet: ' + body(1));
+    d.own = 1; updateDevices();
+    ok(body(1).includes(t('why.st.not')) && body(1).includes(t('own.status')), 'its own lighting: ' + body(1));
+    d.own = 0; d.sent = 120;
+    // a profile being switched to: chosen, not yet on
+    const P0 = profiles()[0];
+    if (P0) { PROF.go = P0.id; updateDevices(); ok(body(1).includes(t('why.st.asked', P0.name)), 'switching said: ' + body(1)); PROF.go = 0; }
+    // simplified: a bulb takes one colour per light, an OpenRGB controller with no Direct one steady colour
+    await open(4);
+    ok(body(4).includes(t('why.bulb')) && body(4).includes(t('why.st.simple')), 'a bulb: ' + body(4));
+    const o = S.ext.devs.find(x => x.id === 2); o.cap = 3; await open(2); updateDevices();
+    ok(body(2).includes(t('why.steady')) && body(2).includes(t('why.st.simple')), 'steady colour only: ' + body(2));
+    o.cap = 1; updateDevices();
+    ok(!body(2).includes(t('why.st.simple')), 'Direct: not simplified');
+    // kept open when the cards are built again, closed again on request
+    buildDevices(); updateDevices();
+    ok(det(1).open && body(1).includes(t('why.prof')), 'stays open across a rebuild');
+    det(1).open = false; await wait(40); buildDevices();
+    ok(!det(1).open, 'closed stays closed');
+  });
+
+  test('home summary: the effect, how many devices haku lights of those on; its buttons go where they say; hidden with nothing found', async () => {
+    await fresh(); showTab('home'); await wait(30);
+    const st = () => $('#home-sum-st').textContent;
+    ok(!$('#home-sum').classList.contains('hidden') && $('#home-sum-fx').textContent.startsWith(fxName(S.effect)), 'the effect: ' + $('#home-sum-fx').textContent);
+    ok(!$('#home-sum').textContent.includes(t('prof.none')) && !$('#home-sum').querySelector('[id*=prof]'), 'the profile not repeated: it is the picker above');
+    // count it here the same way: on and not given away, lit when haku drives it and it answers
+    const ext = S.ext.devs.filter(d => d.enabled && !d.held), n = st().match(/\d+/g).map(Number);
+    const total = ext.length + S.bulbs.length + nanoCtls().length + (S.sticks ? 1 : 0) + (S.msi ? 1 : 0);
+    ok(n.includes(total), 'of all on: ' + st() + ' / ' + total);
+    const before = ext.filter(d => !d.own && (d.online || d.covered)).length, d = ext.find(x => !x.own && x.online);
+    const lit0 = +st().match(/(\d+)/g).slice(-2)[0];
+    d.own = 1; updateHome();
+    ok(st() !== '' && !st().includes(t('home.sum.lit', lit0, total)) && st().includes(t('home.sum.lit', lit0 - 1, total)), 'its own lighting is not haku\'s: ' + st());
+    d.own = 0; updateHome(); ok(before >= 1, 'a lit device in the mock');
+    $('#home-go-fx').click(); ok($('#tab-effects').classList.contains('active'), 'Lighting opens Lighting');
+    showTab('home'); $('#home-go-dev').click(); ok($('#tab-devices').classList.contains('active'), 'Devices opens Devices');
+    showTab('home');
+    ok(['en', 'ru', 'fr'].every(l => STR[l]['home.sum.lit']), 'a language misses the summary');
+    const none = JSON.parse(JSON.stringify(STATE));
+    Object.assign(none, { bulbs: [], nano: { ctls: [] }, sticks: 0, msi: null, fans: { on: 0 }, ll: null }); none.ext.devs = [];
+    emit(none); await wait(80);
+    ok($('#home-sum').classList.contains('hidden'), 'hidden with nothing found');
+    emit(STATE); await wait(80);
+  });
+
+  test('a modal window: focus goes in on open, Tab stays inside both ways, Escape or Cancel gives it back to the opener', async () => {
+    await fresh(); showTab('help'); await wait(30);
+    const op = $('#report-open'), w = $('#report-dlg'), tab = shift => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true, cancelable: true }));
+    op.focus(); op.click(); await wait(80);
+    ok(w.contains(document.activeElement), 'focus inside on open: ' + document.activeElement.id);
+    const f = [...w.querySelectorAll('button, input, textarea')].filter(e => !e.disabled && e.getClientRects().length);
+    f[f.length - 1].focus(); tab(false);
+    ok(document.activeElement === f[0], 'Tab from the last goes to the first: ' + document.activeElement.id);
+    tab(true); ok(document.activeElement === f[f.length - 1], 'Shift+Tab from the first goes to the last: ' + document.activeElement.id);
+    op.blur(); document.body.focus(); tab(false); ok(w.contains(document.activeElement), 'focus outside is pulled back in');
+    $('#report-close').click(); await wait(30);
+    ok(document.activeElement === op, 'Cancel gives focus back to the opener: ' + (document.activeElement.id || document.activeElement.tagName));
+    // Escape on another one, opened from the keyboard: the preset dialog
+    showTab('effects'); fxTab('presets'); await wait(30);
+    const save = $('#fx-grid .fx.add') || $('.fx.add'); ok(save, 'the new preset tile'); save.focus(); save.click(); await wait(80);
+    ok(!$('#pdlg').classList.contains('hidden') && $('#pdlg').contains(document.activeElement), 'the preset dialog takes focus');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(30);
+    ok($('#pdlg').classList.contains('hidden') && document.activeElement === save, 'Escape gives it back: ' + (document.activeElement.id || document.activeElement.tagName));
+    tab(false); ok(true, 'no modal: Tab left alone');
   });
 
   const only =decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it

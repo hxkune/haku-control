@@ -128,15 +128,28 @@ int cfg_palette(const char *section, rgbf *out, int max) {
     return n;
 }
 
-// the old file stays whole until the new one is (a full disk or a failing drive part way through); 0: not saved
+// a file written whole or not at all: the new one goes beside it as path.new and only then replaces it (the old one
+// is never deleted first), so a full disk or a failing drive part way through leaves the old file as it was.
+// file_fail: a test's fault point (1 the new file can't be made, 2 writing it fails, 3 replacing fails), 0 in the app
+int file_fail;
+FILE *file_begin(const wchar_t *path, wchar_t *tmp) {
+    swprintf(tmp, MAX_PATH, L"%s.new", path);
+    return file_fail == 1 ? NULL : _wfopen(tmp, L"wb");
+}
+int file_commit(FILE *f, const wchar_t *tmp, const wchar_t *path) {
+    int ok = !ferror(f) && file_fail != 2;
+    if (fclose(f)) ok = 0;
+    if (!ok || file_fail == 3 || !MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { DeleteFileW(tmp); return 0; }
+    return 1;
+}
+
+// 0: not saved
 static int save(void) {
-    wchar_t tmp[MAX_PATH]; swprintf(tmp, MAX_PATH, L"%s.new", path_w);
-    FILE *f = _wfopen(tmp, L"wb");
+    wchar_t tmp[MAX_PATH];
+    FILE *f = file_begin(path_w, tmp);
     if (!f) return 0;
     for (int i = 0; i < nlines; i++) fprintf(f, "%s\r\n", lines[i]);
-    int ok = !ferror(f);
-    if (fclose(f)) ok = 0;
-    if (!ok || !MoveFileExW(tmp, path_w, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { DeleteFileW(tmp); return 0; }
+    if (!file_commit(f, tmp, path_w)) return 0;
     last_write = file_time();
     return 1;
 }

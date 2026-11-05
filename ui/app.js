@@ -51,7 +51,7 @@ function setCfg(s, k, v) {
   undoPush(s, k, cv(s, k, ''));
   pendingSets.delete(s + '\u0001' + k);   // a value still waiting to go would land after this one
   (S.cfg[s] = S.cfg[s] || {})[k] = v;
-  send({ cmd: 'set', s, k, v });
+  send({ cmd: 'set', s, k, v, p: cv('general', 'profile', '') });   // p: the core drops a profile's key meant for another one
   groupSpread(s, k, v, setCfg);
 }
 // [fans] keys as one change: fans.c reads a curve and its source together, so it never runs one with the other's old value
@@ -78,12 +78,12 @@ function setCfgSoon(s, k, v) {
   undoPush(s, k, cv(s, k, ''));
   (S.cfg[s] = S.cfg[s] || {})[k] = String(v);
   groupSpread(s, k, String(v), setCfgSoon);
-  pendingSets.set(s + '\u0001' + k, [s, k, String(v)]);
+  pendingSets.set(s + '\u0001' + k, [s, k, String(v), cv('general', 'profile', '')]);   // the profile it was made in
   if (!flushTimer) flushTimer = setTimeout(flushSets, 40);
 }
 function flushSets() {
   clearTimeout(flushTimer); flushTimer = 0;
-  for (const [s2, k2, v2] of pendingSets.values()) send({ cmd: 'set', s: s2, k: k2, v: v2 });
+  for (const [s2, k2, v2, p] of pendingSets.values()) send({ cmd: 'set', s: s2, k: k2, v: v2, p });
   pendingSets.clear();
 }
 
@@ -1131,6 +1131,19 @@ function buildEffects() {
     imp.addEventListener('click', () => shareDialog(null));
     grid.appendChild(imp);
   }
+  // the constructor's drafts ([cdraft.N]): a click opens one in the constructor (the lights stay until Apply), ··· for the rest
+  if (FX_TAB === 'presets') {
+    const D = cmpDrafts(), h3 = document.createElement('div'); h3.className = 'fx-head'; h3.innerHTML = `${t('bp.drafts')}<i>${D.length}</i>`; grid.appendChild(h3);
+    if (!D.length) { const p = document.createElement('p'); p.className = 'comm-note'; p.textContent = t('draft.none'); grid.appendChild(p); }
+    for (const d of D) {
+      const b = document.createElement('button');
+      b.className = 'fx preset draft'; b.dataset.draft = d.n;
+      b.innerHTML = `<div class="top"><b>${esc(d.name)}</b><i class="pmenu" title="${t('draft.edit')}">···</i></div><small>${esc(draftSub(d))}</small><canvas></canvas>`;
+      b.addEventListener('click', e => { if (e.target.closest('.pmenu')) draftDialog(d.n); else cmpOpen(cmpDraft(d.n)); });
+      b.addEventListener('contextmenu', e => { e.preventDefault(); draftDialog(d.n); });
+      grid.appendChild(b);
+    }
+  }
   markEffect();
 }
 // [preset.N] sections of the settings (the core saves and applies them, see main.c)
@@ -1160,7 +1173,7 @@ function markEffect() {
 // the page only lists them. The switcher sits above the preview: a click on a profile switches to it, the pencil
 // renames it (and sets its hotkey or deletes it), "Save profile" makes a new one from what is set up now.
 const PROFILE_MAX = 16;
-const PROF = { edit: 0, sure: false, go: 0, goT: 0 };   // go: the profile asked for, until the core has it on
+const PROF = { edit: 0, sure: false, go: 0, goT: 0, errN: -1 };   // go: the profile asked for, until the core has it on; errN: refusals seen
 const profSec = id => 'profile.' + id;
 function profiles() {
   return Object.keys(S.cfg).map(k => /^profile\.(\d+)$/.exec(k)).filter(m => m && S.cfg[m[0]].name)
@@ -1275,6 +1288,23 @@ function profGo(id) {
   PROF.go = id; clearTimeout(PROF.goT); PROF.goT = setTimeout(() => { PROF.go = 0; renderProfiles(); }, 5000);
   renderProfiles();
 }
+// the core's last refusal of a profile's save, switch, copy or delete (status prof: {err, id, n}, n counts them): a new
+// one is said until closed, and what waited on it stops waiting (the switcher's busy mark, the guide's save)
+const PROF_ERR = ['', 'write', 'leave', 'missing', 'bad', 'full', 'cfg'];
+function profErrCheck() {
+  const e = S.prof; if (!e) return;
+  if (PROF.errN < 0 || e.n <= PROF.errN) { PROF.errN = e.n; return; }   // ones from before the window opened are in the log
+  PROF.errN = e.n;
+  const msg = t('prof.err.' + (PROF_ERR[e.err] || 'write'), cv(profSec(e.id), 'name', '') || '#' + e.id, PROFILE_MAX);
+  PROF.go = 0; clearTimeout(PROF.goT);
+  if (GUIDE.saving) { GUIDE.saving = null; GUIDE.err = msg; }
+  profErrShow(msg); renderProfiles();
+}
+function profErrShow(msg) {
+  const el = $('#prof-err'); $('span', el).textContent = msg; $('.x', el).setAttribute('aria-label', t('close'));
+  el.classList.toggle('hidden', !msg);
+}
+$('#prof-err .x').addEventListener('click', () => { profErrShow(''); $('#prof-btn').focus(); });
 $('#prof-state').addEventListener('click', e => {
   if (!e.target.closest('.prof-pause')) return;
   setCfg('general', 'auto_pause', cv('general', 'auto_pause', '') === '1' ? '' : '1'); renderProfiles(); $('#prof-state .prof-pause').focus();
@@ -1323,14 +1353,16 @@ function pdlgFromNow() {
   PDLG.effect = fx; PDLG.pal = effPal(fx).slice(); PDLG.palTouched = false;
   PDLG.speed = +cv(fx, 'speed', cv('general', 'speed', 5)); PDLG.bri = S.brightness || 100;
 }
-function presetDialog(id, name) {
+// comp: the constructor's draft [lines, knobs], made a preset as it is, without being applied
+function presetDialog(id, name, comp) {
   const P = id ? presets().find(p => p.id === id) : null;
-  PDLG.id = P ? P.id : 0; PDLG.zonesHad = !!(P && P.zones); PDLG.retake = false;
+  PDLG.id = P ? P.id : 0; PDLG.zonesHad = !!(P && P.zones); PDLG.retake = false; PDLG.comp = !P && comp || null; PDLG.compLit = false;
   if (P) {
     PDLG.effect = S.effects.some(e => e.id === P.effect) ? P.effect : 'flow';
     PDLG.pal = parsePal(P.palette).length ? parsePal(P.palette) : effPal(PDLG.effect).slice(); PDLG.palTouched = true;
     PDLG.speed = +P.speed || 5; PDLG.bri = +P.bri || S.brightness || 100;
   } else pdlgFromNow();
+  if (PDLG.comp) { PDLG.effect = 'custom'; PDLG.pal = effPal('custom').slice(); PDLG.speed = +cv('custom', 'speed', cv('general', 'speed', 5)); }
   $('#pdlg-title').textContent = t(P ? 'preset.edit' : 'preset.new');
   $('#pdlg-name').value = P ? P.name : name || '';
   $('#pdlg-name').placeholder = t('preset.name.ph');
@@ -1339,6 +1371,7 @@ function presetDialog(id, name) {
   $('#pdlg-save span').textContent = t(P ? 'preset.save' : 'preset.addbtn');
   const del = $('#pdlg-del'); del.classList.toggle('hidden', !P); del.classList.remove('confirm'); del.querySelector('span').textContent = t('preset.delete');
   $('#pdlg-share').classList.toggle('hidden', !P);
+  $('#pdlg-copy').classList.toggle('hidden', !P || presets().length >= 32);
   $('#pdlg').classList.remove('hidden');
   pdlgRender();
   const cvs = $('#pdlg-prev'); cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio;
@@ -1388,7 +1421,8 @@ function pdlgPreview(now) {
   PDLG.sig = sig;
   // a constructor preset that is not the one showing: its own saved layers, not the constructor's current ones
   const own = PDLG.effect === 'custom' && PDLG.id && PDLG.id !== +cv('general', 'preset', 0) && cv('preset.' + PDLG.id, 'effect', '') === 'custom';
-  const PG = own ? k => cv('preset.' + PDLG.id, 'fx.' + k, '') : fxGetter(PDLG.effect);
+  const C = PDLG.effect === 'custom' && PDLG.comp, PG = C ? k => (k[0] === 'l' ? C[0] : k[0] === 'k' ? C[1] : [])[+k.slice(1) - 1] || '' :
+    own ? k => cv('preset.' + PDLG.id, 'fx.' + k, '') : fxGetter(PDLG.effect);
   if (cvs.width && pal.length) drawStrip(cvs, fxPreview(PDLG.effect, pal, still ? 3 : now / 1000 * fxClockSpeed(PDLG.effect, PDLG.speed, PG), 40, PG));
 }
 $('#pdlg-fx').addEventListener('click', e => {
@@ -1408,17 +1442,22 @@ $('#pdlg-retake').addEventListener('click', () => {   // start over from what sh
   if (zonesCustom()) $('#pdlg-zones').checked = true;
   pdlgRender();
 });
-const closePresetDialog = () => { $('#pdlg').classList.add('hidden'); closePicker(); };
+// a constructor that opened it comes back (after this key or click is done with, so its Escape doesn't close that too)
+const closePresetDialog = () => { $('#pdlg').classList.add('hidden'); closePicker(); PDLG.comp = null; setTimeout(cmpBack); };
 const pdlgName = () => $('#pdlg-name').value.replace(/[;#\[\]=]/g, ' ').trim();
 $('#pdlg-form').addEventListener('submit', e => {
   e.preventDefault();
   const z = $('#pdlg-zones').checked, pal = PDLG.effect === 'static' ? PDLG.pal.slice(0, 1) : PDLG.pal;
-  send({ cmd: 'preset_save', id: String(PDLG.id), name: pdlgName(), effect: PDLG.effect, palette: palStr(pal), speed: String(PDLG.speed),
-    brightness: $('#pdlg-bri').checked ? String(PDLG.bri) : '', zones: z ? (PDLG.id && PDLG.zonesHad && !PDLG.retake ? 'keep' : '1') : '0', apply: '1',
+  const C = PDLG.effect === 'custom' && PDLG.comp;   // the constructor's draft: its own layers, and the lights stay as they are
+  const o = { cmd: 'preset_save', id: String(PDLG.id), name: pdlgName(), effect: PDLG.effect, palette: palStr(pal), speed: String(PDLG.speed),
+    brightness: $('#pdlg-bri').checked ? String(PDLG.bri) : '', zones: z ? (PDLG.id && PDLG.zonesHad && !PDLG.retake ? 'keep' : '1') : '0', apply: C && !PDLG.compLit ? '0' : '1',
     // the constructor preset that is showing takes the layers as they are now (any other keeps its own)
-    fx: PDLG.effect === 'custom' && PDLG.id && PDLG.id === +cv('general', 'preset', 0) ? 'cur' : '' });
+    fx: !C && PDLG.effect === 'custom' && PDLG.id && PDLG.id === +cv('general', 'preset', 0) ? 'cur' : '' };
+  if (C) o.fxkv = cmpKv(C);
+  send(o);
   closePresetDialog();
-  if (FX_TAB !== 'presets') fxTab('presets');
+  if (C) CMP.note = t('cmp.st.preset', o.name || t('fx.custom'));   // shown when the constructor comes back
+  else if (FX_TAB !== 'presets') fxTab('presets');
 });
 $('#pdlg-del').addEventListener('click', () => {
   const b = $('#pdlg-del');
@@ -1427,6 +1466,12 @@ $('#pdlg-del').addEventListener('click', () => {
   closePresetDialog();
 });
 $('#pdlg-cancel').addEventListener('click', closePresetDialog);
+// a copy keeps everything of the preset (its layers, settings, device colours) under a new name, not applied
+$('#pdlg-copy').addEventListener('click', () => {
+  const P = presets().find(p => p.id === PDLG.id); if (!P) return;
+  send({ cmd: 'preset_copy', id: String(P.id), name: cmpLabel(t('preset.copy.name', P.name)) });
+  closePresetDialog();
+});
 $('#pdlg-share').addEventListener('click', () => { const P = presets().find(p => p.id === PDLG.id); closePresetDialog(); if (P) shareDialog(P); });
 
 // ---- sharing a preset: a code (haku:<base64url of its JSON>) with the look only (effect, colours, speed,
@@ -1437,33 +1482,44 @@ function presetCode(P) {
   const o = { v: 1, n: P.name, e: P.effect, p: parsePal(P.palette), s: +P.speed || undefined, b: +P.bri || undefined };
   if (P.effect === 'custom') {   // the constructor's look is its layers: words only, as saved (nothing else of the preset travels)
     const get = k => P.id ? cv('preset.' + P.id, 'fx.' + k, '') : cv('custom', k, '');
-    o.c = P.c || { l: [1, 2, 3, 4, 5, 6, 7, 8].map(i => get('l' + i)).filter(Boolean), k: [1, 2, 3].map(i => get('k' + i)).filter(Boolean) };
+    // the lines as this version writes them, so its own code always passes the strict reading of an import
+    const l = [1, 2, 3, 4, 5, 6, 7, 8].map(i => fxc.parse(get('l' + i))).filter(Boolean);
+    o.c = P.c || { l: l.map(fxc.line), k: [1, 2, 3].map(i => get('k' + i)).filter(Boolean) };
   }
   return 'haku:' + b64u(JSON.stringify(o));
 }
-// a code's constructor part, checked as the core would read it: at most 8 layers and 3 knobs, each one a line of
-// words that reads (a code is someone else's text: a bad one is refused whole, never half taken)
+// a code's constructor part, checked strictly: at most 8 layers (at least one) and 3 knobs, every layer word known
+// and in range, every knob on a layer and a setting that exists (a code is someone else's text: a bad one is refused
+// whole, never half taken; it is data only, nothing in it runs, opens a file or the network, or reaches a device)
 function compFromCode(c) {
-  if (!c || !Array.isArray(c.l) || !Array.isArray(c.k) || c.l.length > fxc.MAX || c.k.length > 3) return null;
-  const L = c.l.map(s => typeof s === 'string' && s.length <= 240 && !/[;\r\n]/.test(s) ? fxc.parse(s) : null);
-  if (L.some(x => !x)) return null;
-  const K = c.k.map(s => typeof s === 'string' && s.length <= 240 ? knobParse(s, L) : null);
+  if (!c || typeof c !== 'object' || !Array.isArray(c.l) || !Array.isArray(c.k) || !c.l.length || c.l.length > fxc.MAX || c.k.length > 3) return null;
+  if (!c.l.every(fxc.strict)) return null;
+  const L = c.l.map(fxc.parse);
+  const K = c.k.map(s => typeof s === 'string' && s.length <= 240 && !/[;\u0000-\u001f]/.test(s) ? knobParse(s, L) : null);
   if (K.some(x => !x)) return null;
   return { l: L.map(fxc.line), k: K.map(x => knobStr(x, L)) };
 }
-function presetFromCode(code) {
-  const m = /haku:([A-Za-z0-9_-]+)/.exec(code.replace(/\s+/g, ''));
-  if (!m) return null;
-  try {
-    const o = JSON.parse(unb64u(m[1]));
-    if (!o || o.v !== 1 || !S.effects.some(e => e.id === o.e)) return null;
-    const pal = (Array.isArray(o.p) ? o.p : []).filter(c => /^#[0-9a-fA-F]{6}$/.test(c)).slice(0, 8);
-    const speed = Math.max(1, Math.min(10, Math.round(+o.s || 5))), bri = o.b ? Math.max(5, Math.min(100, Math.round(+o.b))) : 0;
-    const comp = o.e === 'custom' ? compFromCode(o.c) : null;
-    if (o.e === 'custom' && !comp) return null;
-    return { name: String(o.n || '').replace(/[;#\[\]=]/g, ' ').trim().slice(0, 40) || fxName(o.e), effect: o.e, palette: pal.join(', '), speed, bri, comp };
-  } catch (e) { return null; }
+const CODE_MAX = 6000;   // a code with 8 full layers is about 3 KB; anything far bigger is not read at all
+// a code to a preset, or { err } with why it is refused: 'bad' (not a code, or something in it out of place), 'new'
+// (made by a newer haku: a version this one does not know)
+function codeRead(code) {
+  const raw = String(code || '');
+  if (raw.length > CODE_MAX * 2) return { err: 'bad' };   // the size before any decoding
+  const m = /^haku:([A-Za-z0-9_-]+)$/.exec(raw.replace(/\s+/g, ''));
+  if (!m || m[1].length > CODE_MAX) return { err: 'bad' };
+  let o; try { o = JSON.parse(unb64u(m[1])); } catch (e) { return { err: 'bad' }; }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return { err: 'bad' };
+  if (Number.isInteger(o.v) && o.v > 1) return { err: 'new' };
+  if (o.v !== 1 || typeof o.e !== 'string' || !S.effects.some(e => e.id === o.e)) return { err: 'bad' };
+  if (o.n !== undefined && typeof o.n !== 'string' || o.p !== undefined && !(Array.isArray(o.p) && o.p.length <= 8 && o.p.every(c => /^#[0-9a-fA-F]{6}$/.test(c)))) return { err: 'bad' };
+  const num = (v, lo, hi) => v === undefined || typeof v === 'number' && isFinite(v) && v >= lo && v <= hi;
+  if (!num(o.s, 1, 10) || !num(o.b, 5, 100)) return { err: 'bad' };
+  const comp = o.e === 'custom' ? compFromCode(o.c) : null;
+  if (o.e === 'custom' ? !comp : o.c !== undefined) return { err: 'bad' };
+  return { name: String(o.n || '').replace(/[;#\[\]=\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 40) || fxName(o.e), effect: o.e,
+    palette: (o.p || []).join(', '), speed: o.s ? Math.round(o.s) : 5, bri: o.b ? Math.round(o.b) : 0, comp };
 }
+const presetFromCode = code => { const p = codeRead(code); return p.err ? null : p; };
 let SHARE = null;   // the preset being shared, or null: importing
 function shareDialog(P) {
   SHARE = P;
@@ -1478,7 +1534,7 @@ function shareDialog(P) {
   $('#share-dlg').classList.remove('hidden');
   setTimeout(() => { ta.focus(); if (P) ta.select(); }, 30);
 }
-const closeShare = () => $('#share-dlg').classList.add('hidden');
+const closeShare = () => { $('#share-dlg').classList.add('hidden'); setTimeout(cmpBack); };
 $('#share-close').addEventListener('click', closeShare);
 $('#share-dlg').addEventListener('pointerdown', e => { if (e.target.id === 'share-dlg') closeShare(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#share-dlg').classList.contains('hidden')) closeShare(); });
@@ -1492,14 +1548,16 @@ $('#share-form').addEventListener('submit', async e => {
     $('#share-msg').textContent = t(ok ? 'share.copied' : 'share.copyhand');
     return;
   }
-  const p = presetFromCode(ta.value);
-  if (!p) { $('#share-msg').textContent = t('import.bad'); ta.focus(); return; }
+  const p = codeRead(ta.value);
+  if (p.err) { $('#share-msg').textContent = t(p.err === 'new' ? 'import.new' : 'import.bad'); ta.focus(); return; }
   if (presets().length >= 32) { $('#share-msg').textContent = t('import.full'); return; }
-  // a constructor code: its layers go to the constructor first, and the new preset takes them from there
-  if (p.comp) { flushSets(); cmpWrite(p.comp.l, p.comp.k, false); }
-  send({ cmd: 'preset_save', id: '0', name: p.name, effect: p.effect, palette: p.palette, speed: String(p.speed),
-    brightness: p.bri ? String(p.bri) : '', zones: '0', apply: '1' });
-  closeShare();
+  // a new preset in My effects, not applied: the lighting stays as it is until the preset is picked; a constructor
+  // code's layers go into the preset alone, never into the composition that is lit
+  const o = { cmd: 'preset_save', id: '0', name: p.name, effect: p.effect, palette: p.palette, speed: String(p.speed),
+    brightness: p.bri ? String(p.bri) : '', zones: '0', apply: '0' };
+  if (p.comp) o.fxkv = cmpKv([p.comp.l, p.comp.k]);
+  send(o);
+  ta.value = ''; $('#share-msg').textContent = t('import.done', p.name);   // the window stays to say so; another code can go in
   if (FX_TAB !== 'presets') fxTab('presets');
 });
 
@@ -1606,8 +1664,8 @@ $('#pub-go').addEventListener('click', () => { if (SHARE && SHARE.effect !== 'cu
 
 // ---- the constructor ([custom], effects.c comp_*): up to 8 layers of plain shapes, each a line of words (l1..l8),
 // and up to 3 of their settings shown on the effect panel (k1..k3: "layer setting from to name"; from > to runs it
-// backwards, setting c is the layer's own colour). The editor keeps its own undo (the lines before each change);
-// every change is also an ordinary setting, so the window's undo and the presets see it as any other.
+// backwards, setting c is the layer's own colour). The editor works on a draft with its own undo: nothing reaches
+// [custom] until Apply (comp_apply, all 11 keys as one change, for the profile it was opened in).
 const fxc = fxPreview.comp, CMP_LP = Object.fromEntries(fxc.LPD.map((d, i) => [d[0], i]));
 const CMP_P = { fill: ['v'], grad: ['a', 'sz', 'v'], wave: ['a', 'sz', 'v'], noise: ['a', 'sz', 'v'], dots: ['n', 'w', 'sf', 'v'],
   ring: ['x', 'y', 'sz', 'w', 'sf', 'dur', 'per'], spark: ['n', 'life', 'tail', 'v', 'w'] };
@@ -1618,7 +1676,9 @@ const CMP_TUT = {   // knob names are i18n keys, written in the window's languag
 };
 const cmpNum = v => String(+(+v).toFixed(2));
 const cmpLabel = s => String(s || '').replace(/[;#\[\]=\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
-const cmpName = L => t('cmp.s.' + fxc.SHAPES[L.shape]);
+const cmpName = L => L.name || t('cmp.s.' + fxc.SHAPES[L.shape]);   // shown through esc(): a name is the user's text
+// the settings a layer reads: its shape's, strength and the colour always, the rest once what needs them is on
+const cmpUses = L => { const s = fxc.SHAPES[L.shape]; return ['c', 'o', 'hide', ...CMP_P[s], ...(s === 'ring' ? ['fade'] : []), ...(L.blend === 4 ? ['inv'] : []), ...(L.ap >= 0 ? ['aa', 'at'] : []), ...(L.mp >= 0 ? ['ma'] : [])]; };
 // a knob from its words, on the layers it was saved with (null: not one)
 function knobParse(s, layers) {
   const m = /^([1-8]) (\w+) (-?[\d.]+) (-?[\d.]+) ?(.*)$/.exec(String(s || '').trim()); if (!m) return null;
@@ -1682,46 +1742,218 @@ function cmpKnobSet(i, v) {
   cmpWrite(...cmpWords(c.L, c.K), true);   // all of it: with nothing saved yet the reactor is written whole
 }
 
-// the editor window
-const CMP = { L: [], K: [], sel: 0, cur: '', hist: [], fut: [], ctl: '', at: 0, open: {}, raf: 0, last: 0 };
+// the editor window. cur: the draft's words; base: what [custom] holds (dirty when they differ); live: [custom] as
+// last seen; prof: the profile the draft is for; tok: bumped on each open and profile change, so a late reply or
+// timer of an earlier one does nothing; st: '' | 'sent' | 'applied' | 'err' (why); away: hidden behind the preset
+// or share window it opened, coming back when that one closes; moved: a profile came on meanwhile (1: the draft was
+// kept in Drafts, 2: Drafts were full)
+// g: the gesture now (bumped on each press, release, cancel, key press, leaving the window), ag: the one of the last
+// undo step; t, play, rate, pt: the preview's own clock (never saved); solo: the layer the preview shows alone
+const CMP = { L: [], K: [], sel: 0, cur: '', hist: [], fut: [], ctl: '', g: 0, ag: -1, open: {}, raf: 0, last: 0, t: 0, play: 1, rate: 1, pt: 0, solo: null,
+  base: '', live: '', prof: '', tok: 0, st: '', why: '', req: '', sent: '', timer: 0, away: 0, moved: 0, from: null };
+let cmpReq = 0;
 const cmpSnap = () => JSON.stringify(cmpWords(CMP.L, CMP.K));
-function cmpOpen() {
-  const c = cmpNow();
-  Object.assign(CMP, { L: c.L, K: c.K, sel: 0, hist: [], fut: [], ctl: '', open: {} }); CMP.cur = cmpSnap();
-  $('#cdlg-tut').setAttribute('aria-label', t('cmp.tut'));
-  $('#cdlg-tut').innerHTML = `<option value="">${t('cmp.tut')}</option>` + Object.keys(CMP_TUT).map(id => `<option value="${id}">${t('cmp.tut.' + id)}</option>`).join('');
+const cmpLiveSnap = () => (c => JSON.stringify(cmpWords(c.L, c.K)))(cmpNow());
+const cmpDirty = () => CMP.cur !== CMP.base;
+// [lines, knobs] as all 11 "key=value" lines (an empty one clears that key), for comp_apply and a preset's fxkv
+const cmpKv = ([l, k]) => Array.from({ length: fxc.MAX }, (_, i) => 'l' + (i + 1) + '=' + (l[i] || '')).concat([0, 1, 2].map(i => 'k' + (i + 1) + '=' + (k[i] || ''))).join('\n');
+const cmpShown = () => !$('#cdlg').classList.contains('hidden') || !!CMP.away;
+function cmpSet(snap) {   // the editor shows these words
+  const [l, k] = JSON.parse(snap);
+  const si = CMP.L.indexOf(CMP.solo);   // the preview's solo stays on the same place in the list
+  CMP.L = l.map(fxc.parse); CMP.K = k.map(s => knobParse(s, CMP.L)).filter(Boolean); CMP.sel = Math.max(0, Math.min(CMP.sel, CMP.L.length - 1));
+  CMP.solo = CMP.L[si] || null; CMP.cur = snap;
+}
+// c: a composition to start from (a draft), else what [custom] holds
+function cmpOpen(c) {
+  const live = cmpLiveSnap();
+  CMP.tok++; clearTimeout(CMP.timer);
+  Object.assign(CMP, { sel: 0, hist: [], fut: [], ctl: '', open: {}, base: live, live, prof: cv('general', 'profile', ''), st: '', why: '', req: '', away: 0, moved: 0, note: '', solo: null,
+    t: stillMotion() ? 3 : 0, play: stillMotion() ? 0 : 1, pt: 0 });   // reduced motion: a still frame until Play
+  if (!(c && c.L)) CMP.from = document.activeElement;
+  cmpSet(c && c.L ? JSON.stringify(cmpWords(c.L, c.K)) : live);
+  cmpTutOpts();
+  $('#cdlg-ask').classList.add('hidden');
   $('#cdlg').classList.remove('hidden');
   cmpRender();
   const s = $('#cdlg-strip'); s.width = s.clientWidth * devicePixelRatio; s.height = s.clientHeight * devicePixelRatio;
   if (!CMP.raf) CMP.raf = requestAnimationFrame(cmpPreview);
+  setTimeout(() => $('#cdlg-tut').focus(), 30);
 }
-const cmpClose = () => { $('#cdlg').classList.add('hidden'); closePicker(); flushSets(); renderEffectSide(); };
-// after each edit: a step of the editor's undo (one drag of one control is one), then the settings
-function cmpChanged(ctl, soon) {
+function cmpTutOpts() {
+  const D = cmpDrafts();
+  $('#cdlg-tut').setAttribute('aria-label', t('cmp.tut'));
+  $('#cdlg-tut').innerHTML = `<option value="">${t('cmp.tut')}</option>` + Object.keys(CMP_TUT).map(id => `<option value="${id}">${t('cmp.tut.' + id)}</option>`).join('') +
+    (D.length ? `<optgroup label="${esc(t('cmp.drafts'))}">${D.map(d => `<option value="d${d.n}">${esc(d.name)}</option>`).join('')}</optgroup>` : '');
+}
+// the window goes; the draft goes with it (asked first in cmpTryClose)
+function cmpClose() {
+  CMP.tok++; clearTimeout(CMP.timer); CMP.away = 0;
+  $('#cdlg').classList.add('hidden'); closePicker(); flushSets(); renderEffectSide();
+  const f = CMP.from && CMP.from.isConnected ? CMP.from : $('#cmp-open'); if (f) f.focus();
+}
+function cmpTryClose() {
+  if (!cmpDirty()) { cmpClose(); return; }
+  $('#cdlg-ask-text').textContent = t('cmp.ask.text');
+  $('#cdlg-ask').classList.remove('hidden'); $('#cdlg-row').classList.add('hidden');
+  $('#cdlg-ask-keep').focus();
+}
+function cmpAskBack() { $('#cdlg-ask').classList.add('hidden'); $('#cdlg-row').classList.remove('hidden'); $('#cdlg-close').focus(); }
+// behind a window it opened (Save as a preset, Share), and back when that one closes
+function cmpAway() { CMP.away = 1; $('#cdlg').classList.add('hidden'); closePicker(); }
+function cmpBack() {
+  if (!CMP.away) return;
+  CMP.away = 0; $('#cdlg').classList.remove('hidden'); cmpRender();
+  if (!CMP.raf) CMP.raf = requestAnimationFrame(cmpPreview);
+  setTimeout(() => $('#cdlg-tut').focus(), 30);
+}
+// after each edit: a step of the editor's undo, one per gesture (a drag of a slider, a held key, a drag in the
+// colour picker is one; a structural change, ctl '', is always its own); nothing is written
+function cmpChanged(ctl) {
   const s = cmpSnap(); if (s === CMP.cur) return;
-  if (!ctl || ctl !== CMP.ctl || Date.now() - CMP.at > 1000) { CMP.hist.push(CMP.cur); if (CMP.hist.length > 50) CMP.hist.shift(); }
-  CMP.fut.length = 0; CMP.cur = s; CMP.ctl = ctl || ''; CMP.at = Date.now();
-  cmpWrite(...cmpWords(CMP.L, CMP.K), soon);
+  if (!ctl || ctl !== CMP.ctl || CMP.g !== CMP.ag) { CMP.hist.push(CMP.cur); if (CMP.hist.length > 50) CMP.hist.shift(); }
+  CMP.fut.length = 0; CMP.cur = s; CMP.ctl = ctl || ''; CMP.ag = CMP.g; CMP.note = '';
+  if (CMP.st !== 'sent') CMP.st = '';
   cmpTools();
 }
 function cmpUndo(redo) {
   const from = redo ? CMP.fut : CMP.hist, to = redo ? CMP.hist : CMP.fut;
   if (!from.length) return;
-  to.push(CMP.cur); CMP.cur = from.pop(); CMP.ctl = '';
-  const [l, k] = JSON.parse(CMP.cur);
-  CMP.L = l.map(fxc.parse); CMP.K = k.map(s => knobParse(s, CMP.L)).filter(Boolean); CMP.sel = Math.min(CMP.sel, CMP.L.length - 1);
-  flushSets(); cmpWrite(l, k, false); cmpRender();
+  to.push(CMP.cur); cmpSet(from.pop()); CMP.ctl = '';
+  if (CMP.st !== 'sent') CMP.st = '';
+  cmpRender();
 }
 function cmpTools() {
+  const dirty = cmpDirty();
   $('#cdlg-undo').disabled = !CMP.hist.length; $('#cdlg-redo').disabled = !CMP.fut.length;
   $('#cdlg-add').disabled = CMP.L.length >= fxc.MAX;
+  $('#cdlg-apply').disabled = !dirty || CMP.st === 'sent'; $('#cdlg-revert').disabled = !dirty;
+  const st = $('#cdlg-st'), key = CMP.st === 'sent' ? 'cmp.st.sent' : CMP.st === 'err' ? 'cmp.st.err.' + CMP.why : dirty ? 'cmp.st.draft' : CMP.st === 'applied' ? 'cmp.st.applied' : '';
+  st.textContent = [key ? t(key) : '', CMP.note].filter(Boolean).join(' · '); st.className = 'cdlg-st' + (CMP.st === 'err' ? ' bad' : dirty ? ' draft' : CMP.st === 'applied' ? ' ok' : '');
+  const so = cmpSolo(), on = L => L.p[CMP_LP.hide] < 0.5;
+  $('#cdlg-cap').textContent = [t('cmp.view.model'), CMP.L.some(L => on(L) && L.mp >= 0) ? t('cmp.view.demo') : '',
+    so ? t('cmp.solo.on', CMP.L.indexOf(so) + 1) : '', so && so.blend === 4 ? t('cmp.mask.bw') : ''].filter(Boolean).join(' · ');
+  const mv = $('#cdlg-moved'); mv.classList.toggle('hidden', !CMP.moved);
+  if (CMP.moved) $('#cdlg-moved-text').textContent = t(CMP.moved === 2 ? 'cmp.moved.full' : 'cmp.moved');
 }
-function cmpRender() { cmpList(); cmpEdit(); cmpKnobs(); cmpTools(); }
+// Apply: the draft as [custom], one change, for the profile it is for; the core answers comp_done
+function cmpApply() {
+  if (!cmpDirty() || CMP.st === 'sent') return;
+  const req = String(++cmpReq), tok = CMP.tok;
+  Object.assign(CMP, { st: 'sent', why: '', req, sent: CMP.cur });
+  flushSets();   // the panel's knobs still on their way go first
+  send({ cmd: 'comp_apply', p: CMP.prof, req, kv: cmpKv(JSON.parse(CMP.cur)) });
+  clearTimeout(CMP.timer);
+  CMP.timer = setTimeout(() => { if (CMP.tok === tok) cmpDone({ req, err: 'noreply' }); }, 4000);
+  cmpTools();
+}
+function cmpDone(m) {
+  if (!CMP.req || m.req !== CMP.req) return;   // a reply for an editor closed, reopened or moved to another profile since
+  clearTimeout(CMP.timer); CMP.req = '';
+  // 'save': in use, only not on disk yet; 'prof', 'bad', 'noreply': not taken
+  if (!m.err || m.err === 'save') CMP.base = CMP.live = CMP.sent;
+  CMP.st = m.err ? 'err' : 'applied'; CMP.why = m.err || '';
+  cmpTools(); renderEffectSide();
+}
+function cmpRevert() {
+  if (!cmpDirty()) return;
+  const [l, k] = JSON.parse(CMP.base);   // one step of undo, like any other change
+  CMP.L = l.map(fxc.parse); CMP.K = k.map(s => knobParse(s, CMP.L)).filter(Boolean); CMP.sel = Math.min(CMP.sel, CMP.L.length - 1);
+  cmpChanged(''); cmpRender();
+}
+// a state came while the editor is up: [custom] changed (a preset, the phone, the panel) or another profile came on
+function cmpState(switched) {
+  const live = cmpLiveSnap();
+  if (switched) {
+    const dirty = cmpDirty();
+    CMP.tok++; CMP.req = ''; clearTimeout(CMP.timer);
+    if (dirty) CMP.moved = cmpDraftSave() ? 1 : 2;   // kept (marked with the old profile), never applied to the new one by itself
+    Object.assign(CMP, { prof: cv('general', 'profile', ''), base: live, live, hist: [], fut: [], ctl: '', st: '', why: '', solo: null });   // no undo across profiles
+    if (!dirty) { cmpSet(live); CMP.moved = 0; }
+    cmpTutOpts();
+    if (!CMP.away) cmpRender();
+    return;
+  }
+  if (live === CMP.live) return;
+  const dirty = cmpDirty();
+  CMP.live = CMP.base = live;
+  if (!dirty) cmpSet(live);
+  if (!CMP.away) cmpRender();
+}
+
+// ---- drafts ([cdraft.1..16], not a profile's): name, at (ms), prof, l1..l8, k1..k3. Written only when asked
+// (closing with changes) or when a profile comes on under unapplied changes; never overwritten
+const CDRAFT_MAX = 16;
+function cmpDrafts() {
+  const D = [];
+  for (let n = 1; n <= CDRAFT_MAX; n++) if (cv('cdraft.' + n, 'at', '')) D.push({ n, name: cv('cdraft.' + n, 'name', '') || t('cmp.drafts'), at: +cv('cdraft.' + n, 'at', 0) });
+  return D.sort((a, b) => b.at - a.at);
+}
+function cmpDraftSave() {
+  let n = 1; while (n <= CDRAFT_MAX && cv('cdraft.' + n, 'at', '')) n++;
+  if (n > CDRAFT_MAX) return 0;
+  const [l, k] = JSON.parse(CMP.cur), sec = 'cdraft.' + n;
+  const when = new Date().toLocaleString(LANG, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const kv = [['name', cmpLabel(t('cmp.draft.name', when))], ['at', String(Date.now())], ['prof', CMP.prof]]
+    .concat(Array.from({ length: fxc.MAX }, (_, i) => ['l' + (i + 1), l[i] || '']), [0, 1, 2].map(i => ['k' + (i + 1), k[i] || '']));
+  kv.forEach(([key, v]) => { setCfgLocal(sec, key, v); send({ cmd: 'set', s: sec, k: key, v }); });   // no p: drafts belong to no profile
+  return n;
+}
+const cmpDraft = n => cmpLoad(k => cv('cdraft.' + n, k, ''));
+const draftKeys = () => ['name', 'at', 'prof'].concat(Array.from({ length: fxc.MAX }, (_, i) => 'l' + (i + 1)), ['k1', 'k2', 'k3']);
+const draftPut = (n, k, v) => { setCfgLocal('cdraft.' + n, k, v); send({ cmd: 'set', s: 'cdraft.' + n, k, v }); };   // no p: a draft is no profile's
+// a draft's lines as a constructor's [lines, knobs] (kept in order: the knobs point at layers by place)
+const draftComp = n => [Array.from({ length: fxc.MAX }, (_, i) => cv('cdraft.' + n, 'l' + (i + 1), '')).filter(Boolean), [1, 2, 3].map(i => cv('cdraft.' + n, 'k' + i, '')).filter(Boolean)];
+function draftSub(d) {
+  const p = cv('cdraft.' + d.n, 'prof', ''), pn = p && cv('profile.' + p, 'name', '');
+  const when = d.at ? new Date(d.at).toLocaleString(LANG, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  return [t('draft.layers', draftComp(d.n)[0].length), when, pn ? t('draft.from', pn) : ''].filter(Boolean).join(' · ');
+}
+let DDLG = 0, DDLG_FROM = null;   // the draft in the window, and what to focus after it
+function draftDialog(n) {
+  const d = cmpDrafts().find(x => x.n === n); if (!d) return;
+  DDLG = n; DDLG_FROM = document.activeElement;
+  $('#ddlg-name').value = d.name; $('#ddlg-note').textContent = draftSub(d) + '. ' + t('draft.note');
+  const del = $('#ddlg-del'); del.classList.remove('confirm'); del.querySelector('span').textContent = t('preset.delete');
+  $('#ddlg-preset').disabled = presets().length >= 32;
+  $('#ddlg').classList.remove('hidden');
+  setTimeout(() => { $('#ddlg-name').focus(); $('#ddlg-name').select(); }, 30);
+}
+function draftClose() {
+  $('#ddlg').classList.add('hidden'); DDLG = 0;
+  if (FX_TAB === 'presets') buildEffects();
+  const f = DDLG_FROM && DDLG_FROM.isConnected ? DDLG_FROM : $('#fx-tabs button[data-v="presets"]'); if (f) f.focus();
+}
+$('#ddlg-form').addEventListener('submit', e => {   // the name only
+  e.preventDefault();
+  const v = cmpLabel($('#ddlg-name').value); if (DDLG && v) draftPut(DDLG, 'name', v);
+  draftClose();
+});
+$('#ddlg-open').addEventListener('click', () => { const n = DDLG; draftClose(); if (n) cmpOpen(cmpDraft(n)); });
+$('#ddlg-preset').addEventListener('click', () => {   // into My effects, not applied; the draft stays
+  const n = DDLG, name = cmpLabel($('#ddlg-name').value) || t('fx.custom'); draftClose(); if (n) presetDialog(0, name, draftComp(n));
+});
+$('#ddlg-share').addEventListener('click', () => {
+  const n = DDLG, name = cmpLabel($('#ddlg-name').value) || t('fx.custom'); if (!n) return; const [l, k] = draftComp(n);
+  draftClose(); shareDialog({ name, effect: 'custom', palette: palStr(effPal('custom')), speed: cv('custom', 'speed', ''), bri: '', c: { l, k } });
+});
+$('#ddlg-del').addEventListener('click', () => {   // asked twice; nothing else is touched
+  const b = $('#ddlg-del');
+  if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.querySelector('span').textContent = t('preset.delete.sure'); return; }
+  const n = DDLG; if (n) draftKeys().forEach(k => draftPut(n, k, ''));
+  draftClose();
+});
+$('#ddlg-cancel').addEventListener('click', draftClose);
+$('#ddlg').addEventListener('pointerdown', e => { if (e.target.id === 'ddlg') draftClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#ddlg').classList.contains('hidden')) draftClose(); });
+function cmpRender() { cmpList(); cmpEdit(); cmpKnobs(); cmpTools(); cmpPlayUi(); }
 function cmpList() {
   const n = CMP.L.length, off = L => L.p[CMP_LP.hide] >= 0.5;
   $('#cdlg-list').innerHTML = CMP.L.map((L, i) => `<li class="${i === CMP.sel ? 'on' : ''}${off(L) ? ' off' : ''}" data-i="${i}">` +
     `<button type="button" class="cdlg-eye" data-a="eye" title="${t(off(L) ? 'cmp.show' : 'cmp.hide')}" aria-pressed="${!off(L)}">${off(L) ? '○' : '●'}</button>` +
-    `<button type="button" class="cdlg-pick" data-a="pick" aria-current="${i === CMP.sel}">${i + 1} · ${cmpName(L)}${L.blend ? ` <i>${t('cmp.b.' + fxc.BLENDS[L.blend])}</i>` : ''}</button>` +
+    `<button type="button" class="cdlg-pick" data-a="pick" aria-current="${i === CMP.sel}">${i + 1} · ${esc(cmpName(L))}${L.blend ? ` <i>${t('cmp.b.' + fxc.BLENDS[L.blend])}</i>` : ''}</button>` +
+    `<button type="button" class="cdlg-solo" data-a="solo" title="${t('cmp.solo')}" aria-pressed="${CMP.solo === L}">◐</button>` +
+    `<button type="button" data-a="dup" title="${t('cmp.dup')}"${n < fxc.MAX ? '' : ' disabled'}>⧉</button>` +
     `<button type="button" data-a="up" title="${t('cmp.up')}"${i ? '' : ' disabled'}>▲</button><button type="button" data-a="down" title="${t('cmp.down')}"${i < n - 1 ? '' : ' disabled'}>▼</button>` +
     `<button type="button" data-a="del" title="${t('cmp.del')}"${n > 1 ? '' : ' disabled'}>✕</button></li>`).join('');
 }
@@ -1729,8 +1961,10 @@ $('#cdlg-list').addEventListener('click', e => {
   const b = e.target.closest('button[data-a]'); if (!b) return;
   const i = +b.closest('li').dataset.i, L = CMP.L, a = b.dataset.a;
   if (a === 'pick') { CMP.sel = i; cmpRender(); return; }
-  if (a === 'eye') L[i].p[CMP_LP.hide] = L[i].p[CMP_LP.hide] >= 0.5 ? 0 : 1;
-  else if (a === 'del') { if (L.length < 2) return; const [x] = L.splice(i, 1); CMP.K = CMP.K.filter(K => K.L !== x); if (CMP.sel > i) CMP.sel--; CMP.sel = Math.min(CMP.sel, L.length - 1); }
+  if (a === 'solo') { CMP.solo = CMP.solo === L[i] ? null : L[i]; cmpRender(); return; }   // the preview only: no undo step, never saved
+  if (a === 'dup') { if (L.length >= fxc.MAX) return; L.splice(i + 1, 0, fxc.parse(fxc.line(L[i]))); CMP.sel = i + 1; }
+  else if (a === 'eye') L[i].p[CMP_LP.hide] = L[i].p[CMP_LP.hide] >= 0.5 ? 0 : 1;
+  else if (a === 'del') { if (L.length < 2) return; const [x] = L.splice(i, 1); CMP.K = CMP.K.filter(K => K.L !== x); if (CMP.solo === x) CMP.solo = null; if (CMP.sel > i) CMP.sel--; CMP.sel = Math.min(CMP.sel, L.length - 1); }
   else {
     const j = a === 'up' ? i - 1 : i + 1; if (j < 0 || j >= L.length) return;
     [L[i], L[j]] = [L[j], L[i]]; CMP.sel = CMP.sel === i ? j : CMP.sel === j ? i : CMP.sel;
@@ -1748,18 +1982,24 @@ function cmpEdit() {
   };
   const chk = k => `<div class="set-row"><b>${t('cmp.p.' + k)}</b><label class="switch"><input type="checkbox" data-p="${k}"${L.p[CMP_LP[k]] >= 0.5 ? ' checked' : ''}><span></span></label></div>`;
   const cols = [[-1, t('cmp.c.grad')]].concat(Array.from({ length: 8 }, (_, i) => [i, t('cmp.c.pal', i + 1)]), [[-2, t('cmp.c.own')]]);
-  const mods = [[-1, t('cmp.none')]].concat(fxc.LPD.slice(0, fxc.MOD).map((d, i) => [i, t('cmp.p.' + d[0])]));
+  // what time or sound can move: the settings this shape reads, and the one chosen before a shape change (marked)
+  const uses = cmpUses(L), dead = i => i >= 0 && !uses.includes(fxc.LPD[i][0]);
+  const mods = cur => [[-1, t('cmp.none')]].concat(fxc.LPD.slice(0, fxc.MOD).map((d, i) => [i, dead(i) ? t('cmp.dead', t('cmp.p.' + d[0])) : t('cmp.p.' + d[0])]).filter(([i]) => !dead(i) || i === cur));
+  const deadNote = i => dead(i) ? `<p class="cdlg-dead">${t('cmp.dead', t('cmp.p.' + fxc.LPD[i][0]))}. ${t('cmp.dead.note')}</p>` : '';
   const shape = fxc.SHAPES[L.shape], open = (d, on) => on || CMP.open[d] ? ' open' : '';
-  box.innerHTML = field(t('cmp.shape'), sel('shape', fxc.SHAPES.map((s, i) => [i, t('cmp.s.' + s)]), L.shape, t('cmp.shape'))) +
+  box.innerHTML = field(t('cmp.name'), `<input type="text" data-f="name" maxlength="24" spellcheck="false" value="${esc(L.name)}" placeholder="${esc(t('cmp.s.' + shape))}" aria-label="${t('cmp.name')}">`) +
+    field(t('cmp.shape'), sel('shape', fxc.SHAPES.map((s, i) => [i, t('cmp.s.' + s)]), L.shape, t('cmp.shape'))) +
     field(t('cmp.colour'), `<div class="cdlg-col">${sel('col', cols, L.col, t('cmp.colour'))}${L.col === -2 ? `<button type="button" class="sw" id="cdlg-sw" style="--c:${cmpHex(L)}" title="${cmpHex(L)}" aria-label="${t('cmp.c.own')}"></button>` : ''}</div>`) +
     field(t('cmp.blend'), sel('blend', fxc.BLENDS.map((s, i) => [i, t('cmp.b.' + s)]), L.blend, t('cmp.blend'))) +
-    (L.blend === 4 ? `<p class="note">${t('cmp.mask.note')}</p>` + chk('inv') : '') +
+    (L.blend === 4 ? `<p class="note">${t('cmp.mask.note')}</p><button type="button" class="btn small ghost" data-a="maskview" aria-pressed="${CMP.solo === L}">${t('cmp.mask.view')}</button>` + chk('inv') : '') +
     rng('o') + CMP_P[shape].map(rng).join('') + (shape === 'ring' ? chk('fade') : '') +
-    `<details class="fx-adv" data-d="anim"${open('anim', L.ap >= 0)}><summary>${t('cmp.anim')}</summary>${field(t('cmp.anim.what'), sel('ap', mods, L.ap, t('cmp.anim.what')))}${L.ap >= 0 ? rng('aa') + rng('at') : ''}</details>` +
-    `<details class="fx-adv" data-d="snd"${open('snd', L.mp >= 0)}><summary>${t('cmp.snd')}</summary>${field(t('cmp.snd.what'), sel('mp', mods, L.mp, t('cmp.snd.what')))}` +
+    `<details class="fx-adv" data-d="anim"${open('anim', L.ap >= 0)}><summary>${t('cmp.anim')}</summary>${field(t('cmp.anim.what'), sel('ap', mods(L.ap), L.ap, t('cmp.anim.what')))}${deadNote(L.ap)}${L.ap >= 0 ? rng('aa') + rng('at') : ''}</details>` +
+    `<details class="fx-adv" data-d="snd"${open('snd', L.mp >= 0)}><summary>${t('cmp.snd')}</summary>${field(t('cmp.snd.what'), sel('mp', mods(L.mp), L.mp, t('cmp.snd.what')))}${deadNote(L.mp)}` +
     (L.mp >= 0 ? field(t('cmp.ms'), sel('ms', [[0, t('cmp.ms.level')], [1, t('cmp.ms.bass')], [2, t('cmp.ms.beat')]], L.ms, t('cmp.ms'))) + rng('ma') : '') + `<p class="note">${t('cmp.snd.note')}</p></details>`;
   box.querySelectorAll('input[type=range]').forEach(fill);
   box.querySelectorAll('details').forEach(d => d.addEventListener('toggle', () => { CMP.open[d.dataset.d] = d.open; }));
+  const mv = box.querySelector('[data-a="maskview"]');
+  if (mv) mv.addEventListener('click', () => { CMP.solo = CMP.solo === L ? null : L; cmpRender(); });   // the preview only
   const sw = box.querySelector('#cdlg-sw');
   if (sw) sw.addEventListener('click', () => openPicker(sw, cmpHex(L), hex => { L.rgb = hex2rgb(hex); sw.style.setProperty('--c', hex); sw.title = hex; cmpChanged('rgb' + CMP.sel, true); }));
 }
@@ -1771,6 +2011,7 @@ $('#cdlg-edit').addEventListener('input', e => {
 });
 $('#cdlg-edit').addEventListener('change', e => {
   const x = e.target, L = CMP.L[CMP.sel]; if (!L || x.type === 'range') return;
+  if (x.dataset.f === 'name') { L.name = fxc.NAME(x.value); x.value = L.name; cmpChanged(''); cmpList(); cmpKnobs(); return; }   // the field keeps its focus
   if (x.type === 'checkbox') L.p[CMP_LP[x.dataset.p]] = x.checked ? 1 : 0;
   else if (x.dataset.f) {
     const f = x.dataset.f; L[f] = +x.value;
@@ -1782,13 +2023,17 @@ $('#cdlg-edit').addEventListener('change', e => {
 });
 // the knobs: which layer and setting, the range the panel's slider runs over, a name
 function cmpKnobs() {
-  const ps = [['c', t('cmp.colour')]].concat(fxc.LPD.filter(d => !['fade', 'inv', 'hide'].includes(d[0])).map(d => [d[0], t('cmp.p.' + d[0])]));
+  const ps = K => { const u = cmpUses(K.L), dead = k => k !== 'c' && !u.includes(k);
+    return [['c', t('cmp.colour')]].concat(fxc.LPD.filter(d => !['fade', 'inv', 'hide'].includes(d[0]) && (!dead(d[0]) || d[0] === K.p))
+      .map(d => [d[0], dead(d[0]) ? t('cmp.dead', t('cmp.p.' + d[0])) : t('cmp.p.' + d[0])])); };
+  const dead = K => K.p !== 'c' && !cmpUses(K.L).includes(K.p);
   $('#cdlg-knobs').innerHTML = CMP.K.map((K, i) => `<div class="cdlg-knob" data-i="${i}">` +
     `<input type="text" data-f="label" maxlength="40" spellcheck="false" value="${esc(K.label)}" placeholder="${t('cmp.knob.name')}" aria-label="${t('cmp.knob.name')}">` +
-    `<select class="select" data-f="L" aria-label="${t('cmp.knob.layer')}">${CMP.L.map((L, j) => `<option value="${j}"${L === K.L ? ' selected' : ''}>${j + 1} · ${cmpName(L)}</option>`).join('')}</select>` +
-    `<select class="select" data-f="p" aria-label="${t('cmp.knob.what')}">${ps.map(([v, s]) => `<option value="${v}"${v === K.p ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>` +
+    `<select class="select" data-f="L" aria-label="${t('cmp.knob.layer')}">${CMP.L.map((L, j) => `<option value="${j}"${L === K.L ? ' selected' : ''}>${j + 1} · ${esc(cmpName(L))}</option>`).join('')}</select>` +
+    `<select class="select" data-f="p" aria-label="${t('cmp.knob.what')}">${ps(K).map(([v, s]) => `<option value="${v}"${v === K.p ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>` +
     (K.p === 'c' ? '<span></span><span></span>' : `<input type="number" data-f="lo" value="${cmpNum(K.lo)}" step="any" title="${t('cmp.knob.from')}" aria-label="${t('cmp.knob.from')}"><input type="number" data-f="hi" value="${cmpNum(K.hi)}" step="any" title="${t('cmp.knob.to')}" aria-label="${t('cmp.knob.to')}">`) +
-    `<button type="button" class="btn small ghost" data-a="del" title="${t('cmp.del')}">✕</button></div>`).join('') +
+    `<button type="button" class="btn small ghost" data-a="del" title="${t('cmp.del')}">✕</button></div>` +
+    (dead(K) ? `<p class="cdlg-dead">${t('cmp.dead', t('cmp.p.' + K.p))}. ${t('cmp.dead.note')}</p>` : '')).join('') +
     (CMP.K.length < 3 ? `<button type="button" class="btn small ghost" data-a="add">${t('cmp.knob.add')}</button>` : '') + `<p class="note">${t('cmp.knob.note')}</p>`;
 }
 $('#cdlg-knobs').addEventListener('change', e => {
@@ -1806,39 +2051,83 @@ $('#cdlg-knobs').addEventListener('click', e => {
   else CMP.K.splice(+b.closest('[data-i]').dataset.i, 1);
   cmpChanged(''); cmpKnobs();
 });
-// the picture (2D, as on a fan or a panel) and the strip (as on a line of LEDs), at the effect's speed and colours
+// the layer shown alone, if it is still in the list
+const cmpSolo = () => CMP.solo && CMP.L.includes(CMP.solo) ? CMP.solo : null;
+// what the preview draws: all layers, or the solo one with the others hidden (a mask: as black and white, over white)
+// shortcut: a soloed mask moves one place down, so a noise or spark mask gets another seed than in the composition
+function cmpShow() {
+  const so = cmpSolo(); if (!so) return CMP.L;
+  const L = CMP.L.map(x => { const c = fxc.parse(fxc.line(x)); c.p[CMP_LP.hide] = x === so ? 0 : 1; return c; });
+  return so.blend === 4 ? [fxc.parse('s:fill c:#ffffff')].concat(L) : L;
+}
+// the picture (2D, as on a fan or a panel) and the strip (as on a line of LEDs): one clock for both, at the effect's
+// speed and colours; it runs only while the window shows (hidden or behind other windows: no frames)
 function cmpPreview(now) {
   CMP.raf = 0;
   if ($('#cdlg').classList.contains('hidden') || document.body.classList.contains('idle')) return;
   CMP.raf = requestAnimationFrame(cmpPreview);
   if (now - CMP.last < 33) return;
   CMP.last = now;
-  const pal = effPal('custom').map(hex2rgb), lines = CMP.L.map(fxc.line);
-  const tt = stillMotion() ? 3 : now / 1000 * fxClockSpeed('custom', +cv('custom', 'speed', cv('general', 'speed', 5)), () => '');
-  const v = $('#cdlg-view');
-  v.getContext('2d').putImageData(new ImageData(fxc.frame(CMP.L, pal, v.width, v.height, tt), v.width, v.height), 0, 0);
-  const s = $('#cdlg-strip'); if (s.width) drawStrip(s, fxPreview('custom', pal, tt, 40, k => lines[+k.slice(1) - 1] || ''));
+  const dt = CMP.pt ? Math.min(0.25, (now - CMP.pt) / 1000) : 0; CMP.pt = now;   // back from a pause of the loop: no jump
+  if (CMP.play) CMP.t = (CMP.t + dt * CMP.rate * fxClockSpeed('custom', +cv('custom', 'speed', cv('general', 'speed', 5)), () => '')) % 60;
+  cmpDraw();
 }
+function cmpDraw() {
+  const pal = effPal('custom').map(hex2rgb), show = cmpShow(), lines = show.map(fxc.line), tt = CMP.t;
+  const v = $('#cdlg-view');
+  v.getContext('2d').putImageData(new ImageData(fxc.frame(show, pal, v.width, v.height, tt), v.width, v.height), 0, 0);
+  const s = $('#cdlg-strip'); if (s.width) drawStrip(s, fxPreview('custom', pal, tt, 40, k => lines[+k.slice(1) - 1] || ''));
+  const r = $('#cdlg-t'); if (+r.value !== +tt.toFixed(1)) { r.value = tt.toFixed(1); fill(r); }
+  $('#cdlg-tv').textContent = tt.toFixed(1);
+}
+function cmpPlayUi() {
+  const b = $('#cdlg-pp'); b.textContent = CMP.play ? '❚❚' : '▶'; b.title = t(CMP.play ? 'cmp.pause' : 'cmp.play'); b.setAttribute('aria-pressed', String(!!CMP.play));
+  $('#cdlg-rate').value = String(CMP.rate);
+}
+$('#cdlg-pp').addEventListener('click', () => { CMP.play = CMP.play ? 0 : 1; cmpPlayUi(); });
+$('#cdlg-rs').addEventListener('click', () => { CMP.t = 0; cmpDraw(); });
+$('#cdlg-t').addEventListener('input', e => { CMP.t = +e.target.value; CMP.play = 0; cmpPlayUi(); cmpDraw(); });   // scrubbing holds the picture
+$('#cdlg-rate').addEventListener('change', e => { CMP.rate = +e.target.value || 1; });
+// gestures for the undo: a press or release of the pointer or a key, a cancelled pointer, the window left
+['pointerdown', 'pointerup', 'pointercancel', 'keyup'].forEach(ev => document.addEventListener(ev, () => { CMP.g++; }, true));
+document.addEventListener('keydown', e => { if (!e.repeat) CMP.g++; }, true);
+window.addEventListener('blur', () => { CMP.g++; });
 $('#cdlg-add').addEventListener('click', () => {
   if (CMP.L.length >= fxc.MAX) return;
   CMP.L.push(fxc.parse('s:grad c:p')); CMP.sel = CMP.L.length - 1; cmpChanged(''); cmpRender();
 });
 $('#cdlg-tut').addEventListener('change', e => {
-  const id = e.target.value; e.target.value = ''; if (!CMP_TUT[id]) return;
-  const c = cmpTut(id); CMP.L = c.L; CMP.K = c.K; CMP.sel = 0; cmpChanged(''); cmpRender();
+  const id = e.target.value; e.target.value = '';
+  const d = /^d(\d+)$/.exec(id), c = d ? cmpDraft(+d[1]) : CMP_TUT[id] ? cmpTut(id) : null; if (!c) return;
+  CMP.L = c.L; CMP.K = c.K; CMP.sel = 0; cmpChanged(''); cmpRender();   // into the draft, one step of undo; applied only with Apply
 });
 $('#cdlg-undo').addEventListener('click', () => cmpUndo(false));
 $('#cdlg-redo').addEventListener('click', () => cmpUndo(true));
-$('#cdlg-done').addEventListener('click', cmpClose);
-$('#cdlg').addEventListener('pointerdown', e => { if (e.target.id === 'cdlg') cmpClose(); });
-$('#cdlg-save').addEventListener('click', () => { cmpClose(); presetDialog(0, t('fx.custom')); });
+$('#cdlg-apply').addEventListener('click', cmpApply);
+$('#cdlg-revert').addEventListener('click', cmpRevert);
+$('#cdlg-close').addEventListener('click', cmpTryClose);
+$('#cdlg-ask-keep').addEventListener('click', () => {
+  if (!cmpDraftSave()) { $('#cdlg-ask-text').textContent = t('cmp.draft.full'); return; }   // never one overwritten: the window stays
+  cmpAskBack(); cmpClose(); if (FX_TAB === 'presets') buildEffects();
+});
+$('#cdlg-ask-drop').addEventListener('click', () => { cmpAskBack(); cmpClose(); });
+$('#cdlg-ask-back').addEventListener('click', cmpAskBack);
+$('#cdlg-moved-open').addEventListener('click', () => {   // the profile's own composition; the draft stays in Drafts
+  cmpSet(CMP.base); CMP.moved = 0; CMP.hist = []; CMP.fut = []; cmpRender(); $('#cdlg-close').focus();
+});
+$('#cdlg-moved-preset').addEventListener('click', () => $('#cdlg-save').click());
+$('#cdlg').addEventListener('pointerdown', e => { if (e.target.id === 'cdlg') cmpTryClose(); });
+$('#cdlg-save').addEventListener('click', () => {
+  // nothing unapplied: the preset is what is lit, so it shows as the one in use, like any other preset saved
+  const comp = JSON.parse(CMP.cur), lit = S.effect === 'custom' && CMP.cur === cmpLiveSnap();
+  cmpAway(); presetDialog(0, t('fx.custom'), comp); PDLG.compLit = lit; });
 $('#cdlg-export').addEventListener('click', () => {
-  const [l, k] = cmpWords(CMP.L, CMP.K);
-  cmpClose(); shareDialog({ name: t('fx.custom'), effect: 'custom', palette: palStr(effPal('custom')), speed: cv('custom', 'speed', ''), bri: '', c: { l, k } });
+  const [l, k] = JSON.parse(CMP.cur);
+  cmpAway(); shareDialog({ name: t('fx.custom'), effect: 'custom', palette: palStr(effPal('custom')), speed: cv('custom', 'speed', ''), bri: '', c: { l, k } });
 });
 document.addEventListener('keydown', e => {
   if ($('#cdlg').classList.contains('hidden') || !pk.classList.contains('hidden')) return;
-  if (e.key === 'Escape') { cmpClose(); return; }
+  if (e.key === 'Escape') { if (!$('#cdlg-ask').classList.contains('hidden')) cmpAskBack(); else cmpTryClose(); return; }
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y') && !e.target.closest('input:not([type=range]):not([type=checkbox]), textarea, select')) { e.preventDefault(); cmpUndo(k === 'y' || e.shiftKey); }
 });
@@ -2029,12 +2318,13 @@ function animate(now) {
     const r = cvs.getBoundingClientRect(); if (r.bottom <= 0 || r.top >= innerHeight) continue;   // only the cards on screen (hidden ones measure 0)
     const C = b.dataset.comm ? COMM.items.find(x => x.id === b.dataset.comm) : null;
     const B = b.dataset.builtin ? BUILTIN.find(x => x.id === b.dataset.builtin) : null;
-    const P = C ? { effect: C.effect, palette: (C.palette || []).join(', '), speed: C.speed } : B || (b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null), id = P ? P.effect : b.dataset.id;
+    const DR = b.dataset.draft ? 'cdraft.' + b.dataset.draft : '';
+    const P = C ? { effect: C.effect, palette: (C.palette || []).join(', '), speed: C.speed } : DR ? { effect: 'custom', palette: '', speed: '' } : B || (b.dataset.preset ? PR.find(p => p.id === +b.dataset.preset) : null), id = P ? P.effect : b.dataset.id;
     if (!id) continue;
     if (cvs.width !== cvs.clientWidth * devicePixelRatio) { cvs.width = cvs.clientWidth * devicePixelRatio; cvs.height = cvs.clientHeight * devicePixelRatio; cvs._sig = ''; }
     const pal = P && parsePal(P.palette).length ? parsePal(P.palette) : effPal(id);
     if (calm || stillFx(id)) { const sig = id + pal + (C ? 'g' : 's'); if (cvs._sig === sig) continue; cvs._sig = sig; } else cvs._sig = '';
-    const PG = B ? k => fxParamValue(id, k, B.fx[k] ?? '') : id === 'custom' && P && P.id ? k => cv('preset.' + P.id, 'fx.' + k, '') : fxGetter(id), spd = fxClockSpeed(id, P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5)), PG);
+    const PG = DR ? k => cv(DR, k, '') : B ? k => fxParamValue(id, k, B.fx[k] ?? '') : id === 'custom' && P && P.id ? k => cv('preset.' + P.id, 'fx.' + k, '') : fxGetter(id), spd = fxClockSpeed(id, P && P.speed ? P.speed : cv(id, 'speed', cv('general', 'speed', 5)), PG);
     drawStrip(cvs, fxPreview(id, pal.map(hex2rgb), t * spd, 28, PG), C ? 'glow' : 'spill');
   }
 }
@@ -3375,6 +3665,33 @@ function chkText(d) {
     C.res === 'subnet' ? t('chk.subnet', ip) : t('chk.name');
 }
 const DEV_ADV = new Set();   // devices whose "Advanced" part is open (kept when the cards are built again)
+const DEV_WHY = new Set();   // devices whose "What controls its lighting now" part is open
+// "What controls its lighting now": every row from what the page holds or the core reports. The core only knows that
+// a frame left (devices.c "sent", the local write): no driver hears back that the device showed it, so nothing here
+// says confirmed.
+function devWhy(d) {
+  const zone = 'zone.dev' + d.id, sec = 'dev.' + d.id, caps = zoneCaps(zone).kind, P = activePreset(), cur = profCur();
+  const own = cv(zone, 'effect', ''), mode = zoneMode(zone), zb = +cv(zone, 'brightness', 100), rate = d.kind === 'openrgb' ? +cv(sec, 'rate', 0) : 0;
+  const goP = PROF.go && profiles().find(p => p.id === PROF.go);
+  const ours = d.enabled && !d.own && !d.held && !d.covered && !(d.pro && proLocked());
+  const simple = !ours ? '' : d.kind === 'openrgb' && d.cap === 2 ? t('drive.2') : caps === 'steady' || d.kind === 'openrgb' && d.cap === 3 ? t('why.steady') :
+    caps === 'white' ? t('why.white') : caps === 'onoff' ? t('why.onoff') : !d.per_led ? t('why.bulb') : '';
+  const who = !d.enabled ? t('dev.off') : d.own ? t('own.status') : d.held || d.covered ? devStatus(d) : d.pro && proLocked() ? t('dev.pro') : 'haku';
+  const st = goP ? t('why.st.asked', goP.name) : !ours ? t('why.st.not') : !d.online ? t('why.st.off') :
+    d.sent >= 0 ? t('why.st.sent', d.sent < 1000 ? '<1' : Math.round(d.sent / 1000)) : t('why.st.wait');
+  const rows = [
+    ['why.prof', cur ? cur.name : t('prof.none')],
+    ['why.fx', fxName(S.effect) + (P ? ' · ' + P.name : '')],
+    ['why.own', [own ? fxName(own) : '', mode !== 'effect' ? t('mode.' + mode) : ''].filter(Boolean).join(' · ') || t('why.own.none')],
+    ['why.bri', (zb < 100 ? t('why.bri.of', Math.round(S.brightness * zb / 100), S.brightness, zb) : S.brightness + '%') + (rate ? ' · ' + t('dev.rate.n', rate) : '')],
+    ['why.who', who],
+    ['why.link', !d.enabled ? t('dev.off') : d.online ? t('why.online') : t(d.fails === 0 ? 'dev.connecting' : 'dev.offline')],
+    ['why.simple', simple || t('why.simple.none')],
+  ];
+  return `<p class="why-st"><b>${esc(st)}</b>${simple ? ' · ' + esc(t('why.st.simple')) : ''}</p>
+    <dl class="why-list">${rows.map(([k, v]) => `<dt>${t(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    <p class="hint">${t('why.noack')}</p>`;
+}
 // set while it can't be reached: the core keeps [dev.N] and reads it again on every reconnect, so it does apply then,
 // as long as it stays on, haku's and still tries (not given back to its own lighting, not waiting for Pro)
 const DEV_SAVED = new Set();
@@ -3423,6 +3740,7 @@ function buildDevices() {
           ['direct', 'orgb', 'own'].map(v => `<option value="${v}:${n.id}"${pathCur(d) === v + ':' + n.id ? ' selected' : ''}>${esc(t('path.' + v, n.name))}</option>`).join('')).join('')}</select></label>
           <p class="hint">${t('path.note')}</p>` : ''}
         ${d.kind !== 'openrgb' && devById(d.same) ? `<p class="hint">${esc(t('path.hint', devById(d.same).name))}</p>` : ''}
+        ${scr ? '' : `<details class="trouble dev-why"${DEV_WHY.has(d.id) ? ' open' : ''}><summary>${t('why.title')}</summary><div class="adv-body" id="dev-why-${d.id}"></div></details>`}
         <details class="trouble dev-adv"${DEV_ADV.has(d.id) || devStatus(d) === t('zones.need') ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
         ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
@@ -3453,6 +3771,7 @@ function buildDevices() {
     el.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', saved));
     el.querySelector('.dev-on').addEventListener('change', e => { setCfg(sec, 'enabled', e.target.checked ? 1 : 0); });
     el.querySelector('.dev-adv').addEventListener('toggle', e => { e.target.open ? DEV_ADV.add(d.id) : DEV_ADV.delete(d.id); });
+    el.querySelector('.dev-why')?.addEventListener('toggle', e => { e.target.open ? DEV_WHY.add(d.id) : DEV_WHY.delete(d.id); updateDevices(); });
     el.querySelector('.dev-ident')?.addEventListener('click', () => send({ cmd: 'identify', zone: 'zone.dev' + d.id }));
     el.querySelector('.dev-cal')?.addEventListener('click', e => calOpen(d, e.currentTarget));
     el.querySelector('.dev-check')?.addEventListener('click', () => { CHK_ID = d.id; S.netchk = { id: d.id, busy: 1 }; updateDevices(); send({ cmd: 'dev_check', id: String(d.id) }); });
@@ -3859,12 +4178,13 @@ function txbLayers() {
   $('#txb-text').disabled = $('#txb-pic').disabled = B.layers.length >= 8;
 }
 const txbSel = i => { TXB.sel = i; $('#txb-layers').querySelectorAll('.txb-layer').forEach(r => r.classList.toggle('on', +r.dataset.i === i)); };
-// the smallest mp4 a player takes: one H.264 track (WebCodecs chunks in avc form, avcc = its avcC), moov first, one chunk in mdat
-function txbMp4(w, h, avcc, chunks) {
+// the smallest mp4 a player takes: one H.264 track (WebCodecs chunks in avc form, avcc = its avcC), moov first, one chunk in mdat;
+// the last frame lasts to the animation's end (dur, s): frames come slower when the window is hidden
+function txbMp4(w, h, avcc, chunks, dur) {
   const T = 90000, u32 = v => [v >>> 24 & 255, v >>> 16 & 255, v >>> 8 & 255, v & 255], u16 = v => [v >>> 8 & 255, v & 255];
   const box = (type, ...p) => { const b = p.flat(Infinity); return [...u32(b.length + 8), ...[...type].map(ch => ch.charCodeAt(0)), ...b]; };
   const z = k => new Array(k).fill(0), matrix = [u32(0x10000), z(12), u32(0x10000), z(12), u32(0x40000000)];
-  const at = chunks.map(c => Math.round(c.t * T / 1e6)), d = at.map((v, i) => i + 1 < at.length ? Math.max(1, at[i + 1] - v) : T / 30);
+  const at = chunks.map(c => Math.round(c.t * T / 1e6)), d = at.map((v, i) => i + 1 < at.length ? Math.max(1, at[i + 1] - v) : Math.max(T / 30, Math.round((dur || 0) * T) - v));
   const D = d.reduce((a, v) => a + v, 0), size = chunks.reduce((a, c) => a + c.b.length, 0);
   const ftyp = box('ftyp', [...'isom'].map(ch => ch.charCodeAt(0)), u32(512), [...'isomiso2avc1mp41'].map(ch => ch.charCodeAt(0)));
   const moov = off => box('moov',
@@ -3930,7 +4250,7 @@ async function txbMake() {
       if (!err && !B.stop) await enc.flush().catch(e => { err = e; });
       if (B.stop) throw t('txb.stopped');
       if (err || !desc || !chunks.length) throw t('txb.fail', err?.message || 'no video frames');
-      blob = new Blob([txbMp4(c.width, c.height, desc, chunks)], { type: 'video/mp4' });
+      blob = new Blob([txbMp4(c.width, c.height, desc, chunks, s.dur)], { type: 'video/mp4' });
     }
     if (blob.size > 16 << 20) throw t('txb.big');
     const data = await new Promise((r, no) => { const f = new FileReader(); f.onload = () => r(f.result.slice(f.result.indexOf(',') + 1)); f.onerror = no; f.readAsDataURL(blob); });
@@ -4153,12 +4473,18 @@ const HW_KEYS = {   // USB maker -> words its OpenRGB controllers carry in their
   '2516': ['cooler master'], '3633': ['deepcool'], '0951': ['hyperx', 'kingston'], '03F0': ['hyperx'], '1044': ['gigabyte', 'aorus'],
   '2F68': ['thermaltake'], '264A': ['thermaltake'], '0416': ['lian li', 'thermalright'], '3402': ['glorious'], '2433': ['asetek'],
 };
+// who lights each memory stick haku found (main.c ram_src: 0 haku, 1 through OpenRGB, 2 OpenRGB has one that may be it)
+const ramSrc = () => Array.from({ length: Math.min(S.sticks || 0, 2) }, (_, k) => S.ram_own ? 'other' : ['haku', 'orgb', 'unsure'][(S.ram_src || [])[k] || 0] || 'haku');
+function ramSrcText() {
+  const L = ramSrc();
+  return L.every(x => x === L[0]) ? t('ram.src.' + (L[0] || 'haku')) : L.map((x, k) => t('ram.stick', k + 1, t('ram.src.' + x))).join(' · ');
+}
 function hwRoute(it) {
   const O = S.orgb || { state: 0, ctls: [] }, ctls = O.ctls || [], vid = (it.id || '').slice(0, 4);
   const lc = x => (x || '').toLowerCase();
   // haku's own drivers first (or given back to their own lighting)
   if ((it.cat === 'board' || (it.cat === 'usb' && vid === '1462')) && S.msi) return S.msi_own ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
-  if (it.cat === 'ram' && S.sticks > 0) return S.ram_own ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
+  if (it.cat === 'ram' && S.sticks > 0) { const L = ramSrc(); return { cls: L.includes('unsure') ? 'warn' : L.every(x => x === 'other') ? 'off' : 'on', text: ramSrcText() }; }
   const own = { '31E3': 'wooting', '1B80': 'wooting', '37FA': 'nlusb' }[vid];
   if (own) {
     const ds = S.ext.devs.filter(d => d.kind === own && lc(d.host).startsWith(lc(vid)));
@@ -4254,6 +4580,8 @@ function updateDevices() {
     const ck = $('#dev-chk-' + d.id), mine = CHK_ID === d.id && (S.netchk || {}).id === d.id;
     if (d.online) DEV_SAVED.delete(d.id);
     if (ck) { ck.textContent = mine ? chkText(d) : DEV_SAVED.has(d.id) && devWaits(d) ? t('dev.saved') : ''; ck.previousElementSibling.querySelector('.dev-check')?.toggleAttribute('disabled', mine && !!S.netchk.busy); }
+    const why = $('#dev-why-' + d.id);
+    if (why && why.parentElement.open) { const h = devWhy(d); if (why.dataset.h !== h) { why.dataset.h = h; why.innerHTML = h; } }
     const ev = $('#dev-ev-' + d.id), txt = devEvText(d);
     if (ev) { ev.classList.toggle('hidden', !txt); const p = ev.querySelector('pre'); if (p.textContent !== txt) p.textContent = txt; }
   });
@@ -4833,7 +5161,8 @@ function updateChips() {
     const tip = h.map(x => x.replace(/<[^>]+>/g, '')).join('\n');
     $('#chips').innerHTML = chip(off.length ? 'warn' : 'on', `${t(tab === 'fans' ? 'chip.light' : 'chip.ok')} <b>${off.length ? t('chip.off', off.length) : t('chip.allok')}</b>`, off).replace('class="chip', `title="${esc(tip)}" class="chip`);
   } else $('#chips').innerHTML = h.join('');
-  $('#ram-status').textContent = !S.sticks ? t('ram.none') : S.ram_own ? t('own.status') : t('ram.status', S.sticks);
+  $('#ram-status').textContent = !S.sticks ? t('ram.none') : t('ram.status', S.sticks) + ' · ' + ramSrcText();
+  $('#ram-unsure').classList.toggle('hidden', !S.sticks || !ramSrc().includes('unsure'));
   $$('[data-own]').forEach(el => { if (el !== document.activeElement) el.checked = !!S[el.dataset.own === 'msi_own' ? 'msi_own' : 'ram_own']; });
   // all of the PC's lighting given back / taken again: shown once there is something of the PC haku lights
   const pcDevs = S.sticks || S.msi || S.ext.devs.some(pcDev), pb = $('#pc-own');
@@ -4889,6 +5218,14 @@ function updateHome() {
   const none = !S.ext.devs.length && !S.bulbs.length && !nanoCtls().length && !S.sticks && !S.msi && !(S.fans || {}).on && !llOn();
   $('#home-first').classList.toggle('hidden', !none || gdOn() || document.documentElement.classList.contains('remote'));
   updateGuide();
+  // the summary: the devices haku lights now (the same ones the cards call online and haku's) of those switched on
+  const ext = S.ext.devs.filter(d => d.enabled && !d.held), lit = [
+    ...ext.map(d => !d.own && !(d.pro && proLocked()) && (d.online || !!d.covered)), ...S.bulbs.map(b => !!b.online), ...nanoCtls().map(n => !!n.online),
+    ...(S.sticks ? [!S.ram_own] : []), ...(S.msi ? [!S.msi_own] : [])];
+  const P = activePreset();
+  $('#home-sum').classList.toggle('hidden', !lit.length);
+  $('#home-sum-fx').textContent = fxName(S.effect) + (P ? ' · ' + P.name : '');
+  $('#home-sum-st').textContent = t('home.sum.lit', lit.filter(Boolean).length, lit.length);
   const a = homeAttn(), btn = (k, v, txt, cls) => `<button class="btn small${cls || ' ghost'}" type="button" data-${k}="${esc(v)}"><span>${txt}</span></button>`;
   const html = a.map((x, i) => `<div class="found-row" data-i="${i}"><span class="kind">${esc(x.kind)}</span>
     <div class="what"><b>${esc(x.n)}</b><small>${esc(x.why)}</small></div>
@@ -4917,6 +5254,52 @@ $('#home-attn-list').addEventListener('click', e => {
   else if (b.dataset.a === 'cf') go('cf');
 });
 $('#home-cool').addEventListener('click', () => showTab('fans'));
+$('#home-go-fx').addEventListener('click', () => showTab('effects'));
+$('#home-go-dev').addEventListener('click', () => showTab('devices'));
+// a slider or a list under its caption (.lbl) is named by that caption for screen readers, the rows built later too;
+// by reference, so a language change follows on its own
+let LBN = 0, LBQ = 0;
+function nameFields() {
+  $$('.lbl + input, .lbl + select, .lbl + textarea').forEach(i => {
+    if (i.getAttribute('aria-label') || i.getAttribute('aria-labelledby') || (i.labels && i.labels.length)) return;
+    const c = i.previousElementSibling, s = c.querySelector('span') || c;
+    if (!s.id) s.id = 'lbl-' + (++LBN);
+    i.setAttribute('aria-labelledby', s.id);
+  });
+}
+new MutationObserver(rs => {
+  if (!LBQ && rs.some(r => [...r.addedNodes].some(n => n.nodeType === 1))) LBQ = setTimeout(() => { LBQ = 0; nameFields(); }, 200);
+}).observe(document.body, { childList: true, subtree: true });
+nameFields();
+
+// modal windows: focus moves in on open, Tab stays inside, and on close it goes back to what opened it
+const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+const shown = el => !!(el && el.isConnected && el.getClientRects().length);
+const focusables = w => [...w.querySelectorAll(FOCUSABLE)].filter(e => !e.disabled && shown(e));
+const OPENER = new Map();
+$$('.sheet-wrap').forEach(w => new MutationObserver(() => {
+  const open = !w.classList.contains('hidden');
+  if (open === OPENER.has(w)) return;
+  if (open) {
+    OPENER.set(w, document.activeElement);
+    if (!w.contains(document.activeElement)) { const f = focusables(w)[0]; if (f) f.focus({ preventScroll: true }); }
+  } else {
+    const o = OPENER.get(w); OPENER.delete(w);
+    const a = document.activeElement;
+    if ((!a || a === document.body || w.contains(a)) && shown(o)) o.focus({ preventScroll: true });
+  }
+}).observe(w, { attributes: true, attributeFilter: ['class'] }));
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || !pk.classList.contains('hidden')) return;   // the colour picker floats over a dialog with its own fields
+  const open = $$('.sheet-wrap').filter(w => !w.classList.contains('hidden'));
+  const w = open.find(x => x.contains(document.activeElement)) || open[open.length - 1];
+  if (!w) return;
+  const f = focusables(w); if (!f.length) return;
+  const i = f.indexOf(document.activeElement);
+  if (i < 0) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+  else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+  else if (e.shiftKey && i === 0) { e.preventDefault(); f[f.length - 1].focus(); }
+});
 $('#home-find').addEventListener('click', () => { go('add'); S.ext.scanning = 1; updateDevices(); send({ cmd: 'scan' }); });
 // help: a topic in Settings, opened from where the question comes up
 function helpOpen(topic) {
@@ -4936,7 +5319,18 @@ const gdOn = () => !document.documentElement.classList.contains('remote') && (['
 // an OpenRGB device that may be one the PC also has through its own driver: only offered, the user says (a name is no proof)
 const gdPairs = () => S.ext.devs.filter(o => o.kind === 'openrgb' && pathPairs(o).length);
 const gdSteps = () => ['dev', ...(gdStep() === 'path' || gdPairs().length ? ['path'] : []), 'test', 'save'];
-const gdAny = () => S.ext.devs.length || S.bulbs.length || nanoCtls().length;
+const gdAny = () => heroItems(true).length;   // the same catalogue as Home and Lighting: haku's own RAM and MSI count too
+// haku's own drivers (ENE memory, the MSI board or card): why: '' when the test colour can go there
+function gdDirect() {
+  const on = k => cv('layout', k, '1') !== '0', L = [];
+  if (S.sticks) { const w = !on('ram_enabled') ? t('cat.st.off') : ramSrc().includes('haku') ? '' : ramSrcText();
+    L.push({ id: 'ram', kind: t('pc.memory'), name: `ENE · ${S.sticks} ${t('chip.pcs')}`, zone: 'zone.ram', why: w, lv: w || ramSrcText() }); }
+  if (S.msi) { const w = !on('gpu_enabled') ? t('cat.st.off') : S.msi_own ? t('ram.src.other') : '';
+    L.push({ id: 'gpu', kind: 'MSI', name: stripName(), zone: 'zone.gpu', why: w, lv: w || t('ram.src.haku') }); }
+  return L;
+}
+// what can show the test colour: id is 'ram' | 'gpu' | an added device's number
+const gdCan = () => [...gdDirect().filter(x => !x.why), ...S.ext.devs.filter(d => !gdWhyNot(d)).map(d => ({ id: d.id, name: d.name, zone: 'zone.dev' + d.id }))];
 // why a device can't show the test colour here (then its own card or page is the way), '' when it can
 function gdWhyNot(d) {
   if (d.kind === 'tryx') return t('gd.t.screen');
@@ -4966,7 +5360,7 @@ function pathSet(d, val) {
 // the test colour: on only after Check; the core ends it by itself after a minute (TEST_MS), and on a layout change
 function gdTestEnd(why) {
   if (!GUIDE.test) return;
-  const d = devById(GUIDE.dev);
+  const d = typeof GUIDE.dev === 'number' ? devById(GUIDE.dev) : { online: 1 };   // RAM and MSI: haku's own, no answer to wait for
   send({ cmd: 'dev_test', zone: '' });
   GUIDE.test = ''; GUIDE.seen = 0;
   // haku sends the lighting as set now; whether the device shows it again is only known while it answers
@@ -5016,13 +5410,13 @@ function gdBody(s) {
     const st = err ? t('gd.d.err') : E.scanning ? t('dev.scanning.note') : fresh.length ? t('dev.found', fresh.length) : none ? t('gd.d.none') : '';
     const found = fresh.map(f => { const k = [f.kind, f.host, f.sub].join('|'), i = E.found.indexOf(f);
       return row(f.title, f.name || f.title, f.host + (f.info ? ' · ' + f.info : ''), GUIDE.adding.has(k) ? `<span>${t('gd.d.adding')}</span>` : b('add', t('dev.add'), '', ` data-i="${i}"`)); }).join('');
-    const have = [...E.devs.map(d => row(kindTitle(d.kind), d.name, gdLevel(d))),
+    const have = [...gdDirect().map(x => row(x.kind, x.name, x.lv)), ...E.devs.map(d => row(kindTitle(d.kind), d.name, gdLevel(d))),
       ...S.bulbs.map((x, i) => row(t('chip.lamps'), bulbName(i), x.online ? t('gd.lv.page') : t('dev.offline'))),
       ...nanoCtls().map(n => row('Nanoleaf', nanoName(n), n.online ? t('gd.lv.page') : t('dev.offline')))].join('');
     return { st, err: err || none, x: `${found ? `<div class="found">${found}</div>` : ''}${have ? `<p class="gd-sub">${t('gd.d.have')}</p><div class="found">${have}</div>` : ''}`,
       more: (gdAny() || err || none ? b('scan', t('gd.d.rescan'), ' ghost', E.scanning && !err ? ' disabled' : '') : '') +
         b('manual', t('gd.d.manual')) + (err || none ? b('help-start', t('help.open')) : '') + (fansOn() ? b('fans', t('gd.d.fans')) : ''),
-      main: gdAny() ? b('next', t('wz.next'), ' primary') : err || none ? '' : b('scan', E.scanning ? t('dev.scanning') : t('dev.scan'), ' primary', E.scanning ? ' disabled' : '') };
+      main: gdAny() ? b('next', t('wz.next'), ' primary') : err || none ? b('next', t('gd.d.go'), ' primary') : b('scan', E.scanning ? t('dev.scanning') : t('dev.scan'), ' primary', E.scanning ? ' disabled' : '') };
   }
   if (s === 'path') {
     const x = gdPairs().map(o => pathPairs(o).map(n => {
@@ -5034,12 +5428,12 @@ function gdBody(s) {
     return { st: '', x: x + `<p class="hint">${t('path.note')}</p>`, more: '', main: b('next', t('wz.next'), ' primary') };
   }
   if (s === 'test') {
-    const can = S.ext.devs.filter(d => !gdWhyNot(d)), d = can.find(x => x.id === GUIDE.dev) || can[0];
+    const can = gdCan(), d = can.find(x => x.id === GUIDE.dev) || can[0];
     if (d && !GUIDE.test) GUIDE.dev = d.id;
     if (GUIDE.test && S.test === GUIDE.test) GUIDE.seen = 1;
     else if (GUIDE.test && GUIDE.seen) gdTestEnd('core');   // the core ended it (its minute, a layout change), not the page
     const on = GUIDE.test && S.test === GUIDE.test;
-    const not = [...S.ext.devs.filter(x => gdWhyNot(x)).map(x => row(kindTitle(x.kind), x.name, gdWhyNot(x), b('card', t('gd.t.card'), ' ghost', ` data-id="${x.id}"`))),
+    const not = [...gdDirect().filter(x => x.why).map(x => row(x.kind, x.name, x.why, b('card', t('gd.t.card'), ' ghost', ` data-id="${x.id}"`))), ...S.ext.devs.filter(x => gdWhyNot(x)).map(x => row(kindTitle(x.kind), x.name, gdWhyNot(x), b('card', t('gd.t.card'), ' ghost', ` data-id="${x.id}"`))),
       ...S.bulbs.map((x, i) => row(t('chip.lamps'), bulbName(i), t('gd.t.page'), b('tab-bulbs', t('home.open')))),
       ...nanoCtls().map(n => row('Nanoleaf', nanoName(n), t('gd.t.page'), b('tab-nano', t('home.open'))))].join('');
     const pick = can.length > 1 && !GUIDE.test ? `<label class="num"><span>${t('gd.t.dev')}</span><select class="select" id="gd-dev">${can.map(x =>
@@ -5048,7 +5442,7 @@ function gdBody(s) {
       : GUIDE.prob === 'blink' ? b('help-conflict', t('help.open')) : b('card', t('gd.t.card'), ' ghost', ` data-id="${GUIDE.dev}"`)}${b('check', t('gd.t.again'))}</div>` : '';
     const ask = GUIDE.test ? `<div class="btn-row">${b('works', t('gd.t.works'), ' primary')}${b('problem', t('gd.t.problem'))}${b('stop', t('gd.t.stop'))}</div>` : '';
     const list = GUIDE.prob === 'ask' ? `<div class="btn-row gd-probs">${['dark', 'blink', 'other', 'colour'].map(p => b('pr-' + p, t('gd.pr.' + p))).join('')}</div>` : '';
-    const st = GUIDE.test ? (on ? t('gd.t.on', devById(GUIDE.dev)?.name || '') : t('gd.t.sending')) : GUIDE.ok ? t('gd.t.ok') : GUIDE.said;
+    const st = GUIDE.test ? (on ? t('gd.t.on', (can.find(x => x.id === GUIDE.dev) || {}).name || '') : t('gd.t.sending')) : GUIDE.ok ? t('gd.t.ok') : GUIDE.said;
     return { st, x: (d ? pick + `<p class="hint">${t('gd.t.what')}</p>` + ask + list + prob : `<p class="hint">${t('gd.t.none')}</p>`) +
         (not ? `<p class="gd-sub">${t('gd.t.other')}</p><div class="found">${not}</div>` : ''),
       more: '', main: GUIDE.test ? '' : d && !GUIDE.ok && !GUIDE.prob ? b('check', t('gd.t.check'), ' primary') : b('next', t('wz.next'), GUIDE.ok || !d ? ' primary' : ' ghost') };
@@ -5122,11 +5516,11 @@ $('#guide').addEventListener('click', e => {
   if (g === 'fans') return showTab('fans');
   if (g.startsWith('help-')) return helpOpen(g.slice(5));
   if (g.startsWith('tab-')) return showTab(g.slice(4));
-  if (g === 'card') { gdTestEnd(); updateGuide(); const r = btn.getBoundingClientRect(); openSheet({ k: 'ext', id: +btn.dataset.id }, r.left + r.width / 2, r.top); return; }
+  if (g === 'card') { gdTestEnd(); updateGuide(); const r = btn.getBoundingClientRect(); const id = btn.dataset.id; openSheet(/^\d+$/.test(id) ? { k: 'ext', id: +id } : { k: id }, r.left + r.width / 2, r.top); return; }
   if (g === 'check') {
     gdTestEnd(); GUIDE.prob = ''; GUIDE.ok = 0; GUIDE.said = '';
-    const d = devById(GUIDE.dev); if (!d || gdWhyNot(d)) return updateGuide();
-    GUIDE.test = 'zone.dev' + d.id; GUIDE.seen = 0;
+    const d = gdCan().find(x => x.id === GUIDE.dev); if (!d) return updateGuide();
+    GUIDE.test = d.zone; GUIDE.seen = 0;
     send({ cmd: 'dev_test', zone: GUIDE.test }); updateGuide(); return;
   }
   if (g === 'works') { gdTestEnd(); GUIDE.ok = 1; GUIDE.said = ''; return updateGuide(); }
@@ -5142,7 +5536,7 @@ $('#guide').addEventListener('click', e => {
   }
 });
 $('#guide').addEventListener('change', e => {
-  if (e.target.id === 'gd-dev') { GUIDE.dev = +e.target.value; GUIDE.ok = 0; GUIDE.prob = ''; GUIDE.said = ''; updateGuide(); }
+  if (e.target.id === 'gd-dev') { const v = e.target.value; GUIDE.dev = /^\d+$/.test(v) ? +v : v; GUIDE.ok = 0; GUIDE.prob = ''; GUIDE.said = ''; updateGuide(); }
   const o = e.target.dataset.gp && devById(+e.target.dataset.gp); if (o) pathSet(o, e.target.value);
 });
 $('#guide').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'gd-name') { e.preventDefault(); gdSave(); } });
@@ -5825,7 +6219,7 @@ fcv.addEventListener('pointerdown', e => {
   pts.forEach((p, j) => { if (p[0] < sc.lo || p[0] > sc.hi) return;   // past the range: the keys or the fields move it
     const d2 = (g.px(p[0]) - x) ** 2 + (g.py(clamp20(p[1])) - y) ** 2; if (d2 < best) { best = d2; k = j; } });
   if (k < 0) return;
-  e.preventDefault(); fcv.focus(); fcv.setPointerCapture(e.pointerId);
+  e.preventDefault(); fcv.focus({ preventScroll: true }); fcv.setPointerCapture(e.pointerId);
   FAN.drag = { k, pts, sc }; FAN.sel = k; drawFanCurve();
 });
 fcv.addEventListener('pointermove', e => {
@@ -5859,6 +6253,7 @@ function applyStatus(m) {
   const effectChanged = m.effect !== S.effect;
   Object.assign(S, m);
   S.ext = S.ext || { devs: [], found: [], kinds: [], scanning: 0 };
+  profErrCheck();
   const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type, d.zones, d.same, d.held]));
   if (!dragging) { setRange($('#bright'), S.brightness); $('#bright-val').textContent = S.brightness + '%'; }
   if (effectChanged) { markEffect(); renderEffectSide(); } else updateFxState();
@@ -5875,13 +6270,16 @@ if (wv) wv.addEventListener('message', e => {
   else if (m.type === 'status') applyStatus(m);
   else if (m.type === 'go') helpOpen('');   // the tray's Help
   else if (m.type === 'tryx_built') { if (TXB?.wait?.req === m.req) TXB.wait.done(m); }
+  else if (m.type === 'comp_done') cmpDone(m);
   else if (m.type === 'state') {
     const prof = cv('general', 'profile', '');
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;
-    if (PROF.go && +cv('general', 'profile', 0) === PROF.go) { PROF.go = 0; clearTimeout(PROF.goT); }   // the core has it on
+    if (PROF.go && +cv('general', 'profile', 0) === PROF.go) { PROF.go = 0; clearTimeout(PROF.goT); profErrShow(''); }   // the core has it on
     // another profile came on (by the clock, a program, the tray, a hotkey): undo and unsent drags belonged to the old one
-    if (cv('general', 'profile', '') !== prof) { pendingSets.clear(); undoReset(); }
-    LANG = ['ru', 'fr'].includes(cv('general', 'lang', 'en')) ? cv('general', 'lang', 'en') : 'en';
+    const switched = cv('general', 'profile', '') !== prof;
+    if (switched) { pendingSets.clear(); undoReset(); }
+    if (cmpShown()) cmpState(switched);   // the constructor's draft stays its own, whatever came
+    LANG =['ru', 'fr'].includes(cv('general', 'lang', 'en')) ? cv('general', 'lang', 'en') : 'en';
     applyI18n();
     applyTheme(); buildEffects(); buildHotkeys(); syncToggles(); renderProfiles();
     S.effect = null;           // force a full refresh

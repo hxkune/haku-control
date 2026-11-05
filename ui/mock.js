@@ -16,14 +16,24 @@ const LAYOUTS = {
   blocks: mockLayout(33, [[251, 301, 0], [251, 167, 0], [117, 100, 0], [251, 33, 0], [151, 0, 0, 34], [84, 0, 0, 34], [117, 301, 0], [151, 201, 0, 34], [84, 201, 0, 34]]
     .map(([x, y, o, sh]) => [-x, -y, o, sh])),
 };
-const emit = d => L.forEach(f => f({ data: d === STATE ? JSON.parse(JSON.stringify(d)) : d }));   // the state as a copy, as the core sends it
+// the state as a copy, as the core sends it; a device that is lit had a frame leave a moment ago (devices.c "sent"),
+// unless a test sets its own
+const sentOf = x => (x.ext || { devs: [] }).devs.forEach(v => { if (v.sent === undefined) v.sent = v.online && v.enabled && !v.own && !v.held && !v.covered ? 120 : -1; });
+const emit = d => L.forEach(f => { const c = d === STATE ? JSON.parse(JSON.stringify(d)) : d; if (d === STATE) sentOf(c); f({ data: c }); });
 window.chrome = { webview: {
   postMessage(s) {
     const o = JSON.parse(s); console.log('->', o);
     if (o.cmd === 'hello') setTimeout(() => emit(STATE), 30);
     // profiles: kept in the fake settings only (the core keeps the setups)
     const C = STATE.cfg, G = C.general;
+    // ui_web.cpp other_profile: a profile's setting sent for a profile no longer in use is dropped, the page gets the state
+    const profSec = s => s === 'custom' || s === 'general' || STATE.effects.some(e => e.id === s);
+    if (o.cmd === 'set' && o.p && o.p !== (G.profile || '') && profSec(o.s)) { setTimeout(() => emit(STATE), 30); return; }
     if (o.cmd === 'set') (C[o.s] = C[o.s] || {})[o.k] = o.v;
+    // main.c app_comp_apply: the 11 lines into [custom] at once; window.mockCompFail = 'bad' | 'save' | 'silent'
+    if (o.cmd === 'comp_apply') { const no = window.mockCompFail, err = no === 'bad' ? 'bad' : o.p && o.p !== (G.profile || '') ? 'prof' : no === 'save' ? 'save' : '';
+      if (no !== 'silent') { if (!err || err === 'save') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); (C.custom = C.custom || {})[l.slice(0, e)] = l.slice(e + 1); });
+        setTimeout(() => { emit(STATE); emit({ type: 'comp_done', req: o.req, err }); }, 40); } }
     // devices.c load_config: an OpenRGB device's same=N pairs it with dev N, path= says which of the two lights it; the other lets go
     const pairUp = () => { const D = STATE.ext.devs; D.forEach(d => { if (d.held) d.online = 1; d.same = d.held = 0; });
       D.filter(d => d.kind === 'openrgb').forEach(m => { const c = C['dev.' + m.id] || {}, n = D.find(x => x.id === +c.same && x.kind !== 'openrgb' && !x.same); if (!n) return;
@@ -49,8 +59,13 @@ window.chrome = { webview: {
     if (o.cmd === 'preset_save') { let id = +o.id; if (!id) { id = 1; while (C['preset.' + id] && C['preset.' + id].name) id++; }
       const e = o.effect || STATE.effect, p = { name: o.name, effect: e, palette: o.palette || '', speed: o.speed || '', fx: '1' };
       if (o.brightness) p.brightness = o.brightness;
-      Object.entries(C[e] || {}).forEach(([k, v]) => { if (v !== '' && k !== 'palette' && k !== 'speed') p['fx.' + k] = v; });
+      if (o.fxkv) o.fxkv.split('\n').forEach(l => { const q = l.indexOf('='); if (q > 0 && l.slice(q + 1) !== '') p['fx.' + l.slice(0, q)] = l.slice(q + 1); });   // the constructor's draft
+      else Object.entries(C[e] || {}).forEach(([k, v]) => { if (v !== '' && k !== 'palette' && k !== 'speed') p['fx.' + k] = v; });
       C['preset.' + id] = p; if (o.apply === '1') { G.preset = String(id); STATE.effect = G.effect = e; } setTimeout(() => emit(STATE), 30); }
+    // main.c app_preset_copy / app_preset_delete
+    if (o.cmd === 'preset_copy' && C['preset.' + o.id]) { let id = 1; while (C['preset.' + id] && C['preset.' + id].effect) id++;
+      if (id <= 32) { C['preset.' + id] = { ...C['preset.' + o.id], name: o.name || C['preset.' + o.id].name }; setTimeout(() => emit(STATE), 30); } }
+    if (o.cmd === 'preset_delete') { delete C['preset.' + o.id]; if (G.preset === String(o.id)) G.preset = ''; setTimeout(() => emit(STATE), 30); }
     if (o.cmd === 'brightness') STATE.brightness = +o.v;
     if (o.cmd === 'get') setTimeout(() => emit(STATE), 30);
     if (o.cmd === 'diag') setTimeout(() => { STATE.diag = { busy: 0, ok: 1, file: 'haku-diagnostics-20261022-1200.txt', report: { busy: 0, ok: -1, id: '', err: '' } }; emit(STATE); }, 300);
@@ -58,7 +73,9 @@ window.chrome = { webview: {
     if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'dev_retry') setTimeout(() => emit(STATE), 60);   // the devices not connected try again (here: they all answer)
     if (o.cmd === 'dev_check') { STATE.netchk = { id: +o.id, busy: 1, res: '' }; emit(STATE); setTimeout(() => { STATE.netchk = { id: +o.id, busy: 0, res: o.id % 2 ? 'silent' : 'answers', ms: 0 }; emit(STATE); }, 1500); }
-    if (o.cmd === 'profile') { G.profile = o.id; STATE.prof_why = 1; setTimeout(() => emit(STATE), 120); }
+    // profile.c's refusals (prof_json): window.mockProfFail = 2 (the one in use can't be written), 3 (missing), 4 (damaged)
+    const refuse = (err, id) => { STATE.prof = { err, id: +id, n: STATE.prof.n + 1 }; setTimeout(() => emit(STATE), 60); };
+    if (o.cmd === 'profile') { if (window.mockProfFail) refuse(window.mockProfFail, window.mockProfFail === 2 ? G.profile : o.id); else { G.profile = o.id; STATE.prof_why = 1; setTimeout(() => emit(STATE), 120); } }
     if (o.cmd === 'profile_dup') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; setTimeout(() => emit(STATE), 60); }
     // main.c app_test: one zone's steady test colour, '' ends it (the core's own minute is not run here)
     if (o.cmd === 'dev_test') { STATE.test = o.zone; setTimeout(() => emit(STATE), 30); }
@@ -69,7 +86,8 @@ window.chrome = { webview: {
       if (!E.devs.some(same)) E.devs.push({ id: Math.max(0, ...E.devs.map(d => d.id)) + 1, kind: o.kind, title: f ? f.title : o.kind, name: o.name, host: o.host, sub: o.sub,
         leds: f ? f.leds : 1, per_led: 1, online: 1, enabled: 1, type: '', info: f ? f.info : '' });
       if (f) f.added = 1; setTimeout(() => emit(STATE), 60); }
-    // window.mockSaveFail: the core does not write it
+    // window.mockSaveFail: its file can't be written (1) or all are taken (5): no profile, the reason in prof; 'silent': no answer
+    if (o.cmd === 'profile_save' && window.mockSaveFail && window.mockSaveFail !== 'silent') refuse(window.mockSaveFail === 5 ? 5 : 1, 0);
     if (o.cmd === 'profile_save' && !window.mockSaveFail) { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; G.profile = String(n); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'profile_delete') { delete C['profile.' + o.id]; if (G.profile === o.id) G.profile = ''; setTimeout(() => emit(STATE), 60); }
   },
@@ -78,11 +96,11 @@ window.chrome = { webview: {
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
 const panels = (LAY || LAYOUTS.blocks).panels;
 const STATE = {
-  type: 'state', test: '', hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
+  type: 'state', test: '', prof: { err: 0, id: 0, n: 0 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
     { cat: 'gpu', maker: 'ASUS', name: 'NVIDIA GeForce RTX 4070', id: '10DE:2786' }, { cat: 'usb', maker: 'Corsair', name: 'K70 RGB PRO', id: '1B1C:1BB3' },
     { cat: 'usb', maker: 'Wooting', name: 'Wooting 60HE v2', id: '31E3:1342' }, { cat: 'usb', maker: 'Lian Li', name: 'LianLi-Strimer Plus-1.5', id: '0CF2:A200' }] },
   orgb: { state: 2, exe: 1, auto: 1, ours: 1, setup: 0, pct: 0, err: '', ctls: [{ i: 0, type: 5, kind: 'keyboard', leds: 104, name: 'Keyboard' }, { i: 1, type: 3, kind: 'cooler', leds: 16, name: 'Fan hub' },
-    { i: 2, type: 2, kind: 'graphics card', leds: 8, name: 'ASUS TUF RTX 4070' }, { i: 6, type: 1, kind: 'memory', leds: 8, name: 'ENE DRAM' }, { i: 7, type: 2, kind: 'graphics card', leds: 3, name: 'MSI RTX 3060 Ventus' }] }, autostart: 1, ollama: { exe: 0, model: 0, ours: 0, on_demand: 0, startup: 0, stage: 5, pct: 42, err: '' }, effect: 'flow', brightness: 85, msi: 1, sticks: 2, gpu_temp: 41, hotspot: 1, fx_audio: -2, fx_temp: -2, fans: { on: 1, q: 1, link: 1, age: 400, paused: 0, rfail: 0, gpu: 41, gage: 600, serial: '04976-37680', fw: 1024, flow: 0, t: [31.4, null, null, null], log: [], f: [{ rpm: 1180, pct: 52, v: 12, w: 1.4, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 1210, pct: 52, v: 12, w: 1.5, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }] }, ll: { st: 'ok', err: 0, rep: 3, g: [{ mac: '7c:9c:06:f5:17:e1', own: 1, ch: 8, type: 0, n: 3, rpm: [1650, 1664, 1820], pct: [79, 79, 79] }, { mac: '3a:10:c4:22:9e:05', own: 0, ch: 8, type: 0, n: 2, rpm: [980, 1004], pct: [40, 40] }] }, cf: { busy: '', a: [{ id: 'armoury', name: 'ASUS Armoury Crate / Aura', w: 'board', cool: 1, run: 1, inst: 1, bad: 0, fail: 0 }, { id: 'icue', name: 'Corsair iCUE', w: 'corsair', cool: 1, run: 0, inst: 1, bad: 0, fail: 0 }, { id: 'asrock', name: 'ASRock Polychrome RGB', w: 'board', cool: 0, run: 1, inst: 1, bad: 0, fail: 0, stay: 1 }] }, mqtt: { state: 'connected', err: '', topic: 'haku/desk-pc' }, pro: { on: 1, state: 'trial', kind: '', days: 12, until: '', checked: '', stale: 0, key: '', who: '', err: '', busy: 0 }, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/', can: 1, inst: 0, pct: 0, err: '' },
+    { i: 2, type: 2, kind: 'graphics card', leds: 8, name: 'ASUS TUF RTX 4070' }, { i: 6, type: 1, kind: 'memory', leds: 8, name: 'ENE DRAM' }, { i: 7, type: 2, kind: 'graphics card', leds: 3, name: 'MSI RTX 3060 Ventus' }] }, autostart: 1, ollama: { exe: 0, model: 0, ours: 0, on_demand: 0, startup: 0, stage: 5, pct: 42, err: '' }, effect: 'flow', brightness: 85, msi: 1, sticks: 2, ram_src: [0, 0], gpu_temp: 41, hotspot: 1, fx_audio: -2, fx_temp: -2, fans: { on: 1, q: 1, link: 1, age: 400, paused: 0, rfail: 0, gpu: 41, gage: 600, serial: '04976-37680', fw: 1024, flow: 0, t: [31.4, null, null, null], log: [], f: [{ rpm: 1180, pct: 52, v: 12, w: 1.4, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 1210, pct: 52, v: 12, w: 1.5, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }] }, ll: { st: 'ok', err: 0, rep: 3, g: [{ mac: '7c:9c:06:f5:17:e1', own: 1, ch: 8, type: 0, n: 3, rpm: [1650, 1664, 1820], pct: [79, 79, 79] }, { mac: '3a:10:c4:22:9e:05', own: 0, ch: 8, type: 0, n: 2, rpm: [980, 1004], pct: [40, 40] }] }, cf: { busy: '', a: [{ id: 'armoury', name: 'ASUS Armoury Crate / Aura', w: 'board', cool: 1, run: 1, inst: 1, bad: 0, fail: 0 }, { id: 'icue', name: 'Corsair iCUE', w: 'corsair', cool: 1, run: 0, inst: 1, bad: 0, fail: 0 }, { id: 'asrock', name: 'ASRock Polychrome RGB', w: 'board', cool: 0, run: 1, inst: 1, bad: 0, fail: 0, stay: 1 }] }, mqtt: { state: 'connected', err: '', topic: 'haku/desk-pc' }, pro: { on: 1, state: 'trial', kind: '', days: 12, until: '', checked: '', stale: 0, key: '', who: '', err: '', busy: 0 }, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/', can: 1, inst: 0, pct: 0, err: '' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['rainbow','Радуга'],['wave','Цветная волна'],['fire','Огонь'],['ocean','Океан'],['twinkle','Созвездие'],['meteor','Метеорный дождь'],['plasma','Плазма'],['aurora','Северное сияние'],['ripple','Капли'],['matrix','Матрица'],['candle','Свеча'],['pendulum','Маятник'],['interference','Интерференция'],['steps','Ступени'],['screen','Экран'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['custom','Конструктор'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
   // #multi: a second controller (Shapes hexagons) and a Secretlab MAGRGB strip next to the Blocks

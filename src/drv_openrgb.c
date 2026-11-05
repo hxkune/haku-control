@@ -41,6 +41,20 @@ typedef struct { char host[64]; unsigned idx; int users, pending; SRWLOCK setup;
 static SRWLOCK sh_lk = SRWLOCK_INIT;
 static share_t shares[16];
 
+// OpenRGB's location for an SMBus device is "I2C: <bus name>, address 0x70"; haku's own sticks are on PIIX4 port 0
+int orgb_ram_match(const char *host, const char *loc, int addr) {
+    char l[128]; snprintf(l, sizeof(l), "%s", loc ? loc : ""); _strlwr_s(l, sizeof(l));
+    // another PC's OpenRGB server: its memory, never this PC's (a name or an address is no proof)
+    if (!host || (_stricmp(host, "127.0.0.1") && _stricmp(host, "localhost") && _stricmp(host, "::1"))) return 0;
+    if (!strstr(l, "smbus") && !strstr(l, "i2c") && !strstr(l, "piix4")) return 0;
+    const char *a = strstr(l, "address 0x");
+    if (!a) return 2;
+    char *end; long v = strtol(a + 10, &end, 16);
+    if (end == a + 10 || v != addr) return 0;
+    if (strstr(l, "port 1") || strstr(l, "port 2") || strstr(l, "0b20") || strstr(l, "aux")) return 0;   // the other PIIX4 port
+    return strstr(l, "piix4") && (strstr(l, "port 0") || strstr(l, "0b00")) ? 1 : 2;
+}
+
 // orig: the colours its LEDs had before, given back on restore; last / one: what was sent last, not sent again
 typedef struct {
     unsigned int orig[EXT_MAX_LEDS]; int norig; unsigned idx; int part; setup_t st; share_t *sh;

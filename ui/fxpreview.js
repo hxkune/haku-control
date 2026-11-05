@@ -74,7 +74,7 @@ var fxPreview = (function () {
   const F = Math.fround, lpClamp = (i, v) => v >= LPD[i][2] ? (v <= LPD[i][3] ? v : LPD[i][3]) : LPD[i][2];
   // shortcut: a number is read with parseFloat; C strtod also takes hex ("0x10"), which the window never writes
   function parse(line) {
-    const L = { shape: -1, blend: 0, col: -1, ap: -1, mp: -1, ms: 0, rgb: [255, 255, 255], p: LPD.map(d => F(d[1])) };
+    const L = { shape: -1, blend: 0, col: -1, ap: -1, mp: -1, ms: 0, rgb: [255, 255, 255], p: LPD.map(d => F(d[1])), name: '' };
     for (const w of String(line || '').slice(0, 255).split(/[ \t]+/)) {
       const at = w.indexOf(':'); if (at < 0) continue;
       const k = w.slice(0, at), v = w.slice(at + 1);
@@ -86,12 +86,17 @@ var fxPreview = (function () {
       }
       else if (k === 'ap' || k === 'mp') { const i = LP[v]; if (i !== undefined && i < MOD) L[k] = i; }
       else if (k === 'ms') L.ms = v === 'bass' ? 1 : v === 'beat' ? 2 : 0;
+      else if (k === 'nm') L.name = NAME(v.replace(/_/g, ' '));
       else if (LP[k] !== undefined) { const d = parseFloat(v); L.p[LP[k]] = F(lpClamp(LP[k], isFinite(d) ? d : NaN)); }
     }
     return L.shape >= 0 ? L : null;
   }
   // a layer back to its words, only what differs from the defaults (so a line stays short)
   const num = v => String(+(+v).toFixed(2));
+  // a layer's name: the window's own word (the core skips it), last so a long line loses only the name; spaces travel as _
+  // shortcut: an _ typed in a name comes back as a space, fine for a label
+  const NAME = s => String(s || '').replace(/[;#\[\]=\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 24);
+  const LINE_MAX = 240, bytes = s => new TextEncoder().encode(s).length;   // a config line holds 255 bytes with its key; a code takes 240
   function line(L) {
     const w = ['s:' + SHAPES[L.shape]];
     if (L.col === -2) w.push('c:#' + L.rgb.map(v => (v | 0).toString(16).padStart(2, '0')).join(''));
@@ -100,7 +105,28 @@ var fxPreview = (function () {
     if (L.ap >= 0) w.push('ap:' + LPD[L.ap][0]);
     if (L.mp >= 0) w.push('mp:' + LPD[L.mp][0], 'ms:' + ['level', 'bass', 'beat'][L.ms]);
     if (L.blend) w.push('b:' + BLENDS[L.blend]);
-    return w.join(' ');
+    let s = w.join(' '), n = NAME(L.name);
+    while (n && bytes(s + ' nm:' + n.replace(/ /g, '_')) > LINE_MAX) n = n.slice(0, -1).trim();
+    return n ? s + ' nm:' + n.replace(/ /g, '_') : s;
+  }
+  // a line from someone else (an imported code) read strictly: every word known, every number finite and in its
+  // range, one shape; parse() above is the lenient reader of one's own saved lines and clamps instead
+  function strict(s) {
+    if (typeof s !== 'string' || bytes(s) > LINE_MAX || /[;\u0000-\u001f\u007f]/.test(s)) return false;
+    let shapes = 0;
+    for (const w of s.split(' ')) {
+      const at = w.indexOf(':'); if (at <= 0) return false;
+      const k = w.slice(0, at), v = w.slice(at + 1);
+      if (k === 's') { if (SHAPES.indexOf(v) < 0) return false; shapes++; }
+      else if (k === 'b') { if (BLENDS.indexOf(v) < 0) return false; }
+      else if (k === 'c') { if (!/^(#[0-9a-fA-F]{6}|p[0-7]?)$/.test(v)) return false; }
+      else if (k === 'ap' || k === 'mp') { if (!(LP[v] < MOD)) return false; }
+      else if (k === 'ms') { if (!['level', 'bass', 'beat'].includes(v)) return false; }
+      else if (k === 'nm') { if (!v) return false; }
+      else if (LP[k] !== undefined) { if (!/^-?\d+(\.\d+)?$/.test(v) || +v < LPD[LP[k]][2] || +v > LPD[LP[k]][3]) return false; }
+      else return false;
+    }
+    return shapes === 1;
   }
   // [custom] l1..l8 as the core loads them (none: the reactor); get(k) is the saved value
   function load(get) {
@@ -163,7 +189,7 @@ var fxPreview = (function () {
     });
     return acc;
   }
-  const comp = { SHAPES, BLENDS, LPD, MOD, MAX, DEFAULT, parse, line, load, color };
+  const comp = { SHAPES, BLENDS, LPD, MOD, MAX, DEFAULT, NAME, parse, strict, line, load, color };
 
   // the strip: DEV_EXT (6) in zone ZONE_EXT0 (18), y in the middle; it is flat
   const DEV = 6, ZONE = 18, KEY0 = DEV * 100003 + ZONE * 1009;

@@ -160,6 +160,7 @@ static int      have_msi, have_ene, fps = 30;
 static volatile LONG msi_own, ram_own, need_own;
 // bit k: an OpenRGB device that is on sits at stick k's address and lights it, so the stick is left to it here
 static volatile LONG ram_yield;
+static volatile LONG ram_src;   // per stick, 2 bits: 0 lit here, 1 through OpenRGB (the same stick), 2 OpenRGB has one that may be it
 // "off in N minutes" and "which one is it": both only shade what the render thread sends, nothing is saved
 static volatile LONG off_at;              // GetTickCount() when the lights go off (0: no timer); the last minute fades
 static volatile LONG ident_zone = -1, ident_at;   // that zone blinks white for a few seconds
@@ -224,16 +225,21 @@ static void build_scene(void) {
     // disabled devices are left out of the scene, so effects span only what is lit
     int sticks = !ram_on || ram_own ? 0 : have_ene ? ene_count() : 2;
     // two writers on one stick fight (and memory switched off here would keep writing black over OpenRGB's colours)
-    LONG yield = 0;
+    // a stick is the same one only on this PC, its bus and address (orgb_ram_match); one that may be is yielded too, and said
+    LONG yield = 0, src = 0;
     for (int k = 0; have_ene && k < ene_count() && k < 2; k++) {
-        char at[24]; snprintf(at, sizeof(at), "address 0x%02x", ene_addr(k));
-        for (int id = 1; id <= 64; id++) {
-            char sec[16], loc[128]; snprintf(sec, sizeof(sec), "dev.%d", id);
-            snprintf(loc, sizeof(loc), "%s", cfg_get(sec, "loc", "")); _strlwr_s(loc, sizeof(loc));
-            if (strstr(loc, "smbus") && strstr(loc, at) && !_stricmp(cfg_get(sec, "kind", ""), "openrgb") && cfg_geti(sec, "enabled", 1) && !cfg_geti(sec, "own", 0)) { yield |= 1 << k; break; }
+        int how = 0;
+        for (int id = 1; id <= 64 && how != 1; id++) {
+            char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", id);
+            if (_stricmp(cfg_get(sec, "kind", ""), "openrgb") || !cfg_geti(sec, "enabled", 1) || cfg_geti(sec, "own", 0)) continue;
+            int m = orgb_ram_match(cfg_get(sec, "host", ""), cfg_get(sec, "loc", ""), ene_addr(k));
+            if (m == 1 || (m == 2 && !how)) how = m;   // a sure match wins over a maybe
         }
+        if (how) yield |= 1 << k;
+        src |= (LONG)how << (k * 2);
     }
     InterlockedExchange(&ram_yield, yield);
+    InterlockedExchange(&ram_src, src);
     if (sticks > 2) sticks = 2;
     int glit = gpu_on && !msi_own ? gpu_leds : 0;
 
@@ -645,9 +651,10 @@ static int palette_ok(const char *s) {
 // effect / palette / speed: the preset's look, "" = the current one; brightness: "" = none kept, "cur" = the
 // current one, else 5..100. zones: "1" takes every device's own colours as they are now, "keep" leaves the ones
 // saved before, anything else drops them. fx_cur: the effect's settings as they are now even over an edited preset of
-// the same effect (the constructor saves what is on screen). Returns the preset's number (0: all PRESET_MAX are taken).
+// the same effect (the constructor saves what is on screen). fxkv (nfx key, value pairs, nfx -1: none): the effect's
+// settings given, a constructor's draft not applied. Returns the preset's number (0: all PRESET_MAX are taken).
 int app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
-                    const char *bri, const char *zones, int fx_cur) {
+                    const char *bri, const char *zones, int fx_cur, const char *const *fxkv, int nfx) {
     char sec[24];
     if (id <= 0 || id > PRESET_MAX) {   // a new one: the first free number
         id = 0;
@@ -663,7 +670,7 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
     int nkept = cfg_items(sec, kept, 512);
     const char *eff = effect && *effect ? g_effects[effect_index(effect)].id : g_effects[cur_effect].id;
     // the effect's own settings: an edited preset of the same effect keeps its own, anything else takes the current ones
-    int fx_kept = !fx_cur && !_stricmp(cfg_get(sec, "effect", ""), eff) && cfg_geti(sec, "fx", 0);
+    int fx_kept = nfx < 0 && !fx_cur && !_stricmp(cfg_get(sec, "effect", ""), eff) && cfg_geti(sec, "fx", 0);
     cfg_remove_section(sec);
     cfg_set(sec, "name", nm);
     cfg_set(sec, "effect", eff);
@@ -683,6 +690,12 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
     cfg_set(sec, "fx", "1");   // marks a preset that carries the effect's settings (older ones leave them alone)
     if (fx_kept) {
         for (int i = 0; i < nkept; i++) if (!_strnicmp(kept[i].key, "fx.", 3)) cfg_set(sec, kept[i].key, kept[i].val);
+    } else if (nfx >= 0) {
+        for (int i = 0; i < nfx; i++) {
+            if (!fxkv[2 * i + 1][0]) continue;
+            char key[80]; snprintf(key, sizeof(key), "fx.%s", fxkv[2 * i]);
+            cfg_set(sec, key, fxkv[2 * i + 1]);
+        }
     } else {
         static cfg_item cur[128];
         int nc = cfg_items(eff, cur, 128);
@@ -756,6 +769,27 @@ void app_preset_apply(int id) {
     logf_("preset %d: %s", id, cfg_get(sec, "name", ""));
 }
 
+// a copy of a preset under the first free number: every key as it is (the effect's settings, a constructor's layers,
+// the devices' own colours), a new name; not applied. Returns the new number (0: no such preset, or all are taken)
+int app_preset_copy(int src, const char *name) {
+    char from[24], sec[24];
+    snprintf(from, sizeof(from), "preset.%d", src);
+    if (src <= 0 || src > PRESET_MAX || !cfg_get(from, "effect", NULL)) return 0;
+    int id = 0;
+    for (int i = 1; i <= PRESET_MAX && !id; i++) { snprintf(sec, sizeof(sec), "preset.%d", i); if (!cfg_get(sec, "effect", NULL)) id = i; }
+    if (!id) return 0;
+    static cfg_item it[512];
+    int n = cfg_items(from, it, 512);
+    for (int i = 0; i < n; i++) cfg_set(sec, it[i].key, it[i].val);
+    char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(from, "name", ""));
+    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
+    if (!nm[0]) snprintf(nm, sizeof(nm), "Preset %d", id);
+    cfg_set(sec, "name", nm);
+    cfg_save_if_dirty();
+    logf_("preset %d copied to %d", src, id);
+    return id;
+}
+
 void app_preset_delete(int id) {
     char sec[24]; snprintf(sec, sizeof(sec), "preset.%d", id);
     cfg_remove_section(sec);
@@ -787,68 +821,7 @@ static int profile_key(const char *sec, const char *key) {
     return is_effect_section(sec);
 }
 
-static void profile_file(int id, wchar_t *out) {
-    wchar_t n[40]; swprintf(n, 40, L"profiles\\%d.ini", id);
-    app_data_path(n, out);
-}
-
-static int profile_exists(int id) {
-    char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
-    return id >= 1 && id <= PROFILE_MAX && cfg_get(sec, "name", NULL) != NULL;
-}
-
-// the live setup -> profiles\N.ini
-static void profile_capture(int id) {
-    static char secs[512][64]; static cfg_item it[512];
-    wchar_t p[MAX_PATH]; app_data_path(L"profiles", p); CreateDirectoryW(p, NULL);
-    profile_file(id, p);
-    FILE *f = _wfopen(p, L"wb");
-    if (!f) { logf_("profile %d: can't write its file", id); return; }
-    fprintf(f, "; haku control profile %d: its setup, written when another profile takes over\r\n", id);
-    int ns = cfg_sections("", secs, 512);
-    for (int s = 0; s < ns; s++) {
-        int n = cfg_items(secs[s], it, 512), head = 0;
-        for (int i = 0; i < n; i++) {
-            if (!it[i].val[0] || !profile_key(secs[s], it[i].key)) continue;
-            if (!head++) fprintf(f, "[%s]\r\n", secs[s]);
-            fprintf(f, "%s=%s\r\n", it[i].key, it[i].val);
-        }
-    }
-    fclose(f);
-}
-
-// profiles\N.ini -> the live setup; what the file doesn't have goes back to its default
-static int profile_load(int id) {
-    typedef struct { char sec[64], key[64], val[256]; } entry;
-    static entry e[4096]; static char secs[512][64]; static cfg_item it[512];
-    wchar_t p[MAX_PATH]; profile_file(id, p);
-    FILE *f = _wfopen(p, L"rb");
-    if (!f) { logf_("profile %d: its file is missing", id); return 0; }
-    int n = 0; char line[400], sec[64] = "";
-    while (n < 4096 && fgets(line, sizeof(line), f)) {
-        char *s = line, *end = s + strlen(s);
-        while (end > s && (end[-1] == '\r' || end[-1] == '\n' || end[-1] == ' ')) *--end = 0;
-        if (*s == ';' || !*s) continue;
-        if (*s == '[') { char *c = strchr(s, ']'); if (c) *c = 0; snprintf(sec, sizeof(sec), "%s", s + 1); continue; }
-        char *eq = strchr(s, '=');
-        if (!eq || !sec[0]) continue;
-        *eq = 0;
-        if (!profile_key(sec, s)) continue;
-        snprintf(e[n].sec, 64, "%s", sec); snprintf(e[n].key, 64, "%s", s); snprintf(e[n].val, 256, "%s", eq + 1);
-        n++;
-    }
-    fclose(f);
-    // the preview's groups are replaced whole; everything else of the setup is emptied, then filled from the file
-    int ns = cfg_sections("group.", secs, 512);
-    for (int s = 0; s < ns; s++) cfg_remove_section(secs[s]);
-    ns = cfg_sections("", secs, 512);
-    for (int s = 0; s < ns; s++) {
-        int m = cfg_items(secs[s], it, 512);
-        for (int i = 0; i < m; i++) if (it[i].val[0] && profile_key(secs[s], it[i].key)) cfg_set(secs[s], it[i].key, "");
-    }
-    for (int i = 0; i < n; i++) cfg_set(e[i].sec, e[i].key, e[i].val);
-    return 1;
-}
+static int profile_exists(int id) { return prof_exists(id); }
 
 // why the profile in use came on: 1 chosen by hand, 2 its time, 3 its program runs (0: not known, e.g. since the app started)
 static int prof_why;
@@ -856,20 +829,16 @@ static int prof_why;
 static void profile_apply(int id, int why) {
     if (!profile_exists(id)) return;
     InterlockedExchange(&xfade_req, 1);   // before the new setup reaches the render thread, so it blends from the old one
-    int cur = cfg_geti("general", "profile", 0);
-    if (cur != id && profile_exists(cur)) profile_capture(cur);   // the one in use keeps what was changed in it
-    if (!profile_load(id)) return;
+    if (!prof_switch(id)) { ui_refresh_state(); return; }   // nothing changed: the one in use keeps its setup (why: prof_json)
     prof_why = why;
     char pre[16]; snprintf(pre, sizeof(pre), "%s", cfg_get("general", "preset", ""));
     int fx = effect_index(cfg_get("general", "effect", "flow"));
     set_brightness_ex(clampf(cfg_getf("general", "brightness", 100) / 100.0f, 0.05f, 1), 0);
-    char v[8]; snprintf(v, sizeof(v), "%d", id);
-    cfg_set("general", "profile", v);
     app_config_changed(1);
     ext_reload();
     set_effect(fx);
     cfg_set("general", "preset", pre);   // (set_effect clears it)
-    cfg_save_if_dirty();
+    prof_saved(id);
     ui_refresh_state();
     char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
     logf_("profile %d: %s", id, cfg_get(sec, "name", ""));
@@ -963,73 +932,22 @@ void app_auto_recheck(void) {
     auto_tick();
 }
 
-// id 0: a new profile with the setup as it is now, which becomes the one in use (the profile used before keeps
-// what it had when it was last left); else rewrites profile id with the setup as it is now.
-// Returns its number (0: all PROFILE_MAX are taken).
-// [profile.N] name: what was given (else the one it has, else "Profile N"), without what would break the file
-static const char *profile_name(const char *sec, int id, const char *name) {
-    char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(sec, "name", ""));
-    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
-    if (!nm[0]) snprintf(nm, sizeof(nm), "Profile %d", id);
-    cfg_set(sec, "name", nm);
-    return cfg_get(sec, "name", "");
-}
-
+// see prof_save, prof_dup and prof_delete in profile.c (the file first, the name after; errors in prof_json)
 int app_profile_save(int id, const char *name) {
-    char sec[24];
-    if (!profile_exists(id)) {
-        id = 0;
-        for (int i = 1; i <= PROFILE_MAX && !id; i++) if (!profile_exists(i)) id = i;
-        if (!id) return 0;
-    }
-    snprintf(sec, sizeof(sec), "profile.%d", id);
-    const char *nm = profile_name(sec, id, name);
-    profile_capture(id);
-    char v[8]; snprintf(v, sizeof(v), "%d", id);
-    cfg_set("general", "profile", v);
-    prof_why = 1;
-    cfg_save_if_dirty();
-    PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
-    logf_("profile %d saved: %s", id, nm);
-    return id;
+    int r = prof_save(id, name);
+    if (r) { prof_why = 1; PostMessageW(hwnd, WM_REHOTKEY, 0, 0); }
+    return r;
 }
-
-// a new profile with what profile src has (the one in use: as it is now), not its hotkey, programs or time.
-// Returns its number (0: src is gone, all PROFILE_MAX are taken, or its file can't be copied).
-int app_profile_dup(int src, const char *name) {
-    static cfg_item it[64];
-    int id = 0;
-    for (int i = 1; i <= PROFILE_MAX && !id; i++) if (!profile_exists(i)) id = i;
-    if (!profile_exists(src) || !id) return 0;
-    if (src == cfg_geti("general", "profile", 0)) profile_capture(src);
-    wchar_t from[MAX_PATH], to[MAX_PATH]; profile_file(src, from); profile_file(id, to);
-    if (!CopyFileW(from, to, FALSE)) { logf_("profile %d: can't copy its file", src); return 0; }
-    char ss[24], sec[24]; snprintf(ss, sizeof(ss), "profile.%d", src); snprintf(sec, sizeof(sec), "profile.%d", id);
-    static const char *own[] = { "name", "hotkey", "apps", "at", "days", "at_off", "pin" };
-    int n = cfg_items(ss, it, 64);
-    for (int i = 0; i < n; i++) {
-        int skip = 0;
-        for (int k = 0; k < (int)(sizeof(own) / sizeof(own[0])); k++) skip |= !_stricmp(it[i].key, own[k]);
-        if (!skip) cfg_set(sec, it[i].key, it[i].val);
-    }
-    profile_name(sec, id, name);
-    cfg_save_if_dirty();
-    logf_("profile %d: a copy of %d", id, src);
-    return id;
-}
-
+int app_profile_dup(int src, const char *name) { return prof_dup(src, name); }
 void app_profile_delete(int id) {
-    char sec[24]; snprintf(sec, sizeof(sec), "profile.%d", id);
-    cfg_remove_section(sec);
-    wchar_t p[MAX_PATH]; profile_file(id, p); DeleteFileW(p);
-    if (cfg_geti("general", "profile", 0) == id) { cfg_set("general", "profile", ""); prof_why = 0; }   // the setup stays as it is
-    cfg_save_if_dirty();
+    if (cfg_geti("general", "profile", 0) == id) prof_why = 0;
+    prof_delete(id);
     PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
 }
 
 void app_profiles_flush(void) {
     int cur = cfg_geti("general", "profile", 0);
-    if (profile_exists(cur)) profile_capture(cur);
+    if (profile_exists(cur) && !prof_write(cur)) logf_("profile %d: its file can't be written", cur);
 }
 
 void app_reload_all(void) {
@@ -1170,8 +1088,8 @@ static int status_body(char *out, int cap) {
     char gt[16] = "null", tz[32] = "";
     if (test_zone >= 0 && GetTickCount() - (DWORD)test_at < TEST_MS) zone_section(test_zone, tz, sizeof(tz));
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"rev\":%ld,\"test\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
-                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, app_pc_own_now(),
+    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"ram_src\":[%ld,%ld],\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"rev\":%ld,\"test\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
+                     g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, ram_src & 3, ram_src >> 2 & 3, app_pc_own_now(),
                      off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, g_state_rev, tz, effects_audio_state(), effects_temp_state());
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
@@ -1183,6 +1101,8 @@ static int status_body(char *out, int cap) {
     n += ext_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"pro\":");
     n += pro_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"prof\":");
+    n += prof_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"backup\":");
     n += backup_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"fans\":");
@@ -1283,6 +1203,14 @@ void app_set(const char *s, const char *k, const char *v) {
     if (!_stricmp(s, "mqtt")) { cfg_save_if_dirty(); mqtt_apply(); }
     if (!_stricmp(s, "devices")) { cfg_save_if_dirty(); InterlockedExchange(&need_own, 1); }
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
+}
+
+// the constructor's layers and knobs ([custom] l1..l8, k1..k3, checked by the caller) as one change, written to disk
+// now: 1 written, 0 in use but not on disk yet (written with the next change)
+int app_comp_apply(const char *const *kv, int n) {
+    cfg_set_many("custom", kv, n);
+    app_config_changed(0);
+    return cfg_save_if_dirty();
 }
 
 // the fan panel's curve, its source and the other sources' curves, as one change (fans.c reads them together)
@@ -1722,6 +1650,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS);
 
     cfg_load(p);
+    prof_keep = profile_key; prof_check();
     if (policy_blocked(blocked_msg, sizeof(blocked_msg), blocked_url, sizeof(blocked_url))) {   // before any device is touched
         logf_("this version was stopped by its author");
         show_blocked();

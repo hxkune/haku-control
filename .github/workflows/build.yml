@@ -39,6 +39,16 @@ jobs:
           $v = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0' }
           "VERSION=$v" >> $env:GITHUB_ENV
 
+      # the checks that need no hardware: simulators, a fake OpenRGB server, the phone page in node,
+      # and the UI against the mock core in headless Chrome
+      - name: Tests (no hardware)
+        shell: cmd
+        run: tools\sim\run-tests.cmd
+
+      - name: UI tests (mock, headless Chrome)
+        shell: pwsh
+        run: tools\sim\ui-tests.ps1
+
       # ---- signing, step 1: the program's own executables (they go into the installer afterwards)
       - name: Upload the executables for signing
         if: env.SIGN == 'true'

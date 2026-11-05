@@ -63,6 +63,28 @@ void        cfg_remove_section(const char *section);
 typedef struct { char key[64], val[256]; } cfg_item;
 int         cfg_items(const char *section, cfg_item *out, int max);      // a section's keys, copied
 int         cfg_sections(const char *prefix, char (*out)[64], int max);  // section names starting with prefix
+// a file written whole or not at all (path.new, then it replaces path); file_commit 0: not written, the old one as it was
+extern int  file_fail;   // tests only: 1 can't create, 2 write fails, 3 replace fails
+FILE       *file_begin(const wchar_t *path, wchar_t *tmp /* MAX_PATH */);
+int         file_commit(FILE *f, const wchar_t *tmp, const wchar_t *path);
+
+// ---- profiles' files and bookkeeping (profile.c); errors go to prof_json: {"err":PE_*,"id":N,"n":count}
+typedef int (*prof_keep_fn)(const char *sec, const char *key);
+extern prof_keep_fn prof_keep;   // does [sec] key belong to a profile's setup (main.c sets it)
+typedef struct { char sec[64], key[64], val[256]; } prof_entry;
+enum { PROF_MISSING = -1, PROF_BAD = -2 };
+enum { PE_WRITE = 1, PE_LEAVE, PE_MISSING, PE_BAD, PE_FULL, PE_CFG };
+int  prof_exists(int id);
+int  prof_write(int id);                      // the live setup -> its file; 0: not written
+int  prof_parse(char *text, size_t len, prof_entry *e, int max);   // entries, or PROF_BAD
+int  prof_load(int id);                       // 1, PROF_MISSING or PROF_BAD (then nothing changed)
+int  prof_switch(int id);                     // 1: id's setup is the live one; 0: nothing changed
+int  prof_save(int id, const char *name);     // its number, 0: none
+int  prof_dup(int src, const char *name);     // its number, 0: none
+void prof_delete(int id);
+void prof_saved(int id);                      // writes the settings, PE_CFG when they can't be yet
+void prof_check(void);
+int  prof_json(char *out, int cap);
 
 // ---- effects.c
 typedef struct {
@@ -262,9 +284,11 @@ int   app_lang(void);                    // [general] lang: 0 English, 1 Russian
 void  app_set_effect(int fx);
 #define PRESET_MAX 32
 int   app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
-                      const char *brightness, const char *zones, int fx_cur);   // id 0: new; returns its number, see main.c
+                      const char *brightness, const char *zones, int fx_cur,
+                      const char *const *fxkv, int nfx);   // id 0: new; returns its number, see main.c
 void  app_preset_apply(int id);
 void  app_preset_delete(int id);
+int   app_preset_copy(int src, const char *name);   // a new number with every key of src; 0: none free
 #define PROFILE_MAX 16
 int   app_profile_save(int id, const char *name);   // id 0: new, from the setup as it is now; see main.c
 void  app_profile_apply(int id);
@@ -274,6 +298,7 @@ int   app_profile_dup(int src, const char *name);   // a copy of profile src; re
 void  ui_refresh_state(void);   // the open window gets the whole state (settings included) again
 void  app_set_brightness(float b, int save_now);
 void  app_set_fans(const char *const *kv, int n);   // key, value pairs written as one change
+int   app_comp_apply(const char *const *kv, int n);   // the constructor's [custom] keys as one change; 0: not written to disk
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
 void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled
 void  app_pc_own(int own);                         // the PC's lighting given back to its own programs (1) / taken by haku (0)
@@ -293,6 +318,9 @@ void  diag_fixed_seen(const char *id);   // the window showed it
 int   diag_json(char *out, int cap);
 void  orgb_check_start(void);          // looks for OpenRGB on this PC (drv_openrgb.c), the page is told
 int   orgb_json(char *out, int cap);
+// an OpenRGB device (its host, its location) vs this PC's memory stick at SMBus addr (on PIIX4 port 0, dev_ene.c):
+// 0 another one (another PC, bus or address), 1 the same stick, 2 it may be: the location does not say which bus
+int   orgb_ram_match(const char *host, const char *loc, int addr);
 int   hw_inventory(char *out, int cap);  // the PC hardware as text lines, for the diagnostics (hwinfo.c)
 void  hw_scan_start(void);              // the PC's lighting hardware, as a list for the window (in the background)
 int   hw_scan_json(char *out, int cap);  // "hw":{...}
