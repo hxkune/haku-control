@@ -4524,9 +4524,10 @@ function hwRoute(it) {
   // haku's own drivers first (or given back to their own lighting)
   if ((it.cat === 'board' || (it.cat === 'usb' && vid === '1462')) && S.msi) return S.msi_own ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
   if (it.cat === 'ram' && S.sticks > 0) { const L = ramSrc(); return { cls: L.includes('unsure') ? 'warn' : L.every(x => x === 'other') ? 'off' : 'on', text: ramSrcText() }; }
-  const own = { '31E3': 'wooting', '1B80': 'wooting', '37FA': 'nlusb' }[vid];
+  // a Corsair LCD by its whole id (drv_corsairlcd.c MODELS): Corsair's other devices are not haku's own
+  const own = { '31E3': 'wooting', '1B80': 'wooting', '37FA': 'nlusb' }[vid] || (/^1B1C:0C(4E|39|33|42)$/i.test(it.id || '') ? 'corsairlcd' : '');
   if (own) {
-    const ds = S.ext.devs.filter(d => d.kind === own && lc(d.host).startsWith(lc(vid)));
+    const ds = S.ext.devs.filter(d => d.kind === own && lc(d.host).startsWith(lc(own === 'corsairlcd' ? it.id : vid)));
     return !ds.length ? { cls: 'warn', text: t('hw.haku.add'), act: 'scan' } : ds.every(d => d.own) ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
   }
   // through the maker's own app (Synapse, GG, G HUB), when one of its devices is added
@@ -4540,7 +4541,8 @@ function hwRoute(it) {
   else if (it.cat === 'gpu') {
     const words = [lc(it.maker), ...lc(it.name).split(/\s+/).filter(w => /\d/.test(w) && w.length >= 3)].filter(Boolean);
     match = ctls.filter(c => c.type === 2 && words.some(w => lc(c.name).includes(w)));
-  } else match = ctls.filter(c => c.type > 2 && (HW_KEYS[vid] || []).some(k => lc(c.name).includes(k)));
+  // a USB device: OpenRGB's own kinds, or a board's USB light controller (ASRock Polychrome USB, RGB Fusion 2, Aura), typed motherboard there
+  } else match = ctls.filter(c => (c.type > 2 || c.type === 0) && (HW_KEYS[vid] || []).some(k => lc(c.name).includes(k)));
   const mine = match.filter(c => !orgbOwn(c));
   if (mine.length) {
     const free = mine.filter(c => !orgbAdded(c));

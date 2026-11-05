@@ -282,6 +282,25 @@
     } finally { closeReport(); $('#report-text').value = ''; S.hw = was; S.orgb = o; updateHw(); }
   });
 
+  test('hardware: a Corsair LCD is haku’s own screen, never asked for; other Corsair devices still go through OpenRGB', async () => {
+    await fresh(); showTab('devices');
+    const was = S.hw, o = S.orgb, devs = S.ext.devs;
+    try {
+      const lcd = { cat: 'usb', maker: 'Corsair', name: 'CORSAIR iCUE LINK AIO LCD Screen Module', id: '1B1C:0C4E' }, kb = { cat: 'usb', maker: 'Corsair', name: 'K70', id: '1B1C:1B49' };
+      S.hw = { busy: 0, done: 1, items: [lcd, kb] }; S.orgb = { state: 2, ctls: [] }; S.ext.devs = devs.filter(d => d.kind !== 'corsairlcd');
+      let r = hwRoute(lcd);
+      ok(r.act === 'scan' && r.text === t('hw.haku.add') && hwRoute(kb).act === 'ask', 'not added yet: ' + JSON.stringify([r, hwRoute(kb)]));
+      S.ext.devs = devs.concat([{ id: 77, kind: 'corsairlcd', host: '1B1C:0C4E', own: 0, online: 1, enabled: 1 }]);
+      r = hwRoute(lcd); ok(r.cls === 'on' && r.text === t('hw.haku') && !r.act, 'added: ' + JSON.stringify(r));
+      ok(hwRoute({ cat: 'usb', id: '1B1C:0C42' }).act === 'scan', 'an XC7 on the same PC is its own device');
+      // a board's USB light controller: OpenRGB types it motherboard
+      const asr = { cat: 'usb', maker: 'ASRock', name: 'LED Controller', id: '26CE:01A2' };
+      S.orgb = { state: 2, ctls: [{ i: 0, name: 'ASRock Polychrome USB', type: 0, location: 'HID: x', serial: '' }, { i: 1, name: 'Corsair Vengeance', type: 1, location: 'I2C: x', serial: '' }] };
+      r = hwRoute(asr); ok(r.act === 'add' ? r.ctls.length === 1 && r.ctls[0].i === 0 : r.text === t('hw.orgb'), 'ASRock USB: ' + JSON.stringify(r));   // the mock may have it added
+      ok(hwRoute(kb).act === 'ask', 'a stick or a board of another maker is not the K70');
+    } finally { S.hw = was; S.orgb = o; S.ext.devs = devs; updateHw(); }
+  });
+
   test('OpenRGB is fetched unasked, once, when something here lights only through it', async () => {
     await fresh();
     const was = S.hw, o = S.orgb, n = () => sent.filter(x => x.cmd === 'orgb_setup').length, n0 = n();
