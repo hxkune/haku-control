@@ -299,6 +299,7 @@ int   app_profile_dup(int src, const char *name);   // a copy of profile src; re
 void  ui_refresh_state(void);   // the open window gets the whole state (settings included) again
 void  app_set_brightness(float b, int save_now);
 void  app_set_fans(const char *const *kv, int n);   // key, value pairs written as one change
+int   app_draft_save(const char *sec, const char *const *kv, int n);   // a constructor draft's whole section; 0: not on disk, taken back out
 int   app_comp_apply(const char *const *kv, int n);   // the constructor's [custom] keys as one change; 0: not written to disk
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
 void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled

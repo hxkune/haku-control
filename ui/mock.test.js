@@ -534,7 +534,7 @@
   // fans: the browser has no core, so nothing here reaches a QUADRO; the mock stands in for what fans.c reports
   const fanEmit = async () => { bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(120); };
   const fanReset = async () => {
-    const F = STATE.fans; Object.assign(F, { link: 1, age: 400, rfail: 0, log: [] });
+    const F = STATE.fans; Object.assign(F, { link: 1, age: 400, rfail: 0, wd: [0, 0], log: [] });
     F.f.forEach(f => Object.assign(f, { em: '', own: 0, want: -1, out: -1, ok: 1, err: '' }));
     Object.keys(STATE.cfg.fans || {}).forEach(k => { STATE.cfg.fans[k] = ''; });
     if (SHEET.kind === 'fan') closeSheet();
@@ -750,6 +750,22 @@
     ok(tile.scrollWidth <= tile.clientWidth + 1 && (nm.scrollWidth <= nm.clientWidth || getComputedStyle(nm).textOverflow === 'ellipsis') && nm.title === 'A really long name for the pump', 'the name spills out of the tile');
     STATE.fans.log = [{ t: '12:00:01', m: 'fan 1: read-back "differs"', n: 3 }]; await fanEmit();
     ok(!$('#fans-log-d').classList.contains('hidden') && $('#fans-log').textContent.includes(String.fromCharCode(215) + '3'), 'the error log');
+    await fanReset();
+  });
+
+  test('fans: a stalled control loop is said for as long as it lasts; channels that did not go back are a lasting problem', async () => {
+    await fresh(); await fanReset();
+    const m = $('#fans-back-msg');
+    STATE.fans.wd = [1, 0]; await fanEmit();
+    ok(m.textContent === t('fans.wd.back', 'QUADRO', 1) && m.classList.contains('warn') && !m.classList.contains('bad'), 'given back: ' + m.textContent);
+    STATE.fans.wd = [3, 0]; STATE.fans.rfail = 2; await fanEmit(); await fanEmit();
+    ok(m.textContent === t('fans.wd.fail', 'QUADRO', 2) && m.classList.contains('bad'), 'not given back, still said a round later: ' + m.textContent);
+    STATE.fans.wd = [3, 2]; await fanEmit();
+    ok(m.textContent === t('fans.wd.fail', 'QUADRO', 2), 'the worst one first: ' + m.textContent);
+    STATE.fans.wd = [0, 2]; STATE.fans.rfail = 0; await fanEmit();
+    ok(m.textContent === t('fans.wd.busy', t('fans.wd.board'), 1) && m.classList.contains('warn'), 'the board busy: ' + m.textContent);
+    STATE.fans.wd = [0, 0]; await fanEmit();
+    ok(m.textContent === '' && !m.classList.contains('warn') && !m.classList.contains('bad'), 'running again, nothing left: ' + m.textContent);
     await fanReset();
   });
 
@@ -1044,6 +1060,13 @@
     ti.value = 'CPU'; ti.dispatchEvent(new Event('input', { bubbles: true }));
     ok(TXB.layers[0].text === 'CPU' && TXB.sel === 0, 'the text: ' + TXB.layers[0].text);
     txbMove(.1, 0); ok(Math.abs(TXB.layers[0].x - .6) < 1e-9, 'the chosen text did not move');
+    // a still picture: drawn again only on a change (the loop driven by hand: a background page gets no rAF)
+    txbLoop(); let d0 = TXB.draws; txbLoop(); txbLoop(); ok(TXB.draws === d0, 'a still, unchanged: not drawn again: ' + (TXB.draws - d0));
+    txbMove(-.1, 0); txbLoop(); txbLoop(); ok(TXB.draws === d0 + 1, 'moved: drawn once: ' + (TXB.draws - d0));
+    ti.value = 'GPU'; ti.dispatchEvent(new Event('input', { bubbles: true })); txbLoop(); ok(TXB.draws === d0 + 2, 'new text: drawn: ' + (TXB.draws - d0));
+    document.body.classList.add('idle'); await wait(20); ti.value = 'CPU'; ti.dispatchEvent(new Event('input', { bubbles: true })); txbMove(.1, 0); txbLoop();
+    ok(TXB.draws === d0 + 2, 'behind other windows: no frames: ' + (TXB.draws - d0));
+    document.body.classList.remove('idle'); await wait(20); ok(TXB.draws === d0 + 3, 'back in front: drawn again: ' + (TXB.draws - d0));
     sent.length = 0; await txbMake();
     const o = sent.find(x => x.cmd === 'tryx_build');
     ok(o && o.id === '14' && o.ext === 'jpg' && o.data.startsWith('/9j/'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }));
@@ -1084,12 +1107,87 @@
   };
   const clPixel = async (jpg, x, y) => { const c = document.createElement('canvas'); c.width = c.height = 480; const g = c.getContext('2d'); g.drawImage(await createImageBitmap(new Blob([jpg], { type: 'image/jpeg' })), 0, 0); return [...g.getImageData(x, y, 1, 1).data.slice(0, 3)]; };
 
+  test('the check level (README facts): on the card and in Add before anything is added; one model checked is not the line; a kind with no fact has none', async () => {
+    await fresh();
+    STATE.ext.devs.push({ ...clDev(''), id: 16, kind: 'wooting', title: 'Wooting', name: 'Wooting 80HE', host: '31E3:1402', type: 'keyboard', leds: 80, per_led: 1 },
+      { ...clDev(''), id: 17, kind: 'aura', title: 'ASUS Aura (board)', name: 'ROG logo', host: '0B05:19AF', type: 'board', leds: 3, per_led: 1 });
+    await fanEmit();
+    const chk = id => $('#dev-st-' + id)?.parentElement.querySelector('.dev-chk');   // the card's head: its name, state and kind
+    ok(chk(16)?.textContent === t('chk.hw', 'Wooting 60HE v2') && /60HE v2/.test(t('chk.hw', 'Wooting 60HE v2')), 'Wooting: ' + chk(16)?.textContent);
+    ok($('#dev-st-17') && !chk(17), 'a kind the README has no fact for got a level: ' + !!$('#dev-st-17') + ' [' + chk(17)?.outerHTML + ']');
+    const ks = $('#man-kind');
+    for (const [k, want] of [['wled', t('chk.sim')], ['nanoleaf', t('chk.hw', 'Nanoleaf Blocks')]]) {
+      ks.value = k; manualHints(); ok(ks.value === k && $('#man-note').textContent.endsWith(want), k + ' in Add: ' + $('#man-note').textContent);
+    }
+    for (const L of ['ru', 'fr']) for (const key of ['chk.hw', 'chk.sim', 'chk.none']) ok(STR[L][key] && STR[L][key] !== STR.en[key], L + ' ' + key + ' missing');
+    STATE.ext.devs = STATE.ext.devs.filter(d => d.id !== 16 && d.id !== 17); await fanEmit();   // the tests after it add their own 16
+  });
+
+  test('frames and sending (Help, Diagnostics): the core\'s measurements, a send rate from two readings, nothing sent', async () => {
+    await fresh();
+    const P0 = STATE.perf, d = STATE.ext.devs[0], li = () => [...$$('#perf-list li')].map(l => l.textContent);
+    STATE.perf = { fps10: 0, chg10: 0, avg_us: 0, max_us: 0, want: 30 }; await fanEmit();
+    ok(li()[0] === t('perf.wait'), 'before the first window: ' + li()[0]);
+    STATE.perf = { fps10: 298, chg10: 51, avg_us: 1250, max_us: 14200, want: 30 };
+    Object.assign(d, { ns: 1000, nf: 0 }); PERF.at = -Infinity; PERF.ns = {}; await fanEmit();
+    ok(li()[0] === t('perf.loop', '29.8', 30, '5.1', '1.3', '14'), 'the loop line: ' + li()[0]);
+    ok(li().includes(t('perf.dev.wait', d.name)), 'one reading is no rate yet: ' + li().join(' | '));
+    Object.assign(d, { ns: 1060, nf: 2 }); PERF.at = performance.now() - 2000; await fanEmit();
+    const row = li().find(s => s.startsWith(d.name + ':')), r = +(row.match(/([\d.]+)/) || [])[1];
+    ok(r > 27 && r <= 30 && row === t('perf.dev', d.name, r.toFixed(1), 2), '60 frames over ~2 s: ' + row);
+    const off = STATE.ext.devs.find(x => x.enabled && !x.online && !x.own && !x.held && !x.covered);
+    ok(!off || li().includes(t('perf.dev.off', off.name || off.title, off.fails || 0)), 'a device not connected: ' + li().join(' | '));
+    ok(STATE.ext.devs.filter(x => x.own || x.held || x.covered || !x.enabled).every(x => !li().some(s => s.startsWith((x.name || x.title) + ':'))), 'a device haku does not send to has a line');
+    ok(!sent.some(o => o.cmd !== 'get'), 'showing the measurements sent: ' + JSON.stringify(sent.filter(o => o.cmd !== 'get')));
+    for (const L of ['ru', 'fr']) for (const key of ['perf.title', 'perf.text', 'perf.loop', 'perf.wait', 'perf.dev', 'perf.dev.wait', 'perf.dev.off']) ok(STR[L][key] && STR[L][key] !== STR.en[key], L + ' ' + key + ' missing');
+    STATE.perf = P0; delete d.ns; delete d.nf; await fanEmit();
+  });
+
+  test('check for problems (Help): hidden until asked, a row per kind with its reason and action, nothing sent or changed', async () => {
+    await fresh();
+    CHK.on = false; $('#dchk-list').classList.add('hidden'); await fanEmit();
+    ok($('#dchk-list').classList.contains('hidden'), 'the list shows before Check is pressed');
+    $('#dchk-run').click();
+    const txt = () => $('#dchk-list').textContent.replace(/\s+/g, ' ');
+    ok(!$('#dchk-list').classList.contains('hidden') && txt().includes('Bedside' + t('dev.offline') + t('dchk.off.net')), 'the mock\'s lamp not reachable: ' + txt());
+    const D0 = STATE.ext.devs.map(d => ({ ...d })), B0 = STATE.bulbs.map(b => ({ ...b })), P0 = STATE.prof, W0 = STATE.fans.wd;
+    try {
+    STATE.ext.devs.forEach(d => d.online = 1); STATE.bulbs.forEach(b => b.online = 1); STATE.prof = { err: 0, id: 0, n: 0 }; STATE.fans.wd = [0, 0]; await fanEmit();
+    ok(txt().trim() === t('dchk.none'), 'all reachable: ' + txt());
+    const dev = id => STATE.ext.devs.find(d => d.id === id), kb = dev(2), gpu = dev(6), ram = dev(7), mouse = dev(10);
+    STATE.ext.devs.push({ ...clDev('Corsair iCUE LINK LCD · screen · USB'), mx: 1 }); STATE.cfg['dev.15'] = { kind: 'corsairlcd', media: 'C:\\pics\\cat.hlcd' };
+    STATE.ext.kinds.push({ kind: 'corsairlcd', title: 'Corsair LCD', per_led: 0 });   // drv_corsairlcd.c's title: its first word pairs it with OpenRGB's Corsair devices
+    kb.online = 0; gpu.cap = 6; Object.assign(mouse, { cap: 4, online: 0 });
+    STATE.prof = { err: 1, id: 2, n: 1 }; STATE.fans.wd = [3, 0];
+    sent.length = 0; await fanEmit();
+    const rows = [...$$('#dchk-list .found-row')].map(r => ({ k: r.querySelector('.kind').textContent, s: r.querySelector('.what').textContent, a: r.querySelector('[data-a]').dataset.a }));
+    const has = (c, why, todo, a) => rows.some(r => r.k === t('dchk.c.' + c) && r.s.includes(why) && r.s.includes(todo) && r.a === a);
+    const all = rows.map(r => r.k + ' ' + r.s + ' [' + r.a + ']').join(' | ');
+    ok(has('media', t('dchk.media', 'cat.hlcd'), t('dchk.media.do'), 'open'), 'a screen\'s file gone: ' + all);
+    ok(has('off', kb.name, t('dchk.off.orgb'), 'open'), 'an OpenRGB device not reachable: ' + all);
+    ok(has('two', t('cap.6'), t('dchk.cap6.do'), 'open'), 'one that is the same device as another: ' + all);
+    ok(has('two', t('dchk.pair', 'Corsair iCUE LINK LCD'), t('dchk.pair.do'), 'open') && rows.some(r => r.s.startsWith(ram.name)), 'the path question never answered: ' + all);
+    ok(has('cap', mouse.name, t('dchk.cap4.do'), 'open') && !rows.some(r => r.k === t('dchk.c.off') && r.s.startsWith(mouse.name)), 'not supported, not told as unreachable too: ' + all);
+    ok(has('left', t('prof.label'), t('dchk.prof.do'), 'prof'), 'a profile not saved: ' + all);
+    ok(has('left', t('fans.wd.fail', 'QUADRO', 1), t('dchk.wd.do'), 'log'), 'fans not given back: ' + all);
+    STATE.cfg['dev.7'] = { same: '' }; await fanEmit();
+    ok(!$('#dchk-list').textContent.includes(t('dchk.pair.do')), 'None answered, still asked');
+    ok(!sent.some(o => o.cmd !== 'get'), 'the check sent: ' + JSON.stringify(sent.filter(o => o.cmd !== 'get')));
+    $('#dchk-list [data-a="log"]').click(); ok(sent.filter(o => o.cmd !== 'get').length === 1 && sent.at(-1).cmd === 'open' && sent.at(-1).what === 'log', 'the log button: ' + JSON.stringify(sent.at(-1)));
+    for (const L of ['ru', 'fr']) for (const key of Object.keys(STR.en).filter(k => k.startsWith('dchk.'))) ok(STR[L][key] && STR[L][key] !== STR.en[key], L + ' ' + key + ' missing');
+    } finally {   // a failed check above must not leave its devices to the tests after it
+    STATE.ext.devs.splice(0, Infinity, ...D0); STATE.bulbs.splice(0, Infinity, ...B0); STATE.ext.kinds = STATE.ext.kinds.filter(k => k.kind !== 'corsairlcd');
+    delete STATE.cfg['dev.15']; delete STATE.cfg['dev.7']; STATE.prof = P0; STATE.fans.wd = W0; CHK.on = false; $('#dchk-list').classList.add('hidden'); await fanEmit();
+    }
+  });
+
   test('Corsair LCD: a screen card with the builder and the follow switch, no theme; the program holding it is named', async () => {
     await fresh();
     STATE.ext.devs.push(clDev('Corsair iCUE LINK LCD · screen · USB')); STATE.cfg['dev.15'] = { kind: 'corsairlcd' }; await fanEmit();
     const card = () => $('#dev-st-15').closest('.card');
     ok(card().querySelector('.dev-build') && card().querySelector('.dev-media') && card().querySelector('.dev-follow')?.checked && !card().querySelector('.dev-theme'), 'the card: ' + card().innerHTML.slice(0, 200));
     ok(!card().querySelector('.live, .zone, .dev-type, .dev-cal, .dev-ident') && t('cl.note') !== 'cl.note' && card().textContent.includes(t('cl.note')), 'the screen card has light settings or no note');
+    ok(card().querySelector('.dev-chk')?.textContent === t('chk.none'), 'the check level on the card: ' + card().querySelector('.dev-chk')?.textContent);
     ok(gdWhyNot(STATE.ext.devs.at(-1)) === t('gd.t.screen'), 'the test colour offered for a screen');
     card().querySelector('.dev-follow').click(); ok(sets('dev.15', 'screen_follow').some(o => +o.v === 0), 'the switch did not save: ' + JSON.stringify(sent));
     STATE.ext.devs[STATE.ext.devs.length - 1] = clDev('iCUE.exe busy'); await fanEmit();
@@ -1262,7 +1360,7 @@
   // a stand-in VideoEncoder and VideoFrame (plan: the encode call that throws, a failing flush), counting what was made
   // and closed; frames come from a timer, as a hidden pane runs none. The work a broken or stopped video must leave as it was
   const fakeEncoder = (plan = {}) => {
-    const real = { E: window.VideoEncoder, F: window.VideoFrame, raf: window.requestAnimationFrame, draw: window.txbDraw };
+    const real = { E: window.VideoEncoder, F: window.VideoFrame, raf: window.requestAnimationFrame, caf: window.cancelAnimationFrame, draw: window.txbDraw };
     const log = { enc: 0, encClosed: 0, frames: 0, framesClosed: 0, encoded: 0, draws: 0, previews: 0 };
     window.VideoEncoder = class {
       static isConfigSupported() { return Promise.resolve({ supported: true }); }
@@ -1276,9 +1374,9 @@
       close() { this.state = 'closed'; log.encClosed++; }
     };
     window.VideoFrame = class { constructor(c, { timestamp }) { this.timestamp = timestamp; log.frames++; } close() { log.framesClosed++; } };
-    window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16);
+    window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16); window.cancelAnimationFrame = clearTimeout;
     window.txbDraw = (c, tt, sel) => { if (sel) log.previews++; else if (++log.draws === plan.draw) throw new Error('draw broke'); return real.draw(c, tt, sel); };
-    log.restore = () => { window.VideoEncoder = real.E; window.VideoFrame = real.F; window.requestAnimationFrame = real.raf; window.txbDraw = real.draw; };
+    log.restore = () => { window.VideoEncoder = real.E; window.VideoFrame = real.F; window.requestAnimationFrame = real.raf; window.cancelAnimationFrame = real.caf; window.txbDraw = real.draw; };
     log.tidy = () => log.enc === log.encClosed && log.frames === log.framesClosed;
     return log;
   };
@@ -1471,7 +1569,7 @@
   });
 
   test('help: the diagnostics file saved on a click, sends nothing else, then offered to open and check', async () => {
-    await fresh(); showTab('settings');
+    await fresh(); showTab('settings'); sent.length = 0;   // leaving Home tells the core to slow its frames (frameNeed)
     ok($('#help-diag-open').classList.contains('hidden'), 'Open to check shown before a file is saved');
     $('#help-diag-save').click();
     ok(sent.length === 1 && sent[0].cmd === 'diag', 'Save sent: ' + JSON.stringify(sent));
@@ -1505,7 +1603,8 @@
     await fresh(); showTab('home'); sent.length = 0;
     emit({ type: 'go', to: 'help' }); await wait(80);
     ok(tab === 'help' && $('#tab-help').classList.contains('active') && $('#help').offsetParent, 'not on the Help card: ' + tab);
-    ok(!sent.length, 'sent: ' + JSON.stringify(sent));
+    // the one message: no picture to draw on Help, so the core is told to slow its frames (frameNeed); nothing else
+    ok(sent.length === 1 && sent[0].cmd === 'frames' && sent[0].live === 0, 'sent: ' + JSON.stringify(sent));
     showTab('home');
   });
 
@@ -1942,6 +2041,24 @@
     ok($('#ram-card').closest('#dev-store'), 'the card did not go back to its place');
   });
 
+  test('the live colours: asked for only where they are drawn (Home, Devices, a device sheet), a frame at once on return', async () => {
+    const live = () => sent.filter(o => o.cmd === 'frames').map(o => o.live).join('');
+    try {
+      showTab('home'); await fresh();
+      for (const p of ['effects', 'settings', 'help', 'fans']) { showTab(p); ok(FRAMES.live === false, p + ': still asks for 20 a second'); }
+      ok(live() === '0', 'one message for four pages: ' + live());
+      F = { ram: [[], []], gpu: [], board: null, bulbs: [], nano: {}, ext: {} };
+      const n = FRAMES.sent; showTab('home');
+      ok(FRAMES.live && FRAMES.sent === n + 1 && F.ram[0].length === 8, `Home: no frame at once (${FRAMES.sent - n}, ${F.ram[0].length} RAM LEDs)`);
+      showTab('devices'); ok(live() === '01', 'Devices is live too: ' + live());
+      // a device sheet over a page that draws nothing has its own live view
+      showTab('settings'); openSheet({ k: 'ram' }, 0, 0);
+      ok(SHEET.kind === 'ram' && FRAMES.live, 'a RAM sheet over Settings gets no live colours');
+      openSheet({ k: 'fx' }, 0, 0); ok(SHEET.kind === 'fx' && !FRAMES.live, 'the effect sheet draws none, yet asks');
+      closeSheet(); ok(!FRAMES.live && live() === '01010', 'closed: ' + live());
+    } finally { closeSheet(); showTab('home'); }
+  });
+
   test('the nav: six pages, a new brand adds none; its one mark sits on the open page; tiles move only with motion on', async () => {
     await fresh();
     const pages = () => $$('#nav button[data-tab]').map(b => b.dataset.tab).join(), w = motionWas();
@@ -2261,6 +2378,135 @@
     });
   });
 
+  const draftSecs = () => Object.keys(S.cfg).filter(s => /^cdraft\.\d+$/.test(s) && S.cfg[s].at);
+  const dsaves = slot => sent.filter(o => o.cmd === 'draft_save' && o.slot === slot);
+  test('constructor drafts: Save the draft closes only once the core wrote it; a failed write keeps the work with Try again and Export; drafts full; no answer; a late answer', async () => {
+    await fresh(); showTab('effects');
+    await cmpKeep(async () => {
+      try {
+        STATE.effect = S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+        const live = cmpLines().join('|'), n0 = draftSecs().length;
+        tutPick('lights'); await wait(20);
+        // the disk refuses: the window stays with the work, the button says Try again, Export is offered
+        window.mockDraftFail = 'save'; sent.length = 0;
+        $('#cdlg-close').click(); await wait(20); $('#cdlg-ask-keep').click(); await wait(5);
+        ok($('#cdlg-ask-keep').disabled && $('#cdlg-ask-text').textContent === t('cmp.draft.saving'), 'saving said: ' + $('#cdlg-ask-text').textContent);
+        await wait(80);
+        const d0 = dsaves('');
+        ok(d0.length === 1 && d0[0].kv.split('\n').length === 14 && !sent.some(o => o.cmd === 'set' && /^cdraft/.test(o.s)), 'one draft_save, no loose sets: ' + JSON.stringify(sent.map(o => o.cmd)));
+        ok(!$('#cdlg').classList.contains('hidden') && !$('#cdlg-ask').classList.contains('hidden') && $('#cdlg-ask-text').textContent === t('cmp.draft.fail'), 'not written, the window stays: ' + $('#cdlg-ask-text').textContent);
+        ok(!$('#cdlg-ask-keep').disabled && $('#cdlg-ask-keep').textContent === t('cmp.draft.retry') && !$('#cdlg-ask-export').classList.contains('hidden'), 'Try again and Export offered');
+        ok(draftSecs().length === n0 && dl().length === 2 && /s:dots/.test(dl()[1]) && cmpLines().join('|') === live, 'no draft, the work still in the editor, nothing lit');
+        // Export: the share window with the work in it; back to the editor when it closes
+        $('#cdlg-ask-export').click(); await wait(40);
+        ok(!$('#share-dlg').classList.contains('hidden') && $('#cdlg').classList.contains('hidden'), 'the share window');
+        closeShare(); await wait(40);
+        ok(!$('#cdlg').classList.contains('hidden') && dl().length === 2 && $('#cdlg-ask').classList.contains('hidden'), 'back in the editor with the work');
+        // Try again with the disk back: written, then closed
+        window.mockDraftFail = undefined;
+        $('#cdlg-close').click(); await wait(20);
+        ok($('#cdlg-ask-keep').textContent === t('cmp.ask.keep') && $('#cdlg-ask-export').classList.contains('hidden'), 'the question asked afresh');
+        $('#cdlg-ask-keep').click(); await wait(80);
+        ok($('#cdlg').classList.contains('hidden') && draftSecs().length === n0 + 1, 'written, then closed: ' + JSON.stringify(draftSecs()));
+        // it is in the settings the core keeps: a page loaded again still offers it
+        const sec = draftSecs().find(s => /s:dots/.test(S.cfg[s].l2 || ''));
+        bridge.postMessage(JSON.stringify({ cmd: 'hello' })); await wait(80);
+        $('#cmp-open').click(); await wait(60);
+        ok(sec && $$('#cdlg-tut optgroup option').some(o => o.value === 'd' + sec.split('.')[1]), 'offered after a reload: ' + sec);
+        // drafts full: never one overwritten, the window stays
+        for (let n = 1; n <= 16; n++) if (!(STATE.cfg['cdraft.' + n] || {}).at) STATE.cfg['cdraft.' + n] = { name: 'mine ' + n, at: String(1000 + n), prof: '' };
+        const before = JSON.stringify(Object.keys(STATE.cfg).filter(s => /^cdraft/.test(s)).map(s => STATE.cfg[s]));
+        bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(80);
+        tutPick('lights'); await wait(20);
+        $('#cdlg-close').click(); await wait(20); $('#cdlg-ask-keep').click(); await wait(80);
+        ok(!$('#cdlg').classList.contains('hidden') && $('#cdlg-ask-text').textContent === t('cmp.draft.full') && $('#cdlg-ask-export').classList.contains('hidden'), 'full: ' + $('#cdlg-ask-text').textContent);
+        ok(JSON.stringify(Object.keys(STATE.cfg).filter(s => /^cdraft/.test(s)).map(s => STATE.cfg[s])) === before, 'none overwritten');
+        // no answer: said after 4 s, the work kept; the answer that comes after is not taken for a new try
+        $('#cdlg-ask-back').click(); await wait(20);
+        for (let n = 1; n <= 16; n++) if (/^mine /.test((STATE.cfg['cdraft.' + n] || {}).name || '')) delete STATE.cfg['cdraft.' + n];
+        bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(80);
+        window.mockDraftFail = 'silent'; sent.length = 0;
+        $('#cdlg-close').click(); await wait(20); $('#cdlg-ask-keep').click(); await wait(4200);
+        ok(!$('#cdlg').classList.contains('hidden') && $('#cdlg-ask-text').textContent === t('cmp.draft.fail') && !$('#cdlg-ask-keep').disabled, 'no answer: ' + $('#cdlg-ask-text').textContent);
+        const late = dsaves('')[0].req;
+        emit({ type: 'draft_done', req: late, err: '', n: 3 }); await wait(20);
+        ok(!$('#cdlg').classList.contains('hidden') && $('#cdlg-ask-text').textContent === t('cmp.draft.fail'), 'the late answer changed nothing');
+        // a refused document is a failure too
+        $('#cdlg-ask-keep').click(); await wait(20);
+        emit({ type: 'draft_done', req: dsaves('')[1].req, err: 'bad', n: 0 }); await wait(20);
+        ok(!$('#cdlg').classList.contains('hidden') && $('#cdlg-ask-text').textContent === t('cmp.draft.fail'), 'refused: ' + $('#cdlg-ask-text').textContent);
+      } finally { window.mockDraftFail = undefined; }
+    });
+  });
+
+  test('constructor drafts: a profile switch during Save the draft keeps it once; a failed write there offers Try again', async () => {
+    await fresh(); showTab('effects');
+    const was = cv('general', 'profile', ''), other = profiles().find(p => String(p.id) !== was);
+    await cmpKeep(async () => {
+      try {
+        STATE.effect = S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+        tutPick('lights'); await wait(20);
+        window.mockDraftFail = 'silent'; sent.length = 0;
+        $('#cdlg-close').click(); await wait(20); $('#cdlg-ask-keep').click(); await wait(20);
+        bridge.postMessage(JSON.stringify({ cmd: 'profile', id: String(other.id) })); await wait(250);
+        ok(dsaves('').length === 1, 'one save for both: ' + dsaves('').length);
+        ok($('#cdlg-ask').classList.contains('hidden') || $('#cdlg-ask-keep').disabled, 'the question waits for the save');
+        ok(!$('#cdlg-moved').classList.contains('hidden') && $('#cdlg-moved-text').textContent === t('cmp.moved.saving'), 'saving said: ' + $('#cdlg-moved-text').textContent);
+        // the answer comes: kept once, both told
+        const o = dsaves('')[0], L = o.kv.split('\n').map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]);
+        STATE.cfg['cdraft.9'] = Object.fromEntries(L); emit(STATE); emit({ type: 'draft_done', req: o.req, err: '', n: 9 }); await wait(40);
+        ok($('#cdlg-moved-text').textContent === t('cmp.moved') && $('#cdlg-ask').classList.contains('hidden') && !$('#cdlg').classList.contains('hidden'), 'kept, the editor stays on the new profile: ' + $('#cdlg-moved-text').textContent);
+        ok(S.cfg['cdraft.9'].prof === was && /s:dots/.test(S.cfg['cdraft.9'].l2) && !sent.some(x => x.cmd === 'comp_apply'), 'marked with the old profile, never applied');
+        // back to the first profile with the work still unapplied: the disk refuses, Try again writes it
+        window.mockDraftFail = 'save';
+        bridge.postMessage(JSON.stringify({ cmd: 'profile', id: was })); await wait(250);
+        ok($('#cdlg-moved-text').textContent === t('cmp.moved.fail') && !$('#cdlg-moved-retry').classList.contains('hidden') && /s:dots/.test(dl()[1] || ''), 'not written, said, the work kept: ' + $('#cdlg-moved-text').textContent);
+        window.mockDraftFail = undefined; $('#cdlg-moved-retry').click(); await wait(80);
+        ok($('#cdlg-moved-text').textContent === t('cmp.moved') && $('#cdlg-moved-retry').classList.contains('hidden'), 'Try again: kept');
+      } finally { window.mockDraftFail = undefined; }
+    });
+  });
+
+  test('constructor recovery: the unapplied work is copied 3 s after a change; offered after an unexpected end, restored as a step, never applied; Delete; a write error said', async () => {
+    await fresh(); showTab('effects');
+    await cmpKeep(async () => {
+      try {
+        STATE.effect = S.effect = 'custom'; renderEffectSide(); $('#cmp-open').click(); await wait(60);
+        const live = cmpLines().join('|');
+        ok($('#cdlg-rec').classList.contains('hidden'), 'nothing to offer');
+        sent.length = 0; tutPick('lights'); await wait(1000);
+        ok(!dsaves('r').length, 'not at once');
+        await wait(2300);
+        const r = dsaves('r');
+        ok(r.length === 1 && /l2=s:dots/.test(r[0].kv) && S.cfg.crecover && /s:dots/.test(S.cfg.crecover.l2), 'the copy written: ' + JSON.stringify(r));
+        ok(!sent.some(o => o.cmd === 'comp_apply' || o.cmd === 'set' && o.s === 'custom') && cmpLines().join('|') === live, 'nothing applied');
+        await wait(3200); ok(dsaves('r').length === 1, 'not written again while unchanged');
+        // the window goes without a close (the app ended): the next editor offers it
+        CMP.tok++; clearTimeout(CMP.rt); $('#cdlg').classList.add('hidden');
+        $('#cmp-open').click(); await wait(60);
+        ok(!$('#cdlg-rec').classList.contains('hidden') && $('#cdlg-rec-text').textContent.length > 10 && dl().join('|') === litLines().join('|'), 'offered, not loaded by itself: ' + $('#cdlg-rec-text').textContent);
+        // while it is not answered, its copy stays as it was
+        sent.length = 0; tutPick('reactor'); await wait(3300);
+        ok(!dsaves('r').length && /s:dots/.test(S.cfg.crecover.l2), 'the copy kept while asked');
+        $('#cdlg-rec-open').click(); await wait(20);
+        ok($('#cdlg-rec').classList.contains('hidden') && dl().length === 2 && /s:dots/.test(dl()[1]) && !$('#cdlg-undo').disabled, 'restored as a step: ' + dl().join(' | '));
+        ok(!sent.some(o => o.cmd === 'comp_apply' || o.cmd === 'set' && o.s === 'custom') && cmpLines().join('|') === live, 'restored, not applied');
+        // a close the user chose clears it
+        sent.length = 0; $('#cdlg-close').click(); await wait(20); $('#cdlg-ask-drop').click(); await wait(80);
+        ok(dsaves('r').some(o => o.kv === '') && !S.cfg.crecover, 'cleared on a close: ' + JSON.stringify(S.cfg.crecover));
+        // Delete
+        STATE.cfg.crecover = { name: 'x', at: String(Date.now()), prof: '', l1: 's:dots c:p' }; bridge.postMessage(JSON.stringify({ cmd: 'get' })); await wait(80);
+        $('#cmp-open').click(); await wait(60);
+        ok(!$('#cdlg-rec').classList.contains('hidden'), 'offered again');
+        $('#cdlg-rec-drop').click(); await wait(80);
+        ok($('#cdlg-rec').classList.contains('hidden') && !S.cfg.crecover && dl().join('|') === litLines().join('|'), 'deleted');
+        // the copy cannot be written: said in the status, the work stays
+        window.mockDraftFail = 'save'; tutPick('lights'); await wait(3300);
+        ok($('#cdlg-st').textContent.includes(t('cmp.rec.fail')) && dl().length === 2, 'said: ' + $('#cdlg-st').textContent);
+      } finally { window.mockDraftFail = undefined; }
+    });
+  });
+
   test('constructor: the tutorials are plain layers; a panel knob moves its layer\'s setting; Save as preset sends the layers', async () => {
     await fresh(); showTab('effects');
     await cmpKeep(async () => {
@@ -2407,10 +2653,40 @@
       const a = pix(); await wait(120); const b = pix(); ok(a === b && CMP.t === 5 && $('#cdlg-tv').textContent === '5.0', 'scrubbed to 5: the same frame');
       $('#cdlg-rs').click(); ok(CMP.t === 0 && $('#cdlg-tv').textContent === '0.0', 'from the start');
       tr.value = 5; tr.dispatchEvent(new Event('input', { bubbles: true })); ok(pix() === a, 'back at 5: the same frame again');
+      // paused: no frames until what they show changes, then one (the loop driven by hand: a background page gets no rAF)
+      let T = performance.now() + 1e4; const tick = () => { cancelAnimationFrame(CMP.raf); cmpPreview(T += 40); };
+      tick(); let d0 = CMP.draws; tick(); tick(); tick(); ok(CMP.draws === d0, 'paused and unchanged: not drawn again: ' + (CMP.draws - d0));
+      const r3 = $('#cdlg-edit input[data-p="o"]'); r3.value = 20; r3.dispatchEvent(new Event('input', { bubbles: true })); tick(); tick();
+      ok(CMP.draws === d0 + 1, 'an edit on a pause: drawn once: ' + (CMP.draws - d0));
+      d0 = CMP.draws; $('#cdlg-pp').click(); tick(); tick(); tick(); ok(CMP.draws - d0 === 3, 'playing: drawn each frame: ' + (CMP.draws - d0)); $('#cdlg-pp').click();
       const rt = $('#cdlg-rate'); rt.value = '2'; rt.dispatchEvent(new Event('change', { bubbles: true }));
       ok(CMP.rate === 2 && !JSON.stringify(S.cfg).includes('rate') && !sent.some(o => JSON.stringify(o).includes('rate')), 'the preview speed is not saved');
       $('#cdlg-pp').click(); await wait(200); ok(CMP.play && CMP.t > 0, 'playing again: ' + CMP.t);
       rt.value = '1'; rt.dispatchEvent(new Event('change', { bubbles: true }));
+      // the clock runs on past a minute (no jump back to 0); the slider shows the minute it is in
+      if (CMP.play) $('#cdlg-pp').click();
+      CMP.t = 59.95; $('#cdlg-pp').click(); for (let i = 0; i < 10; i++) tick(); $('#cdlg-pp').click();
+      ok(CMP.t > 60 && CMP.t < 70 && +tr.min === 60 && +tr.max === 120 && $('#cdlg-tv').textContent === CMP.t.toFixed(1), 'past a minute, the time goes on: ' + CMP.t + ' in ' + tr.min + '..' + tr.max);
+      tr.value = 70; tr.dispatchEvent(new Event('input', { bubbles: true })); ok(CMP.t === 70, 'scrubbed in the second minute: ' + CMP.t);
+      $('#cdlg-rs').click(); ok(CMP.t === 0 && +tr.min === 0 && +tr.max === 60, 'from the start: the first minute again');
+      // Before: the applied composition at the same moment, size and colours; nothing sent; an edit shows the draft again
+      tr.value = 5; tr.dispatchEvent(new Event('input', { bubbles: true }));
+      const v = $('#cdlg-view'), draftPix = pix(), s0 = sent.length;
+      const want = (() => { const c = document.createElement('canvas'); c.width = v.width; c.height = v.height; const g = c.getContext('2d');
+        g.putImageData(new ImageData(fxPreview.comp.frame(JSON.parse(CMP.base)[0].map(fxPreview.comp.parse), effPal('custom').map(hex2rgb), v.width, v.height, 5), v.width, v.height), 0, 0);
+        return Array.from(g.getImageData(0, 0, v.width, v.height).data).join(); })();
+      ok(cmpDirty() && !$('#cdlg-ab').disabled, 'a draft: Before offered');
+      $('#cdlg-ab').click();
+      ok(CMP.ab && $('#cdlg-ab').getAttribute('aria-pressed') === 'true' && $('#cdlg-cap').textContent.startsWith(t('cmp.ab.on')), 'Before on, and said');
+      ok(pix() === want && want !== draftPix, 'Before draws the applied composition at the same moment');
+      ok(sent.length === s0 && cmpDirty(), 'Before sends nothing and keeps the draft');
+      const r4 = $('#cdlg-edit input[data-p="o"]'); r4.value = 30; r4.dispatchEvent(new Event('input', { bubbles: true }));
+      ok(!CMP.ab && $('#cdlg-ab').getAttribute('aria-pressed') === 'false', 'an edit shows the draft again');
+      // enlarged: a wider window, the picture computed at 96 x 54 at most; Esc goes back first, the editor stays
+      $('#cdlg-big').click();
+      ok(v.width === 96 && v.height === 54 && $('#cdlg .cdlg').classList.contains('big') && $('#cdlg-big').getAttribute('aria-pressed') === 'true', 'enlarged: ' + v.width + 'x' + v.height);
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      ok(v.width === 64 && v.height === 36 && !cmpIsBig() && !$('#cdlg').classList.contains('hidden') && $('#cdlg-ask').classList.contains('hidden'), 'Esc: back to the normal size, the editor still open');
     });
   });
 

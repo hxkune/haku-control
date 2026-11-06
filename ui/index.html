@@ -620,6 +620,12 @@
         </div>
         <div class="set-row"><div><b data-i18n="f.log">Log</b><p class="muted" data-i18n="help.log.text"></p></div>
           <button class="btn small ghost" type="button" data-open="log"><span data-i18n="home.open">Open</span></button></div>
+        <!-- what the core measures (main.c perf, devices.c ns / nf): only while haku runs, nothing logged -->
+        <div class="set-row pc-only" id="help-perf"><div><b data-i18n="perf.title">Frames and sending</b><p class="muted" data-i18n="perf.text"></p><ul class="perf-list" id="perf-list"></ul></div></div>
+        <!-- the check (app.js checkRows): from what haku already knows, nothing scanned, sent or fixed by itself -->
+        <div class="set-row pc-only"><div><b data-i18n="dchk.title">Check for problems</b><p class="muted" data-i18n="dchk.text"></p></div>
+          <button class="btn small ghost" type="button" id="dchk-run"><span data-i18n="dchk.run">Check</span></button></div>
+        <div class="found pc-only hidden" id="dchk-list" role="status"></div>
         <div class="set-row pc-only diag-row">
           <div><b data-i18n="report">Report a problem</b><p class="muted" id="diag-note"></p></div>
           <button class="btn small" id="report-open"><span data-i18n="report.open">Report…</span></button>
@@ -887,7 +893,15 @@
       <p id="cdlg-moved-text"></p>
       <div class="btn-row">
         <button class="btn small" type="button" id="cdlg-moved-open"><span data-i18n="cmp.moved.open">Open the current profile's composition</span></button>
+        <button class="btn small ghost hidden" type="button" id="cdlg-moved-retry"><span data-i18n="cmp.draft.retry">Try again</span></button>
         <button class="btn small ghost" type="button" id="cdlg-moved-preset"><span data-i18n="cmp.moved.preset">Save the draft as a preset</span></button>
+      </div>
+    </div>
+    <div class="cdlg-moved hidden" id="cdlg-rec" role="alert">
+      <p id="cdlg-rec-text"></p>
+      <div class="btn-row">
+        <button class="btn small" type="button" id="cdlg-rec-open"><span data-i18n="cmp.rec.open">Restore</span></button>
+        <button class="btn small ghost" type="button" id="cdlg-rec-drop"><span data-i18n="cmp.rec.drop">Delete</span></button>
       </div>
     </div>
     <canvas class="cdlg-view" id="cdlg-view" width="64" height="36"></canvas>
@@ -900,6 +914,8 @@
       <select class="select" id="cdlg-rate" data-i18n-aria="cmp.rate" aria-label="Preview speed (not saved)">
         <option value="0.25">×0.25</option><option value="0.5">×0.5</option><option value="1" selected>×1</option><option value="2">×2</option>
       </select>
+      <button class="btn ghost small" type="button" id="cdlg-ab" aria-pressed="false" data-i18n-title="cmp.ab.t" title="Show the applied composition at the same moment (nothing is sent)"><span data-i18n="cmp.ab">Before</span></button>
+      <button class="btn ghost small" type="button" id="cdlg-big" aria-pressed="false" data-i18n-title="cmp.big" title="Enlarge the picture (Esc: back)">⤢</button>
     </div>
     <p class="cdlg-cap" id="cdlg-cap"></p>
     <div class="cdlg-body">
@@ -916,6 +932,7 @@
       <p id="cdlg-ask-text"></p>
       <div class="btn-row">
         <button class="btn primary" type="button" id="cdlg-ask-keep"><span data-i18n="cmp.ask.keep">Save the draft</span></button>
+        <button class="btn ghost hidden" type="button" id="cdlg-ask-export"><span data-i18n="cmp.ask.export">Export</span></button>
         <button class="btn ghost" type="button" id="cdlg-ask-drop"><span data-i18n="cmp.ask.drop">Don't save</span></button>
         <button class="btn ghost" type="button" id="cdlg-ask-back"><span data-i18n="cmp.ask.back">Keep editing</span></button>
       </div>

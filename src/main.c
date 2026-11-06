@@ -392,6 +392,11 @@ static void close_devices(int restore) {
     have_msi = have_ene = 0;
 }
 
+// the render loop measured over ~2 s windows (Help, Diagnostics): frames per second x10, frames that changed a LED
+// per second x10, the frame's work in us (from the frame's start to its wait: effects, scene, the PC hardware's own
+// writes), average and worst. A few integers per frame, nothing logged.
+static volatile LONG perf_fps10, perf_chg10, perf_avg_us, perf_max_us;
+
 static unsigned __stdcall render_thread(void *p) {
     (void)p;
     HANDLE timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
@@ -562,6 +567,19 @@ static unsigned __stdcall render_thread(void *p) {
             SetEvent(ram_event);
         }
 
+        {
+            static LONGLONG w0, wsum, wmax; static int wf, wc;
+            LARGE_INTEGER e; QueryPerformanceCounter(&e);
+            LONGLONG us = (e.QuadPart - now.QuadPart) * 1000000 / fq.QuadPart;
+            if (!wf) w0 = now.QuadPart;
+            wf++; wc += changed != 0; wsum += us; if (us > wmax) wmax = us;
+            LONGLONG span = e.QuadPart - w0;
+            if (span >= 2 * fq.QuadPart) {
+                InterlockedExchange(&perf_fps10, (LONG)(wf * 10LL * fq.QuadPart / span)); InterlockedExchange(&perf_chg10, (LONG)(wc * 10LL * fq.QuadPart / span));
+                InterlockedExchange(&perf_avg_us, (LONG)(wsum / wf)); InterlockedExchange(&perf_max_us, (LONG)wmax);
+                wf = wc = 0; wsum = wmax = 0;
+            }
+        }
         // adaptive pacing: full fps while animating, 5 Hz while the picture is static
         idle_frames = changed || xf_at ? 0 : idle_frames + 1;   // (a profile blend runs at full fps)
         LONGLONG ms = idle_frames > 10 ? 200 : 1000 / fps;
@@ -1129,6 +1147,7 @@ static int status_body(char *out, int cap) {
     n += ollama_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",\"netchk\":");
     n += net_check_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"perf\":{\"fps10\":%ld,\"chg10\":%ld,\"avg_us\":%ld,\"max_us\":%ld,\"want\":%d}", perf_fps10, perf_chg10, perf_avg_us, perf_max_us, fps);
     n += snprintf(out + n, cap - n, ",\"diag\":");
     n += diag_json(out + n, cap - n);
     n += snprintf(out + n, cap - n, ",");
@@ -1213,6 +1232,17 @@ int app_comp_apply(const char *const *kv, int n) {
     cfg_set_many("custom", kv, n);
     app_config_changed(0);
     return cfg_save_if_dirty();
+}
+
+// a constructor draft's section ([cdraft.N], [crecover]) as these n pairs, n 0 clears it, written to disk now: 1 written.
+// One not written is taken back out, so the page is never told of a draft the disk lacks (a recovery copy's older
+// version may stay on disk until the next write)
+int app_draft_save(const char *sec, const char *const *kv, int n) {
+    cfg_remove_section(sec);
+    if (n) cfg_set_many(sec, kv, n);
+    if (cfg_save_if_dirty()) return 1;
+    if (n) cfg_remove_section(sec);
+    return 0;
 }
 
 // the fan panel's curve, its source and the other sources' curves, as one change (fans.c reads them together)

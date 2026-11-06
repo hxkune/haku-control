@@ -161,7 +161,7 @@ static void pictures(const char *dir) {
 // ---- "dump <file>": colours of a 28-LED strip for a set of effects, settings and moments, as JSON, for
 // tools/sim/preview_check.js to compare with the window's previews (ui/fxpreview.js)
 static void dump(const char *file) {
-    static const char *cases[][9] = {   // effect, then key/value pairs
+    static const char *cases[][19] = {   // effect, then key/value pairs
         { "flow" }, { "caustic" }, { "comet" }, { "lava" }, { "rainbow" }, { "ocean" }, { "plasma" }, { "ripple" }, { "pump" },
         { "wave" }, { "wave", "dir", "left", "size", "3" }, { "wave", "dir", "out" }, { "wave", "dir", "in", "size", "1" },
         { "breathe" }, { "breathe", "depth", "0" }, { "breathe", "single", "1", "wave", "60" }, { "breathe", "wave", "30", "depth", "20" },
@@ -182,21 +182,38 @@ static void dump(const char *file) {
         { "custom", "l1", "s:ring c:p1 x:20 dur:1.5 per:2.5 w:30 sf:0 fade:0", "l2", "s:spark c:p n:40 life:2 tail:30 v:-60 w:20 b:add", "l3", "s:dots n:5 w:50 inv:1 b:mask o:80" },
         { "custom", "l1", "s:grad c:p ap:sz aa:80 at:3", "l2", "s:wave c:p1 ap:o aa:-60 at:5 b:add", "l3", "s:fill c:p0 hide:1" },
         { "custom", "palette", "#FF0000, #00FF00", "l1", "s:spark c:p0 n:60 life:0.5 tail:0 v:0 w:100 b:screen" },
+        // eight layers, every blend, hidden ones between, an inverted mask, and settings at their limits and past them
+        { "custom", "l1", "s:fill c:#000a30", "l2", "s:grad c:p sz:400 v:200 a:360", "l3", "s:wave c:p0 sz:1 v:-200 b:screen o:60",
+          "l4", "s:dots n:60 w:100 sf:100 b:mask", "l5", "s:noise c:p sz:9999 v:-999 b:add hide:1", "l6", "s:ring c:p2 dur:20 per:0.1 w:100 sf:100 b:add",
+          "l7", "s:dots n:1 w:1 sf:0 inv:1 b:mask o:100", "l8", "s:wave c:p1 b:mul o:0" },
+        { "custom", "l1", "s:spark c:p n:60 life:10 tail:50 v:200 w:100", "l2", "s:spark c:p1 n:1 life:0.1 tail:0 v:-200 w:1 b:add",
+          "l3", "s:ring c:#ffffff x:0 y:100 dur:0.1 per:30 w:1 sf:0 b:screen", "l4", "s:grad c:p ap:a aa:400 at:0.2 b:mul o:50",
+          "l5", "s:wave c:p2 ap:sz aa:-400 at:60 hide:1", "l6", "s:noise c:#ff00ff sz:1 v:0 o:100 b:add", "l7", "s:fill c:p7 o:0" },
+        // sound-led layers on a fixed sound (the dump's "snd"): each reading, a beat, and a pull past a limit
+        { "custom", "l1", "s:fill c:p0 mp:o ma:100 ms:level", "l2", "s:ring c:p1 dur:1 per:2 w:20 mp:w ma:-80 ms:beat b:add",
+          "l3", "s:noise c:p sz:120 v:20 mp:sz ma:400 ms:bass b:screen", "l4", "s:spark c:p n:10 mp:v ma:-400 ms:level b:add", "l5", "s:dots n:9 mp:sf ma:60 ms:beat b:mask hide:1" },
+        { "custom", "l1", "s:grad c:p v:15 ap:a aa:90 at:4 mp:sz ma:200 ms:bass", "l2", "s:dots n:6 w:30 mp:w ma:100 ms:level inv:1 b:mask" },
     };
-    static const double T[] = { 0.37, 7.3, 41.9, 123.45 };
+    static const double T[] = { 0.37, 7.3, 41.9, 123.45, 0, 600.25 };   // the constructor also at its start and much later
+    static const float SND[][3] = { { 0.2f, 0.7f, 0 }, { 0.9f, 0.1f, 0.05f }, { 0, 1, 1.5f }, { 1, 0.5f, 9 }, { 0.5f, 0.5f, 0.3f }, { 0.05f, 0.95f, 0.7f } };   // level, bass, beat age
     FILE *f = fopen(file, "w"); if (!f) { printf("FAIL cannot write %s\n", file); fails++; return; }
     fputs("[\n", f);
     int first = 1;
     for (int c = 0; c < (int)(sizeof(cases) / sizeof(cases[0])); c++) {
         const char *id = cases[c][0]; int fx = effect_index(id);
-        for (int k = 0; k < 4; k++) {
+        for (int k = 0; k < (fx == FX_CUSTOM ? 6 : 4); k++) {
             reset_cfg(); strip(28);
-            for (int j = 1; j < 9 && cases[c][j]; j += 2) cfg_set(id, cases[c][j], cases[c][j + 1]);
+            for (int j = 1; j < 19 && cases[c][j]; j += 2) cfg_set(id, cases[c][j], cases[c][j + 1]);
             fresh(); effects_render(fx, &sc, &sn, 0, out);
             fx_t[fx] = T[k];
             fprintf(f, "%s{\"id\":\"%s\",\"p\":{", first ? "" : ",\n", id); first = 0;
-            for (int j = 1; j < 9 && cases[c][j]; j += 2) fprintf(f, "%s\"%s\":\"%s\"", j > 1 ? "," : "", cases[c][j], cases[c][j + 1]);
-            fprintf(f, "},\"t\":%.5f,\"pal\":[", T[k]);
+            for (int j = 1; j < 19 && cases[c][j]; j += 2) fprintf(f, "%s\"%s\":\"%s\"", j > 1 ? "," : "", cases[c][j], cases[c][j + 1]);
+            fputc('}', f);
+            if (fx == FX_CUSTOM && used_audio) {   // the sound as the analysis left it, set by hand: the same numbers go to the preview
+                level_smooth = SND[k][0]; bass_smooth = SND[k][1]; beat_age = SND[k][2]; audio_in = 1;
+                fprintf(f, ",\"snd\":[%.9g,%.9g,%.9g]", level_smooth, bass_smooth, expf(-beat_age / 0.35f) * audio_in);
+            }
+            fprintf(f, ",\"t\":%.5f,\"pal\":[", T[k]);
             for (int j = 0; j < fx_npal[fx]; j++) { rgbf q = fx_pal[fx][j]; fprintf(f, "%s[%.5f,%.5f,%.5f]", j ? "," : "", q.r, q.g, q.b); }
             fputs("],\"c\":[", f);
             for (int i = 0; i < sc.count; i++) { rgbf q = led_color(fx, &sc.leds[i], fx_t, NULL, 0); fprintf(f, "%s[%.5f,%.5f,%.5f]", i ? "," : "", q.r, q.g, q.b); }

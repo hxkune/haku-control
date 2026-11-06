@@ -25,7 +25,7 @@ static int     ndevs;
 
 // ---- shared (lock)
 static SRWLOCK lk = SRWLOCK_INIT;
-typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held, covered, cap; volatile LONG sent; char name[64], host[64], info[96], kind[16], type[12]; int sub, nev; ext_ev ev[EXT_EV]; } slot_t;
+typedef struct { int id, nleds, per_led, online, fails, enabled, own, same, held, covered, cap; volatile LONG sent; char name[64], host[64], info[96], kind[16], type[12]; int sub, nev; ext_ev ev[EXT_EV]; volatile LONG nsent; LONG nfail; } slot_t;
 static slot_t  slots[EXT_MAX];
 static int     nslots;
 static rgbf    frame[EXT_MAX][EXT_MAX_LEDS];
@@ -89,7 +89,7 @@ static void publish_slots(void) {
         if (s->id != d->id || s->nleds != n || strcmp(s->type, ty)) InterlockedExchange(&layout_new, 1);
         strcpy_s(s->type, sizeof(s->type), ty);
         s->id = d->id; s->nleds = n; s->per_led = d->drv->per_led; s->online = d->online; s->fails = d->fails; s->enabled = d->enabled; s->own = d->own; s->same = d->same; s->held = d->held;
-        s->covered = d->covered; s->cap = d->cap; InterlockedExchange(&s->sent, (LONG)d->sent_at);
+        s->covered = d->covered; s->cap = d->cap; InterlockedExchange(&s->sent, (LONG)d->sent_at); InterlockedExchange(&s->nsent, (LONG)d->nsent); s->nfail = (LONG)d->nfail;
         s->sub = d->sub; s->nev = d->nev; memcpy(s->ev, d->ev, sizeof(s->ev));
         strcpy_s(s->name, sizeof(s->name), d->name); strcpy_s(s->host, sizeof(s->host), d->host);
         strcpy_s(s->info, sizeof(s->info), d->info); strcpy_s(s->kind, sizeof(s->kind), d->drv->kind);
@@ -338,12 +338,13 @@ static unsigned __stdcall worker(void *p) {
                 due[k] = ext_pace_next(now, due[k], interval);
                 last_send[k] = now;
                 d->sent_at = now ? now : 1; InterlockedExchange(&slots[k].sent, (LONG)d->sent_at);   // slots[k] is devs[k] since the last publish
+                d->nsent++; InterlockedExchange(&slots[k].nsent, (LONG)d->nsent);
                 if (strcmp(was, d->info)) changed_state = 1;   // the driver's own news (TRYX: the upload's %)
             } else {
                 // lost soon after connecting (another program takes it back, a device that drops each frame):
                 // a failed attempt, so the waits grow instead of a reconnect every 2 s fighting over it
                 if (now - d->up_at >= 60000) d->fails = 0;
-                d->fails++;
+                d->fails++; d->nfail++;
                 DWORD wait = d->fails == 1 ? 2000 : retry_wait(d->fails);
                 ext_event(d, EV_LOST, 0);
                 logf_("dev.%d (%s %s): connection lost after %lu s: next try in %lu s", d->id, d->drv->kind, d->host, (now - d->up_at) / 1000, wait / 1000);
@@ -577,10 +578,14 @@ int ext_json(char *out, int cap) {
         json_escape_to(nm, sizeof(nm), s->name); json_escape_to(inf, sizeof(inf), s->info); json_escape_to(host, sizeof(host), s->host);
         snprintf(sec, sizeof(sec), "dev.%d", s->id);
         json_escape_to(zs, sizeof(zs), cfg_get(sec, "zones_found", ""));   // resizable zones (OpenRGB), "name:count:min:max|..."
+        // a screen's [dev.N] media file is gone (moved, deleted): it is read again at each start (Help, Diagnostics: Check)
+        // shortcut: one file lookup per screen per status; a path on a slow network share would hold the reply up
+        const char *md = cfg_get(sec, "media", ""); wchar_t mw[MAX_PATH]; int mx = 0;
+        if (*md && MultiByteToWideChar(CP_UTF8, 0, md, -1, mw, MAX_PATH)) mx = GetFileAttributesW(mw) == INVALID_FILE_ATTRIBUTES;
         const ext_driver *drv = ext_driver_by_kind(s->kind);
         n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
-                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"covered\":%d,\"cap\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\",\"sent\":%ld,\"ev\":[%s]}",
-                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->covered, s->cap, s->type, inf, pro_kind(s->kind), zs, s->sent ? (long)(GetTickCount() - (DWORD)s->sent) : -1L, ev);
+                      "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"covered\":%d,\"cap\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\",\"sent\":%ld,\"ns\":%ld,\"nf\":%ld,\"mx\":%d,\"ev\":[%s]}",
+                      k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->covered, s->cap, s->type, inf, pro_kind(s->kind), zs, s->sent ? (long)(GetTickCount() - (DWORD)s->sent) : -1L, (long)s->nsent, (long)s->nfail, mx, ev);
     }
     n += snprintf(out + n, cap - n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {

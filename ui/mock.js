@@ -18,12 +18,15 @@ const LAYOUTS = {
 };
 // the state as a copy, as the core sends it; a device that is lit had a frame leave a moment ago (devices.c "sent"),
 // unless a test sets its own
-const sentOf = x => (x.ext || { devs: [] }).devs.forEach(v => { if (v.sent === undefined) v.sent = v.online && v.enabled && !v.own && !v.held && !v.covered ? 120 : -1; });
+// and has been sent about 30 frames a second (devices.c ns) without a failed write (nf)
+const sentOf = x => (x.ext || { devs: [] }).devs.forEach(v => { const lit = v.online && v.enabled && !v.own && !v.held && !v.covered;
+  if (v.sent === undefined) v.sent = lit ? 120 : -1; if (v.ns === undefined) v.ns = lit ? Math.round(performance.now() * 0.03) : 0; if (v.nf === undefined) v.nf = 0; });
 const emit = d => L.forEach(f => { const c = d === STATE ? JSON.parse(JSON.stringify(d)) : d; if (d === STATE) sentOf(c); f({ data: c }); });
 window.chrome = { webview: {
   postMessage(s) {
     const o = JSON.parse(s); console.log('->', o);
     if (o.cmd === 'hello') setTimeout(() => emit(STATE), 30);
+    if (o.cmd === 'frames') { const was = FRAMES.live; FRAMES.live = o.live === 1; if (FRAMES.live && !was) FRAMES.emit(); }   // ui_web.cpp: at once
     // profiles: kept in the fake settings only (the core keeps the setups)
     const C = STATE.cfg, G = C.general;
     // ui_web.cpp other_profile: a profile's setting sent for a profile no longer in use is dropped, the page gets the state
@@ -34,6 +37,16 @@ window.chrome = { webview: {
     if (o.cmd === 'comp_apply') { const no = window.mockCompFail, err = no === 'bad' ? 'bad' : o.p && o.p !== (G.profile || '') ? 'prof' : no === 'save' ? 'save' : '';
       if (no !== 'silent') { if (!err || err === 'save') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); (C.custom = C.custom || {})[l.slice(0, e)] = l.slice(e + 1); });
         setTimeout(() => { emit(STATE); emit({ type: 'comp_done', req: o.req, err }); }, 40); } }
+    // ui_web.cpp draft_save: the 14 lines in order into the first free [cdraft.N] or, slot r, [crecover] (no lines: cleared);
+    // window.mockDraftFail = 'save' | 'silent'; a slot not taken back when not written
+    if (o.cmd === 'draft_save') { const no = window.mockDraftFail, K = ['name', 'at', 'prof', 'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'k1', 'k2', 'k3'];
+      const L = o.kv ? o.kv.split('\n').map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]) : [];
+      let err = (o.slot === '' || o.slot === 'r') && (L.length === 14 ? L.every((x, i) => x[0] === K[i]) && L[1][1] : !L.length && o.slot === 'r') ? '' : 'bad', n = 0, sec = 'crecover';
+      if (!err && o.slot === '') { n = 1; while (n <= 16 && (C['cdraft.' + n] || {}).at) n++; sec = 'cdraft.' + n; if (n > 16) err = 'full'; }
+      if (!err && no === 'save') err = 'save';
+      if (no === 'silent') return;
+      if (err) n = 0; else { delete C[sec]; if (L.length) C[sec] = Object.fromEntries(L); }
+      setTimeout(() => { emit(STATE); emit({ type: 'draft_done', req: o.req, err, n }); }, 40); }
     // devices.c load_config: an OpenRGB device's same=N pairs it with dev N, path= says which of the two lights it; the other lets go
     const pairUp = () => { const D = STATE.ext.devs; D.forEach(d => { if (d.held) d.online = 1; d.same = d.held = 0; });
       D.filter(d => d.kind === 'openrgb').forEach(m => { const c = C['dev.' + m.id] || {}, n = D.find(x => x.id === +c.same && x.kind !== 'openrgb' && !x.same); if (!n) return;
@@ -97,11 +110,11 @@ window.chrome = { webview: {
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
 const panels = (LAY || LAYOUTS.blocks).panels;
 const STATE = {
-  type: 'state', test: '', prof: { err: 0, id: 0, n: 0 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
+  type: 'state', test: '', prof: { err: 0, id: 0, n: 0 }, perf: { fps10: 299, chg10: 299, avg_us: 420, max_us: 1900, want: 30 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
     { cat: 'gpu', maker: 'ASUS', name: 'NVIDIA GeForce RTX 4070', id: '10DE:2786' }, { cat: 'usb', maker: 'Corsair', name: 'K70 RGB PRO', id: '1B1C:1BB3' },
     { cat: 'usb', maker: 'Wooting', name: 'Wooting 60HE v2', id: '31E3:1342' }, { cat: 'usb', maker: 'Lian Li', name: 'LianLi-Strimer Plus-1.5', id: '0CF2:A200' }] },
   orgb: { state: 2, exe: 1, auto: 1, ours: 1, setup: 0, pct: 0, err: '', ctls: [{ i: 0, type: 5, kind: 'keyboard', leds: 104, name: 'Keyboard' }, { i: 1, type: 3, kind: 'cooler', leds: 16, name: 'Fan hub' },
-    { i: 2, type: 2, kind: 'graphics card', leds: 8, name: 'ASUS TUF RTX 4070' }, { i: 6, type: 1, kind: 'memory', leds: 8, name: 'ENE DRAM' }, { i: 7, type: 2, kind: 'graphics card', leds: 3, name: 'MSI RTX 3060 Ventus' }] }, autostart: 1, ollama: { exe: 0, model: 0, ours: 0, on_demand: 0, startup: 0, stage: 5, pct: 42, err: '' }, effect: 'flow', brightness: 85, msi: 1, sticks: 2, ram_src: [0, 0], gpu_temp: 41, hotspot: 1, fx_audio: -2, fx_temp: -2, fans: { on: 1, q: 1, link: 1, age: 400, paused: 0, rfail: 0, gpu: 41, gage: 600, serial: '04976-37680', fw: 1024, flow: 0, t: [31.4, null, null, null], log: [], f: [{ rpm: 1180, pct: 52, v: 12, w: 1.4, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 1210, pct: 52, v: 12, w: 1.5, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }] }, ll: { st: 'ok', err: 0, rep: 3, g: [{ mac: '7c:9c:06:f5:17:e1', own: 1, ch: 8, type: 0, n: 3, rpm: [1650, 1664, 1820], pct: [79, 79, 79] }, { mac: '3a:10:c4:22:9e:05', own: 0, ch: 8, type: 0, n: 2, rpm: [980, 1004], pct: [40, 40] }] }, cf: { busy: '', a: [{ id: 'armoury', name: 'ASUS Armoury Crate / Aura', w: 'board', cool: 1, run: 1, inst: 1, bad: 0, fail: 0 }, { id: 'icue', name: 'Corsair iCUE', w: 'corsair', cool: 1, run: 0, inst: 1, bad: 0, fail: 0 }, { id: 'asrock', name: 'ASRock Polychrome RGB', w: 'board', cool: 0, run: 1, inst: 1, bad: 0, fail: 0, stay: 1 }] }, mqtt: { state: 'connected', err: '', topic: 'haku/desk-pc' }, pro: { on: 1, state: 'trial', kind: '', days: 12, until: '', checked: '', stale: 0, key: '', who: '', err: '', busy: 0 }, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/', can: 1, inst: 0, pct: 0, err: '' },
+    { i: 2, type: 2, kind: 'graphics card', leds: 8, name: 'ASUS TUF RTX 4070' }, { i: 6, type: 1, kind: 'memory', leds: 8, name: 'ENE DRAM' }, { i: 7, type: 2, kind: 'graphics card', leds: 3, name: 'MSI RTX 3060 Ventus' }] }, autostart: 1, ollama: { exe: 0, model: 0, ours: 0, on_demand: 0, startup: 0, stage: 5, pct: 42, err: '' }, effect: 'flow', brightness: 85, msi: 1, sticks: 2, ram_src: [0, 0], gpu_temp: 41, hotspot: 1, fx_audio: -2, fx_temp: -2, fans: { on: 1, q: 1, link: 1, age: 400, paused: 0, rfail: 0, wd: [0, 0], gpu: 41, gage: 600, serial: '04976-37680', fw: 1024, flow: 0, t: [31.4, null, null, null], log: [], f: [{ rpm: 1180, pct: 52, v: 12, w: 1.4, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 1210, pct: 52, v: 12, w: 1.5, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }] }, ll: { st: 'ok', err: 0, rep: 3, g: [{ mac: '7c:9c:06:f5:17:e1', own: 1, ch: 8, type: 0, n: 3, rpm: [1650, 1664, 1820], pct: [79, 79, 79] }, { mac: '3a:10:c4:22:9e:05', own: 0, ch: 8, type: 0, n: 2, rpm: [980, 1004], pct: [40, 40] }] }, cf: { busy: '', a: [{ id: 'armoury', name: 'ASUS Armoury Crate / Aura', w: 'board', cool: 1, run: 1, inst: 1, bad: 0, fail: 0 }, { id: 'icue', name: 'Corsair iCUE', w: 'corsair', cool: 1, run: 0, inst: 1, bad: 0, fail: 0 }, { id: 'asrock', name: 'ASRock Polychrome RGB', w: 'board', cool: 0, run: 1, inst: 1, bad: 0, fail: 0, stay: 1 }] }, mqtt: { state: 'connected', err: '', topic: 'haku/desk-pc' }, pro: { on: 1, state: 'trial', kind: '', days: 12, until: '', checked: '', stale: 0, key: '', who: '', err: '', busy: 0 }, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/', can: 1, inst: 0, pct: 0, err: '' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['rainbow','Радуга'],['wave','Цветная волна'],['fire','Огонь'],['ocean','Океан'],['twinkle','Созвездие'],['meteor','Метеорный дождь'],['plasma','Плазма'],['aurora','Северное сияние'],['ripple','Капли'],['matrix','Матрица'],['candle','Свеча'],['pendulum','Маятник'],['interference','Интерференция'],['steps','Ступени'],['screen','Экран'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['custom','Конструктор'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
   // #multi: a second controller (Shapes hexagons) and a Secretlab MAGRGB strip next to the Blocks
@@ -148,7 +161,11 @@ STATE.link = { st: 'ok', found: 1, app: '', fw: '3.10.636', hw: 0, age: 4000, hu
 const pal = [[0,200,255],[122,60,255],[255,45,149]];
 const pc = p => { p = (p % 1 + 1) % 1 * 3; const i = Math.floor(p), f = p - i, a = pal[i % 3], b = pal[(i + 1) % 3]; return a.map((v, k) => Math.round(v + (b[k] - v) * f)); };
 const hx = c => c.map(v => v.toString(16).padStart(2, '0')).join('');
-setInterval(() => {
+// ui_web.cpp FRAME_TIMER: 20 a second while the page draws them, else every 8th (the background glow)
+const FRAMES = { live: true, n: 0, sent: 0, emit: () => {} };
+setInterval(() => { if (FRAMES.live || ++FRAMES.n % 8 === 0) FRAMES.emit(); }, 50);
+FRAMES.emit = () => {
+  FRAMES.sent++;
   const t = performance.now() / 1000, l = [];
   for (let s = 0; s < 2; s++) for (let i = 0; i < 8; i++) l.push([s, i, hx(pc((s * 8 + i) / 36 - t * .12))]);
   for (let i = 0; i < 8; i++) l.push([2, i, hx(pc((16 + i) / 36 - t * .12))]);
@@ -162,4 +179,4 @@ setInterval(() => {
   [[105, 8], [106, 10], [107, 12], [108, 16], [109, 3]].forEach(([k, n], j) => { for (let i = 0; i < n; i++) l.push([k, i, hx(pc(i / n + j * .2 - t * .12))]); });   // PC hardware through OpenRGB
   l.push([110, 0, 'ffd9b0']);   // the Key Light: warm white
   emit({ type: 'frame', l });
-}, 50);
+};

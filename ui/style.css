@@ -404,6 +404,9 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .cdlg-tools .select { margin-top: 0; padding-block: 6px; width: auto; max-width: 220px; }
 .cdlg-tools .btn:disabled { opacity: .35; cursor: default; }
 .cdlg-view { width: 100%; aspect-ratio: 16 / 9; display: block; background: #000; image-rendering: pixelated; }
+.card.pdlg.cdlg.big { width: min(1400px, 100%); }
+.cdlg.big .cdlg-view { flex: none; width: auto; max-width: 100%; height: min(66vh, calc((100vw - 80px) * 9 / 16)); margin-inline: auto; }
+#cdlg-ab[aria-pressed=true], #cdlg-big[aria-pressed=true] { border-color: var(--strong); color: var(--strong); }
 .cdlg-play { display: flex; gap: 8px; align-items: center; }
 .cdlg-play .range { flex: 1; min-width: 0; }
 .cdlg-play b { font: 12px var(--font); color: var(--muted); min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
@@ -716,6 +719,7 @@ body.no-net #accounts, body.no-net #phone-card { display: none !important; }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 0; border-bottom: 1px solid var(--line); }
 .set-row b { font-size: 13.5px; font-weight: 600; }
 .set-row .muted { margin-top: 4px; }
+.perf-list { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .hk { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .hk:last-child { border-bottom: 0; }
 .kbd {

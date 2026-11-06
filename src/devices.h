@@ -78,6 +78,7 @@ struct ext_dev {
     int   fails;              // attempts that failed since it last stayed connected
     DWORD up_at;              // when it came online (a loss soon after counts as a failed attempt)
     DWORD sent_at;            // when a frame last left (the local write only: no driver hears back that it was shown)
+    unsigned nsent, nfail;    // frames written and writes that failed (Help, Diagnostics: the send rate from two readings)
     ext_ev ev[EXT_EV];        // the last events, oldest first (kept across a settings change)
     int   nev;
     SOCKET sock;              // for drivers with one socket

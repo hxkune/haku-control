@@ -139,7 +139,8 @@ int prof_switch(int id) {
 }
 
 // the settings with the change could not be written: the change is kept in memory and written with the next one
-void prof_saved(int id) { if (!cfg_save_if_dirty()) fail(PE_CFG, id); }
+// one that went through clears the last error (err_n stays: the window only tells new ones)
+void prof_saved(int id) { if (!cfg_save_if_dirty()) fail(PE_CFG, id); else err = 0; }
 
 // [profile.N] name: what was given (else the one it has, else "Profile N"), without what would break the file
 static const char *prof_name(const char *sec, int id, const char *name) {
@@ -205,6 +206,7 @@ void prof_delete(int id) {
     if (cfg_geti("general", "profile", 0) == id) cfg_set("general", "profile", "");   // the setup stays as it is
     if (!cfg_save_if_dirty()) { fail(PE_CFG, id); return; }
     wchar_t p[MAX_PATH]; prof_file(id, p); DeleteFileW(p);
+    err = 0;
 }
 
 // at start: [general] profile names one that is gone (its [profile.N] removed by hand, a restore): none is in use

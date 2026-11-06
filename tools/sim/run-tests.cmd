@@ -22,6 +22,15 @@ set "CF=/nologo /utf-8 /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /Fo:%T%\ /
 call :one xfade    tools\sim\xfade_test.c
 call :one tryx     tools\sim\tryx_test.c
 call :one effects  /O2 tools\sim\effects_test.c
+rem the window's previews (ui\fxpreview.js) against the engine just built: a fresh dump each run, under a new name
+echo === previews against the engine (node)
+set "D=%T%\fxdump-%RANDOM%%RANDOM%.json"
+del /q "%D%" 2>nul
+if not exist "%T%\effects_test.exe" (set "BAD=1") else (
+  "%T%\effects_test.exe" dump "%D%" >"%T%\fxdump.log" || (type "%T%\fxdump.log" & set "BAD=1")
+  node tools\sim\preview_check.js "%D%" || set "BAD=1"
+)
+del /q "%D%" 2>nul
 call :one profile  /W3 tools\sim\profile_test.c src\profile.c src\config.c
 call :one backup   /DHAKU_DEV tools\sim\backup_test.c src\backup.c src\config.c comdlg32.lib
 rem the remote check takes only the allowlist from ui_web.cpp; the rest of the program is left unlinked on purpose

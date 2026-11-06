@@ -69,6 +69,7 @@ int main(void) {
     CHECK(!prof_exists(3) && cfg_geti("general", "profile", 0) == 1, "no profile 3 shows, the one in use stays");
     file_fail = 0;
     CHECK(prof_save(0, "Film") == 3 && prof_exists(3) && there(L"profiles\\3.ini") && cfg_geti("general", "profile", 0) == 3, "retried, it is saved");
+    CHECK(err() == 0, "a save that went through clears the last error");
     reload();
     CHECK(prof_exists(3) && cfg_geti("general", "profile", 0) == 3, "after a restart it is there");
     // the settings can't be written after the profile's file: kept in memory, said, written with the next change

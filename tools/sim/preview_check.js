@@ -51,9 +51,16 @@ if (!file) { console.log('usage: node preview_check.js <dump.json from effects_t
 const cases = JSON.parse(fs.readFileSync(file, 'utf8'));
 const TOL = 0.004;   // 1/255: float (C) against double (JS) rounding, nothing more
 const worst = {};
+// a strip of the constructor's layers on a given sound (the dump's fixed "snd"), as fxPreview draws it on its made-up one
+const onSound = (P, pal, t, n, snd) => {
+  const np = pal.length, palc = p => { p = (p - Math.floor(p)) * np; const i = Math.floor(p), a = pal[i % np], b = pal[(i + 1) % np], f = p - i; return a.map((v, j) => v + (b[j] - v) * f); };
+  const cl = comp.load(P), pre = comp.prep(cl, true, t, snd);
+  return Array.from({ length: n }, (_, i) => comp.color(cl, pal, palc, n > 1 ? i / (n - 1) : 0, 0.5, true, t, snd, pre).map(v => v > 0 ? (v < 255 ? v : 255) : 0));
+};
 for (const k of cases) {
   const P = k.id === 'wave' ? (key => key === 'dir' ? k.p.dir || 'right' : +(k.p.size || 2)) : (key => fxParamValue(k.id, key, k.p[key]));
-  const js = fxPreview(k.id, k.pal.map(c => c.map(v => v * 255)), Math.fround(k.t), k.c.length, P);
+  const pal = k.pal.map(c => c.map(v => v * 255)), t = Math.fround(k.t);
+  const js = k.snd ? onSound(P, pal, t, k.c.length, k.snd) : fxPreview(k.id, pal, t, k.c.length, P);
   let d = 0, at = -1;
   k.c.forEach((c, i) => c.forEach((v, j) => { const e = Math.abs(v - js[i][j] / 255); if (e > d) { d = e; at = i; } }));
   const name = k.id + (Object.keys(k.p).length ? ' ' + JSON.stringify(k.p) : '');
@@ -62,5 +69,8 @@ for (const k of cases) {
 let bad = 0;
 for (const [name, w] of Object.entries(worst)) if (w.d > TOL) { bad++; console.log(`     ${name}: off by ${w.d.toFixed(4)} at LED ${w.at}, t=${w.t}`); }
 const all = Object.values(worst).reduce((m, w) => Math.max(m, w.d), 0);
-check(!bad, `the previews show the engine's colours (${Object.keys(worst).length} cases x 4 moments, worst ${all.toFixed(5)})`);
+check(!bad, `the previews show the engine's colours (${Object.keys(worst).length} cases, ${cases.length} strips, worst ${all.toFixed(5)})`);
+const cust = cases.filter(k => k.id === 'custom');
+check(cust.some(k => k.snd) && cust.some(k => k.t === 0) && cust.some(k => Object.keys(k.p).length >= 8),
+  'the dump has the constructor on a fixed sound, at its start, and with eight layers (a dump from an older test is not taken)');
 process.exit(fails ? 1 : 0);

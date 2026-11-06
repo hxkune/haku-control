@@ -548,6 +548,11 @@ function decorWake() {
   if ((q || still) && kyTimer) { clearTimeout(kyTimer); kyTimer = 0; if (!still) $('.ky-script')?.getAnimations({ subtree: true }).forEach(a => a.pause()); }
   if (document.documentElement.dataset.theme === 'kyoka' && ((!q && !kyTimer) || still)) kyWrite();
   previewWake();
+  if (TXB && !TXB.busy) {   // the screen builder: its video and its loop wait too
+    const v = TXB.src?.el, off = document.hidden || document.body.classList.contains('idle');
+    if (v) off ? v.pause() : v.paused && v.play().catch(() => {});
+    if (!off) txbLoop();
+  }
 }
 document.addEventListener('visibilitychange', decorWake);
 new MutationObserver(decorWake).observe(document.body, { attributes: true, attributeFilter: ['class'] });   // calm, idle
@@ -733,7 +738,7 @@ function showTab(p) {
   $('#nav button.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });   // the bottom bar of a narrow window scrolls
   $('#title').textContent = t(p === 'fans' ? 'nav.cooling' : 'nav.' + p);
   $('#subtitle').textContent = t('sub.' + p + (p === 'fans' && !(S.fans || {}).q ? '.b' : ''));
-  requestAnimationFrame(sizeCanvases); previewWake();
+  requestAnimationFrame(sizeCanvases); previewWake(); frameNeed();
   try { localStorage.setItem('tab', p); } catch (e) { }
 }
 // the jumps from Help, Home and the guide: a page, the Add sheet (from where it is), the OpenRGB set-up in it, the
@@ -1750,7 +1755,7 @@ function cmpKnobSet(i, v) {
 // g: the gesture now (bumped on each press, release, cancel, key press, leaving the window), ag: the one of the last
 // undo step; t, play, rate, pt: the preview's own clock (never saved); solo: the layer the preview shows alone
 const CMP = { L: [], K: [], sel: 0, cur: '', hist: [], fut: [], ctl: '', g: 0, ag: -1, open: {}, raf: 0, last: 0, t: 0, play: 1, rate: 1, pt: 0, solo: null,
-  base: '', live: '', prof: '', tok: 0, st: '', why: '', req: '', sent: '', timer: 0, away: 0, moved: 0, from: null };
+  base: '', live: '', prof: '', tok: 0, st: '', why: '', req: '', sent: '', timer: 0, away: 0, moved: 0, from: null, keep: null, rec: 0, rt: 0, recCur: '' };
 let cmpReq = 0;
 const cmpSnap = () => JSON.stringify(cmpWords(CMP.L, CMP.K));
 const cmpLiveSnap = () => (c => JSON.stringify(cmpWords(c.L, c.K)))(cmpNow());
@@ -1768,12 +1773,15 @@ function cmpSet(snap) {   // the editor shows these words
 function cmpOpen(c) {
   const live = cmpLiveSnap();
   CMP.tok++; clearTimeout(CMP.timer);
-  Object.assign(CMP, { sel: 0, hist: [], fut: [], ctl: '', open: {}, base: live, live, prof: cv('general', 'profile', ''), st: '', why: '', req: '', away: 0, moved: 0, note: '', solo: null,
+  clearTimeout(CMP.rt);
+  Object.assign(CMP, { sel: 0, hist: [], fut: [], ctl: '', open: {}, base: live, live, prof: cv('general', 'profile', ''), st: '', why: '', req: '', away: 0, moved: 0, note: '', solo: null, ab: 0,
+    keep: null, rec: cv('crecover', 'at', '') ? 1 : 0, recCur: '',
     t: stillMotion() ? 3 : 0, play: stillMotion() ? 0 : 1, pt: 0 });   // reduced motion: a still frame until Play
   if (!(c && c.L)) CMP.from = document.activeElement;
   cmpSet(c && c.L ? JSON.stringify(cmpWords(c.L, c.K)) : live);
   cmpTutOpts();
   $('#cdlg-ask').classList.add('hidden');
+  cmpBig(0);
   $('#cdlg').classList.remove('hidden');
   cmpRender();
   const s = $('#cdlg-strip'); s.width = s.clientWidth * devicePixelRatio; s.height = s.clientHeight * devicePixelRatio;
@@ -1788,7 +1796,8 @@ function cmpTutOpts() {
 }
 // the window goes; the draft goes with it (asked first in cmpTryClose)
 function cmpClose() {
-  CMP.tok++; clearTimeout(CMP.timer); CMP.away = 0;
+  CMP.tok++; clearTimeout(CMP.timer); clearTimeout(CMP.rt); CMP.away = 0; cmpBig(0);
+  if (!CMP.rec && cv('crecover', 'at', '')) draftSend('r', '', () => {});   // a close the user chose: nothing to recover
   $('#cdlg').classList.add('hidden'); closePicker(); flushSets(); renderEffectSide();
   const f = CMP.from && CMP.from.isConnected ? CMP.from : $('#cmp-open'); if (f) f.focus();
 }
@@ -1798,9 +1807,9 @@ function cmpTryClose() {
   $('#cdlg-ask').classList.remove('hidden'); $('#cdlg-row').classList.add('hidden');
   $('#cdlg-ask-keep').focus();
 }
-function cmpAskBack() { $('#cdlg-ask').classList.add('hidden'); $('#cdlg-row').classList.remove('hidden'); $('#cdlg-close').focus(); }
+function cmpAskBack() { $('#cdlg-ask-export').classList.add('hidden'); $('#cdlg-ask-keep span').textContent = t('cmp.ask.keep'); $('#cdlg-ask').classList.add('hidden'); $('#cdlg-row').classList.remove('hidden'); $('#cdlg-close').focus(); }
 // behind a window it opened (Save as a preset, Share), and back when that one closes
-function cmpAway() { CMP.away = 1; $('#cdlg').classList.add('hidden'); closePicker(); }
+function cmpAway() { CMP.away = 1; cmpBig(0); $('#cdlg').classList.add('hidden'); closePicker(); }
 function cmpBack() {
   if (!CMP.away) return;
   CMP.away = 0; $('#cdlg').classList.remove('hidden'); cmpRender();
@@ -1812,29 +1821,34 @@ function cmpBack() {
 function cmpChanged(ctl) {
   const s = cmpSnap(); if (s === CMP.cur) return;
   if (!ctl || ctl !== CMP.ctl || CMP.g !== CMP.ag) { CMP.hist.push(CMP.cur); if (CMP.hist.length > 50) CMP.hist.shift(); }
-  CMP.fut.length = 0; CMP.cur = s; CMP.ctl = ctl || ''; CMP.ag = CMP.g; CMP.note = '';
+  CMP.fut.length = 0; CMP.cur = s; CMP.ctl = ctl || ''; CMP.ag = CMP.g; CMP.note = ''; CMP.ab = 0;   // an edit shows the draft again
   if (CMP.st !== 'sent') CMP.st = '';
-  cmpTools();
+  cmpTools(); cmpRecSoon();
 }
 function cmpUndo(redo) {
   const from = redo ? CMP.fut : CMP.hist, to = redo ? CMP.hist : CMP.fut;
   if (!from.length) return;
   to.push(CMP.cur); cmpSet(from.pop()); CMP.ctl = '';
   if (CMP.st !== 'sent') CMP.st = '';
-  cmpRender();
+  cmpRender(); cmpRecSoon();
 }
 function cmpTools() {
   const dirty = cmpDirty();
   $('#cdlg-undo').disabled = !CMP.hist.length; $('#cdlg-redo').disabled = !CMP.fut.length;
   $('#cdlg-add').disabled = CMP.L.length >= fxc.MAX;
   $('#cdlg-apply').disabled = !dirty || CMP.st === 'sent'; $('#cdlg-revert').disabled = !dirty;
+  if (!dirty) CMP.ab = 0;   // nothing to compare: the draft is what is applied
+  const ab = $('#cdlg-ab'); ab.disabled = !dirty; ab.setAttribute('aria-pressed', String(!!CMP.ab));
   const st = $('#cdlg-st'), key = CMP.st === 'sent' ? 'cmp.st.sent' : CMP.st === 'err' ? 'cmp.st.err.' + CMP.why : dirty ? 'cmp.st.draft' : CMP.st === 'applied' ? 'cmp.st.applied' : '';
   st.textContent = [key ? t(key) : '', CMP.note].filter(Boolean).join(' · '); st.className = 'cdlg-st' + (CMP.st === 'err' ? ' bad' : dirty ? ' draft' : CMP.st === 'applied' ? ' ok' : '');
   const so = cmpSolo(), on = L => L.p[CMP_LP.hide] < 0.5;
-  $('#cdlg-cap').textContent = [t('cmp.view.model'), CMP.L.some(L => on(L) && L.mp >= 0) ? t('cmp.view.demo') : '',
-    so ? t('cmp.solo.on', CMP.L.indexOf(so) + 1) : '', so && so.blend === 4 ? t('cmp.mask.bw') : ''].filter(Boolean).join(' · ');
+  $('#cdlg-cap').textContent = [CMP.ab ? t('cmp.ab.on') : '', t('cmp.view.model'), CMP.L.some(L => on(L) && L.mp >= 0) ? t('cmp.view.demo') : '',
+    so && !CMP.ab ? t('cmp.solo.on', CMP.L.indexOf(so) + 1) : '', so && !CMP.ab && so.blend === 4 ? t('cmp.mask.bw') : ''].filter(Boolean).join(' · ');
   const mv = $('#cdlg-moved'); mv.classList.toggle('hidden', !CMP.moved);
-  if (CMP.moved) $('#cdlg-moved-text').textContent = t(CMP.moved === 2 ? 'cmp.moved.full' : 'cmp.moved');
+  if (CMP.moved) $('#cdlg-moved-text').textContent = t(['', 'cmp.moved', 'cmp.moved.full', 'cmp.moved.fail', 'cmp.moved.saving'][CMP.moved]);
+  $('#cdlg-moved-retry').classList.toggle('hidden', CMP.moved !== 3);
+  $('#cdlg-rec').classList.toggle('hidden', !CMP.rec);
+  if (CMP.rec) { const at = +cv('crecover', 'at', 0); $('#cdlg-rec-text').textContent = t('cmp.rec', at ? new Date(at).toLocaleString(LANG, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''); }
 }
 // Apply: the draft as [custom], one change, for the profile it is for; the core answers comp_done
 function cmpApply() {
@@ -1851,7 +1865,7 @@ function cmpDone(m) {
   if (!CMP.req || m.req !== CMP.req) return;   // a reply for an editor closed, reopened or moved to another profile since
   clearTimeout(CMP.timer); CMP.req = '';
   // 'save': in use, only not on disk yet; 'prof', 'bad', 'noreply': not taken
-  if (!m.err || m.err === 'save') CMP.base = CMP.live = CMP.sent;
+  if (!m.err || m.err === 'save') { CMP.base = CMP.live = CMP.sent; cmpRecSoon(); }
   CMP.st = m.err ? 'err' : 'applied'; CMP.why = m.err || '';
   cmpTools(); renderEffectSide();
 }
@@ -1867,8 +1881,8 @@ function cmpState(switched) {
   if (switched) {
     const dirty = cmpDirty();
     CMP.tok++; CMP.req = ''; clearTimeout(CMP.timer);
-    if (dirty) CMP.moved = cmpDraftSave() ? 1 : 2;   // kept (marked with the old profile), never applied to the new one by itself
-    Object.assign(CMP, { prof: cv('general', 'profile', ''), base: live, live, hist: [], fut: [], ctl: '', st: '', why: '', solo: null });   // no undo across profiles
+    if (dirty) cmpMovedSave();   // kept (marked with the old profile), never applied to the new one by itself
+    Object.assign(CMP, { prof: cv('general', 'profile', ''), base: live, live, hist: [], fut: [], ctl: '', st: '', why: '', solo: null, ab: 0 });   // no undo across profiles
     if (!dirty) { cmpSet(live); CMP.moved = 0; }
     cmpTutOpts();
     if (!CMP.away) cmpRender();
@@ -1879,6 +1893,7 @@ function cmpState(switched) {
   CMP.live = CMP.base = live;
   if (!dirty) cmpSet(live);
   if (!CMP.away) cmpRender();
+  cmpRecSoon();
 }
 
 // ---- drafts ([cdraft.1..16], not a profile's): name, at (ms), prof, l1..l8, k1..k3. Written only when asked
@@ -1889,15 +1904,53 @@ function cmpDrafts() {
   for (let n = 1; n <= CDRAFT_MAX; n++) if (cv('cdraft.' + n, 'at', '')) D.push({ n, name: cv('cdraft.' + n, 'name', '') || t('cmp.drafts'), at: +cv('cdraft.' + n, 'at', 0) });
   return D.sort((a, b) => b.at - a.at);
 }
-function cmpDraftSave() {
-  let n = 1; while (n <= CDRAFT_MAX && cv('cdraft.' + n, 'at', '')) n++;
-  if (n > CDRAFT_MAX) return 0;
-  const [l, k] = JSON.parse(CMP.cur), sec = 'cdraft.' + n;
+// the core writes a draft's section whole and answers draft_done once it is on disk (or not): err '' | 'full' | 'save' |
+// 'bad', 'noreply' after 4 s; done(err, n) once per request. A late answer after noreply only refreshes the lists (its state)
+const DRAFT_W = {};
+function draftSend(slot, kv, done) {
+  const req = String(++cmpReq);
+  DRAFT_W[req] = { done, timer: setTimeout(() => draftDone({ req, err: 'noreply' }), 4000) };
+  send({ cmd: 'draft_save', req, slot, kv });
+}
+function draftDone(m) {
+  const w = DRAFT_W[m.req]; if (!w) return;
+  delete DRAFT_W[m.req]; clearTimeout(w.timer); w.done(m.err || '', +m.n || 0);
+}
+// the editor's work as a draft's 14 lines: name, at, prof (the profile it was for; drafts belong to none), l1..l8, k1..k3
+function cmpDraftKv() {
   const when = new Date().toLocaleString(LANG, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  const kv = [['name', cmpLabel(t('cmp.draft.name', when))], ['at', String(Date.now())], ['prof', CMP.prof]]
-    .concat(Array.from({ length: fxc.MAX }, (_, i) => ['l' + (i + 1), l[i] || '']), [0, 1, 2].map(i => ['k' + (i + 1), k[i] || '']));
-  kv.forEach(([key, v]) => { setCfgLocal(sec, key, v); send({ cmd: 'set', s: sec, k: key, v }); });   // no p: drafts belong to no profile
-  return n;
+  return ['name=' + cmpLabel(t('cmp.draft.name', when)), 'at=' + Date.now(), 'prof=' + CMP.prof, cmpKv(JSON.parse(CMP.cur))].join('\n');
+}
+// the work into the first free draft; a second ask while one is on its way (a profile switch during Save the draft)
+// waits for that same one, so the work is never kept twice
+function cmpDraftSave(done) {
+  if (CMP.keep) { CMP.keep.push(done); return; }
+  const w = CMP.keep = [done];
+  draftSend('', cmpDraftKv(), (err, n) => { if (CMP.keep === w) CMP.keep = null; w.forEach(f => f(err, n)); });
+}
+function cmpMovedSave() {
+  const tok = CMP.tok; CMP.moved = 4;
+  cmpDraftSave(err => {
+    if (CMP.tok !== tok) return;
+    CMP.moved = !err ? 1 : err === 'full' ? 2 : 3; cmpTutOpts(); if (!CMP.away) cmpTools();
+  });
+  if (!CMP.away) cmpTools();
+}
+// the recovery copy [crecover]: the unapplied work, 3 s after the last change, for an editor that went without being
+// closed (a crash, a power cut); cleared once nothing is unapplied and on a close. Never applied by itself
+function cmpRecSoon() {
+  clearTimeout(CMP.rt);
+  if (!CMP.rec) CMP.rt = setTimeout(cmpRecWrite, 3000);   // an offer not answered yet: its copy stays as it is
+}
+function cmpRecWrite() {
+  if (CMP.rec || !cmpShown()) return;
+  const dirty = cmpDirty(), cur = dirty ? CMP.cur : '';
+  if (cur === CMP.recCur && (dirty || !cv('crecover', 'at', ''))) return;
+  const tok = CMP.tok; CMP.recCur = cur;
+  draftSend('r', dirty ? cmpDraftKv() : '', err => {
+    if (!err || CMP.tok !== tok) return;
+    CMP.recCur = ''; CMP.note = t('cmp.rec.fail'); cmpTools();
+  });
 }
 const cmpDraft = n => cmpLoad(k => cv('cdraft.' + n, k, ''));
 const draftKeys = () => ['name', 'at', 'prof'].concat(Array.from({ length: fxc.MAX }, (_, i) => 'l' + (i + 1)), ['k1', 'k2', 'k3']);
@@ -2055,13 +2108,16 @@ $('#cdlg-knobs').addEventListener('click', e => {
 const cmpSolo = () => CMP.solo && CMP.L.includes(CMP.solo) ? CMP.solo : null;
 // what the preview draws: all layers, or the solo one with the others hidden (a mask: as black and white, over white)
 // shortcut: a soloed mask moves one place down, so a noise or spark mask gets another seed than in the composition
+// Before (CMP.ab): the applied composition, whole, in the same picture, time and colours; only drawn, nothing sent
 function cmpShow() {
+  if (CMP.ab) return JSON.parse(CMP.base)[0].map(fxc.parse).filter(Boolean);
   const so = cmpSolo(); if (!so) return CMP.L;
   const L = CMP.L.map(x => { const c = fxc.parse(fxc.line(x)); c.p[CMP_LP.hide] = x === so ? 0 : 1; return c; });
   return so.blend === 4 ? [fxc.parse('s:fill c:#ffffff')].concat(L) : L;
 }
 // the picture (2D, as on a fan or a panel) and the strip (as on a line of LEDs): one clock for both, at the effect's
-// speed and colours; it runs only while the window shows (hidden or behind other windows: no frames)
+// speed and colours; it runs only while the window shows (hidden or behind other windows: no frames). The clock runs
+// on as the engine's does (no jump back to 0 the effect would not make); the slider shows the minute it is in
 function cmpPreview(now) {
   CMP.raf = 0;
   if ($('#cdlg').classList.contains('hidden') || document.body.classList.contains('idle')) return;
@@ -2069,15 +2125,20 @@ function cmpPreview(now) {
   if (now - CMP.last < 33) return;
   CMP.last = now;
   const dt = CMP.pt ? Math.min(0.25, (now - CMP.pt) / 1000) : 0; CMP.pt = now;   // back from a pause of the loop: no jump
-  if (CMP.play) CMP.t = (CMP.t + dt * CMP.rate * fxClockSpeed('custom', +cv('custom', 'speed', cv('general', 'speed', 5)), () => '')) % 60;
-  cmpDraw();
+  if (CMP.play) CMP.t = (CMP.t + dt * CMP.rate * fxClockSpeed('custom', +cv('custom', 'speed', cv('general', 'speed', 5)), () => ''));
+  cmpDraw(1);
 }
-function cmpDraw() {
+// still: on a pause the picture is drawn again only when what it shows changed (the frame is a function of these)
+function cmpDraw(still) {
   const pal = effPal('custom').map(hex2rgb), show = cmpShow(), lines = show.map(fxc.line), tt = CMP.t;
-  const v = $('#cdlg-view');
+  const v = $('#cdlg-view'), s = $('#cdlg-strip'), sig = [lines.join('|'), pal.join(), tt, v.width, v.height, s.width, s.height].join(';');
+  if (still && !CMP.play && CMP.sig === sig) return;
+  CMP.sig = sig; CMP.draws = (CMP.draws || 0) + 1;
   v.getContext('2d').putImageData(new ImageData(fxc.frame(show, pal, v.width, v.height, tt), v.width, v.height), 0, 0);
-  const s = $('#cdlg-strip'); if (s.width) drawStrip(s, fxPreview('custom', pal, tt, 40, k => lines[+k.slice(1) - 1] || ''));
-  const r = $('#cdlg-t'); if (+r.value !== +tt.toFixed(1)) { r.value = tt.toFixed(1); fill(r); }
+  if (s.width) drawStrip(s, fxPreview('custom', pal, tt, 40, k => lines[+k.slice(1) - 1] || ''));
+  const r = $('#cdlg-t'), w = Math.floor(tt / 60) * 60;
+  if (+r.min !== w) { r.min = w; r.max = w + 60; }
+  if (+r.value !== +tt.toFixed(1)) { r.value = tt.toFixed(1); fill(r); }
   $('#cdlg-tv').textContent = tt.toFixed(1);
 }
 function cmpPlayUi() {
@@ -2088,6 +2149,16 @@ $('#cdlg-pp').addEventListener('click', () => { CMP.play = CMP.play ? 0 : 1; cmp
 $('#cdlg-rs').addEventListener('click', () => { CMP.t = 0; cmpDraw(); });
 $('#cdlg-t').addEventListener('input', e => { CMP.t = +e.target.value; CMP.play = 0; cmpPlayUi(); cmpDraw(); });   // scrubbing holds the picture
 $('#cdlg-rate').addEventListener('change', e => { CMP.rate = +e.target.value || 1; });
+$('#cdlg-ab').addEventListener('click', () => { if (!cmpDirty()) return; CMP.ab = CMP.ab ? 0 : 1; cmpTools(); cmpDraw(); });
+// the picture enlarged (a wider window): its pixels grow, its computation only to 96 x 54, never to the window's size
+const cmpIsBig = () => $('#cdlg .cdlg').classList.contains('big');
+function cmpBig(on) {
+  if (!!on === cmpIsBig()) return;
+  const v = $('#cdlg-view'); $('#cdlg .cdlg').classList.toggle('big', !!on); v.width = on ? 96 : 64; v.height = on ? 54 : 36;
+  $('#cdlg-big').setAttribute('aria-pressed', String(!!on));
+  if (!$('#cdlg').classList.contains('hidden')) cmpDraw();
+}
+$('#cdlg-big').addEventListener('click', () => cmpBig(!cmpIsBig()));
 // gestures for the undo: a press or release of the pointer or a key, a cancelled pointer, the window left
 ['pointerdown', 'pointerup', 'pointercancel', 'keyup'].forEach(ev => document.addEventListener(ev, () => { CMP.g++; }, true));
 document.addEventListener('keydown', e => { if (!e.repeat) CMP.g++; }, true);
@@ -2106,14 +2177,32 @@ $('#cdlg-redo').addEventListener('click', () => cmpUndo(true));
 $('#cdlg-apply').addEventListener('click', cmpApply);
 $('#cdlg-revert').addEventListener('click', cmpRevert);
 $('#cdlg-close').addEventListener('click', cmpTryClose);
+// Save the draft: the window goes only once the core says the draft is on disk; else it stays with the work in it
 $('#cdlg-ask-keep').addEventListener('click', () => {
-  if (!cmpDraftSave()) { $('#cdlg-ask-text').textContent = t('cmp.draft.full'); return; }   // never one overwritten: the window stays
-  cmpAskBack(); cmpClose(); if (FX_TAB === 'presets') buildEffects();
+  const b = $('#cdlg-ask-keep'), tok = CMP.tok; if (b.disabled) return;
+  b.disabled = true; $('#cdlg-ask-text').textContent = t('cmp.draft.saving');
+  cmpDraftSave(err => {
+    b.disabled = false;
+    if (CMP.tok !== tok) { if (!$('#cdlg-ask').classList.contains('hidden')) cmpAskBack(); return; }   // another profile came on: its banner says what became of it
+    if (!err) { cmpAskBack(); cmpClose(); if (FX_TAB === 'presets') buildEffects(); return; }
+    $('#cdlg-ask-text').textContent = t(err === 'full' ? 'cmp.draft.full' : 'cmp.draft.fail');   // never one overwritten: the window stays
+    $('#cdlg-ask-keep span').textContent = t(err === 'full' ? 'cmp.ask.keep' : 'cmp.draft.retry');
+    $('#cdlg-ask-export').classList.toggle('hidden', err === 'full'); cmpTutOpts();
+  });
 });
 $('#cdlg-ask-drop').addEventListener('click', () => { cmpAskBack(); cmpClose(); });
 $('#cdlg-ask-back').addEventListener('click', cmpAskBack);
+$('#cdlg-ask-export').addEventListener('click', () => { cmpAskBack(); $('#cdlg-export').click(); });
+$('#cdlg-moved-retry').addEventListener('click', cmpMovedSave);
+$('#cdlg-rec-open').addEventListener('click', () => {   // into the editor as one step of undo; applied only with Apply
+  const c = cmpLoad(k => cv('crecover', k, '')); CMP.rec = 0;
+  CMP.L = c.L; CMP.K = c.K; CMP.sel = 0; cmpChanged(''); cmpRender(); $('#cdlg-tut').focus();
+});
+$('#cdlg-rec-drop').addEventListener('click', () => {
+  CMP.rec = 0; CMP.recCur = ''; draftSend('r', '', () => {}); cmpTools(); cmpRecSoon(); $('#cdlg-tut').focus();
+});
 $('#cdlg-moved-open').addEventListener('click', () => {   // the profile's own composition; the draft stays in Drafts
-  cmpSet(CMP.base); CMP.moved = 0; CMP.hist = []; CMP.fut = []; cmpRender(); $('#cdlg-close').focus();
+  cmpSet(CMP.base); CMP.moved = 0; CMP.hist = []; CMP.fut = []; cmpRender(); cmpRecSoon(); $('#cdlg-close').focus();
 });
 $('#cdlg-moved-preset').addEventListener('click', () => $('#cdlg-save').click());
 $('#cdlg').addEventListener('pointerdown', e => { if (e.target.id === 'cdlg') cmpTryClose(); });
@@ -2127,7 +2216,7 @@ $('#cdlg-export').addEventListener('click', () => {
 });
 document.addEventListener('keydown', e => {
   if ($('#cdlg').classList.contains('hidden') || !pk.classList.contains('hidden')) return;
-  if (e.key === 'Escape') { if (!$('#cdlg-ask').classList.contains('hidden')) cmpAskBack(); else cmpTryClose(); return; }
+  if (e.key === 'Escape') { if (cmpIsBig()) cmpBig(0); else if (!$('#cdlg-ask').classList.contains('hidden')) cmpAskBack(); else cmpTryClose(); return; }
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y') && !e.target.closest('input:not([type=range]):not([type=checkbox]), textarea, select')) { e.preventDefault(); cmpUndo(k === 'y' || e.shiftKey); }
 });
@@ -3249,7 +3338,7 @@ function openSheet(h, cx, cy) {
   const r = sh.getBoundingClientRect();   // grow out of the device that was clicked
   sh.style.transformOrigin = `${cx - r.left}px ${cy - r.top}px`;
   sh.classList.remove('in'); void sh.offsetWidth; sh.classList.add('in');
-  requestAnimationFrame(sizeCanvases);
+  requestAnimationFrame(sizeCanvases); frameNeed();
 }
 function closeSheet() {
   if (!SHEET.kind) return;
@@ -3259,7 +3348,7 @@ function closeSheet() {
   SHEET.moved = []; SHEET.kind = null;
   $('#sheet').classList.add('hidden');
   if (prof) renderProfiles();
-  requestAnimationFrame(sizeCanvases);
+  requestAnimationFrame(sizeCanvases); frameNeed();
   const b = SHEET.back; SHEET.back = null;   // the catalogue may have been drawn again meanwhile: its tile by key
   const el = b && (b.el && b.el.isConnected && b.el !== document.body ? b.el : b.key && $(`.cat-tile[data-key="${b.key}"] .cat-open`));
   if (el) el.focus({ preventScroll: true });
@@ -3426,6 +3515,15 @@ function drawAll() {
   });
 }
 
+// the core sends 20 frames a second only while something here draws them: Home's picture, the catalogue's tiles, a
+// device sheet's live view (drawAll); else one in 400 ms, all the background glow takes (ambient). Status, errors and
+// temperatures come apart, on their own timer.
+const LIVE_SHEETS = ['ram', 'gpu', 'nano', 'ext', 'bulb'];
+let frameLive = null;
+function frameNeed() {
+  const on = tab === 'home' || tab === 'devices' || LIVE_SHEETS.includes(SHEET.kind);
+  if (on !== frameLive) { frameLive = on; send({ cmd: 'frames', live: on ? 1 : 0 }); }
+}
 function onFrame(l) {
   F = { ram: [[], []], gpu: [], board: null, bulbs: [], nano: {}, ext: {} };
   for (const [d, i, c] of l) {
@@ -3618,6 +3716,10 @@ function typeOptions(cur, guess, only) {
 // LAN / bridge devices
 let devSig = '';
 const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).title;
+// how far each kind was checked, as README.md's device table says (hw: the one model it ran on); a kind with no fact there gets no line
+const CHECKED = { openrgb: 'sim', razer: 'sim', steelseries: 'sim', logitech: 'sim', wled: 'sim', hue: 'sim', govee: 'sim', goveecloud: 'sim', lifx: 'sim',
+  yeelight: 'sim', wiz: 'sim', elgato: 'sim', wooting: 'hw:Wooting 60HE v2', nanoleaf: 'hw:Nanoleaf Blocks', tryx: 'none', corsairlcd: 'none', nlusb: 'none', divoom: 'none', tuya: 'none' };
+const checkedText = k => { const c = CHECKED[k]; return !c ? '' : c.startsWith('hw:') ? t('chk.hw', c.slice(3)) : t('chk.' + c); };
 // the PC's own devices (not the lights on the network): they can be given back to their own lighting
 // TRYX PANORAMA's built-in themes, in the order the cooler numbers them (drv_tryx.c); 0: as TRYX KANALI left it
 const TRYX_THEMES = ['', 'Cooling delivery', 'Migration', 'Quantum time capsule', 'Exo-Ecologies', 'Racing', 'Shuttle', 'Gift of TRYX',
@@ -3712,7 +3814,7 @@ function buildDevices() {
     // TRYX: a screen card only (theme, own picture); its fans light from the motherboard's ARGB header, not from here
     const scr = isScreen(d);
     el.innerHTML = `<div class="card-head">
-        <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p></div>
+        <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p>${checkedText(d.kind) ? `<p class="dev-info dev-chk">${checkedText(d.kind)}</p>` : ''}</div>
         <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
       </div>
       ${scr ? '' : `<canvas class="live" id="dev-live-${d.id}" data-h="${d.per_led ? 70 : 90}"></canvas>
@@ -4073,7 +4175,7 @@ const TXB_MAX = 30;   // seconds of video at most: ~8 MB at 2 Mbit/s
 let TXB = null;
 function txbOpen(d, from) {
   const lcd = d.kind === 'corsairlcd';
-  TXB = { d, from, lcd, shape: lcd ? 'round' : /2D04$/i.test(d.host || '') ? '2:1' : '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now() };
+  TXB = { d, from, lcd, shape: lcd ? 'round' : /2D04$/i.test(d.host || '') ? '2:1' : '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now(), font: getComputedStyle(document.body).fontFamily, sig: '' };
   $('#txb-shape').closest('label').classList.toggle('hidden', lcd);   // the LCD has one shape
   const note = $('#txb [data-i18n^="txb.note"]'); note.dataset.i18n = lcd ? 'txb.note.lcd' : 'txb.note'; note.textContent = t(note.dataset.i18n);
   $('#txb-title').textContent = t('txb.title', cv('dev.' + d.id, 'name', d.name));
@@ -4146,7 +4248,7 @@ function txbFrame(s, t) {
 const txbCover = (s, W, H) => Math.max(W / s.w, H / s.h) * TXB.z;
 // one frame of the result at t seconds; sel: outline the chosen layer (the preview only)
 function txbDraw(c, t, sel) {
-  const B = TXB, x = c.getContext('2d'), W = c.width, H = c.height, s = B.src, font = getComputedStyle(document.body).fontFamily;
+  const B = TXB, x = c.getContext('2d'), W = c.width, H = c.height, s = B.src, font = B.font;
   x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
   if (s) { const k = txbCover(s, W, H); x.drawImage(s.el || (s.frames ? txbFrame(s, t) : s.bmp), W / 2 - B.cx * s.w * k, H / 2 - B.cy * s.h * k, s.w * k, s.h * k); }
   B.layers.forEach((l, i) => {
@@ -4163,7 +4265,17 @@ function txbDraw(c, t, sel) {
   });
   if (B.lcd) { x.beginPath(); x.rect(0, 0, W, H); x.arc(W / 2, H / 2, Math.min(W, H) / 2, 0, 2 * Math.PI); x.fillStyle = '#000'; x.fill('evenodd'); }   // a round screen
 }
-function txbLoop() { if (!TXB || TXB.busy) return; txbDraw($('#txb-stage'), (performance.now() - TXB.t0) / 1000, 1); requestAnimationFrame(txbLoop); }
+// an animation or a video is drawn each frame; a still picture again only when what it shows changed
+function txbLoop() {
+  const B = TXB; if (!B || B.busy) return;
+  cancelAnimationFrame(B.raf); if (document.body.classList.contains('idle')) return;   // decorWake starts it again
+  B.raf = requestAnimationFrame(txbLoop);   // one loop, also when called again by hand
+  const s = B.src, c = $('#txb-stage'), bm = B.layers.map(l => l.bmp);
+  const sig = JSON.stringify([B.layers.map(l => [l.text, l.color, l.size, l.x, l.y]), B.sel, B.z, B.cx, B.cy, B.lcd, c.width, c.height]);
+  if (!(s && (s.el || s.frames)) && sig === B.sig && s === B.ds && bm.length === B.db.length && bm.every((b, i) => b === B.db[i])) return;
+  B.sig = sig; B.ds = s; B.db = bm; B.draws = (B.draws || 0) + 1;
+  txbDraw(c, (performance.now() - B.t0) / 1000, 1);
+}
 function txbSize() { const [w, h] = TXB_SHAPES[TXB.shape], c = $('#txb-stage'); c.width = 640; c.height = Math.round(640 * h / w); txbClamp(); }
 // the picture always covers the frame: its centre stays where no edge shows
 function txbClamp() {
@@ -4305,7 +4417,7 @@ async function txbMake() {
   finally {
     if (enc && enc.state !== 'closed') enc.close();
     if (vid && s.el) { s.el.loop = true; s.el.play().catch(() => {}); }
-    B.rec = false; B.stop = 0; busy(0); txbLayers(); txbLoop();
+    B.rec = false; B.stop = 0; B.sig = ''; busy(0); txbLayers(); txbLoop();
   }
 }
 let TXB_REQ = 0;
@@ -4650,7 +4762,7 @@ function updateDevices() {
 function manualHints() {
   const k = $('#man-kind').value;
   $('#man-sub-f').classList.toggle('hidden', k !== 'openrgb');
-  $('#man-note').textContent = k ? t('dev.hint.' + k) : '';
+  $('#man-note').textContent = k ? [t('dev.hint.' + k), checkedText(k)].filter(Boolean).join(' ') : '';
 }
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 $('#scan-btn').addEventListener('click', () => { S.ext.scanning = 1; updateDevices(); send({ cmd: 'scan' }); });
@@ -5016,6 +5128,82 @@ function updateDiag() {
   msg.textContent = busy ? t('report.sending') : REPORT.sent ? t('report.sent', R.id || '') : R.ok === 0 && REPORT.tried
     ? t({ busy: 'report.err.busy', offline: 'report.err.offline', invalid: 'report.err.invalid' }[R.err] || 'report.err') : REPORT.short ? t('report.short') : '';
 }
+// Help, Diagnostics: what the core measures (main.c perf over its last ~2 s, devices.c frames written and failed
+// writes per device), read from the status. Only the last reading per device is kept: a send rate is the frames
+// written between two readings at least 1.5 s apart. A frame the device was not sent because nothing changed is
+// not counted as lost; frames replaced before leaving are not counted by the core, so they are not shown.
+const PERF = { at: -Infinity, ns: {}, rate: {}, h: '' };
+function updatePerf() {
+  const P = S.perf, box = $('#perf-list'); if (!P) return;
+  const now = performance.now(), devs = ((S.ext || {}).devs || []).filter(d => d.enabled && !d.own && !d.held && !d.covered);
+  if (now - PERF.at >= 1500) {
+    const dt = (now - PERF.at) / 1000, ns = {};
+    devs.forEach(d => { const was = PERF.ns[d.id]; ns[d.id] = d.ns; PERF.rate[d.id] = d.online && was !== undefined && d.ns >= was ? (d.ns - was) / dt : undefined; });
+    PERF.ns = ns; PERF.at = now;
+  }
+  const f1 = v => (v / 10).toFixed(1), ms = us => (us / 1000).toFixed(us < 10000 ? 1 : 0);
+  const rows = [P.fps10 ? t('perf.loop', f1(P.fps10), P.want, f1(P.chg10), ms(P.avg_us), ms(P.max_us)) : t('perf.wait')];
+  devs.forEach(d => {
+    const r = PERF.rate[d.id], nm = d.name || d.title;
+    rows.push(!d.online ? t('perf.dev.off', nm, d.fails || 0) : r === undefined ? t('perf.dev.wait', nm) : t('perf.dev', nm, r.toFixed(1), d.nf || 0));
+  });
+  const h = rows.map(r => '<li>' + esc(r) + '</li>').join('');
+  if (h !== PERF.h) { PERF.h = h; box.innerHTML = h; }
+}
+// "Check for problems" (Help, Diagnostics): what the page already holds, sorted into five kinds, each with its reason
+// and what to do. It reads S only: nothing is scanned, sent, switched or fixed by itself (the buttons only open a place).
+const CHK = { on: false, rows: [], h: '' };
+function checkRows() {
+  const r = [], row = (c, n, why, todo, a, x) => r.push({ c, n, why, todo, a, x });
+  const devs = (S.ext || {}).devs || [], raw = d => S.cfg['dev.' + d.id] || {};
+  for (const d of devs) {
+    const ext = OFF_ROW.ext(d);
+    // a screen's picture file gone (devices.c mx): read again at each start, so the screen keeps its own display
+    if (isScreen(d) && d.enabled && d.mx) row('media', ext.n, t('dchk.media', cv('dev.' + d.id, 'media', '').split(/[\\/]/).pop()), t('dchk.media.do'), 'open', ext.h);
+    if (d.kind === 'openrgb' && d.enabled && d.cap === 6) { row('two', ext.n, t('cap.6'), t('dchk.cap6.do'), 'open', ext.h); continue; }
+    // seen twice maybe (the pair haku guesses), both lit, and nobody said whether it is one device: pathSet stores same=
+    const pair = d.kind === 'openrgb' && d.enabled && !d.same && raw(d).same == null ? pathPairs(d).filter(n => n.enabled && !n.own) : [];
+    if (pair.length) row('two', ext.n, t('dchk.pair', pair.map(n => n.name).join(', ')), t('dchk.pair.do'), 'open', ext.h);
+    if (d.kind === 'openrgb' && devWaits(d) && (d.cap === 4 || d.cap === 5)) { row('cap', ext.n, devStatus(d), t('dchk.cap' + d.cap + '.do'), 'open', ext.h); continue; }
+    if (zonesNeed(d)) row('off', ext.n, devStatus(d), t('dchk.zones.do'), 'open', ext.h);
+    else if (devWaits(d)) row('off', ext.n, devStatus(d), t(d.kind === 'openrgb' ? 'dchk.off.orgb' : pcDev(d) ? 'dchk.off.pc' : 'dchk.off.net'), 'open', ext.h);
+  }
+  S.bulbs.forEach((b, i) => { if (!b.online) { const o = OFF_ROW.bulb(b, i); row('off', o.n, t('dev.offline'), t('dchk.off.net'), 'open', o.h); } });
+  nanoCtls().forEach(n => { if (!n.online) { const o = OFF_ROW.nano(n); row('off', o.n, t('dev.offline'), t('dchk.off.net'), 'open', o.h); } });
+  homeCool().forEach(f => row('off', f.n, f.why, t('dchk.fans.do'), 'fan', f.fan));
+  const leave = cfList('leave');
+  for (const x of (S.cf || {}).a || []) if (x.run && cfDev(x) === 'held' && !leave.includes(x.id)) row('two', x.name, t('cf.dev.held'), t('dchk.cf.do'), 'cf');
+  // not finished: a profile action that failed and was not done since (profile.c clears it on the next that goes
+  // through), and fan channels haku could not give back (fans.c wd 2, 3: retried every 10 s)
+  const e = S.prof || {}, pe = PROF_ERR[e.err];
+  if (pe && pe !== 'full') row('left', t('prof.label'), t('prof.err.' + pe, cv(profSec(e.id), 'name', '') || '#' + e.id, PROFILE_MAX),
+    t(pe === 'missing' || pe === 'bad' ? 'dchk.prof.fix' : 'dchk.prof.do'), pe === 'missing' || pe === 'bad' ? 'data' : 'prof');
+  const F = S.fans || {}, wd = F.wd || [];
+  [0, 1].forEach(k => { if (wd[k] === 2 || wd[k] === 3) row('left', t('nav.fans'), t(wd[k] === 2 ? 'fans.wd.busy' : 'fans.wd.fail', k ? t('fans.wd.board') : 'QUADRO', F.rfail || 1), t('dchk.wd.do'), 'log'); });
+  return r;
+}
+function updateCheck() {
+  const L = $('#dchk-list'); if (!CHK.on || !L) return;
+  const r = checkRows(), btn = { open: 'home.open', fan: 'home.open', cf: 'cf.title', prof: 'prof.label', data: 'set.c.data', log: 'f.log' };
+  const h = r.length ? r.map((x, i) => `<div class="found-row" data-i="${i}"><span class="kind">${esc(t('dchk.c.' + x.c))}</span>
+    <div class="what"><b>${esc(x.n)}</b><small>${esc(x.why)}</small><small>${esc(x.todo)}</small></div>
+    <span class="added"><button class="btn small ghost" type="button" data-a="${x.a}"><span>${t(btn[x.a])}</span></button></span></div>`).join('')
+    : `<p class="muted">${esc(t('dchk.none'))}</p>`;
+  CHK.rows = r;
+  if (h !== CHK.h) { CHK.h = h; L.innerHTML = h; }
+  L.classList.remove('hidden');
+}
+$('#dchk-run').addEventListener('click', () => { CHK.on = true; CHK.h = ''; updateCheck(); });
+$('#dchk-list').addEventListener('click', e => {
+  const b = e.target.closest('button[data-a]'); if (!b) return;
+  const x = CHK.rows[+b.closest('[data-i]').dataset.i]; if (!x) return;
+  if (x.a === 'open') { const q = b.getBoundingClientRect(); openSheet(x.x, q.left + q.width / 2, q.top); }
+  else if (x.a === 'fan') fanOpen(x.x, b);
+  else if (x.a === 'cf') go('cf');
+  else if (x.a === 'prof') $('#prof-btn').click();
+  else if (x.a === 'data') { go('settings'); setCat('data'); }
+  else if (x.a === 'log') send({ cmd: 'open', what: 'log' });
+});
 function reportDialog() {
   REPORT.open = true; REPORT.sent = REPORT.tried = REPORT.short = REPORT.waiting = false;
   $('#report-text').placeholder = t('report.ph');
@@ -5127,7 +5315,7 @@ $('#mood-apply').addEventListener('click', () => {
 function updateSettings() {
   updateRemote();
   updateUpdate();
-  updateDiag();
+  updateDiag(); updatePerf(); updateCheck();
   const a = $('#autostart');
   a.checked = S.autostart === 1; a.disabled = S.autostart < 0;
   $('#hotspot-auto').checked = cv('hotspot', 'auto', '0') !== '0';
@@ -6042,7 +6230,11 @@ function updateFans() {
   $('#fans-sensors').textContent = !F.q ? '' : (ts.length ? t('fans.sensors', ts.join(', ')) : t('fans.nosensors')) + (F.flow > 0 ? ' · ' + t('fans.flow', F.flow) : '');
   $('#fans-dev-t').textContent = [F.q ? 'QUADRO · ' + t('fans.dev.t', F.serial, F.fw) : '', F.chip ? t('fans.dev.b', F.chip) : ''].filter(Boolean).join(' · ');
   const own = (F.f || []).filter(f => f && f.own).length;
-  $('#fans-back-msg').textContent = !FAN.back ? '' : F.link === 0 ? t('fans.back.nolink') : F.rfail ? t('fans.back.fail', F.rfail) : own ? t('fans.back.wait' + qb) : t('fans.back.ok' + qb);
+  // a control loop that stalled (fans.c wd_check): stays said until it runs again; one that could not give back is worse
+  const wd = F.wd || [], wk = wd.indexOf(3) >= 0 ? 3 : wd.indexOf(2) >= 0 ? 2 : wd.indexOf(1) >= 0 ? 1 : 0;
+  const wdn = [0, 1].filter(k => wd[k] === wk).map(k => k ? t('fans.wd.board') : 'QUADRO').join(', ');
+  $('#fans-back-msg').textContent = wk ? t(['', 'fans.wd.back', 'fans.wd.busy', 'fans.wd.fail'][wk], wdn, F.rfail || 1) : !FAN.back ? '' : F.link === 0 ? t('fans.back.nolink') : F.rfail ? t('fans.back.fail', F.rfail) : own ? t('fans.back.wait' + qb) : t('fans.back.ok' + qb);
+  $('#fans-back-msg').classList.toggle('bad', wk === 3); $('#fans-back-msg').classList.toggle('warn', wk === 1 || wk === 2);
   const lg = F.log || [];
   $('#fans-log-d').classList.toggle('hidden', !lg.length);
   $('#fans-log-s').textContent = t('fans.log', lg.length);
@@ -6312,6 +6504,7 @@ if (wv) wv.addEventListener('message', e => {
   else if (m.type === 'go') helpOpen('');   // the tray's Help
   else if (m.type === 'tryx_built') { if (TXB?.wait?.req === m.req) TXB.wait.done(m); }
   else if (m.type === 'comp_done') cmpDone(m);
+  else if (m.type === 'draft_done') draftDone(m);
   else if (m.type === 'state') {
     const prof = cv('general', 'profile', '');
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;

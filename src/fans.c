@@ -82,7 +82,13 @@ static void flog(const char *fmt, ...) {
     for (char *p = m; *p; p++) if (*p == '"' || *p == '\\' || (BYTE)*p < 0x20) *p = '\'';
     SYSTEMTIME t; GetLocalTime(&t);
     EnterCriticalSection(&cs);
-    int rep = lgn && !strcmp(lg[lgn - 1].m, m);
+    // a line already there counts up and moves last: a problem coming back every few seconds (a give-back tried again,
+    // two errors taking turns) is one line, not a flood
+    int rep = 0;
+    for (int i = 0; i < lgn && !rep; i++) if (!strcmp(lg[i].m, m)) {
+        rep = 1; int n = lg[i].n;
+        memmove(lg + i, lg + i + 1, sizeof(lg[0]) * (lgn - 1 - i)); strcpy_s(lg[lgn - 1].m, sizeof(lg[0].m), m); lg[lgn - 1].n = n;
+    }
     if (!rep) {
         if (lgn == 8) { memmove(lg, lg + 1, sizeof(lg[0]) * 7); lgn--; }
         strcpy_s(lg[lgn].m, sizeof(lg[lgn].m), m); lg[lgn].n = 0; lgn++;
@@ -511,28 +517,33 @@ static int io_try(int ms) {
 
 // the watchdog: a control thread stuck somewhere (a driver call that never returns, a loop gone wrong) would leave its
 // channels at haku's last speed whatever the temperature does, so after WD_MS they go back to the device's own setting.
-// Once per stall; when the thread comes round again it takes them on as usual. Not while asleep (paused).
-static int wd_out[2];   // 1 handled, 2 the device was busy (tried again on the next check)
+// Done once every channel is back; one that did not go back stays saved (fans-state.ini) and is tried again every
+// WD_RETRY_MS. When the thread comes round again it takes them on as usual. Not while asleep (paused).
+#define WD_RETRY_MS 10000
+static volatile int wd_out[2];   // 0 running, 1 every channel back, 2 the device was busy (tried on the next check), 3 some did not go back
+static DWORD wd_at[2];           // the last give-back tried (3)
 static const char *const wd_name[] = { "QUADRO", "board" };
 static void wd_check(DWORD now) {
     for (int k = 0; k < 2; k++) {
         DWORD b = (DWORD)beat[k];
-        if (!b || now - b < WD_MS) { wd_out[k] = 0; continue; }
-        if (wd_out[k] == 1 || paused) continue;
+        if (!b || (LONG)(now - b) < WD_MS) { wd_out[k] = 0; continue; }   // signed: a beat is tick|1, up to 1 ms ahead of now
+        if (wd_out[k] == 1 || paused || (wd_out[k] == 3 && now - wd_at[k] < WD_RETRY_MS)) continue;
         unsigned s = (now - b) / 1000;
         if (!io_try(1000)) {
             if (!wd_out[k]) flog("fan control of the %s has not run for %u s and the device is busy; nothing given back", wd_name[k], s);
-            wd_out[k] = 2; continue;
+            if (wd_out[k] != 3) wd_out[k] = 2;
+            continue;
         }
-        int any = 0;
+        int any = 0, left = 0;
         if (k) for (int i = 0; i < bn; i++) any |= btaken[i];
         else for (int f = 0; f < FANS; f++) any |= taken[f];
         if (any && !paused) {
-            flog("fan control of the %s has not run for %u s; its channels go back to its own setting", wd_name[k], s);
-            if (k) board_restore(); else restore_all();
+            if (wd_out[k] != 3) flog("fan control of the %s has not run for %u s; its channels go back to its own setting", wd_name[k], s);
+            left = k ? board_restore() : restore_all();
+            if (!left && wd_out[k] == 3) flog("the %s's channels are back on its own setting", wd_name[k]);
         }
         LeaveCriticalSection(&io);
-        wd_out[k] = 1;
+        wd_out[k] = left ? 3 : 1; wd_at[k] = now;
     }
 }
 static unsigned __stdcall wd_thread(void *arg) {
@@ -612,7 +623,7 @@ int fans_json(char *out, int cap) {
     // f[i] is channel i+1: the QUADRO's four (null without one), then the board's (b:1)
     int n = snprintf(out, cap, "{\"on\":%d", st.on || bd.n);
     if (st.on || bd.n) {
-        n += snprintf(out + n, cap - n, ",\"q\":%d,\"paused\":%d,\"rfail\":%d", st.on, paused, rfail + brfail);
+        n += snprintf(out + n, cap - n, ",\"q\":%d,\"paused\":%d,\"rfail\":%d,\"wd\":[%d,%d]", st.on, paused, rfail + brfail, wd_out[0], wd_out[1]);
         if (bd.n) n += snprintf(out + n, cap - n, ",\"chip\":\"%s\"", bd.chip);
         if (st.on) {
             n += snprintf(out + n, cap - n, ",\"link\":%d,\"age\":%lu,\"serial\":\"%05d-%05d\",\"fw\":%d,\"flow\":%.1f,\"t\":[",
@@ -652,7 +663,9 @@ static BYTE dev[0x3C1];                       // the simulated QUADRO's feature 
 static int get_fail, set_fail, set_drop = -1;  // set_drop: the channel the device does not keep
 static int sim_get(BYTE *r, int n) { if (get_fail) return 0; memcpy(r, dev, n); return 1; }
 static void sim_crc(void) { int c = crc16usb(dev + 1, 0x3C1 - 3); dev[0x3BF] = (BYTE)(c >> 8); dev[0x3C0] = (BYTE)c; }
+static int sets;   // writes tried on the simulated QUADRO, failed or not
 static int sim_set(const BYTE *r, int n) {
+    sets++;
     if (set_fail) return 0;
     BYTE keep[3]; if (set_drop >= 0) memcpy(keep, dev + ctl_fan[set_drop], 3);
     memcpy(dev, r, n);
@@ -682,6 +695,7 @@ int sio_get(int i, int *m, int *c) { if (sget_fail) return 0; *m = smode[i]; *c 
 int sio_put(int i, int m, int c) { if (sput_fail) return 0; if (i != sdrop) { smode[i] = m; scmd[i] = c; } return 1; }
 static int bsaved(int b) { wchar_t p[MAX_PATH], v[8], k[8]; state_path(p); swprintf(k, 8, L"fan%d", FANS + b + 1); GetPrivateProfileStringW(bsec, k, L"", v, 8, p); return v[0] != 0; }
 static int bis(int b, int m, int c) { return smode[b] == m && scmd[b] == c; }
+static int lg_n(const char *s) { for (int i = 0; i < lgn; i++) if (strstr(lg[i].m, s)) return lg[i].n; return 0; }   // how often a line was logged
 static unsigned __stdcall hold_io(void *a) {   // holds io until told: a stalled or crashing thread
     HANDLE *e = a; EnterCriticalSection(&io); SetEvent(e[0]); WaitForSingleObject(e[1], INFINITE); LeaveCriticalSection(&io); return 0;
 }
@@ -826,6 +840,42 @@ int main(void) {
     wd_check(now); assert(btaken[0] && bis(0, 0, 102) && wd_out[1] == 2 && strstr(lg[lgn - 1].m, "busy"));
     SetEvent(hb[1]); WaitForSingleObject(ht, INFINITE); CloseHandle(ht);
     wd_check(now); assert(!btaken[0] && bis(0, 5, 0x80) && wd_out[1] == 1);
+    // giving back fails: not called done, the channel stays saved, tried again no faster than WD_RETRY_MS, once logged
+    set("fan2", "fix"); set("fan2_pct", "30"); control(); assert(dev_is(0, 30) && dev_is(1, 30) && taken[0] && taken[1]);
+    beat[0] = (LONG)(now - WD_MS - 1000); set_fail = 1; int stall = lg_n("QUADRO has not run");
+    wd_check(now); assert(wd_out[0] == 3 && taken[0] && taken[1] && saved(0) && saved(1) && rfail == 2 && dev_is(0, 30));
+    assert(lg_n("QUADRO has not run") == stall + 1 && strstr(lg[lgn - 1].m, "2 channel(s) could not be given back") && !lg_n("are back"));
+    int lgr = lg[lgn - 1].n, lgk = lgn, ns = sets;
+    wd_check(now + WD_RETRY_MS - 1); assert(sets == ns && wd_out[0] == 3);              // not yet
+    wd_check(now + WD_RETRY_MS); wd_check(now + 2 * WD_RETRY_MS);                      // failing again and again: the same lines count up
+    assert(sets > ns && wd_out[0] == 3 && lgn == lgk && lg_n("2 channel(s) could not") == lgr + 2 && lg_n("QUADRO has not run") == stall + 1 && taken[0] && saved(0));
+    // one goes back, the other does not: still not done, only that one is left
+    set_fail = 0; set_drop = 1; wd_check(now + 3 * WD_RETRY_MS);
+    assert(wd_out[0] == 3 && !taken[0] && !saved(0) && taken[1] && saved(1) && rfail == 1 && !memcmp(dev + ctl_fan[0], O1, 3) && !strstr(lg[lgn - 1].m, "are back"));
+    // the next try gives it back: said so, done, and nothing more is written
+    set_drop = -1; wd_check(now + 4 * WD_RETRY_MS);
+    assert(wd_out[0] == 1 && !taken[1] && !saved(1) && !rfail && !memcmp(dev + ctl_fan[1], O2, 3) && strstr(lg[lgn - 1].m, "QUADRO's channels are back"));
+    ns = sets; wd_check(now + 5 * WD_RETRY_MS); wd_check(now + 9 * WD_RETRY_MS); assert(sets == ns && wd_out[0] == 1);
+    // failing, then the thread comes round: the watchdog stands back and the round takes the channels on as usual
+    beat[0] = (LONG)now; wd_check(now); control(); beat[0] = (LONG)(now - WD_MS - 1000); set_fail = 1; wd_check(now); assert(wd_out[0] == 3); set_fail = 0;
+    beat[0] = (LONG)now; wd_check(now); assert(!wd_out[0]); control(); assert(dev_is(0, 30) && dev_is(1, 30) && !rfail);
+    ns = sets; wd_check(now + WD_RETRY_MS); assert(sets == ns && !wd_out[0]);
+    // failing, then asleep: sleep gives back on its own, the watchdog does not write meanwhile; awake, the stall is gone
+    beat[0] = (LONG)(now - WD_MS - 1000); set_fail = 1; wd_check(now); assert(wd_out[0] == 3);
+    th = (HANDLE)1; fans_suspend(1); assert(taken[0] && paused); set_fail = 0;
+    ns = sets; wd_check(now + WD_RETRY_MS); assert(sets == ns && taken[0]);
+    fans_suspend(0); th = NULL; wd_check(GetTickCount()); assert(!wd_out[0]);
+    { DWORD e = GetTickCount() & ~1u; beat[0] = (LONG)(e | 1); wd_check(e); assert(!wd_out[0] && taken[0]); }   // a beat 1 ms ahead is no stall
+    control(); assert(dev_is(0, 30) && taken[0] && taken[1]);
+    // failing, and the device busy at the next try: still failed, still tried
+    beat[0] = (LONG)(now - WD_MS - 1000); set_fail = 1; wd_check(now); assert(wd_out[0] == 3); set_fail = 0;
+    ResetEvent(hb[0]); ResetEvent(hb[1]); ht = (HANDLE)_beginthreadex(NULL, 0, hold_io, hb, 0, NULL); WaitForSingleObject(hb[0], INFINITE);
+    wd_check(now + WD_RETRY_MS); assert(wd_out[0] == 3 && taken[0]);
+    SetEvent(hb[1]); WaitForSingleObject(ht, INFINITE); CloseHandle(ht);
+    wd_check(now + WD_RETRY_MS); assert(wd_out[0] == 1 && !taken[0] && !taken[1]);
+    // the page is told
+    { static char wj[8192]; th = (HANDLE)1; fans_json(wj, sizeof(wj)); th = NULL; assert(strstr(wj, "\"wd\":[1,")); }
+    set("fan2", ""); set("fan2_pct", NULL); beat[0] = (LONG)now; wd_check(now); control();
     beat[0] = beat[1] = 0; wd_out[0] = wd_out[1] = 0;
     // a crash: both devices get their own setting back and nothing is taken after
     board_round(); assert(btaken[0]);

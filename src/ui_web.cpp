@@ -66,6 +66,10 @@ static void post_state(void) { InterlockedIncrement(&g_state_rev); send_state();
 // the window in the background: the page pauses its animations and the live view slows down (ui/app.js)
 static void post_focus(bool on) { post(on ? "{\"type\":\"focus\",\"on\":1}" : "{\"type\":\"focus\",\"on\":0}"); }
 static void post_status(void) { static char b[64 * 1024]; app_status_json(b, sizeof(b)); post(b); }
+// the live colours: 20 a second while the page draws them (Home, Devices, a device's sheet: {"cmd":"frames","live":1}),
+// else one in 400 ms for the background glow alone, which takes no more (ui/app.js frameNeed, ambient)
+static bool live_view = true;
+static void post_frame(void) { static char b[64 * 1024]; app_frame_json(b, sizeof(b)); post(b); }
 
 // Value of a string (or number) field in a flat JSON object.
 static std::string field(const std::string &js, const char *key) {
@@ -193,6 +197,7 @@ static void on_message(const std::string &js) {
     std::string cmd = field(js, "cmd");
     if (cmd == "hello") { page_ready = true; send_state(); post_focus(GetForegroundWindow() == wnd); if (go_help) { go_help = false; post("{\"type\":\"go\",\"to\":\"help\"}"); } }
     else if (cmd == "get") send_state();
+    else if (cmd == "frames") { bool was = live_view; live_view = field(js, "live") == "1"; if (live_view && !was && !IsIconic(wnd)) post_frame(); }   // the picture at once, not at the next tick
     else if (cmd == "effect") { app_set_effect(effect_index(field(js, "id").c_str())); post_status(); }
     else if (cmd == "brightness") { app_set_brightness(atoi(field(js, "v").c_str()) / 100.0f, 0); app_save_soon(); }
     else if (cmd == "set") {
@@ -223,6 +228,28 @@ static void on_message(const std::string &js) {
         else { for (const std::string &x : part) p.push_back(x.c_str()); if (!app_comp_apply(p.data(), 11)) err = "save"; }
         post_state();
         char b[96]; snprintf(b, sizeof(b), "{\"type\":\"comp_done\",\"req\":\"%s\",\"err\":\"%s\"}", req.c_str(), err.c_str());
+        post(b);
+    }
+    else if (cmd == "draft_save") {   // a constructor draft, whole, on disk before the page calls it kept. Not in remote_allowed
+        // slot "": the first free [cdraft.1..16], never one overwritten; "r": the recovery copy [crecover], an empty kv clears it
+        std::string req = field(js, "req"), slot = field(js, "slot"), err; std::vector<std::string> part; std::vector<const char *> p;
+        for (char &c : req) if (!isdigit((unsigned char)c)) c = '0';
+        if (req.size() > 12) req.resize(12);
+        static const char *keys[] = { "name", "at", "prof", "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "k1", "k2", "k3" };
+        bool ok = (slot.empty() || slot == "r") && kv_lines(field(js, "kv"), 14, part) && (part.size() == 28 || (part.empty() && slot == "r"));
+        for (size_t i = 0; ok && i < part.size() / 2; i++) ok = part[2 * i] == keys[i];
+        if (ok && !part.empty()) ok = !part[3].empty();   // the time is what marks a slot as taken
+        char sec[16] = "crecover"; int n = 0;
+        if (!ok) err = "bad";
+        else {
+            if (slot.empty()) while (++n <= 16) { snprintf(sec, sizeof(sec), "cdraft.%d", n); if (!cfg_get(sec, "at", "")[0]) break; }
+            for (const std::string &x : part) p.push_back(x.c_str());
+            if (n > 16) err = "full";
+            else if (!app_draft_save(sec, p.data(), (int)p.size() / 2)) err = "save";
+            if (!err.empty()) n = 0;
+        }
+        post_state();
+        char b[112]; snprintf(b, sizeof(b), "{\"type\":\"draft_done\",\"req\":\"%s\",\"err\":\"%s\",\"n\":%d}", req.c_str(), err.c_str(), n);
         post(b);
     }
     else if (cmd == "toggle") { app_toggle_device(field(js, "k").c_str()); post_status(); }
@@ -455,10 +482,11 @@ static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SETFOCUS: if (ctrl) ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC); return 0;
     case WM_TIMER:
         if (!page_ready) return 0;
-        if (wp == FRAME_TIMER) {   // 20 a second in front, 5 behind other windows, none minimised
-            static unsigned n; static char b[64 * 1024];
-            if (IsIconic(h) || (GetForegroundWindow() != h && n++ % 4)) return 0;
-            app_frame_json(b, sizeof(b)); post(b);
+        if (wp == FRAME_TIMER) {   // 20 a second in front, 5 behind other windows, 2.5 for the glow alone, none minimised
+            static unsigned n;
+            unsigned every = !live_view ? 8 : GetForegroundWindow() != h ? 4 : 1;
+            if (IsIconic(h) || ++n % every) return 0;
+            post_frame();
         }
         if (wp == STATUS_TIMER) post_status();
         return 0;

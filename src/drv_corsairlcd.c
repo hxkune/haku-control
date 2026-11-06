@@ -67,6 +67,35 @@ static int cl_parse(const unsigned char *p, DWORD n, cl_frame *fr) {
     return k >= 2 ? k : 0;
 }
 
+#define CL_FEAT 64   // feature report 3 is 4..64 bytes; a collection that says more (or less) is not used for it
+static int feat_ok(int n) { return n >= 4 && n <= CL_FEAT; }
+
+typedef struct { wchar_t path[300], base[300]; USHORT pid; int out, feat; } cl_if;
+
+// The index-th screen of a model: its output collection (takes the 1024-byte reports) and its feature one; -1: none
+static int pick(const cl_if *v, int n, USHORT pid, int index, int *feat) {
+    for (int i = 0, k = 0; i < n; i++) {
+        if (v[i].pid != pid || v[i].out < CL_REP || v[i].out > 4096) continue;
+        if (k++ != index) continue;
+        *feat = feat_ok(v[i].feat) ? i : -1;
+        for (int j = 0; j < n && *feat < 0; j++) if (j != i && !wcscmp(v[j].base, v[i].base) && feat_ok(v[j].feat)) *feat = j;
+        return i;
+    }
+    return -1;
+}
+
+#ifdef CORSAIR_LCD_TEST
+static BOOLEAN __stdcall fake_set(HANDLE h, PVOID b, ULONG n);
+#define SET_FEATURE fake_set
+#else
+#define SET_FEATURE HidD_SetFeature
+#endif
+// Feature report 3: cmd, v; sent as len bytes (the collection's), never more than the buffer has
+static int cl_feature(HANDLE hf, int len, unsigned char cmd, unsigned char v) {
+    unsigned char b[CL_FEAT] = { 0x03, cmd, v, 0x01 };
+    return hf && hf != INVALID_HANDLE_VALUE && feat_ok(len) && SET_FEATURE(hf, b, (ULONG)len);
+}
+
 #ifndef CORSAIR_LCD_TEST
 typedef struct { unsigned char *buf; DWORD n; int nfr; cl_frame fr[CL_FRAMES]; } cl_pack;
 
@@ -98,8 +127,6 @@ static int in_way(char *app, int cap) {
     CloseHandle(snap);
     return r;
 }
-
-typedef struct { wchar_t path[300], base[300]; USHORT pid; int out, feat; } cl_if;
 
 // The HID collections of the screens on interface 0, in a stable order; base: the path without its &colNN, the same
 // for the collections of one device
@@ -135,18 +162,6 @@ static int list_ifs(cl_if *v, int max) {
     return n;
 }
 
-// The index-th screen of a model: its output collection (takes the 1024-byte reports) and its feature one; -1: none
-static int pick(const cl_if *v, int n, USHORT pid, int index, int *feat) {
-    for (int i = 0, k = 0; i < n; i++) {
-        if (v[i].pid != pid || v[i].out < CL_REP || v[i].out > 4096) continue;
-        if (k++ != index) continue;
-        *feat = v[i].feat >= 4 ? i : -1;
-        for (int j = 0; j < n && *feat < 0; j++) if (j != i && !wcscmp(v[j].base, v[i].base) && v[j].feat >= 4 && v[j].feat <= 64) *feat = j;
-        return i;
-    }
-    return -1;
-}
-
 static int write_rep(cl_t *u, const unsigned char *rep) {
     unsigned char b[4096] = { 0 }; DWORD wr = 0;
     memcpy(b, rep, CL_REP);
@@ -159,10 +174,7 @@ static int write_rep(cl_t *u, const unsigned char *rep) {
     return 1;
 }
 
-static int feature(cl_t *u, unsigned char cmd, unsigned char v) {
-    unsigned char b[64] = { 0x03, cmd, v, 0x01 };
-    return u->hf && u->hf != INVALID_HANDLE_VALUE && HidD_SetFeature(u->hf, b, u->feat_len);
-}
+static int feature(cl_t *u, unsigned char cmd, unsigned char v) { return cl_feature(u->hf, u->feat_len, cmd, v); }
 
 static int show(cl_t *u, const cl_pack *p, int f, int stoppable) {
     unsigned char rep[CL_REP];
@@ -335,6 +347,11 @@ const ext_driver drv_corsairlcd = { "corsairlcd", "Corsair LCD", 2, 0, cl_open, 
 
 #else   // cl /DCORSAIR_LCD_TEST src\drv_corsairlcd.c
 #include <assert.h>
+static int fk_n, fk_len, fk_fail; static unsigned char fk_b[CL_FEAT];
+static BOOLEAN __stdcall fake_set(HANDLE h, PVOID b, ULONG n) {
+    (void)h; fk_n++; fk_len = (int)n; memset(fk_b, 0xEE, sizeof(fk_b)); memcpy(fk_b, b, n <= CL_FEAT ? n : CL_FEAT);
+    return !fk_fail;
+}
 static cl_frame fr[CL_FRAMES];
 static unsigned char jpg[CL_MAXJPG + CL_DATA], pk[2 * (CL_MAXJPG + 16)];
 static DWORD put(DWORD at, const unsigned char *j, DWORD len, int delay) {
@@ -373,6 +390,27 @@ int main(void) {
     n = put(8, jpg, 50, 0); n = put(n, jpg, CL_MAXJPG + 1, 100);   // a frame over 256 chunks
     assert(!cl_parse(pk, n, fr) && !cl_parse(pk, 7, fr));
     assert(model(0x0C4E) == 0 && MODELS[model(0x0C42)].br == 0 && model(0x0C3F) < 0);   // the LINK hub itself is not a screen
+
+    // which collection takes the feature reports: never one that says more than 64 bytes (or under 4)
+    static cl_if v[4]; int fi;
+    for (int i = 0; i < 4; i++) { wcscpy_s(v[i].path, 300, L"p"); wcscpy_s(v[i].base, 300, L"a"); v[i].pid = 0x0C4E; v[i].out = 0; v[i].feat = 0; }
+    v[0].out = 1024; v[0].feat = 64;
+    assert(pick(v, 4, 0x0C4E, 0, &fi) == 0 && fi == 0);                 // the output collection has it itself
+    v[0].feat = 65; v[1].feat = 65; v[2].feat = 64;
+    assert(pick(v, 4, 0x0C4E, 0, &fi) == 0 && fi == 2);                 // too long on itself and on a sibling: the next one
+    v[2].feat = 3; assert(pick(v, 4, 0x0C4E, 0, &fi) == 0 && fi == -1);  // none fits: no backlight, nothing sent
+    v[1].feat = 8; wcscpy_s(v[1].base, 300, L"b");
+    assert(pick(v, 4, 0x0C4E, 0, &fi) == 0 && fi == -1);                // another device's collection is not used
+    wcscpy_s(v[1].base, 300, L"a"); assert(pick(v, 4, 0x0C4E, 0, &fi) == 0 && fi == 1);
+    v[3].out = 1024; assert(pick(v, 4, 0x0C4E, 1, &fi) == 3 && pick(v, 4, 0x0C4E, 2, &fi) == -1 && pick(v, 4, 0x0C42, 0, &fi) == -1);
+    v[3].out = 4097; assert(pick(v, 4, 0x0C4E, 1, &fi) == -1);           // an output report over the write buffer
+    // the report itself, through a fake transport: the collection's length, 03 cmd v 01, nothing past 64 bytes
+    HANDLE h = (HANDLE)(INT_PTR)8;
+    assert(cl_feature(h, 64, 0x0b, 40) && fk_n == 1 && fk_len == 64 && fk_b[0] == 3 && fk_b[1] == 0x0b && fk_b[2] == 40 && fk_b[3] == 1 && !fk_b[4] && !fk_b[63]);
+    assert(cl_feature(h, 4, 0x1e, 1) && fk_n == 2 && fk_len == 4 && fk_b[1] == 0x1e);
+    assert(!cl_feature(h, 65, 0x0b, 40) && !cl_feature(h, 4096, 0x0b, 40) && !cl_feature(h, 3, 0x0b, 40) && !cl_feature(h, 0, 0x0b, 40) && fk_n == 2);
+    assert(!cl_feature(NULL, 64, 0x0b, 40) && !cl_feature(INVALID_HANDLE_VALUE, 64, 0x0b, 40) && fk_n == 2);
+    fk_fail = 1; assert(!cl_feature(h, 64, 0x0b, 40) && fk_n == 3); fk_fail = 0;   // the device refused: said so
     puts("corsairlcd ok");
     return 0;
 }
