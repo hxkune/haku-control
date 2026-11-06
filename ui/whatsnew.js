@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.62',
+    en: ['Corsair screens: a picture now goes to the screen again every 100 ms instead of every second, and the rotation is set before the first one, as OpenLinkHub does: an iCUE LINK LCD stayed on its own temperature screen. Not yet tried on a real screen.'],
+    ru: ['Экраны Corsair: картинка теперь отправляется на экран каждые 100 мс, а не раз в секунду, и перед первой задаётся поворот, как у OpenLinkHub: экран iCUE LINK LCD оставался на своей заставке с температурой. На настоящем экране ещё не проверено.'],
+    fr: ['Écrans Corsair : une image part maintenant vers l’écran toutes les 100 ms au lieu de chaque seconde, et la rotation est réglée avant la première, comme le fait OpenLinkHub : un écran iCUE LINK LCD restait sur son propre affichage de température. Pas encore essayé sur un vrai écran.'] },
   { v: '0.4.61',
     en: ['Corsair screens: the log now keeps what the screen answers after the first pictures, to find out why a screen gets them and does not show them.'],
     ru: ['Экраны Corsair: в журнал теперь пишется, что экран отвечает на первые картинки, — чтобы понять, почему экран получает их, но не показывает.'],

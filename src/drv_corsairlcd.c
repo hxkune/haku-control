@@ -5,7 +5,8 @@
 //   [0] 02  [1] 05  [2] 01 on iCUE LINK, 00 on the others  [3] 01 on the last chunk  [4] chunk index  [6..7] its length LE
 // and up to 1016 bytes of the JPEG from [8]. Feature report 3 sets the backlight (03 0b <0-100> 01; the XC7 has none)
 // and gives the screen back to its own display (03 1e 01 01, 03 1d 00 01, then the default backlight). The screen
-// keeps nothing: OpenLinkHub sends its picture again every second, and an animation frame by frame.
+// keeps nothing: OpenLinkHub sends a still again and again (every 10 ms on the iCUE LINK, 100 ms on the XC7), and an
+// animation frame by frame; before the first it sets the rotation (03 0c 00 01; not on the ELITE caps).
 // What it shows here: [dev.N] media, the frame pack the screen builder makes (corsairlcd-<N>.hlcd):
 //   "HKLCD1\0\0", then for each frame: u32 LE JPEG length, u16 LE delay in ms, the JPEG
 // with frame 0 black, shown while the lights are off ([dev.N] screen_follow, default on; brightness follows the app's).
@@ -25,12 +26,13 @@
 #define CL_FRAMES  1500
 #define CL_MAXPACK (16 << 20)
 #define CL_MINGAP  40                        // 25 frames/s at most
-#define CL_STILL   1000                      // a still (or dark) goes again every second, as OpenLinkHub does
+#define CL_STILL   100                       // a still (or dark) goes again every 100 ms, as OpenLinkHub's XC7 image mode
+                                             // (1 s left an iCUE LINK LCD on its own temperature screen, report 711704f653)
 
-static const struct { USHORT pid; unsigned char fam, br; const char *name; } MODELS[] = {
-    { 0x0C4E, 1, 1, "iCUE LINK LCD" },
-    { 0x0C39, 0, 1, "ELITE LCD" }, { 0x0C33, 0, 1, "ELITE LCD" },
-    { 0x0C42, 0, 0, "XC7 ELITE LCD" },
+static const struct { USHORT pid; unsigned char fam, br, rot; const char *name; } MODELS[] = {
+    { 0x0C4E, 1, 1, 1, "iCUE LINK LCD" },
+    { 0x0C39, 0, 1, 0, "ELITE LCD" }, { 0x0C33, 0, 1, 0, "ELITE LCD" },
+    { 0x0C42, 0, 0, 1, "XC7 ELITE LCD" },
 };
 #define NMODELS (int)(sizeof(MODELS) / sizeof(MODELS[0]))
 static int model(USHORT pid) { for (int i = 0; i < NMODELS; i++) if (MODELS[i].pid == pid) return i; return -1; }
@@ -207,6 +209,7 @@ static void hear(cl_t *u) {
 static DWORD WINAPI stream(void *arg) {
     cl_t *u = arg;
     cl_pack *p = NULL; int f = 1, sent_br = -1;
+    if (MODELS[u->m].rot && !feature(u, 0x0c, 0x00)) logf_("corsairlcd: the rotation was not set (error %lu)", GetLastError());
     while (!u->stop) {
         cl_pack *nx = InterlockedExchangePointer((PVOID volatile *)&u->next, NULL);
         if (nx) { free_pack(p); p = nx; f = 1; }
