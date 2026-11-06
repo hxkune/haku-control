@@ -105,6 +105,7 @@ typedef struct {
     int out_len, feat_len, m;
     HANDLE th; volatile LONG stop, dark, br, err, end_dark;   // end_dark: the thread's last frame is the black one
     int took;                      // the thread ran: the screen was haku's, so it is given back
+    int heard;                     // the screen's answers logged so far
     cl_pack *volatile next;        // a new pack for the thread, which owns the one it shows
     int busy;                      // a program in the way was seen: the screen is theirs, nothing is given back
     DWORD checked;
@@ -186,6 +187,22 @@ static int show(cl_t *u, const cl_pack *p, int f, int stoppable) {
 
 static void free_pack(cl_pack *p) { if (p) { free(p->buf); free(p); } }
 
+// What the screen sends back after a frame (it has 512-byte input reports): the first answers go to the log, as the
+// only sign of how it took the picture (report 711704f653: frames went, the picture did not change)
+static void hear(cl_t *u) {
+    unsigned char b[1024]; DWORD got = 0; OVERLAPPED o = { 0 };
+    if (!(o.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL))) return;
+    int ok = ReadFile(u->h, b, sizeof(b), &got, &o) ||
+             (GetLastError() == ERROR_IO_PENDING && WaitForSingleObject(o.hEvent, 100) == WAIT_OBJECT_0 && GetOverlappedResult(u->h, &o, &got, FALSE));
+    if (!ok) { CancelIoEx(u->h, &o); GetOverlappedResult(u->h, &o, &got, TRUE); got = 0; }
+    CloseHandle(o.hEvent);
+    char hex[3 * 32 + 1] = "";
+    for (DWORD i = 0; i < got && i < 32; i++) snprintf(hex + 3 * i, 4, "%02x ", b[i]);
+    if (got) logf_("corsairlcd: the screen answered %lu bytes: %s", got, hex);
+    else logf_("corsairlcd: no answer from the screen within 100 ms");
+    u->heard++;
+}
+
 // The thread that has the screen while there is a pack: all writes go from here, one frame at a time
 static DWORD WINAPI stream(void *arg) {
     cl_t *u = arg;
@@ -201,6 +218,7 @@ static DWORD WINAPI stream(void *arg) {
         if (!p) { WaitForSingleObject(u->wake, 200); continue; }
         int k = u->dark ? 0 : f;
         if (!show(u, p, k, 1)) { if (!u->stop) { u->err = 1; logf_("corsairlcd: a frame did not go (error %lu)", GetLastError()); } break; }
+        if (u->heard < 3) hear(u);
         int still = u->dark || p->nfr == 2, wait = still ? CL_STILL : p->fr[k].delay;
         if (!u->dark && ++f >= p->nfr) f = 1;
         WaitForSingleObject(u->wake, wait);   // set on stop, a new pack and a dark / light change

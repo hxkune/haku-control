@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.61',
+    en: ['Corsair screens: the log now keeps what the screen answers after the first pictures, to find out why a screen gets them and does not show them.'],
+    ru: ['Экраны Corsair: в журнал теперь пишется, что экран отвечает на первые картинки, — чтобы понять, почему экран получает их, но не показывает.'],
+    fr: ['Écrans Corsair : le journal garde maintenant ce que l’écran répond après les premières images, pour savoir pourquoi un écran les reçoit sans les afficher.'] },
   { v: '0.4.60',
     en: ['Tray: a left click on the icon opens a small panel by it: lights on or off, brightness, profiles, effects and presets, and a switch for each device, in the app’s theme. A double click opens the window; the right click keeps the old menu.', 'Corsair screens: pictures are now made the way the screen expects (a plain JPEG, like OpenLinkHub sends), as a screen got them and showed nothing. Not yet tried on a real screen.'],
     ru: ['Трей: щелчок левой кнопкой по значку открывает рядом с ним небольшую панель: включение и выключение подсветки, яркость, профили, эффекты и пресеты, переключатель для каждого устройства — в теме приложения. Двойной щелчок открывает окно, правая кнопка по-прежнему показывает старое меню.', 'Экраны Corsair: картинки теперь делаются так, как ждёт экран (простой JPEG, как отправляет OpenLinkHub): экран получал их, но ничего не показывал. На настоящем экране ещё не проверено.'],
