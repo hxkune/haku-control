@@ -37,7 +37,7 @@ rc /nologo /c65001 /fo %OBJ%\haku-control.res res\haku-control.rc || exit /b 1
 cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE %DEFS% %PRO_DEF% /std:c++17 /EHsc /Fo%OBJ%\ ^
    src\main.c src\config.c src\profile.c src\effects.c src\dev_msi.c src\dev_ene.c src\sensors.c src\net.c ^
    src\netutil.c src\devices.c src\drv_openrgb.c src\drv_nlusb.c src\drv_wooting.c src\drv_razer.c src\drv_steelseries.c src\drv_logitech.c src\drv_tryx.c src\drv_corsairlcd.c src\drv_aura.c src\openrgb_app.c src\update.c src\mood.c src\ollama.c src\diag.c src\hwinfo.c src\backup.c src\fans.c src\sio.c src\cputemp.c src\lianli.c src\link.c src\conflicts.c %PRO_SRC% ^
-   src\ui_web.cpp src\audio.cpp src\screen.cpp ^
+   src\ui_web.cpp src\ui_tray.cpp src\audio.cpp src\screen.cpp ^
    /Fe:%OUT%\haku-control.exe ^
    /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='%UAC%' uiAccess='false'" ^
    user32.lib shell32.lib gdi32.lib setupapi.lib winusb.lib hid.lib winmm.lib comctl32.lib comdlg32.lib ws2_32.lib bcrypt.lib iphlpapi.lib winhttp.lib crypt32.lib wintrust.lib ^

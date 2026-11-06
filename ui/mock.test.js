@@ -1105,6 +1105,11 @@
     for (let o = 8; o + 6 <= b.length;) { const n = v.getUint32(o, true); out.push({ ms: v.getUint16(o + 4, true), jpg: b.slice(o + 6, o + 6 + n) }); o += 6 + n; }
     return out;
   };
+  const jpgSegs = j => {   // the markers up to SOS: [{m: 'c0', b: the segment's bytes}]
+    const r = [{ m: 'd8' }]; let p = 2;
+    while (p < j.length && j[p] === 0xff) { const m = j[p + 1], n = j[p + 2] << 8 | j[p + 3]; r.push({ m: m.toString(16), b: j.slice(p + 4, p + 2 + n) }); if (m === 0xda) break; p += 2 + n; }
+    return r;
+  };
   const clPixel = async (jpg, x, y) => { const c = document.createElement('canvas'); c.width = c.height = 480; const g = c.getContext('2d'); g.drawImage(await createImageBitmap(new Blob([jpg], { type: 'image/jpeg' })), 0, 0); return [...g.getImageData(x, y, 1, 1).data.slice(0, 3)]; };
 
   test('the check level (README facts): on the card and in Add before anything is added; one model checked is not the line; a kind with no fact has none', async () => {
@@ -1210,6 +1215,7 @@
     ok(o && o.id === '15' && o.ext === 'hlcd' && f && f.length === 2 && f[0].ms === 1000, 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 12) }) + ' ' + JSON.stringify(f?.map(x => x.ms)));
     const black = await clPixel(f[0].jpg, 240, 240), mid = await clPixel(f[1].jpg, 240, 240), edge = await clPixel(f[1].jpg, 4, 4);
     ok(black.every(v => v < 16) && mid[0] > 160 && mid[1] < 90 && edge.every(v => v < 16), `frames: black ${black}, the middle ${mid}, the corner ${edge}`);
+    ok(f.every(x => jpgSegs(x.jpg).map(s => s.m).join() === 'd8,db,c0,c4,da'), 'the pack\'s JPEGs are not the baseline kind: ' + f.map(x => jpgSegs(x.jpg).map(s => s.m)).join(' | '));
     ok($('#txb-msg').textContent === t('txb.saved.lcd'), 'the message: ' + $('#txb-msg').textContent);
     txbClose(); await fanEmit();
     ok($('#dev-st-15').closest('.card').querySelector('.dev-media-name').textContent === 'corsairlcd-15.hlcd' && !STATE.cfg['dev.15'].theme, 'the file: ' + JSON.stringify(STATE.cfg['dev.15']));
@@ -1219,6 +1225,24 @@
     $('#dev-st-14').closest('.card').querySelector('.dev-build').click();
     ok(!TXB.lcd && TXB.shape === '2:1' && $('#txb-shape').value === '2:1' && !$('#txb-shape').closest('label').classList.contains('hidden') && note() === t('txb.note'), 'the TRYX builder after the LCD: ' + note());
     txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+  });
+
+  test('Corsair LCD: the JPEG is Go-like baseline (no APPn, 4:2:0, Annex K Huffman tables) and decodes to the picture', async () => {
+    const w = 480, h = 480, img = new ImageData(w, h);
+    for (let i = 0; i < w * h; i++) img.data.set([(i % w) >> 1, (i / w | 0) >> 1, 200, 255], i * 4);
+    const j = txbJpeg(img, 85), segs = jpgSegs(j), m = segs.map(s => s.m).join();
+    ok(m === 'd8,db,c0,c4,da' && j[j.length - 2] === 0xff && j[j.length - 1] === 0xd9, 'markers: ' + m);
+    const sof = segs.find(s => s.m === 'c0').b, dht = segs.find(s => s.m === 'c4').b;
+    ok(sof.length === 15 && sof[0] === 8 && (sof[1] << 8 | sof[2]) === h && (sof[3] << 8 | sof[4]) === w && [sof[7], sof[10], sof[13]].join() === '34,17,17', 'SOF0: ' + [...sof]);
+    const tabs = []; for (let p = 0; p < dht.length;) { const cnt = [...dht.slice(p + 1, p + 17)], n = cnt.reduce((a, b) => a + b); tabs.push({ tc: dht[p], cnt, vals: [...dht.slice(p + 17, p + 17 + n)] }); p += 17 + n; }
+    const code = (tb, v) => { let c = 0, k = 0; for (let l = 1; l <= 16; l++, c <<= 1) for (let i = 0; i < tb.cnt[l - 1]; i++, c++) if (tb.vals[k++] === v) return c.toString(2).padStart(l, '0'); };
+    const ac = new Set([0, 0xf0]); for (let r = 0; r < 16; r++) for (let s = 1; s <= 10; s++) ac.add(r << 4 | s);
+    ok(tabs.map(x => x.tc + ':' + x.vals.length).join() === '0:12,16:162,1:12,17:162' && [tabs[1], tabs[3]].every(x => x.vals.every(v => ac.has(v)) && new Set(x.vals).size === ac.size),
+      'DHT: ' + tabs.map(x => x.tc + ':' + x.vals.length));
+    // the code words T.81 Annex K gives: EOB and ZRL for luma and chroma, the DC size 0
+    ok([code(tabs[1], 0), code(tabs[1], 0xf0), code(tabs[3], 0), code(tabs[3], 0xf0), code(tabs[0], 0), code(tabs[2], 0)].join() === '1010,11111111001,00,1111111010,00,00', 'standard codes');
+    const px = await Promise.all([[0, 0], [100, 300], [479, 479]].map(([x, y]) => clPixel(j, x, y)));
+    ok(px.every((p, i) => { const [x, y] = [[0, 0], [100, 300], [479, 479]][i]; return Math.abs(p[0] - (x >> 1)) < 6 && Math.abs(p[1] - (y >> 1)) < 6 && Math.abs(p[2] - 200) < 6; }), 'decoded: ' + JSON.stringify(px));
   });
 
   test('Corsair LCD: an animation goes frame by frame at 25 a second, each with its time, black first', async () => {

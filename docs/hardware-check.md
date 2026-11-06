@@ -134,6 +134,18 @@ Experimental: built from OpenLinkHub's description of the protocol, not yet run 
 6. **Another program.** Start iCUE with haku open: the card says iCUE has the screen, and haku sends nothing until iCUE is closed.
 7. Send the `corsairlcd:` lines from the log, as they show the screen's reports and how it answered.
 
+## Tray panel
+
+Checked so far only in a browser against a fake core (`tray.html?mock`, `tools/sim/ui-tests.ps1`). On a real PC:
+1. **Open and close.** A left click on the icon opens the panel next to it; a second click, Escape or a click elsewhere closes it. A double click opens the window. The right click still shows the old menu.
+2. **Where it opens.** Move the taskbar to each side, then turn on auto-hide: the panel sits by the icon, inside the screen, never under the taskbar. Repeat at 100 %, 150 % and 200 % scaling and on a second monitor with another scale (there Windows may blur it slightly). With the icon in the overflow (^) area, the panel opens near where it was clicked, inside the screen.
+3. **Controls.** Brightness drag: the lights follow and the panel stays open. Power, a profile, an effect, a preset, a device switch: each changes the lights and the window shows the same. Change the effect in the window: the open panel follows.
+4. **Keyboard and Narrator.** Tab goes through every control with a visible ring; Narrator reads the slider value, the switches' on/off and the profile in use.
+5. **Time and memory.** The log has `tray: open in N ms (first)` and `(again)` lines: write both down. Open and close it 30 times, then look at haku's memory and handles in Task Manager: they should not keep growing. After 30 s closed, the panel's WebView2 processes end.
+6. **Explorer restart.** End Explorer in Task Manager and start it again: the icon comes back and the panel still opens.
+7. **Fallback.** Rename `ui	ray.html` in the install folder (put it back afterwards): a left click shows the old menu instead, and the log says why.
+8. **Quit.** Quit from ⋯: the lights are handed back exactly as with Quit in the old menu.
+
 ## Not to do as part of this check
 
 - No calibration and no load tests.

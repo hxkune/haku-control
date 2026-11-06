@@ -4338,8 +4338,73 @@ function txbMp4(w, h, avcc, chunks, dur) {
 // it shows in ms (u16 LE) and the JPEG. Frame 0 is black (the screen with the lights off), then the still, or an animation
 // at 25 frames a second at most. Each JPEG fits the 256 reports of 1016 bytes the screen takes.
 const TXB_LCD_FRAMES = 300, TXB_LCD_JPG = 256 * 1016;
+// A baseline JPEG the way Go's image/jpeg makes it (what OpenLinkHub sends these screens): 4:2:0, the standard tables of
+// ITU T.81 Annex K, no APPn. Chromium's canvas JPEG (JFIF, an ICC profile, optimised Huffman tables) reached an iCUE LINK
+// LCD and was not shown (report 711704f653).
+const JPG_ZZ = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
+  35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+const JPG_Q = [[16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56, 14, 17, 22, 29, 51, 87, 80, 62,
+  18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113, 92, 49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98, 112, 100, 103, 99],
+  [17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99, 99, 99, 99, 47, 66, 99, 99, 99, 99, 99, 99, ...Array(32).fill(99)]];
+const jpgAc = s => s.split(' ').map(v => parseInt(v, 16));
+const JPG_H = [   // [code counts by length 1..16, values]: DC luma, AC luma, DC chroma, AC chroma
+  [[0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0], [...Array(12).keys()]],
+  [[0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 125], jpgAc('01 02 03 00 04 11 05 12 21 31 41 06 13 51 61 07 22 71 14 32 81 91 a1 08 23 42 b1 c1 15 52 d1 f0 ' +
+    '24 33 62 72 82 09 0a 16 17 18 19 1a 25 26 27 28 29 2a 34 35 36 37 38 39 3a 43 44 45 46 47 48 49 4a 53 54 55 56 57 58 59 5a 63 64 65 66 67 68 69 6a ' +
+    '73 74 75 76 77 78 79 7a 83 84 85 86 87 88 89 8a 92 93 94 95 96 97 98 99 9a a2 a3 a4 a5 a6 a7 a8 a9 aa b2 b3 b4 b5 b6 b7 b8 b9 ba c2 c3 c4 c5 c6 c7 c8 c9 ca ' +
+    'd2 d3 d4 d5 d6 d7 d8 d9 da e1 e2 e3 e4 e5 e6 e7 e8 e9 ea f1 f2 f3 f4 f5 f6 f7 f8 f9 fa')],
+  [[0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0], [...Array(12).keys()]],
+  [[0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 119], jpgAc('00 01 02 03 11 04 05 21 31 06 12 41 51 07 61 71 13 22 32 81 08 14 42 91 a1 b1 c1 09 23 33 52 f0 ' +
+    '15 62 72 d1 0a 16 24 34 e1 25 f1 17 18 19 1a 26 27 28 29 2a 35 36 37 38 39 3a 43 44 45 46 47 48 49 4a 53 54 55 56 57 58 59 5a 63 64 65 66 67 68 69 6a ' +
+    '73 74 75 76 77 78 79 7a 82 83 84 85 86 87 88 89 8a 92 93 94 95 96 97 98 99 9a a2 a3 a4 a5 a6 a7 a8 a9 aa b2 b3 b4 b5 b6 b7 b8 b9 ba c2 c3 c4 c5 c6 c7 c8 c9 ca ' +
+    'd2 d3 d4 d5 d6 d7 d8 d9 da e2 e3 e4 e5 e6 e7 e8 e9 ea f2 f3 f4 f5 f6 f7 f8 f9 fa')]];
+function txbJpeg({ width: w, height: h, data: px }, q) {
+  const sc = q < 50 ? 5000 / q : 200 - q * 2, qt = JPG_Q.map(tb => tb.map(v => Math.min(255, Math.max(1, Math.floor((v * sc + 50) / 100)))));
+  const codes = JPG_H.map(([cnt, vals]) => { const c = []; let code = 0, k = 0; for (let l = 1; l <= 16; l++, code <<= 1) for (let i = 0; i < cnt[l - 1]; i++) c[vals[k++]] = [code++, l]; return c; });
+  const C = Array.from({ length: 64 }, (_, i) => Math.cos((2 * (i >> 3) + 1) * (i & 7) * Math.PI / 16) * ((i & 7) ? .5 : Math.SQRT1_2 / 2));   // [x*8+u]
+  const out = [], blk = new Float64Array(64), tmp = new Float64Array(64), zz = new Int32Array(64), dc = [0, 0, 0];
+  let acc = 0, nb = 0;
+  const put = ([v, n]) => { acc = (acc << n) | (v & ((1 << n) - 1)); nb += n; for (; nb >= 8; nb -= 8) { const b = (acc >> (nb - 8)) & 255; out.push(b); if (b === 255) out.push(0); } acc &= (1 << nb) - 1; };
+  const size = v => { let a = Math.abs(v), n = 0; for (; a; a >>= 1) n++; return n; };
+  const block = (ci, t) => {   // blk (level-shifted samples) -> DCT -> quantised in zigzag order -> Huffman
+    for (let y = 0; y < 8; y++) for (let u = 0; u < 8; u++) { let a = 0; for (let x = 0; x < 8; x++) a += blk[y * 8 + x] * C[x * 8 + u]; tmp[y * 8 + u] = a; }
+    for (let k = 0; k < 64; k++) { const n = JPG_ZZ[k], u = n & 7, v = n >> 3; let a = 0; for (let y = 0; y < 8; y++) a += tmp[y * 8 + u] * C[y * 8 + v]; zz[k] = Math.round(a / qt[t][n]); }
+    const dcC = codes[t * 2], acC = codes[t * 2 + 1], d = zz[0] - dc[ci]; dc[ci] = zz[0];
+    let n = size(d), run = 0; put(dcC[n]); if (n) put([d < 0 ? d - 1 : d, n]);
+    for (let k = 1; k < 64; k++) {
+      if (!zz[k]) { run++; continue; }
+      for (; run > 15; run -= 16) put(acC[0xf0]);
+      n = size(zz[k]); put(acC[run << 4 | n]); put([zz[k] < 0 ? zz[k] - 1 : zz[k], n]); run = 0;
+    }
+    if (run) put(acC[0]);
+  };
+  const at = (x, y) => (Math.min(y, h - 1) * w + Math.min(x, w - 1)) * 4;   // edges repeat when the size is not a multiple of 16
+  for (let my = 0; my < h; my += 16) for (let mx = 0; mx < w; mx += 16) {
+    for (let b = 0; b < 4; b++) {
+      const ox = mx + (b & 1) * 8, oy = my + (b >> 1) * 8;
+      for (let i = 0; i < 64; i++) { const p = at(ox + (i & 7), oy + (i >> 3)); blk[i] = .299 * px[p] + .587 * px[p + 1] + .114 * px[p + 2] - 128; }
+      block(0, 0);
+    }
+    for (const [ci, kr, kg, kb] of [[1, -.168736, -.331264, .5], [2, .5, -.418688, -.081312]]) {   // Cb, Cr: each 2x2 averaged
+      for (let i = 0; i < 64; i++) {
+        let a = 0;
+        for (let j = 0; j < 4; j++) { const p = at(mx + (i & 7) * 2 + (j & 1), my + (i >> 3) * 2 + (j >> 1)); a += kr * px[p] + kg * px[p + 1] + kb * px[p + 2]; }
+        blk[i] = a / 4;
+      }
+      block(ci, 1);
+    }
+  }
+  if (nb) put([0xff, 8 - nb]);   // pad the last byte with ones
+  const seg = (m, b) => [0xff, m, (b.length + 2) >> 8, (b.length + 2) & 255, ...b];
+  const head = [0xff, 0xd8, ...seg(0xdb, [0, 1].flatMap(t => [t, ...JPG_ZZ.map(n => qt[t][n])])),
+    ...seg(0xc0, [8, h >> 8, h & 255, w >> 8, w & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]),
+    ...seg(0xc4, JPG_H.flatMap(([cnt, vals], i) => [(i & 1) << 4 | i >> 1, ...cnt, ...vals])),
+    ...seg(0xda, [3, 1, 0, 2, 0x11, 3, 0x11, 0, 63, 0])];
+  const r = new Uint8Array(head.length + out.length + 2); r.set(head); r.set(out, head.length); r.set([0xff, 0xd9], r.length - 2);
+  return r;
+}
 async function txbPack(B, s, c, msg) {
-  const x = c.getContext('2d'), jpg = () => new Promise((r, no) => c.toBlob(b => b ? r(b) : no(t('txb.fail', 'jpeg')), 'image/jpeg', .85));
+  const x = c.getContext('2d'), jpg = () => new Blob([txbJpeg(x.getImageData(0, 0, c.width, c.height), 85)]);
   x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
   const parts = [[await jpg(), 1000]], dur = s?.dur || 0, n = dur ? Math.max(2, Math.min(TXB_LCD_FRAMES, Math.round(dur * 25))) : 1, step = dur / n;
   if (s?.el) s.el.pause();

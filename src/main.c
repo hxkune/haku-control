@@ -605,7 +605,7 @@ static void short_name(const char *s, wchar_t *out, int cap, int menu) {
 }
 
 // a device on and meant to be lit that does not answer (not while it waits for its app, Pro or the PC's sleep)
-static int dev_unreachable(int f) { return f >= 0 && (f & 1) && !(f & 2) && (f & 8) && !(f & (4 | 16)) && !((f & 32) && pro_off) && !sleeping; }
+static int dev_unreachable(int f) { return f >= 0 && (f & 1) && !(f & 2) && (f & 8) && !(f & (4 | 16 | 64)) && !((f & 32) && pro_off) && !sleeping; }
 
 // the tray tip: the profile, the brightness, what shows, and a problem once confirmed; Windows keeps 127 characters
 static void update_tip(void) {
@@ -1180,6 +1180,78 @@ int app_state_json(char *out, int cap) {
     return n;
 }
 
+// The tray panel's view (ui_tray.cpp): what the tray menu shows, as one small JSON. Its commands go through ui_dispatch.
+// Device states: on, off (the user's switch), own (given back to its own app), busy (held by another app or device),
+// pro (needs Pro), nosup (haku cannot light it), offline (a try failed), connecting.
+static int jesc_w(char *out, int cap, const wchar_t *w) {
+    char u[512]; WideCharToMultiByte(CP_UTF8, 0, w, -1, u, sizeof(u), NULL, NULL);
+    return jesc(out, cap, u);
+}
+int app_tray_json(char *out, int cap) {
+    char a[512], b[256], sec[24];
+    int off = effect_off_index(), n, lang = app_lang();
+    const char *mo = cfg_get("general", "ui_motion", "sys");
+    jesc(a, sizeof(a), cfg_get("general", "theme", "dark")); jesc(b, sizeof(b), cfg_get("general", "unlocked", ""));
+    n = snprintf(out, cap, "{\"type\":\"tray\",\"lang\":\"%s\",\"theme\":\"%s\",\"unlocked\":\"%s\",\"motion\":\"%s\",\"pro_off\":%d,"
+                 "\"fx\":\"%s\",\"off\":\"%s\",\"bri\":%d,\"pal\":[", lang == 1 ? "ru" : lang == 2 ? "fr" : "en", a, b,
+                 !strcmp(mo, "1") || !strcmp(mo, "0") ? mo : "sys", pro_off, g_effects[cur_effect].id, g_effects[off].id, (int)(brightness * 100 + 0.5f));
+    rgbf pal[MAX_PALETTE];
+    EnterCriticalSection(&cs); int np = effects_palette(cur_effect, pal, MAX_PALETTE); LeaveCriticalSection(&cs);
+    for (int i = 0; i < np; i++)
+        n += snprintf(out + n, cap - n, "%s\"#%02x%02x%02x\"", i ? "," : "", (int)(clampf(pal[i].r, 0, 1) * 255 + .5f),
+                      (int)(clampf(pal[i].g, 0, 1) * 255 + .5f), (int)(clampf(pal[i].b, 0, 1) * 255 + .5f));
+    n += snprintf(out + n, cap - n, "],\"fxs\":[");
+    for (int i = 0, first = 1; i < g_effect_count && n < cap - 1200; i++) {
+        if (i == off) continue;
+        jesc_w(a, sizeof(a), effect_title(i));
+        n += snprintf(out + n, cap - n, "%s{\"id\":\"%s\",\"t\":\"%s\"}", first ? "" : ",", g_effects[i].id, a); first = 0;
+    }
+    n += snprintf(out + n, cap - n, "],\"profile\":%d,\"profiles\":[", cfg_geti("general", "profile", 0));
+    for (int i = 1, first = 1; i <= PROFILE_MAX && n < cap - 1200; i++) {
+        snprintf(sec, sizeof(sec), "profile.%d", i);
+        if (!profile_exists(i)) continue;
+        jesc(a, sizeof(a), cfg_get(sec, "name", ""));
+        n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"n\":\"%s\",\"pin\":%d}", first ? "" : ",", i, a, cfg_geti(sec, "pin", 0) != 0); first = 0;
+    }
+    n += snprintf(out + n, cap - n, "],\"prof\":");
+    n += prof_json(out + n, cap - n);
+    n += snprintf(out + n, cap - n, ",\"preset\":%d,\"presets\":[", cfg_geti("general", "preset", 0));
+    for (int i = 1, first = 1; i <= PRESET_MAX && n < cap - 1200; i++) {
+        snprintf(sec, sizeof(sec), "preset.%d", i);
+        const char *fx = cfg_get(sec, "effect", NULL);
+        if (!fx) continue;
+        jesc(a, sizeof(a), cfg_get(sec, "name", "")); jesc(b, sizeof(b), cfg_get(sec, "palette", ""));
+        char f[64]; jesc(f, sizeof(f), fx);
+        n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"n\":\"%s\",\"fx\":\"%s\",\"pal\":\"%s\"}", first ? "" : ",", i, a, f, b); first = 0;
+    }
+    // devices as the tray menu lists them; a toggled one is a [layout] key ("k"), a [dev.N] one its number ("id")
+    n += snprintf(out + n, cap - n, "],\"devs\":[");
+    int nd = 0;
+#define TRAY_DEV(key, name, st) do { jesc_w(a, sizeof(a), name); \
+        n += snprintf(out + n, cap - n, "%s{\"k\":\"%s\",\"n\":\"%s\",\"s\":\"%s\"}", nd++ ? "," : "", key, a, st); } while (0)
+    if (have_ene && ene_count() > 0) TRAY_DEV("ram_enabled", TR(L"Memory lighting", L"Подсветка памяти", L"Éclairage de la mémoire"), !ram_on ? "off" : ram_own ? "own" : "on");
+    if (have_msi) TRAY_DEV("gpu_enabled", TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты", L"Éclairage du ruban ARGB"), !gpu_on ? "off" : msi_own ? "own" : "on");
+    if (lights_count()) TRAY_DEV("lights_enabled", TR(L"AiDot bulbs", L"Лампочки AiDot", L"Ampoules AiDot"), !lights_on ? "off" : pro_off ? "pro" : "on");
+    for (int k = 0; k < NANO_MAX && n < cap - 1200; k++) if (nano_present(k)) {
+        char t[64], key[32]; wchar_t w[96];
+        nano_title(k, t, sizeof(t)); MultiByteToWideChar(CP_UTF8, 0, t, -1, w, 96); nano_key(k, key, sizeof(key));
+        TRAY_DEV(key, w, !nano_on[k] ? "off" : pro_off ? "pro" : "on");
+    }
+#undef TRAY_DEV
+    for (int k = 0; k < ext_count() && n < cap - 1200; k++) {
+        char nm[64]; int f = ext_slot_menu(k, nm, sizeof(nm)), id = ext_slot_id(k);
+        if (f < 0 || id < 1 || id > 99) continue;
+        jesc(a, sizeof(a), nm);
+        // the order the window's device list says it in (app.js catInfo)
+        const char *st = !(f & 1) ? "off" : (f & 4) ? "own" : (f & 16) ? "busy" : (f & 32) && pro_off ? "pro" : (f & 64) ? "nosup"
+                       : (f & 2) ? "on" : (f & 8) ? "offline" : "connecting";
+        n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"n\":\"%s\",\"s\":\"%s\"}", nd++ ? "," : "", id, a, st);
+    }
+    int pn, po; pc_own_count(&pn, &po);
+    n += snprintf(out + n, cap - n, "],\"pc\":[%d,%d]}", pn, po);
+    return n < cap ? n : cap - 1;
+}
+
 // Live colours for the window: [dev, index, "rrggbb"]; LAN devices come as dev 100 + slot and are
 // thinned out to at most 60 samples each (index = sample number).
 int app_frame_json(char *out, int cap) {
@@ -1418,6 +1490,7 @@ static void show_menu(void) {
             : !(f & 1) || (f & 2) ? NULL
             : (f & 32) && pro_off ? TR(L"needs Pro", L"нужен Pro", L"Pro requis")
             : (f & 16) ? TR(L"busy in another app", L"занято другой программой", L"occupé par une autre application")
+            : (f & 64) ? TR(L"not supported", L"не поддерживается", L"non pris en charge")
             : (f & 8) ? TR(L"not reachable", L"нет связи", L"injoignable") : TR(L"connecting…", L"подключение…", L"connexion…");
         if (why) { size_t n = wcslen(w); swprintf(w + n, 160 - n, L" — %s", why); }
         AppendMenuW(md, MF_STRING | ((f & 1) ? MF_CHECKED : 0), ID_DEV_ON + id, w); nd++;
@@ -1445,6 +1518,7 @@ static void show_menu(void) {
     TrackPopupMenu(m, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
     DestroyMenu(m);
 }
+void app_tray_menu(void) { show_menu(); }
 
 static int parse_hotkey(const char *s, UINT *mods, UINT *vk) {
     *mods = MOD_NOREPEAT; *vk = 0;
@@ -1509,7 +1583,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER:
         if (wp == SAVE_TIMER) { KillTimer(h, SAVE_TIMER); cfg_save_if_dirty(); }
-        if (wp == AUTO_TIMER) { if (!auto_paused()) auto_tick(); sched_tick(); conflicts_tick(); update_tip(); }
+        if (wp == AUTO_TIMER) { if (!auto_paused()) auto_tick(); sched_tick(); conflicts_tick(); update_tip(); tray_refresh(); }
         return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: swap the tray icon
@@ -1544,10 +1618,16 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         register_hotkeys();
         update_tip();
         return 0;
-    case WM_TRAY:
-        if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == NIN_BALLOONUSERCLICK) ui_open(app_inst);   // a notice clicked too
-        else if (LOWORD(lp) == WM_RBUTTONUP) show_menu();
+    case WM_TRAY: {
+        // left: the quick panel (the menu when it cannot be made); double: the window; right: the menu, always
+        static int dbl;
+        UINT ev = LOWORD(lp);
+        if (ev == NIN_BALLOONUSERCLICK) ui_open(app_inst);   // a notice clicked
+        else if (ev == WM_LBUTTONDBLCLK) { dbl = 1; tray_close(); ui_open(app_inst); }
+        else if (ev == WM_LBUTTONUP) { if (dbl) dbl = 0; else if (!tray_toggle(app_inst, hwnd)) show_menu(); }
+        else if (ev == WM_RBUTTONUP) { tray_close(); show_menu(); }
         return 0;
+    }
     case WM_COMMAND: {
         int id = LOWORD(wp);
         if (id >= ID_FX_BASE && id < ID_FX_BASE + g_effect_count) set_effect(id - ID_FX_BASE);

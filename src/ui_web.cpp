@@ -606,7 +606,7 @@ extern "C" void ui_open_help(HINSTANCE inst) {
     if (page_ready) { go_help = false; post("{\"type\":\"go\",\"to\":\"help\"}"); }
 }
 
-extern "C" void ui_refresh(void) { if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 0, 0); }
-extern "C" void ui_refresh_state(void) { InterlockedIncrement(&g_state_rev); if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 1, 0); }
+extern "C" void ui_refresh(void) { if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 0, 0); tray_refresh(); }
+extern "C" void ui_refresh_state(void) { InterlockedIncrement(&g_state_rev); if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 1, 0); tray_refresh(); }
 
 extern "C" int ui_is_dialog_message(MSG *m) { (void)m; return 0; }

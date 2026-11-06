@@ -441,14 +441,15 @@ int ext_slot_steady(int k) {
 }
 
 // For the tray: its name (the driver's title if it has none) and 1 on, 2 reached, 4 left to its own lighting, 8 a try failed,
-// 16 held or covered by another app or device, 32 needs Pro; -1 none
+// 16 held or covered by another app or device, 32 needs Pro, 64 haku cannot light it (CAP_UNSUPPORTED and up); -1 none
 int ext_slot_menu(int k, char *name, int cap) {
     AcquireSRWLockShared(&lk);
     int r = -1;
     if (k < nslots) {
         slot_t *s = &slots[k]; const ext_driver *drv = ext_driver_by_kind(s->kind);
         snprintf(name, cap, "%s", *s->name ? s->name : drv ? drv->title : s->kind);
-        r = (s->enabled ? 1 : 0) | (s->online ? 2 : 0) | (s->own ? 4 : 0) | (s->fails ? 8 : 0) | (s->held || s->covered ? 16 : 0) | (pro_kind(s->kind) ? 32 : 0);
+        r = (s->enabled ? 1 : 0) | (s->online ? 2 : 0) | (s->own ? 4 : 0) | (s->fails ? 8 : 0) | (s->held || s->covered ? 16 : 0) | (pro_kind(s->kind) ? 32 : 0)
+          | (!s->online && s->cap >= CAP_UNSUPPORTED ? 64 : 0);
     }
     ReleaseSRWLockShared(&lk);
     return r;

@@ -341,6 +341,14 @@ void effects_reset(void) { loaded = 0; nbub = 0; rng_s = 12345; }
 int effects_audio_state(void) { return !used_audio ? -2 : !audio_have ? -1 : quiet_for > 1.5f ? 0 : 1; }
 int effects_temp_state(void) { return !used_temp ? -2 : temp_lost ? 0 : 1; }
 
+// an effect's own palette as it lights (its section, its default, the general one); the caller holds cs
+int effects_palette(int e, rgbf *out, int max) {
+    if (e < 0 || e >= FX_N) return 0;
+    int n = fx_npal[e] < max ? fx_npal[e] : max;
+    memcpy(out, fx_pal[e], n * sizeof(rgbf));
+    return n;
+}
+
 // cyclic palette lookup
 static rgbf palc(float p) {
     p = fractf(p) * npal;

@@ -106,6 +106,7 @@ int  effects_need_gpu_temp(void);
 int  effects_need_audio(void);
 int  effects_audio_state(void);   // -2 not shown, -1 no capture, 0 silence, 1 sound
 int  effects_temp_state(void);    // -2 not shown, 0 no reading, 1 reading
+int  effects_palette(int effect, rgbf *out, int max);   // its colours as it lights, under cs
 int  effects_zone_white(int zone, int *kelvin);      // 1 if the zone is in "white light" mode   // "zone.ram", "zone.gpu", "zone.light1"...
 
 // ---- dev_msi.c (MSI Mystic Light: onboard LED + JRAINBOW1 ARGB header)
@@ -167,7 +168,7 @@ void ext_suspend(int sleeping);
 int  ext_count(void);                     // configured devices ("slots")
 int  ext_slot_leds(int k);                // LEDs of slot k in the scene (0: disabled / not known yet)
 int  ext_slot_id(int k);                  // N of its [dev.N] section
-int  ext_slot_menu(int k, char *name, int cap);   // name and 1 on | 2 reached | 4 own lighting | 8 a try failed | 16 held | 32 Pro; -1 none
+int  ext_slot_menu(int k, char *name, int cap);   // name and 1 on | 2 reached | 4 own lighting | 8 a try failed | 16 held | 32 Pro | 64 not supported; -1 none
 int  ext_slot_steady(int k);              // 1: the controller holds one steady colour only, no animation
 int  ext_slot_strip(int k);               // 1: addressable strip, 0: separate lights
 void ext_slot_type(int k, char *out, int cap);   // strip, tv, bars, floor, lamp, panels, bulb
@@ -310,6 +311,7 @@ void  orgbapp_setup(void);                         // OpenRGB's zip downloaded, 
 // settings window (ui_web.cpp) <-> core
 int   app_state_json(char *out, int cap);    // effects, config, devices
 int   app_status_json(char *out, int cap);   // devices only (polled)
+int   app_tray_json(char *out, int cap);     // the tray panel's view (ui_tray.cpp)
 extern volatile LONG g_state_rev;           // goes up when the whole state changes ("rev" in the status: a phone reloads)
 void  update_install(void);                 // download, check and run the latest release's installer (update.c)
 void  diag_save(void);                      // diagnostics report to Downloads, in the background (diag.c)
@@ -376,6 +378,13 @@ void  ui_open(HINSTANCE inst);
 void  ui_open_help(HINSTANCE inst);       // the window, on its Help card
 void  ui_refresh(void);                 // effect/brightness changed elsewhere (hotkey, tray)
 int   ui_is_dialog_message(MSG *m);
+
+// ---- ui_tray.cpp: the tray panel (a left click on the icon); its browser part is let go of 30 s after it closes
+int   tray_toggle(HINSTANCE inst, HWND icon);   // 0: it cannot be made, show the menu instead
+void  tray_close(void);
+void  tray_refresh(void);                       // the open panel gets the state again
+int   tray_visible(void);
+void  app_tray_menu(void);                      // the classic tray menu (main.c), the panel's fallback
 
 // ---- log
 void logf_(const char *fmt, ...);
