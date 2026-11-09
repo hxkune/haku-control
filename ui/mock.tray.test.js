@@ -40,6 +40,10 @@
     q('[data-menu="help"]').click(); await wait(20);
     ok(cmds('menu').length === 1 && cmds('menu')[0].do === 'help', 'help not asked for');
     ok(!q('#v-main').hidden && q('#v-more').hidden, 'not back on the first view after closing');
+    await reopen(); q('[data-go="more"]').click(); await wait(10);
+    q('#v-more [data-key="m-window"]').click(); await wait(20);
+    q('[data-menu="window"]').click(); await wait(20);
+    ok(JSON.stringify(cmds('menu').map(m => m.do)) === '["settings","window"]', 'Settings / Open asked for: ' + JSON.stringify(cmds('menu')));
   });
 
   test('Escape in a list goes back first, the focus on what opened it', async () => {
@@ -144,14 +148,48 @@
     await reset();
     q('[data-go="devices"]').click(); await wait(10);
     const row = n => qa('#v-devices .dev').find(r => r.querySelector('.name').textContent === n);
-    ok(row('Desk lamp').querySelector('small').textContent === 'Not reachable', 'offline');
-    ok(row('Corsair K70 RGB PRO').querySelector('small').textContent === 'Busy in another app', 'busy');
+    ok(row('Desk lamp').querySelector('small').textContent === 'Control on · no connection', 'offline');
+    ok(row('Corsair K70 RGB PRO').querySelector('small').textContent === 'Driven another way in haku', 'held by its other path in haku, not by another program');
     ok(row('Desk lamp').querySelector('.switch').getAttribute('aria-checked') === 'true', 'an unreachable one keeps the user\'s switch');
+    ok(row('Corsair K70 RGB PRO').querySelector('.switch').getAttribute('aria-checked') === 'true', 'the switch is not the status');
     sent.length = 0;
     row('Memory lighting').querySelector('.switch').click(); await wait(80);
     row('Lian Li UNI HUB').querySelector('.switch').click(); await wait(80);
     ok(JSON.stringify(sent) === JSON.stringify([{ cmd: 'toggle', k: 'ram_enabled' }, { cmd: 'set', s: 'dev.6', k: 'enabled', v: '1' }]), 'sent ' + JSON.stringify(sent));
     ok(row('Memory lighting').querySelector('small').textContent === 'Off', 'not off after the state');
+  });
+
+  test('a device switch: a second click before the answer sends nothing; a device that vanished is not taken as done', async () => {
+    await reset();
+    q('[data-go="devices"]').click(); await wait(10);
+    const row = n => qa('#v-devices .dev').find(r => r.querySelector('.name').textContent === n);
+    window.mockSilent = 1; sent.length = 0;
+    row('Lian Li UNI HUB').querySelector('.switch').click(); row('Lian Li UNI HUB').querySelector('.switch').click(); await wait(20);
+    ok(cmds('set').length === 1, 'a toggle went twice: ' + JSON.stringify(sent));
+    S.devs = S.devs.filter(d => d.id !== 6); await changed();
+    const e = q('#v-devices .err');
+    ok(e && e.textContent === 'The device disconnected. The change could not be confirmed.', 'no error, or the wrong one: ' + (e && e.textContent));
+    await wait(60); ok(q('#live').textContent === e.textContent, 'not read out: ' + q('#live').textContent);
+    S.devs.push({ id: 6, n: 'Lian Li UNI HUB', s: 'on' }); await changed();   // back, and the change did happen
+    ok(!q('#v-devices .err') && row('Lian Li UNI HUB').querySelector('small').textContent === 'On', 'the late answer did not clear it');
+  });
+
+  test('a device switch never confirmed: an error after 5 s, then a late answer clears it; Russian wording', async () => {
+    await reset();
+    S.lang = 'ru'; await changed();
+    q('[data-go="devices"]').click(); await wait(10);
+    const sw = () => qa('#v-devices .dev').find(r => r.querySelector('.name').textContent === 'Memory lighting').querySelector('.switch');
+    window.mockSilent = 1;
+    sw().click(); await wait(5300);
+    ok(q('#v-devices .err') && q('#v-devices .err').textContent.startsWith('haku не подтвердил'), 'no timeout error');
+    ok(sw().getAttribute('aria-checked') === 'true' && !sw().hasAttribute('aria-busy'), 'still shown as sending or as done');
+    S.devs[0].s = 'off'; await changed();
+    ok(!q('#v-devices .err') && sw().getAttribute('aria-checked') === 'false', 'the answer that came late did not clear the error');
+    sent.length = 0; sw().click(); await wait(20);
+    ok(cmds('toggle').length === 1, 'after the error a new click must go again: ' + JSON.stringify(sent));
+    S.devs[0].s = 'on'; await changed();
+    S.devs = S.devs.filter(d => d.k !== 'ram_enabled'); await changed();
+    ok(!q('#v-devices .err'), 'a confirmed change was reported again when the device went');
   });
 
   test('no devices, no profiles: said plainly, nothing made up', async () => {
@@ -165,7 +203,7 @@
     await reset();
     for (let i = 7; i < 40; i++) S.devs.push({ id: i, n: 'Устройство с очень длинным названием, которое не помещается — №' + i + ' ✨', s: i % 2 ? 'on' : 'connecting' });
     await changed();
-    ok(qa('#devs .dev').length === 3 && q('[data-go="devices"]').textContent.includes('(38)'), 'the first view');
+    ok(qa('#devs .dev').length === 3 && q('[data-go="devices"]').textContent.includes('Show all 38 devices'), 'the first view');
     q('[data-go="devices"]').click(); await wait(10);
     ok(qa('#v-devices .dev').length === 38, 'the full list');
     const p = q('#panel'), n = q('#v-devices .dev:last-child .name');
@@ -178,19 +216,68 @@
     await reset();
     S.pro_off = 1; S.devs.push({ id: 9, n: 'Govee lamp', s: 'pro' }); await changed();
     q('[data-go="devices"]').click(); await wait(10);
-    ok(qa('#v-devices .dev').some(r => r.querySelector('small').textContent === 'Needs Pro'), 'no Needs Pro');
+    ok(qa('#v-devices .dev').some(r => r.querySelector('small').textContent === 'Pro is needed to control it'), 'no Pro wording');
   });
 
   test('effects: the list and the presets apart, the current one marked, a pick sends effect / preset', async () => {
     await reset();
     q('[data-go="effects"]').click(); await wait(10);
     ok(q('[data-fx="aurora"]').getAttribute('aria-current') === 'true', 'the current effect');
-    ok(q('#v-effects h3').textContent === 'Your presets' && q('[data-preset="1"] .pal'), 'the presets with their colours');
+    ok(qa('#v-effects h3').pop().textContent === 'Your presets' && q('[data-preset="1"] .pal'), 'the presets with their colours');
     sent.length = 0;
     q('[data-fx="fire"]').click(); await wait(80);
     q('[data-preset="2"]').click(); await wait(80);
     ok(JSON.stringify(sent) === JSON.stringify([{ cmd: 'effect', id: 'fire' }, { cmd: 'preset', id: 2 }]), 'sent ' + JSON.stringify(sent));
     ok(q('[data-preset="2"]').getAttribute('aria-current') === 'true' && q('[data-fx="ocean"]').getAttribute('aria-current') === 'false', 'the preset is not the current one, or its effect still is');
+  });
+
+  test('effects: favourites and recent first, each effect once; a search narrows them; arrows, letters and Enter work', async () => {
+    await reset();
+    const key = (k, el = document.activeElement) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    const find = () => q('#fx-q'), ids = () => qa('#fx-list [data-fx]').map(b => b.dataset.fx);
+    const type = async v => { find().value = v; find().dispatchEvent(new Event('input', { bubbles: true })); await wait(10); };
+    q('[data-go="effects"]').click(); await wait(10);
+    ok(JSON.stringify(qa('#v-effects h3').map(h => h.textContent)) === '["Favourites","Recent","All effects","Your presets"]', 'headings ' + qa('#v-effects h3').map(h => h.textContent));
+    ok(ids().slice(0, 3).join() === 'fire,aurora,ocean' && ids().length === S.fxs.length && new Set(ids()).size === ids().length, 'order or repeats: ' + ids());
+    find().focus(); await type('OCE');
+    ok(ids().join() === 'ocean' && !q('#v-effects h3') && document.activeElement === find(), 'the search: ' + ids() + ' focus ' + document.activeElement.id);
+    sent.length = 0; key('Enter'); await wait(80);
+    ok(JSON.stringify(cmds('effect')) === '[{"cmd":"effect","id":"ocean"}]', 'Enter did not take the first match: ' + JSON.stringify(sent));
+    await type('zzz');
+    ok(q('#fx-list .muted').textContent === 'Nothing matches “zzz”' && !ids().length, 'nothing found not said');
+    key('Escape'); await wait(10);
+    ok(!q('#v-effects').hidden && find().value === '' && ids().length === S.fxs.length, 'Escape did not clear the search first');
+    ok(ids()[1] === 'ocean', 'the pick is not first among the recent ones: ' + ids());
+    key('ArrowDown'); ok(document.activeElement === q('#fx-list [data-fx="fire"]'), 'ArrowDown did not reach the first row');
+    key('ArrowDown'); ok(document.activeElement === q('#fx-list [data-fx="ocean"]'), 'ArrowDown did not move on');
+    key('ArrowUp'); key('ArrowUp'); ok(document.activeElement === find(), 'ArrowUp did not go back to the search');
+    q('#fx-list [data-fx="fire"]').focus(); key('r'); await wait(10);
+    ok(document.activeElement === find() && find().value === 'r' && ids().every(id => S.fxs.find(f => f.id === id).t.toLowerCase().includes('r') || id.includes('r')), 'a letter on a row did not go to the search');
+    key('Escape'); key('Escape'); await wait(10);
+    ok(!q('#v-main').hidden, 'Escape did not go back after the search was cleared');
+    q('[data-go="effects"]').click(); await wait(10);
+    ok(find().value === '' && ids().length === S.fxs.length, 'the search was kept into the next visit');
+  });
+
+  test('devices: up to 3 pinned by their own key, shown first on the first view whatever the order', async () => {
+    await reset();
+    q('[data-go="devices"]').click(); await wait(10);
+    ok(q('#v-devices .hint').textContent.includes('up to 3'), 'no word on pinning');
+    sent.length = 0;
+    for (const k of ['id:6', 'k:nanoleaf_enabled', 'id:4']) { q(`[data-pin="${k}"]`).click(); await wait(80); }
+    ok(JSON.stringify(cmds('set').map(c => [c.s, c.k, c.v])) === '[["general","tray_pin","id:6"],["general","tray_pin","id:6,k:nanoleaf_enabled"],["general","tray_pin","id:6,k:nanoleaf_enabled,id:4"]]',
+      'sent ' + JSON.stringify(cmds('set')));
+    ok(q('[data-pin="id:4"]').getAttribute('aria-pressed') === 'true' && q('[data-pin="k:ram_enabled"]').disabled, 'a fourth one can be pinned');
+    ok(q('[data-pin="id:4"]').getAttribute('aria-label') === 'Keep Desk lamp on the first screen', 'the pin has no name');
+    q('#v-devices [data-back]').click(); await wait(10);
+    const names = () => qa('#devs .dev .name').map(n => n.textContent).join('|');
+    ok(names() === 'Lian Li UNI HUB|Nanoleaf Shapes|Desk lamp', 'the first view: ' + names());
+    S.devs.reverse(); S.devs = S.devs.filter(d => d.id !== 4); await changed();
+    ok(names() === 'Lian Li UNI HUB|Nanoleaf Shapes' && q('[data-go="devices"]').textContent.includes('Show all 4'), 'by key, a removed one left out: ' + names());
+    q('[data-go="devices"]').click(); await wait(10);
+    ok(!q('[data-pin="k:ram_enabled"]').disabled, 'a removed device still holds a pin');
+    q('[data-pin="id:6"]').click(); await wait(80);
+    ok(S.dpin === 'k:nanoleaf_enabled', 'unpinning: ' + S.dpin);
   });
 
   test('⋯: PC lighting hand-over shows what the core did; quit is apart from power', async () => {

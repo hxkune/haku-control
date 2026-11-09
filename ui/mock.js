@@ -86,10 +86,11 @@ window.chrome = { webview: {
     if (o.cmd === 'report') setTimeout(() => { STATE.diag = { busy: 0, ok: -1, file: '', report: { busy: 0, ok: o.text.includes('fail') ? 0 : 1, id: '3fa2c9d01e', err: o.text.includes('fail') ? 'offline' : '' } }; emit(STATE); }, 900);
     if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli', 'corsairlcd'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'dev_retry') setTimeout(() => emit(STATE), 60);   // the devices not connected try again (here: they all answer)
+    if (o.cmd === 'save_retry') { if (!window.mockSaveFail) STATE.unsaved = 0; setTimeout(() => emit(STATE), 60); }   // window.mockSaveFail = 1: the disk still refuses
     if (o.cmd === 'dev_check') { STATE.netchk = { id: +o.id, busy: 1, res: '' }; emit(STATE); setTimeout(() => { STATE.netchk = { id: +o.id, busy: 0, res: o.id % 2 ? 'silent' : 'answers', ms: 0 }; emit(STATE); }, 1500); }
     // profile.c's refusals (prof_json): window.mockProfFail = 2 (the one in use can't be written), 3 (missing), 4 (damaged)
     const refuse = (err, id) => { STATE.prof = { err, id: +id, n: STATE.prof.n + 1 }; setTimeout(() => emit(STATE), 60); };
-    if (o.cmd === 'profile') { if (window.mockProfFail) refuse(window.mockProfFail, window.mockProfFail === 2 ? G.profile : o.id); else { G.profile = o.id; STATE.prof_why = 1; setTimeout(() => emit(STATE), 120); } }
+    if (o.cmd === 'profile') { if (window.mockProfFail) refuse(window.mockProfFail, window.mockProfFail === 2 ? G.profile : o.id); else { G.profile = o.id; STATE.prof_why = 1; STATE.prof.err = 0; setTimeout(() => emit(STATE), 120); } }
     if (o.cmd === 'profile_dup') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; setTimeout(() => emit(STATE), 60); }
     // main.c app_test: one zone's steady test colour, '' ends it (the core's own minute is not run here)
     if (o.cmd === 'dev_test') { STATE.test = o.zone; setTimeout(() => emit(STATE), 30); }
@@ -110,7 +111,7 @@ window.chrome = { webview: {
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
 const panels = (LAY || LAYOUTS.blocks).panels;
 const STATE = {
-  type: 'state', test: '', prof: { err: 0, id: 0, n: 0 }, perf: { fps10: 299, chg10: 299, avg_us: 420, max_us: 1900, want: 30 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
+  type: 'state', test: '', unsaved: 0, prof: { err: 0, id: 0, n: 0 }, perf: { fps10: 299, chg10: 299, avg_us: 420, max_us: 1900, want: 30 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
     { cat: 'gpu', maker: 'ASUS', name: 'NVIDIA GeForce RTX 4070', id: '10DE:2786' }, { cat: 'usb', maker: 'Corsair', name: 'K70 RGB PRO', id: '1B1C:1BB3' },
     { cat: 'usb', maker: 'Wooting', name: 'Wooting 60HE v2', id: '31E3:1342' }, { cat: 'usb', maker: 'Lian Li', name: 'LianLi-Strimer Plus-1.5', id: '0CF2:A200' }] },
   orgb: { state: 2, exe: 1, auto: 1, ours: 1, setup: 0, pct: 0, err: '', ctls: [{ i: 0, type: 5, kind: 'keyboard', leds: 104, name: 'Keyboard' }, { i: 1, type: 3, kind: 'cooler', leds: 16, name: 'Fan hub' },

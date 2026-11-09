@@ -145,6 +145,9 @@ static void event_checks(void) {
     CHECK(d.nev == EXT_EV && d.ev[0].code != EV_ONLINE && d.ev[EXT_EV - 1].code == EV_BACK, "events: never past EXT_EV, the oldest gone");
     for (int i = 0; i < 300; i++) ext_event(&d, EV_FAIL, 0);
     CHECK(d.nev == EXT_EV && d.ev[EXT_EV - 1].n == 255, "events: the count stops at 255");
+    CHECK(ext_fail_ev("iCUE.exe busy") == EV_BUSY && ext_fail_ev("COM5 busy") == EV_BUSY, "events: a device another program has is a conflict");
+    CHECK(ext_fail_ev("") == EV_FAIL && ext_fail_ev(NULL) == EV_FAIL && ext_fail_ev("busy") == EV_FAIL && ext_fail_ev("no answer") == EV_FAIL &&
+          ext_fail_ev("busy port, no answer") == EV_FAIL, "events: any other failure is not a conflict");
 }
 
 // ---- which of OpenRGB's devices is this PC's own memory stick (main.c yields the stick to it): place, bus, address

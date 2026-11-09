@@ -132,9 +132,21 @@ int main(void) {
     // ---- the settings' own save goes through the same fault points
     start(BASE);
     cfg_set("flow", "speed", "1"); file_fail = 2;
+    CHECK(!cfg_unsaved(), "nothing reported unsaved before a write fails");
     CHECK(!cfg_save_if_dirty() && strstr(get(L"settings.ini"), "speed=5"), "settings not saved on a fault, the old file whole");
+    CHECK(cfg_unsaved(), "a failed write is reported as unsaved");
     file_fail = 0;
-    CHECK(cfg_save_if_dirty() && strstr(get(L"settings.ini"), "speed=1"), "and saved on the next try");
+    CHECK(cfg_save_if_dirty() && strstr(get(L"settings.ini"), "speed=1") && !cfg_unsaved(), "and saved on the next try, no longer reported");
+
+    // ---- a recent-first list ([general] fx_recent): newest first, no repeats in any case, at most max, bad items left out
+    start(BASE);
+    cfg_list_front("general", "fx_recent", "wave", 3); cfg_list_front("general", "fx_recent", "fire", 3);
+    cfg_list_front("general", "fx_recent", "aurora", 3); cfg_list_front("general", "fx_recent", "WAVE", 3);
+    CHECK(!strcmp(cfg_get("general", "fx_recent", ""), "WAVE,aurora,fire"), "recent list: newest first, no repeat, at most 3");
+    cfg_list_front("general", "fx_recent", "a,b", 3); cfg_list_front("general", "fx_recent", "", 3);
+    CHECK(!strcmp(cfg_get("general", "fx_recent", ""), "WAVE,aurora,fire"), "recent list: an item with a comma or empty is not taken");
+    cfg_set("general", "fx_recent", ",,x,,"); cfg_list_front("general", "fx_recent", "y", 3);
+    CHECK(!strcmp(cfg_get("general", "fx_recent", ""), "y,x"), "recent list: empty parts of a hand-edited value dropped");
 
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails != 0;

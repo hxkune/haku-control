@@ -41,7 +41,8 @@ const SHEET = { kind: null, moved: [], page: '', back: null };
 const CAT = { q: '', where: '', brand: '', type: '', state: '' };
 try { Object.assign(CAT, JSON.parse(localStorage.getItem('cat') || '{}')); } catch (e) { }
 const saveCat = () => { try { localStorage.setItem('cat', JSON.stringify(CAT)); } catch (e) { } };
-let CATV = [], catScroll = 0;   // the open device sheet (see openSheet)
+let CATV = [];   // the open device sheet (see openSheet)
+const tabScroll = {};   // where each page was left, for this session only (showTab)
 let dragging = false;
 
 // ------------------------------------------------------------------ config helpers
@@ -611,7 +612,7 @@ function route(p) {
   const f = LEGACY[p] || (b && { brand: b[1] });
   if (!f) return 'home';
   Object.assign(CAT, { q: '', where: '', brand: '', type: '', state: '' }, f); saveCat();
-  $('#cat-q').value = ''; catScroll = 0;
+  $('#cat-q').value = ''; tabScroll.devices = 0;
   return 'devices';
 }
 
@@ -728,12 +729,12 @@ function showTab(p) {
   p = route(p);
   if (p !== 'home' && GUIDE.test) { gdTestEnd(); updateGuide(); }   // the test colour is only on while its step is in view
   SHEET.back = null; closeSheet();   // a page change keeps the focus where it went
-  if (tab === 'devices' && p !== 'devices') catScroll = $('main').scrollTop;   // back to the same place in the catalogue
+  if (tab) tabScroll[tab] = $('main').scrollTop;   // back to the same place; a jump to a card scrolls after this
   tab = p;
   $$('#nav button').forEach(b => { const on = b.dataset.tab === p; b.classList.toggle('active', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + p));
   navMark(); buildCatalog(true);
-  $('main').scrollTop = p === 'devices' ? catScroll : 0;
+  const m = $('main'); m.scrollTop = Math.min(tabScroll[p] || 0, Math.max(0, m.scrollHeight - m.clientHeight));
   updateAccounts(); updateChips();
   $('#nav button.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });   // the bottom bar of a narrow window scrolls
   $('#title').textContent = t(p === 'fans' ? 'nav.cooling' : 'nav.' + p);
@@ -1999,7 +2000,7 @@ $('#ddlg-del').addEventListener('click', () => {   // asked twice; nothing else 
 $('#ddlg-cancel').addEventListener('click', draftClose);
 $('#ddlg').addEventListener('pointerdown', e => { if (e.target.id === 'ddlg') draftClose(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#ddlg').classList.contains('hidden')) draftClose(); });
-function cmpRender() { cmpList(); cmpEdit(); cmpKnobs(); cmpTools(); cmpPlayUi(); }
+function cmpRender() { cmpList(); cmpEdit(); cmpKnobs(); cmpTools(); cmpPlayUi(); cmpWake(); }
 function cmpList() {
   const n = CMP.L.length, off = L => L.p[CMP_LP.hide] >= 0.5;
   $('#cdlg-list').innerHTML = CMP.L.map((L, i) => `<li class="${i === CMP.sel ? 'on' : ''}${off(L) ? ' off' : ''}" data-i="${i}">` +
@@ -2118,16 +2119,21 @@ function cmpShow() {
 // the picture (2D, as on a fan or a panel) and the strip (as on a line of LEDs): one clock for both, at the effect's
 // speed and colours; it runs only while the window shows (hidden or behind other windows: no frames). The clock runs
 // on as the engine's does (no jump back to 0 the effect would not make); the slider shows the minute it is in
+// Paused, the loop stops after one look (cmpDraw draws only if the picture changed); cmpWake starts it again
 function cmpPreview(now) {
   CMP.raf = 0;
   if ($('#cdlg').classList.contains('hidden') || document.body.classList.contains('idle')) return;
-  CMP.raf = requestAnimationFrame(cmpPreview);
-  if (now - CMP.last < 33) return;
-  CMP.last = now;
-  const dt = CMP.pt ? Math.min(0.25, (now - CMP.pt) / 1000) : 0; CMP.pt = now;   // back from a pause of the loop: no jump
+  if (CMP.play && now - CMP.last < 33) { CMP.raf = requestAnimationFrame(cmpPreview); return; }
+  CMP.last = now; CMP.ticks = (CMP.ticks || 0) + 1;
+  const dt = CMP.pt ? Math.min(0.25, (now - CMP.pt) / 1000) : 0; CMP.pt = CMP.play ? now : 0;   // back from a pause of the loop: no jump
   if (CMP.play) CMP.t = (CMP.t + dt * CMP.rate * fxClockSpeed('custom', +cv('custom', 'speed', cv('general', 'speed', 5)), () => ''));
   cmpDraw(1);
+  if (CMP.play) CMP.raf = requestAnimationFrame(cmpPreview);
 }
+// one look at the next frame: after anything done in the window (or a state that may bring other colours)
+function cmpWake() { if (!CMP.raf && !$('#cdlg').classList.contains('hidden')) CMP.raf = requestAnimationFrame(cmpPreview); }
+['input', 'change', 'click', 'keyup', 'pointerup'].forEach(ev => document.addEventListener(ev, cmpWake, true));
+addEventListener('resize', cmpWake);
 // still: on a pause the picture is drawn again only when what it shows changed (the frame is a function of these)
 function cmpDraw(still) {
   const pal = effPal('custom').map(hex2rgb), show = cmpShow(), lines = show.map(fxc.line), tt = CMP.t;
@@ -2145,7 +2151,7 @@ function cmpPlayUi() {
   const b = $('#cdlg-pp'); b.textContent = CMP.play ? '❚❚' : '▶'; b.title = t(CMP.play ? 'cmp.pause' : 'cmp.play'); b.setAttribute('aria-pressed', String(!!CMP.play));
   $('#cdlg-rate').value = String(CMP.rate);
 }
-$('#cdlg-pp').addEventListener('click', () => { CMP.play = CMP.play ? 0 : 1; cmpPlayUi(); });
+$('#cdlg-pp').addEventListener('click', () => { CMP.play = CMP.play ? 0 : 1; cmpPlayUi(); cmpWake(); });
 $('#cdlg-rs').addEventListener('click', () => { CMP.t = 0; cmpDraw(); });
 $('#cdlg-t').addEventListener('input', e => { CMP.t = +e.target.value; CMP.play = 0; cmpPlayUi(); cmpDraw(); });   // scrubbing holds the picture
 $('#cdlg-rate').addEventListener('change', e => { CMP.rate = +e.target.value || 1; });
@@ -3752,7 +3758,7 @@ function devStatus(d) {
   if (d.online && d.kind === 'tryx' && / upload failed/.test(d.info)) return t(/ no adb/.test(d.info) ? 'tx.up.noadb' : 'tx.up.fail');
   // OpenRGB: what the controller takes (drv_openrgb.c, CAP_*), or why it is not lit
   if (!d.online && d.kind === 'openrgb' && d.cap >= 4) return t(d.cap === 4 && /whole board only/.test(d.info) ? 'cap.4b' : 'cap.' + d.cap);
-  if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t(d.fails === 0 ? 'dev.connecting' : 'dev.offline');   // no attempt failed yet: the first one runs
+  if (!d.online) return d.info && /button|reach|forgot|colour|token/i.test(d.info) ? d.info : t(d.fails === 0 ? 'dev.connecting' : 'dev.offline.ctl');   // no attempt failed yet: the first one runs
   // who lights it: OpenRGB says through which mode haku drives the controller (CAP_*), the others take haku's frames
   return t(d.per_led ? 'dev.online' : 'dev.online.lights', d.leds) + (d.kind === 'openrgb' && d.cap >= 1 && d.cap <= 3 ? ' · ' + t('drive.' + d.cap) : '');
 }
@@ -3782,7 +3788,9 @@ function devWhy(d) {
   const ours = d.enabled && !d.own && !d.held && !d.covered && !(d.pro && proLocked());
   const simple = !ours ? '' : d.kind === 'openrgb' && d.cap === 2 ? t('drive.2') : caps === 'steady' || d.kind === 'openrgb' && d.cap === 3 ? t('why.steady') :
     caps === 'white' ? t('why.white') : caps === 'onoff' ? t('why.onoff') : !d.per_led ? t('why.bulb') : '';
-  const who = !d.enabled ? t('dev.off') : d.own ? t('own.status') : d.held || d.covered ? devStatus(d) : d.pro && proLocked() ? t('dev.pro') : 'haku';
+  const busy = !d.online && / busy$/.test(d.info), app = busy && d.kind === 'corsairlcd' ? d.info.replace(/(\.exe)? busy$/i, '') : busy && cfRun(d.kind) ? cfApp(d.kind).name : '';
+  const who = !d.enabled ? t('dev.off') : d.own ? t('own.status') : d.held || d.covered ? devStatus(d) : d.pro && proLocked() ? t('dev.pro') :
+    d.online ? 'haku' : app ? t('why.who.app', app) : t(busy ? 'why.who.busy' : 'why.who.unk');
   const st = goP ? t('why.st.asked', goP.name) : !ours ? t('why.st.not') : !d.online ? t('why.st.off') :
     d.sent >= 0 ? t('why.st.sent', d.sent < 1000 ? '<1' : Math.round(d.sent / 1000)) : t('why.st.wait');
   const rows = [
@@ -4175,7 +4183,7 @@ const TXB_MAX = 30;   // seconds of video at most: ~8 MB at 2 Mbit/s
 let TXB = null;
 function txbOpen(d, from) {
   const lcd = d.kind === 'corsairlcd';
-  TXB = { d, from, lcd, shape: lcd ? 'round' : /2D04$/i.test(d.host || '') ? '2:1' : '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now(), font: getComputedStyle(document.body).fontFamily, sig: '' };
+  TXB = { d, from, lcd, shape: lcd ? 'round' : /2D04$/i.test(d.host || '') ? '2:1' : '16:9', src: null, z: 1, cx: .5, cy: .5, layers: [], sel: -1, busy: 0, t0: performance.now(), font: getComputedStyle(document.body).fontFamily, dirty: 1, raf: 0 };
   $('#txb-shape').closest('label').classList.toggle('hidden', lcd);   // the LCD has one shape
   const note = $('#txb [data-i18n^="txb.note"]'); note.dataset.i18n = lcd ? 'txb.note.lcd' : 'txb.note'; note.textContent = t(note.dataset.i18n);
   $('#txb-title').textContent = t('txb.title', cv('dev.' + d.id, 'name', d.name));
@@ -4265,20 +4273,24 @@ function txbDraw(c, t, sel) {
   });
   if (B.lcd) { x.beginPath(); x.rect(0, 0, W, H); x.arc(W / 2, H / 2, Math.min(W, H) / 2, 0, 2 * Math.PI); x.fillStyle = '#000'; x.fill('evenodd'); }   // a round screen
 }
-// an animation or a video is drawn each frame; a still picture again only when what it shows changed
+// a video or an animation runs a loop and draws each new frame of its source; a still is drawn once per txbMark
+// (every change of the scene marks it: txbClamp, txbMove, txbSel, txbLayers, the layer fields)
 function txbLoop() {
-  const B = TXB; if (!B || B.busy) return;
-  cancelAnimationFrame(B.raf); if (document.body.classList.contains('idle')) return;   // decorWake starts it again
-  B.raf = requestAnimationFrame(txbLoop);   // one loop, also when called again by hand
-  const s = B.src, c = $('#txb-stage'), bm = B.layers.map(l => l.bmp);
-  const sig = JSON.stringify([B.layers.map(l => [l.text, l.color, l.size, l.x, l.y]), B.sel, B.z, B.cx, B.cy, B.lcd, c.width, c.height]);
-  if (!(s && (s.el || s.frames)) && sig === B.sig && s === B.ds && bm.length === B.db.length && bm.every((b, i) => b === B.db[i])) return;
-  B.sig = sig; B.ds = s; B.db = bm; B.draws = (B.draws || 0) + 1;
-  txbDraw(c, (performance.now() - B.t0) / 1000, 1);
+  const B = TXB; if (!B) return;
+  cancelAnimationFrame(B.raf); B.raf = 0;   // one loop, also when called again by hand
+  if (B.busy || document.body.classList.contains('idle')) return;   // decorWake starts it again
+  const s = B.src, tt = (performance.now() - B.t0) / 1000;
+  if (s && (s.el || s.frames)) B.raf = requestAnimationFrame(txbLoop);
+  const fr = s?.el ? s.el.currentTime : s?.frames ? txbFrame(s, tt) : null;
+  if (!B.dirty && fr === B.df) return;
+  B.dirty = 0; B.df = fr; B.draws = (B.draws || 0) + 1;
+  txbDraw($('#txb-stage'), tt, 1);
 }
+function txbMark() { const B = TXB; if (!B) return; B.dirty = 1; if (!B.raf) B.raf = requestAnimationFrame(txbLoop); }
 function txbSize() { const [w, h] = TXB_SHAPES[TXB.shape], c = $('#txb-stage'); c.width = 640; c.height = Math.round(640 * h / w); txbClamp(); }
 // the picture always covers the frame: its centre stays where no edge shows
 function txbClamp() {
+  txbMark();
   const B = TXB, s = B.src, c = $('#txb-stage'); if (!s) return;
   const k = txbCover(s, c.width, c.height), hx = c.width / 2 / (s.w * k), hy = c.height / 2 / (s.h * k);
   B.cx = Math.min(1 - hx, Math.max(hx, B.cx)); B.cy = Math.min(1 - hy, Math.max(hy, B.cy));
@@ -4286,6 +4298,7 @@ function txbClamp() {
 function txbZoom(z) { const r = $('#txb-zoom'); TXB.z = Math.max(1, Math.min(4, z)); r.value = Math.round(TXB.z * 100); fill(r); txbClamp(); }
 // du, dv: fractions of the frame; the chosen layer moves, else the picture under the frame
 function txbMove(du, dv) {
+  txbMark();
   const B = TXB, l = B.layers[B.sel], s = B.src, c = $('#txb-stage');
   if (l) { l.x = Math.min(1, Math.max(0, l.x + du)); l.y = Math.min(1, Math.max(0, l.y + dv)); return; }
   if (!s) return;
@@ -4293,6 +4306,7 @@ function txbMove(du, dv) {
   B.cx -= du * c.width / (s.w * k); B.cy -= dv * c.height / (s.h * k); txbClamp();
 }
 function txbLayers() {
+  txbMark();
   const B = TXB, X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   $('#txb-layers').innerHTML = B.layers.map((l, i) => `<div class="txb-layer${i === B.sel ? ' on' : ''}" data-i="${i}">
     ${l.text != null ? `<input type="text" class="txb-text" maxlength="60" spellcheck="false" value="${esc(l.text)}" aria-label="${esc(t('txb.text'))}"><input type="color" class="txb-color" value="${l.color}" aria-label="${esc(t('txb.color'))}">`
@@ -4302,7 +4316,7 @@ function txbLayers() {
   $('#txb-layers').querySelectorAll('.range').forEach(fill);
   $('#txb-text').disabled = $('#txb-pic').disabled = B.layers.length >= 8;
 }
-const txbSel = i => { TXB.sel = i; $('#txb-layers').querySelectorAll('.txb-layer').forEach(r => r.classList.toggle('on', +r.dataset.i === i)); };
+const txbSel = i => { TXB.sel = i; txbMark(); $('#txb-layers').querySelectorAll('.txb-layer').forEach(r => r.classList.toggle('on', +r.dataset.i === i)); };
 // the smallest mp4 a player takes: one H.264 track (WebCodecs chunks in avc form, avcc = its avcC), moov first, one chunk in mdat;
 // the last frame lasts to the animation's end (dur, s): frames come slower when the window is hidden
 function txbMp4(w, h, avcc, chunks, dur) {
@@ -4482,7 +4496,7 @@ async function txbMake() {
   finally {
     if (enc && enc.state !== 'closed') enc.close();
     if (vid && s.el) { s.el.loop = true; s.el.play().catch(() => {}); }
-    B.rec = false; B.stop = 0; B.sig = ''; busy(0); txbLayers(); txbLoop();
+    B.rec = false; B.stop = 0; B.dirty = 1; busy(0); txbLayers(); txbLoop();
   }
 }
 let TXB_REQ = 0;
@@ -4505,6 +4519,7 @@ $('#txb-layers').addEventListener('input', e => {
   if (e.target.classList.contains('txb-text')) l.text = e.target.value;
   if (e.target.classList.contains('txb-color')) l.color = e.target.value;
   if (e.target.classList.contains('txb-size')) { l.size = +e.target.value; fill(e.target); }
+  txbMark();
 });
 $('#txb-layers').addEventListener('focusin', e => txbSel(+e.target.closest('.txb-layer').dataset.i));
 $('#txb-layers').addEventListener('click', e => {
@@ -5496,7 +5511,24 @@ function homeAttn() {
   const leave = cfList('leave');
   for (const x of (S.cf || {}).a || [])
     if (x.run && cfDev(x) === 'held' && !leave.includes(x.id)) r.push({ n: x.name, kind: t('cf.w.' + x.w), why: t('cf.dev.held'), help: 'conflict', extra: 'cf' });
-  return [...homeCool(), ...r];
+  // not finished (as Check for problems has them): the settings not on disk, a profile action that failed, fans not given back
+  if (S.unsaved) r.push({ n: t('home.unsaved'), kind: t('dchk.c.left'), why: t('home.unsaved.why'), extra: 'save' });
+  const e = S.prof || {}, pe = PROF_ERR[e.err];
+  if (pe && pe !== 'full') r.push({ n: t('prof.label'), kind: t('dchk.c.left'), why: t('prof.err.' + pe, cv(profSec(e.id), 'name', '') || '#' + e.id, PROFILE_MAX), extra: 'prof' });
+  const F = S.fans || {}, wd = F.wd || [];
+  [0, 1].forEach(k => { if (wd[k] === 2 || wd[k] === 3) r.push({ n: k ? t('fans.wd.board') : 'QUADRO', kind: t('dchk.c.left'), why: t(wd[k] === 2 ? 'fans.wd.busy' : 'fans.wd.fail', k ? t('fans.wd.board') : 'QUADRO', F.rfail || 1), help: 'fans', tab: 'fans' }); });
+  return [...homeCool(), ...homeGroup(r)];
+}
+// one cause, one row: devices waiting for the same reason are named together, and Open then goes to Devices
+function homeGroup(r) {
+  const out = [];
+  for (const x of r) {
+    const key = [x.kind, x.why, x.extra, x.help].join('|'), g = out.find(y => y.key === key);
+    if (!g) out.push(Object.assign({ key, names: [x.n] }, x));
+    else { g.names.push(x.n); g.h = null; g.tab = 'devices'; }
+  }
+  for (const g of out) if (g.names.length > 1) g.n = g.names.length > 3 ? g.names.slice(0, 2).join(', ') + ' ' + t('home.more', g.names.length - 2) : g.names.join(', ');
+  return out;
 }
 // the fans that need a look, the worst first, as their tiles tell it: the QUADRO's lost link once for all its channels
 // (the board's go on reading), then each channel in emergency, not taken or driven with no rpm read (not a no-tach one)
@@ -5523,7 +5555,7 @@ function updateHome() {
   const a = homeAttn(), btn = (k, v, txt, cls) => `<button class="btn small${cls || ' ghost'}" type="button" data-${k}="${esc(v)}"><span>${txt}</span></button>`;
   const html = a.map((x, i) => `<div class="found-row" data-i="${i}"><span class="kind">${esc(x.kind)}</span>
     <div class="what"><b>${esc(x.n)}</b><small>${esc(x.why)}</small></div>
-    <span class="added">${x.h || x.fan ? btn('a', 'open', t('home.open'), ' ') : ''}${x.extra === 'retry' ? btn('a', 'retry', t('dev.retry')) : ''}${x.extra === 'cf' ? btn('a', 'cf', t('cf.title')) : ''}${btn('help', x.help, t('help.open'))}</span></div>`).join('');
+    <span class="added">${x.h || x.fan || x.tab ? btn('a', 'open', t('home.open'), ' ') : ''}${x.extra === 'retry' ? btn('a', 'retry', t('dev.retry')) : ''}${x.extra === 'cf' ? btn('a', 'cf', t('cf.title')) : ''}${x.extra === 'save' ? btn('a', 'save', t('home.save.again'), ' ') : ''}${x.extra === 'prof' ? btn('a', 'prof', t('prof.label')) : ''}${x.help ? btn('help', x.help, t('home.why')) : ''}</span></div>`).join('');
   const L = $('#home-attn-list');
   if (L.dataset.html !== html) { L.dataset.html = html; L.innerHTML = html; HOME.attn = a; }
   $('#home-attn').classList.toggle('hidden', !a.length);
@@ -5543,8 +5575,10 @@ $('#home-attn-list').addEventListener('click', e => {
   const b = e.target.closest('button[data-a]'); if (!b) return;
   const x = HOME.attn[+b.closest('[data-i]').dataset.i]; if (!x) return;
   if (b.dataset.a === 'open' && x.fan) fanOpen(x.fan, b);
-  else if (b.dataset.a === 'open') { const r = b.getBoundingClientRect(); openSheet(x.h, r.left + r.width / 2, r.top); }
-  else if (b.dataset.a === 'retry') { b.disabled = true; setTimeout(() => { b.disabled = false; }, 3000); send({ cmd: 'dev_retry' }); }
+  else if (b.dataset.a === 'open' && x.h) { const r = b.getBoundingClientRect(); openSheet(x.h, r.left + r.width / 2, r.top); }
+  else if (b.dataset.a === 'open') showTab(x.tab);
+  else if (b.dataset.a === 'retry' || b.dataset.a === 'save') { b.disabled = true; setTimeout(() => { b.disabled = false; }, 3000); send({ cmd: b.dataset.a === 'save' ? 'save_retry' : 'dev_retry' }); }
+  else if (b.dataset.a === 'prof') $('#prof-btn').click();
   else if (b.dataset.a === 'cf') go('cf');
 });
 $('#home-cool').addEventListener('click', () => showTab('fans'));
@@ -5726,6 +5760,7 @@ function gdBody(s) {
     if (d && !GUIDE.test) GUIDE.dev = d.id;
     if (GUIDE.test && S.test === GUIDE.test) GUIDE.seen = 1;
     else if (GUIDE.test && GUIDE.seen) gdTestEnd('core');   // the core ended it (its minute, a layout change), not the page
+    if (GUIDE.test && typeof GUIDE.dev === 'number' && !devById(GUIDE.dev)?.online) gdTestEnd();   // lost or removed meanwhile
     const on = GUIDE.test && S.test === GUIDE.test;
     const not = [...gdDirect().filter(x => x.why).map(x => row(x.kind, x.name, x.why, b('card', t('gd.t.card'), ' ghost', ` data-id="${x.id}"`))), ...S.ext.devs.filter(x => gdWhyNot(x)).map(x => row(kindTitle(x.kind), x.name, gdWhyNot(x), b('card', t('gd.t.card'), ' ghost', ` data-id="${x.id}"`))),
       ...S.bulbs.map((x, i) => row(t('chip.lamps'), bulbName(i), t('gd.t.page'), b('tab-bulbs', t('home.open')))),
@@ -6559,6 +6594,7 @@ function applyStatus(m) {
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
   updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck();
   if (nanoLayoutChanged) drawAll();
+  cmpWake();
 }
 
 if (wv) wv.addEventListener('message', e => {
@@ -6566,7 +6602,7 @@ if (wv) wv.addEventListener('message', e => {
   if (m.type === 'frame') onFrame(m.l);
   else if (m.type === 'focus') document.body.classList.toggle('idle', !m.on);   // behind other windows: endless animations pause
   else if (m.type === 'status') applyStatus(m);
-  else if (m.type === 'go') helpOpen('');   // the tray's Help
+  else if (m.type === 'go') { if (m.to === 'settings') showTab('settings'); else helpOpen(''); }   // the tray's Settings or Help
   else if (m.type === 'tryx_built') { if (TXB?.wait?.req === m.req) TXB.wait.done(m); }
   else if (m.type === 'comp_done') cmpDone(m);
   else if (m.type === 'draft_done') draftDone(m);

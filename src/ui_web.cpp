@@ -33,7 +33,7 @@ static HWND wnd;
 static ComPtr<ICoreWebView2Environment> env;
 static ComPtr<ICoreWebView2Controller> ctrl;
 static ComPtr<ICoreWebView2> web;
-static bool go_help;                     // the tray's Help: the page opens it once it has said hello
+static const char *go_to;                // the tray's Help or Settings: the page goes there once it has said hello
 static bool page_ready;                  // the page has said hello; messages can be posted
 static const COLORREF BG = RGB(10, 10, 10);
 
@@ -53,6 +53,11 @@ static std::string narrow(const wchar_t *s) {
 
 static void post(const char *json) {
     if (web && page_ready) web->PostWebMessageAsJson(widen(json).c_str());
+}
+static void post_go(void) {   // go_to is one of the fixed names below, never the page's text
+    if (!go_to) return;
+    char m[64]; snprintf(m, sizeof(m), "{\"type\":\"go\",\"to\":\"%s\"}", go_to);
+    go_to = NULL; post(m);
 }
 
 static char *big_buf(void) {
@@ -195,10 +200,10 @@ static bool other_profile(const std::string &p, const char *sec, const char *key
 
 static void on_message(const std::string &js) {
     std::string cmd = field(js, "cmd");
-    if (cmd == "hello") { page_ready = true; send_state(); post_focus(GetForegroundWindow() == wnd); if (go_help) { go_help = false; post("{\"type\":\"go\",\"to\":\"help\"}"); } }
+    if (cmd == "hello") { page_ready = true; send_state(); post_focus(GetForegroundWindow() == wnd); post_go(); }
     else if (cmd == "get") send_state();
     else if (cmd == "frames") { bool was = live_view; live_view = field(js, "live") == "1"; if (live_view && !was && !IsIconic(wnd)) post_frame(); }   // the picture at once, not at the next tick
-    else if (cmd == "effect") { app_set_effect(effect_index(field(js, "id").c_str())); post_status(); }
+    else if (cmd == "effect") { std::string id = field(js, "id"); app_fx_recent(id.c_str()); app_set_effect(effect_index(id.c_str())); post_status(); }
     else if (cmd == "brightness") { app_set_brightness(atoi(field(js, "v").c_str()) / 100.0f, 0); app_save_soon(); }
     else if (cmd == "set") {
         std::string s = field(js, "s"), k = field(js, "k");
@@ -366,6 +371,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "backup_load") { backup_load(wnd); post_state(); }
     else if (cmd == "pro_key") { pro_set_key(field(js, "key").c_str()); post_status(); }
     else if (cmd == "diag") { diag_save(); post_status(); }
+    else if (cmd == "save_retry") { cfg_save_if_dirty(); post_status(); }   // Home's "Save again" after a failed write
     else if (cmd == "report_seen") diag_fixed_seen(field(js, "id").c_str());
     else if (cmd == "report") { diag_report(field(js, "text").c_str(), field(js, "contact").c_str(), field(js, "install").c_str(), field(js, "attach") != "0"); post_status(); }
     else if (cmd == "update_install") { update_install(); post_status(); }
@@ -600,11 +606,12 @@ extern "C" void ui_open(HINSTANCE inst) {
     SetTimer(wnd, STATUS_TIMER, 1000, NULL);
 }
 
-extern "C" void ui_open_help(HINSTANCE inst) {
-    go_help = true;
+extern "C" void ui_open_at(HINSTANCE inst, const char *to) {
+    go_to = to;
     ui_open(inst);
-    if (page_ready) { go_help = false; post("{\"type\":\"go\",\"to\":\"help\"}"); }
+    if (page_ready) post_go();
 }
+extern "C" void ui_open_help(HINSTANCE inst) { ui_open_at(inst, "help"); }
 
 extern "C" void ui_refresh(void) { if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 0, 0); tray_refresh(); }
 extern "C" void ui_refresh_state(void) { InterlockedIncrement(&g_state_rev); if (wnd) PostMessageW(wnd, WM_UI_REFRESH, 1, 0); tray_refresh(); }

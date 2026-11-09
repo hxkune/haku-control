@@ -55,11 +55,13 @@ void        cfg_set(const char *section, const char *key, const char *value);
 void        cfg_set_many(const char *section, const char *const *kv, int n);   // n pairs, one change
 void        cfg_get_many(const char *section, const char *const *keys, int n, char (*vals)[256]);   // read together; "" when not there
 int         cfg_save_if_dirty(void);   // 0: the file could not be written (the old one is left as it was)
+int         cfg_unsaved(void);         // 1: the last write failed, changes are only in memory until a write goes through
 void        cfg_set_and_save(const char *section, const char *key, const char *value);
 int         cfg_palette(const char *section, rgbf *out, int max);
 const wchar_t *cfg_path(void);
 int         cfg_json(char *out, int cap);   // whole config as {"section":{"key":"value"}}
 void        cfg_remove_section(const char *section);
+void        cfg_list_front(const char *section, const char *key, const char *item, int max);   // a recent-first list
 typedef struct { char key[64], val[256]; } cfg_item;
 int         cfg_items(const char *section, cfg_item *out, int max);      // a section's keys, copied
 int         cfg_sections(const char *prefix, char (*out)[64], int max);  // section names starting with prefix
@@ -284,6 +286,7 @@ int   app_ru(void);                      // [general] lang=ru (English otherwise
 int   app_lang(void);                    // [general] lang: 0 English, 1 Russian (ru), 2 French (fr)
 #define TR(en, ru, fr) (app_lang() == 1 ? (ru) : app_lang() == 2 ? (fr) : (en))
 void  app_set_effect(int fx);
+void  app_fx_recent(const char *id);   // a user's pick, kept for the tray (memory; set_effect saves it)
 #define PRESET_MAX 32
 int   app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
                       const char *brightness, const char *zones, int fx_cur,
@@ -376,6 +379,7 @@ HICON app_icon(int big);
 // ---- ui_web.cpp: settings window, exists only while open
 void  ui_open(HINSTANCE inst);
 void  ui_open_help(HINSTANCE inst);       // the window, on its Help card
+void  ui_open_at(HINSTANCE inst, const char *to);   // ... on a page: "help" or "settings" (a literal)
 void  ui_refresh(void);                 // effect/brightness changed elsewhere (hotkey, tray)
 int   ui_is_dialog_message(MSG *m);
 

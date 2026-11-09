@@ -15,7 +15,7 @@
 typedef struct ext_dev ext_dev;
 
 // A device's short history, shown on its card (devices.c dev_event): what happened, when, how many times in a row
-enum { EV_ONLINE = 1, EV_BACK, EV_FAIL, EV_LOST, EV_CAP, EV_LET };
+enum { EV_ONLINE = 1, EV_BACK, EV_FAIL, EV_LOST, EV_CAP, EV_LET, EV_BUSY };   // EV_BUSY: another program has it (a conflict)
 #define EXT_EV 8
 typedef struct { unsigned t; unsigned char code, a, n; } ext_ev;   // t: time(); a: EV_CAP the CAP_*, EV_LET the LEAVE_*
 
@@ -98,6 +98,12 @@ static inline void ext_event(ext_dev *d, int code, int a) {
     if (l && l->code == code && l->a == a) { if (l->n < 255) l->n++; l->t = (unsigned)time(NULL); return; }
     if (d->nev == EXT_EV) { memmove(d->ev, d->ev + 1, sizeof(d->ev) - sizeof(d->ev[0])); d->nev--; }
     d->ev[d->nev++] = (ext_ev){ (unsigned)time(NULL), (unsigned char)code, (unsigned char)a, 1 };
+}
+
+// A failed connect: refused because another program has the device (the driver's info "<who> busy") or just failed
+static inline int ext_fail_ev(const char *info) {
+    size_t n = info ? strlen(info) : 0;
+    return n >= 5 && !strcmp(info + n - 5, " busy") ? EV_BUSY : EV_FAIL;
 }
 
 // A finished connect (devices.c), the device copy it ran on (res) against the devices now: the index that takes it

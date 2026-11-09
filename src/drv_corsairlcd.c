@@ -98,12 +98,14 @@ static int cl_feature(HANDLE hf, int len, unsigned char cmd, unsigned char v) {
     return hf && hf != INVALID_HANDLE_VALUE && feat_ok(len) && SET_FEATURE(hf, b, (ULONG)len);
 }
 
-#ifndef CORSAIR_LCD_TEST
 typedef struct { unsigned char *buf; DWORD n; int nfr; cl_frame fr[CL_FRAMES]; } cl_pack;
 
 typedef struct {
     HANDLE h, hf;                  // the output collection; the one with the feature reports (may be the same)
-    OVERLAPPED ow; HANDLE wake;
+    OVERLAPPED ow, orr;            // the write's and the read's
+    HANDLE wake, quit;             // quit: set on stop, it ends a write that is being waited for
+    unsigned char wb[4096], rb[1024];   // their buffers: the device has them until the I/O completes
+    int wpend;                     // an I/O did not complete even cancelled: nothing more goes out, cl_close keeps u
     int out_len, feat_len, m;
     HANDLE th; volatile LONG stop, dark, br, err, end_dark;   // end_dark: the thread's last frame is the black one
     int took;                      // the thread ran: the screen was haku's, so it is given back
@@ -114,6 +116,126 @@ typedef struct {
     char key[MAX_PATH * 3 + 16];   // [dev.N] media|media_at last loaded
 } cl_t;
 
+#ifdef CORSAIR_LCD_TEST
+static BOOL fk_write(HANDLE h, LPCVOID b, DWORD n, LPDWORD wr, LPOVERLAPPED o);
+static BOOL fk_cancel(HANDLE h, LPOVERLAPPED o);
+#define IO_WRITE  fk_write
+#define IO_CANCEL fk_cancel
+static DWORD cl_write_ms = 1000, cl_cancel_ms = 3000, cl_br_retry_ms = 1000;
+#else
+#define IO_WRITE  WriteFile
+#define IO_CANCEL CancelIoEx
+static const DWORD cl_write_ms = 1000, cl_cancel_ms = 3000, cl_br_retry_ms = 1000;
+#endif
+
+// An overlapped I/O cancelled, then waited for until the device lets go of it (the kernel writes its OVERLAPPED and
+// buffer until then). 0: it did not within cl_cancel_ms; u->wpend says so, and that memory is never freed.
+static int cancel_wait(cl_t *u, OVERLAPPED *o) {
+    IO_CANCEL(u->h, o);
+    if (WaitForSingleObject(o->hEvent, cl_cancel_ms) == WAIT_OBJECT_0) return 1;
+    u->wpend = 1;
+    logf_("corsairlcd: an I/O did not end %lu ms after it was cancelled: the screen is let go of", cl_cancel_ms);
+    return 0;
+}
+
+// One report out, whole. 0: refused, unplugged (ERROR_DEVICE_NOT_CONNECTED), short, too slow (cl_write_ms) or, when
+// stoppable, stopped (u->quit). Never returns while the device still has u->wb, unless u->wpend is set.
+static int write_rep(cl_t *u, const unsigned char *rep, int stoppable) {
+    DWORD wr = 0;
+    if (u->wpend) return 0;
+    memcpy(u->wb, rep, CL_REP); memset(u->wb + CL_REP, 0, sizeof(u->wb) - CL_REP);
+    ResetEvent(u->ow.hEvent);
+    u->ow.Offset = u->ow.OffsetHigh = 0;
+    if (!IO_WRITE(u->h, u->wb, u->out_len, NULL, &u->ow) && GetLastError() != ERROR_IO_PENDING) return 0;
+    HANDLE w[2] = { u->ow.hEvent, u->quit };
+    if (WaitForMultipleObjects(stoppable ? 2 : 1, w, FALSE, cl_write_ms) != WAIT_OBJECT_0) {
+        if (cancel_wait(u, &u->ow)) GetOverlappedResult(u->h, &u->ow, &wr, FALSE);
+        SetLastError(ERROR_TIMEOUT);
+        return 0;
+    }
+    if (!GetOverlappedResult(u->h, &u->ow, &wr, FALSE)) return 0;
+    if (wr != (DWORD)u->out_len) { logf_("corsairlcd: %lu of %d bytes written", wr, u->out_len); SetLastError(ERROR_WRITE_FAULT); return 0; }
+    return 1;
+}
+
+static int feature(cl_t *u, unsigned char cmd, unsigned char v) { return cl_feature(u->hf, u->feat_len, cmd, v); }
+
+static int show(cl_t *u, const cl_pack *p, int f, int stoppable) {
+    unsigned char rep[CL_REP];
+    for (int i = 0, count = 1; i < count; i++) {
+        if ((stoppable && u->stop) || (count = cl_chunk(rep, MODELS[u->m].fam, p->buf + p->fr[f].off, (int)p->fr[f].len, i)) < 0 || !write_rep(u, rep, stoppable)) return 0;
+    }
+    return 1;
+}
+
+static void free_pack(cl_pack *p) { if (p) { free(p->buf); free(p); } }
+
+// What the screen sends back after a frame (it has 512-byte input reports): the first answers go to the log, as the
+// only sign of how it took the picture (report 711704f653: frames went, the picture did not change)
+static void hear(cl_t *u) {
+    DWORD got = 0;
+    if (u->wpend) return;
+    ResetEvent(u->orr.hEvent);
+    u->orr.Offset = u->orr.OffsetHigh = 0;
+    int ok = ReadFile(u->h, u->rb, sizeof(u->rb), NULL, &u->orr) || GetLastError() == ERROR_IO_PENDING;
+    if (ok && WaitForSingleObject(u->orr.hEvent, 100) != WAIT_OBJECT_0) { ok = 0; cancel_wait(u, &u->orr); }
+    if (!ok || !GetOverlappedResult(u->h, &u->orr, &got, FALSE)) got = 0;
+    char hex[3 * 32 + 1] = "";
+    for (DWORD i = 0; i < got && i < 32; i++) snprintf(hex + 3 * i, 4, "%02x ", u->rb[i]);
+    if (got) logf_("corsairlcd: the screen answered %lu bytes: %s", got, hex);
+    else logf_("corsairlcd: no answer from the screen within 100 ms");
+    u->heard++;
+}
+
+// The thread that has the screen while there is a pack: all writes go from here, one frame at a time.
+// An animation keeps its own clock (due, monotonic), so the time a frame takes to go counts towards its delay.
+// Behind: the next one goes at once and the clock starts again from now, so frames never go in a burst to catch up
+// (while the link is slower than the animation, it plays slower). A still (or dark) goes again CL_STILL after the
+// last one went, as before.
+// The backlight counts as sent only once the screen took it: a refused one is tried again, with the latest value,
+// every cl_br_retry_ms at most, and logged once until it goes.
+static DWORD WINAPI stream(void *arg) {
+    cl_t *u = arg;
+    cl_pack *p = NULL; int f = 1, sent_br = -1, br_fails = 0;
+    ULONGLONG due = 0, br_at = 0;
+    if (MODELS[u->m].rot && !feature(u, 0x0c, 0x00)) logf_("corsairlcd: the rotation was not set (error %lu)", GetLastError());
+    while (!u->stop) {
+        cl_pack *nx = InterlockedExchangePointer((PVOID volatile *)&u->next, NULL);
+        if (nx) { free_pack(p); p = nx; f = 1; due = 0; }
+        int br = u->dark ? 0 : u->br;
+        ULONGLONG now = GetTickCount64();
+        if (MODELS[u->m].br && br != sent_br && p && now >= br_at) {
+            if (feature(u, 0x0b, (unsigned char)br)) {
+                if (br_fails) logf_("corsairlcd: the backlight went after %d refusal(s)", br_fails);
+                sent_br = br; br_fails = 0;
+            } else {
+                if (!br_fails++) logf_("corsairlcd: the backlight was not set (error %lu), it is tried again", GetLastError());
+                br_at = now + cl_br_retry_ms;
+            }
+        }
+        if (!p) { WaitForSingleObject(u->wake, 200); continue; }
+        int dark = u->dark, still = dark || p->nfr == 2, k = dark ? 0 : f;
+        if (still) due = 0;
+        else if (due > now) { WaitForSingleObject(u->wake, (DWORD)(due - now)); continue; }   // woken before its time
+        else if (!due) due = now;
+        if (!show(u, p, k, 1)) { if (!u->stop) { u->err = 1; logf_("corsairlcd: a frame did not go (error %lu)", GetLastError()); } break; }
+        if (u->heard < 3) hear(u);
+        DWORD wait = CL_STILL;
+        if (!still) {
+            due += p->fr[k].delay; now = GetTickCount64();
+            if (now > due) due = now;
+            wait = due > now ? (DWORD)(due - now) : 0;
+            if (++f >= p->nfr) f = 1;
+        }
+        // set on stop, a new pack, a dark / light or backlight change; a retry of the backlight waits for the next frame
+        WaitForSingleObject(u->wake, wait);
+    }
+    if (u->end_dark && p && !u->err) show(u, p, 0, 0);
+    free_pack(p);
+    return 0;
+}
+
+#ifndef CORSAIR_LCD_TEST
 // a program that drives the screen itself, by exe name (as link.c's owner)
 static int in_way(char *app, int cap) {
     PROCESSENTRY32W pe = { sizeof(pe) };
@@ -165,72 +287,6 @@ static int list_ifs(cl_if *v, int max) {
     return n;
 }
 
-static int write_rep(cl_t *u, const unsigned char *rep) {
-    unsigned char b[4096] = { 0 }; DWORD wr = 0;
-    memcpy(b, rep, CL_REP);
-    ResetEvent(u->ow.hEvent);
-    if (!WriteFile(u->h, b, u->out_len, &wr, &u->ow)) {
-        if (GetLastError() != ERROR_IO_PENDING) return 0;
-        if (WaitForSingleObject(u->ow.hEvent, 1000) != WAIT_OBJECT_0) { CancelIoEx(u->h, &u->ow); WaitForSingleObject(u->ow.hEvent, 100); return 0; }
-        if (!GetOverlappedResult(u->h, &u->ow, &wr, FALSE)) return 0;
-    }
-    return 1;
-}
-
-static int feature(cl_t *u, unsigned char cmd, unsigned char v) { return cl_feature(u->hf, u->feat_len, cmd, v); }
-
-static int show(cl_t *u, const cl_pack *p, int f, int stoppable) {
-    unsigned char rep[CL_REP];
-    for (int i = 0, count = 1; i < count; i++) {
-        if ((stoppable && u->stop) ||(count = cl_chunk(rep, MODELS[u->m].fam, p->buf + p->fr[f].off, (int)p->fr[f].len, i)) < 0 || !write_rep(u, rep)) return 0;
-    }
-    return 1;
-}
-
-static void free_pack(cl_pack *p) { if (p) { free(p->buf); free(p); } }
-
-// What the screen sends back after a frame (it has 512-byte input reports): the first answers go to the log, as the
-// only sign of how it took the picture (report 711704f653: frames went, the picture did not change)
-static void hear(cl_t *u) {
-    unsigned char b[1024]; DWORD got = 0; OVERLAPPED o = { 0 };
-    if (!(o.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL))) return;
-    int ok = ReadFile(u->h, b, sizeof(b), &got, &o) ||
-             (GetLastError() == ERROR_IO_PENDING && WaitForSingleObject(o.hEvent, 100) == WAIT_OBJECT_0 && GetOverlappedResult(u->h, &o, &got, FALSE));
-    if (!ok) { CancelIoEx(u->h, &o); GetOverlappedResult(u->h, &o, &got, TRUE); got = 0; }
-    CloseHandle(o.hEvent);
-    char hex[3 * 32 + 1] = "";
-    for (DWORD i = 0; i < got && i < 32; i++) snprintf(hex + 3 * i, 4, "%02x ", b[i]);
-    if (got) logf_("corsairlcd: the screen answered %lu bytes: %s", got, hex);
-    else logf_("corsairlcd: no answer from the screen within 100 ms");
-    u->heard++;
-}
-
-// The thread that has the screen while there is a pack: all writes go from here, one frame at a time
-static DWORD WINAPI stream(void *arg) {
-    cl_t *u = arg;
-    cl_pack *p = NULL; int f = 1, sent_br = -1;
-    if (MODELS[u->m].rot && !feature(u, 0x0c, 0x00)) logf_("corsairlcd: the rotation was not set (error %lu)", GetLastError());
-    while (!u->stop) {
-        cl_pack *nx = InterlockedExchangePointer((PVOID volatile *)&u->next, NULL);
-        if (nx) { free_pack(p); p = nx; f = 1; }
-        int br = u->dark ? 0 : u->br;
-        if (MODELS[u->m].br && br != sent_br && p) {
-            if (!feature(u, 0x0b, (unsigned char)br)) logf_("corsairlcd: the backlight was not set (error %lu)", GetLastError());
-            sent_br = br;
-        }
-        if (!p) { WaitForSingleObject(u->wake, 200); continue; }
-        int k = u->dark ? 0 : f;
-        if (!show(u, p, k, 1)) { if (!u->stop) { u->err = 1; logf_("corsairlcd: a frame did not go (error %lu)", GetLastError()); } break; }
-        if (u->heard < 3) hear(u);
-        int still = u->dark || p->nfr == 2, wait = still ? CL_STILL : p->fr[k].delay;
-        if (!u->dark && ++f >= p->nfr) f = 1;
-        WaitForSingleObject(u->wake, wait);   // set on stop, a new pack and a dark / light change
-    }
-    if (u->end_dark && p && !u->err) show(u, p, 0, 0);
-    free_pack(p);
-    return 0;
-}
-
 static void cl_close(ext_dev *d);
 
 static int cl_open(ext_dev *d) {
@@ -247,11 +303,12 @@ static int cl_open(ext_dev *d) {
         u->feat_len = v[fi].feat;
         u->hf = fi == oi ? u->h : CreateFileW(v[fi].path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
     }
-    u->ow.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL); u->wake = CreateEventW(NULL, FALSE, FALSE, NULL);
+    u->ow.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL); u->orr.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    u->wake = CreateEventW(NULL, FALSE, FALSE, NULL); u->quit = CreateEventW(NULL, TRUE, FALSE, NULL);
     logf_("corsairlcd: %s %04X #%d: output %d bytes, feature %d bytes%s", MODELS[m].name, pid, d->sub, u->out_len, u->feat_len,
           fi < 0 ? " (none: no backlight, nothing to give back)" : fi == oi ? "" : " (another collection)");
     free(v);
-    if (u->h == INVALID_HANDLE_VALUE || !u->ow.hEvent || !u->wake) {
+    if (u->h == INVALID_HANDLE_VALUE || !u->ow.hEvent || !u->orr.hEvent || !u->wake || !u->quit) {
         logf_("corsairlcd: %04X cannot be opened (error %lu)", pid, GetLastError()); cl_close(d); return 0;
     }
     char nth[8] = ""; if (d->sub > 0) snprintf(nth, sizeof(nth), " %d", d->sub + 1);
@@ -306,8 +363,10 @@ static int cl_send(ext_dev *d, const rgbf *c, int n) {
 
 static void stop_thread(cl_t *u) {
     if (!u->th) return;
-    u->stop = 1; SetEvent(u->wake);
-    WaitForSingleObject(u->th, INFINITE);   // a write gives up within a second
+    u->stop = 1; SetEvent(u->quit); SetEvent(u->wake);
+    // every wait of the thread is bounded: a write being waited for ends at once (quit), its cancel within
+    // cl_cancel_ms, then the black frame (end_dark) at most cl_write_ms + cl_cancel_ms a chunk: ~7 s at worst
+    WaitForSingleObject(u->th, INFINITE);
     CloseHandle(u->th); u->th = NULL;
 }
 
@@ -335,13 +394,19 @@ static void cl_close(ext_dev *d) {
     cl_t *u = d->priv;
     if (!u) return;
     stop_thread(u);
-    give_back(u, 0);   // lost (send returned 0) or closed without leave: its own display again
-    free_pack(u->next);
+    if (!u->wpend) give_back(u, 0);   // lost (send returned 0) or closed without leave: its own display again
+    free_pack(u->next); u->next = NULL;
     if (u->hf && u->hf != INVALID_HANDLE_VALUE && u->hf != u->h) CloseHandle(u->hf);
     if (u->h && u->h != INVALID_HANDLE_VALUE) { CancelIo(u->h); CloseHandle(u->h); }
+    d->priv = NULL;
+    // shortcut: an I/O the device never ended keeps u (its OVERLAPPED, buffer and event) for good, ~6 KB a time;
+    // a screen that hangs like that is rare, fine until it is not
+    if (u->wpend) { logf_("corsairlcd: an I/O is still pending at close: its memory is kept"); return; }
     if (u->ow.hEvent) CloseHandle(u->ow.hEvent);
+    if (u->orr.hEvent) CloseHandle(u->orr.hEvent);
     if (u->wake) CloseHandle(u->wake);
-    free(u); d->priv = NULL;
+    if (u->quit) CloseHandle(u->quit);
+    free(u);
 }
 
 static void cl_discover(int ms, void (*found)(const disc_t *)) {
@@ -369,10 +434,54 @@ const ext_driver drv_corsairlcd = { "corsairlcd", "Corsair LCD", 2, 0, cl_open, 
 #else   // cl /DCORSAIR_LCD_TEST src\drv_corsairlcd.c
 #include <assert.h>
 static int fk_n, fk_len, fk_fail; static unsigned char fk_b[CL_FEAT];
+static volatile LONG fk_br_n, fk_br_v = -1;   // backlight reports tried, the last one the device took
 static BOOLEAN __stdcall fake_set(HANDLE h, PVOID b, ULONG n) {
     (void)h; fk_n++; fk_len = (int)n; memset(fk_b, 0xEE, sizeof(fk_b)); memcpy(fk_b, b, n <= CL_FEAT ? n : CL_FEAT);
+    if (fk_b[1] == 0x0b) { InterlockedIncrement(&fk_br_n); if (!fk_fail) fk_br_v = fk_b[2]; }
     return !fk_fail;
 }
+void logf_(const char *fmt, ...) { (void)fmt; }
+
+// The fake transport: WriteFile and CancelIoEx as a HID driver does them. A write pends on its own thread, which
+// completes it the way the kernel does (InternalHigh, then Internal, then the event), fk_delay ms later or, once
+// cancelled, fk_cancel_ms later (-1: only when fk_release is set). It checks the buffer was not touched meanwhile.
+static volatile LONG fk_delay = 10, fk_cancel_ms = 0, fk_status = 0, fk_short, fk_sync_err, fk_pending, fk_writes, fk_cancels, fk_spoilt;
+static HANDLE fk_cancel_ev, fk_release;
+static double fk_t0;
+static struct { double t; int mark; } lg[2048];
+static volatile LONG lg_n;
+static double ms(void) { LARGE_INTEGER c, f; QueryPerformanceCounter(&c); QueryPerformanceFrequency(&f); return c.QuadPart * 1000.0 / f.QuadPart - fk_t0; }
+typedef struct { OVERLAPPED *o; const unsigned char *b; DWORD n; unsigned char copy[4096]; } fk_io;
+static DWORD WINAPI fk_done(void *arg) {
+    fk_io *io = arg;
+    int cancelled = WaitForSingleObject(fk_cancel_ev, (DWORD)fk_delay) == WAIT_OBJECT_0;
+    if (cancelled) { if (fk_cancel_ms < 0) WaitForSingleObject(fk_release, INFINITE); else Sleep((DWORD)fk_cancel_ms); }
+    if (memcmp(io->b, io->copy, io->n)) InterlockedIncrement(&fk_spoilt);
+    io->o->InternalHigh = cancelled ? 0 : fk_short ? io->n - 1 : io->n;
+    MemoryBarrier();
+    io->o->Internal = cancelled ? 0xC0000120 : (ULONG_PTR)(ULONG)fk_status;   // STATUS_CANCELLED
+    SetEvent(io->o->hEvent);
+    InterlockedDecrement(&fk_pending);
+    free(io);
+    return 0;
+}
+static BOOL fk_write(HANDLE h, LPCVOID b, DWORD n, LPDWORD wr, LPOVERLAPPED o) {
+    (void)h; (void)wr;
+    const unsigned char *p = b;
+    InterlockedIncrement(&fk_writes);
+    if (!p[4] && lg_n < 2048) { lg[lg_n].t = ms(); lg[lg_n].mark = p[8 + 3]; lg_n++; }   // the first chunk of a frame
+    if (fk_sync_err) { SetLastError((DWORD)fk_sync_err); return FALSE; }
+    fk_io *io = malloc(sizeof(fk_io));
+    io->o = o; io->b = p; io->n = n; memcpy(io->copy, p, n);
+    ResetEvent(fk_cancel_ev);
+    o->Internal = 0x103;   // STATUS_PENDING
+    InterlockedIncrement(&fk_pending);
+    CloseHandle(CreateThread(NULL, 0, fk_done, io, 0, NULL));
+    SetLastError(ERROR_IO_PENDING);
+    return FALSE;
+}
+static BOOL fk_cancel(HANDLE h, LPOVERLAPPED o) { (void)h; (void)o; InterlockedIncrement(&fk_cancels); SetEvent(fk_cancel_ev); return TRUE; }
+
 static cl_frame fr[CL_FRAMES];
 static unsigned char jpg[CL_MAXJPG + CL_DATA], pk[2 * (CL_MAXJPG + 16)];
 static DWORD put(DWORD at, const unsigned char *j, DWORD len, int delay) {
@@ -381,6 +490,122 @@ static DWORD put(DWORD at, const unsigned char *j, DWORD len, int delay) {
     memcpy(pk + at + 6, j, len);
     return at + 6 + len;
 }
+// The writes and the frame clock against the fake transport (no device is opened)
+static cl_t U;
+static HANDLE th;
+static void fresh(void) {
+    while (fk_pending) Sleep(1);
+    HANDLE ow = U.ow.hEvent, q = U.quit, w = U.wake;
+    memset(&U, 0, sizeof(U)); U.ow.hEvent = ow; U.quit = q; U.wake = w; ResetEvent(q);
+    U.h = (HANDLE)(INT_PTR)12; U.hf = (HANDLE)(INT_PTR)16; U.feat_len = 64; U.out_len = CL_REP; U.br = 100; U.heard = 3;
+    fk_delay = 10; fk_cancel_ms = 0; fk_status = 0; fk_short = 0; fk_sync_err = 0; fk_spoilt = 0; fk_fail = 0;
+    fk_br_n = 0; fk_br_v = -1; lg_n = 0;
+    cl_write_ms = 1000; cl_cancel_ms = 3000; cl_br_retry_ms = 1000;
+}
+// frame 0 black (marked B0), then nfr frames marked base, base + 1..., their delays d[0], d[1], d[0]...
+static cl_pack *mk(int base, int nfr, const int *d) {
+    unsigned char j[20] = { 0xFF, 0xD8, 0xFF, 0xB0 };
+    memcpy(pk, "HKLCD1\0\0", 8);
+    DWORD at = put(8, j, 20, 0);
+    for (int i = 0; i < nfr; i++) { j[3] = (unsigned char)(base + i); at = put(at, j, 20, d[i % 2]); }
+    cl_pack *p = calloc(1, sizeof(cl_pack));
+    p->buf = malloc(at); memcpy(p->buf, pk, at); p->n = at;
+    assert((p->nfr = cl_parse(p->buf, p->n, p->fr)) == nfr + 1);
+    return p;
+}
+static void run(cl_pack *p) { U.next = p; th = CreateThread(NULL, 0, stream, &U, 0, NULL); assert(th); }
+static double halt(void) {   // as stop_thread: how long the thread took to end
+    double t = ms();
+    U.stop = 1; SetEvent(U.quit); SetEvent(U.wake);
+    assert(WaitForSingleObject(th, 5000) == WAIT_OBJECT_0);
+    CloseHandle(th); free_pack(U.next); U.next = NULL;
+    t = ms() - t;
+    while (fk_pending) Sleep(1);
+    return t;
+}
+static double period(int from, int to) { assert(to - from >= 3); return (lg[to - 1].t - lg[from].t) / (to - 1 - from); }
+static double mingap(int from, int to) { double m = 1e9; for (int i = from + 1; i < to; i++) if (lg[i].t - lg[i - 1].t < m) m = lg[i].t - lg[i - 1].t; return m; }
+
+static void io_tests(void) {
+    fk_cancel_ev = CreateEventW(NULL, TRUE, FALSE, NULL); fk_release = CreateEventW(NULL, TRUE, FALSE, NULL);
+    U.ow.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL); U.quit = CreateEventW(NULL, TRUE, FALSE, NULL); U.wake = CreateEventW(NULL, FALSE, FALSE, NULL);
+    fk_t0 = ms();
+    unsigned char r[CL_REP]; memset(r, 0x5A, sizeof(r));
+    double t; LONG c0, w0;
+
+    // §1 write_rep. Done at once, done 50 ms later: whole, nothing cancelled, nothing left pending
+    fresh(); fk_delay = 0; assert(write_rep(&U, r, 1) && !fk_pending && !fk_spoilt && !fk_cancels);
+    fresh(); fk_delay = 50; t = ms(); assert(write_rep(&U, r, 1) && ms() - t >= 45 && !fk_pending && !fk_spoilt);
+    // too slow, the cancel ends at once: an error, and the device has let go of the buffer before it returns
+    fresh(); cl_write_ms = 100; fk_delay = 5000; c0 = fk_cancels; t = ms();
+    assert(!write_rep(&U, r, 1) && GetLastError() == ERROR_TIMEOUT && !fk_pending && fk_cancels == c0 + 1 && !U.wpend && ms() - t < 400);
+    // the cancel takes 300 ms (more than the old 100 ms wait): waited for, not left behind
+    fresh(); cl_write_ms = 100; fk_delay = 5000; fk_cancel_ms = 300; t = ms();
+    assert(!write_rep(&U, r, 1) && !fk_pending && !U.wpend && ms() - t >= 380);
+    memset(r, 0x33, sizeof(r)); fk_delay = 10; assert(write_rep(&U, r, 1) && !fk_spoilt);
+    // the cancel never ends: nothing goes out from then on, the buffer is left alone
+    fresh(); cl_write_ms = 100; cl_cancel_ms = 200; fk_delay = 5000; fk_cancel_ms = -1; ResetEvent(fk_release);
+    assert(!write_rep(&U, r, 1) && U.wpend && fk_pending == 1);
+    w0 = fk_writes; assert(!write_rep(&U, r, 1) && fk_writes == w0);
+    SetEvent(fk_release); while (fk_pending) Sleep(1); assert(!fk_spoilt);
+    // unplugged while the write was pending, or at once
+    fresh(); fk_delay = 20; fk_status = (LONG)0xC000009D; assert(!write_rep(&U, r, 1) && GetLastError() == ERROR_DEVICE_NOT_CONNECTED);
+    fresh(); fk_sync_err = ERROR_DEVICE_NOT_CONNECTED; assert(!write_rep(&U, r, 1) && GetLastError() == ERROR_DEVICE_NOT_CONNECTED && !fk_pending);
+    // fewer bytes than the report: not taken as sent
+    fresh(); fk_short = 1; assert(!write_rep(&U, r, 1) && GetLastError() == ERROR_WRITE_FAULT);
+    // stopped while waiting: at once, not after cl_write_ms; the black frame at the end (not stoppable) still goes
+    fresh(); fk_delay = 5000; SetEvent(U.quit); t = ms(); assert(!write_rep(&U, r, 1) && ms() - t < 300 && !fk_pending);
+    fresh(); fk_delay = 50; SetEvent(U.quit); assert(write_rep(&U, r, 0));
+
+    // §12 the frame clock. Sent in 40 ms, 100 ms frames: 100 ms apart (it was 140)
+    static const int d100[2] = { 100, 100 }, dvar[2] = { 60, 140 };
+    int n;
+    fresh(); fk_delay = 40; run(mk(1, 2, d100)); Sleep(1300); halt();
+    t = period(2, lg_n); printf("corsairlcd: 40 ms transfer, 100 ms frames: %.1f ms apart\n", t); assert(t >= 90 && t <= 115);
+    // close to the frame (80 ms): still 100
+    fresh(); fk_delay = 80; run(mk(1, 2, d100)); Sleep(1300); halt();
+    t = period(2, lg_n); printf("corsairlcd: 80 ms transfer: %.1f ms apart\n", t); assert(t >= 90 && t <= 115);
+    // slower than the frame (150 ms): as fast as the link goes; then fast again: no burst to catch up
+    fresh(); fk_delay = 150; run(mk(1, 2, d100)); Sleep(1200); n = lg_n;
+    t = period(1, n); printf("corsairlcd: 150 ms transfer: %.1f ms apart\n", t); assert(t >= 140 && t <= 190);
+    fk_delay = 10; Sleep(800); halt();
+    t = mingap(n - 1, lg_n); printf("corsairlcd: then 10 ms: %.1f ms apart at least\n", t); assert(t >= 80);
+    // varied delays: each frame its own
+    fresh(); fk_delay = 20; run(mk(1, 4, dvar)); Sleep(1500); halt();
+    for (int i = 2; i < lg_n; i++) { double want = dvar[(lg[i - 1].mark - 1) % 2], gap = lg[i].t - lg[i - 1].t; assert(gap >= want - 30 && gap <= want + 30); }
+    // dark: the black frame only, every CL_STILL after the last went, the backlight 0
+    fresh(); U.dark = 1; run(mk(1, 2, d100)); Sleep(800); halt();
+    for (int i = 0; i < lg_n; i++) assert(lg[i].mark == 0xB0);
+    t = period(1, lg_n); assert(t >= 95 && t <= 145 && fk_br_v == 0);
+    // a new pack while playing: its frames within a frame or so, none of the old after
+    fresh(); run(mk(1, 2, d100)); Sleep(300);
+    U.next = mk(0x21, 2, d100); SetEvent(U.wake); t = ms(); Sleep(400); halt();
+    int first = -1;
+    for (int i = 0; i < lg_n; i++) if (lg[i].mark == 0x21 && first < 0) first = i;
+    assert(first > 0 && lg[first].t - t < 150);
+    for (int i = first; i < lg_n; i++) assert(lg[i].mark >= 0x21);
+    // stopped while a write hangs: ends at once (the write is cancelled, not waited out)
+    fresh(); run(mk(1, 2, d100)); Sleep(250); fk_delay = 5000; Sleep(300);
+    t = halt(); printf("corsairlcd: stopped during a pending write in %.0f ms\n", t); assert(t < 500);
+    // switched off (end_dark): the last frame is the black one
+    fresh(); U.end_dark = 1; run(mk(1, 2, d100)); Sleep(250); halt(); assert(lg_n > 1 && lg[lg_n - 1].mark == 0xB0);
+    // unplugged while playing: the thread ends by itself and says so (cl_send then reports the device lost)
+    fresh(); run(mk(1, 2, d100)); Sleep(200); fk_status = (LONG)0xC000009D;
+    assert(WaitForSingleObject(th, 1000) == WAIT_OBJECT_0 && U.err); halt();
+
+    // §2 the backlight: refused, then taken; tried again every cl_br_retry_ms, not in a loop; not again once taken
+    fresh(); cl_br_retry_ms = 200; fk_fail = 1; U.br = 40; run(mk(1, 1, d100)); Sleep(500);
+    printf("corsairlcd: backlight tried %ld time(s) in 500 ms while refused\n", fk_br_n);
+    assert(fk_br_n >= 2 && fk_br_n <= 4 && fk_br_v == -1);
+    fk_fail = 0; Sleep(350); assert(fk_br_v == 40);
+    w0 = fk_br_n; Sleep(300); assert(fk_br_n == w0); halt();
+    // changed while refused: the latest goes
+    fresh(); cl_br_retry_ms = 100; fk_fail = 1; U.br = 40; run(mk(1, 1, d100)); Sleep(100);
+    U.br = 70; Sleep(150); fk_fail = 0; Sleep(400); assert(fk_br_v == 70); halt();
+    // a reconnect is a new thread: it sends the backlight again even if it is the same
+    fresh(); U.br = 70; run(mk(1, 1, d100)); Sleep(200); halt(); assert(fk_br_v == 70 && fk_br_n == 1);
+}
+
 int main(void) {
     unsigned char rep[CL_REP];
     for (int i = 0; i < (int)sizeof(jpg); i++) jpg[i] = (unsigned char)(i * 7 + 3);
@@ -432,6 +657,7 @@ int main(void) {
     assert(!cl_feature(h, 65, 0x0b, 40) && !cl_feature(h, 4096, 0x0b, 40) && !cl_feature(h, 3, 0x0b, 40) && !cl_feature(h, 0, 0x0b, 40) && fk_n == 2);
     assert(!cl_feature(NULL, 64, 0x0b, 40) && !cl_feature(INVALID_HANDLE_VALUE, 64, 0x0b, 40) && fk_n == 2);
     fk_fail = 1; assert(!cl_feature(h, 64, 0x0b, 40) && fk_n == 3); fk_fail = 0;   // the device refused: said so
+    io_tests();
     puts("corsairlcd ok");
     return 0;
 }

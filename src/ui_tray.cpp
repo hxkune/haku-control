@@ -3,7 +3,8 @@
 // It shares the settings window's WebView2 folder and virtual host but loads only its own light page.
 // Shown: state from app_tray_json, commands through ui_dispatch (the phone's checks). Closed: hidden and suspended;
 // 30 s later the browser part is let go of, so nothing of it runs while haku sits in the tray.
-// Any failure leaves the right-click menu, and a left click falls back to it (app_tray_menu).
+// Any failure leaves the right-click menu, and a left click falls back to it (app_tray_menu), once: so does a page
+// that never says hello and its height (OPEN_TIMER). What a released browser part still answers is ignored (gen).
 extern "C" {
 #include "common.h"
 }
@@ -19,6 +20,9 @@ using Microsoft::WRL::ComPtr;
 
 #define RELEASE_TIMER   1
 #define RELEASE_AFTER   30000
+#define OPEN_TIMER      2
+#define OPEN_FIRST      10000    // ms for a page to say its height: a cold start of the browser part, then the page
+#define OPEN_AGAIN      3000     // ... the page already loaded (resumed)
 #define WM_TRAY_REFRESH (WM_APP + 11)
 #define PANEL_W         340      // logical px, as tray.css lays it out
 
@@ -29,6 +33,7 @@ static ComPtr<ICoreWebView2Controller> ctrl;
 static ComPtr<ICoreWebView2> web;
 static bool page_ready, opening, shown, first_open = true;
 static DWORD open_t0, closed_at;
+static unsigned gen;             // the browser part's: raised when it is let go of, so its late callbacks do nothing
 static int content_h = 420;      // the page's own height in css px, as it last said
 static COLORREF bg = RGB(18, 18, 18);
 
@@ -72,6 +77,7 @@ static std::string field(const std::string &js, const char *key) {
 // everything browser-side let go of; the next click starts again
 static void release(void) {
     page_ready = opening = shown = false;
+    gen++;
     if (ctrl) ctrl->Close();
     web.Reset(); ctrl.Reset(); env.Reset();
     if (tw) { HWND h = tw; tw = NULL; DestroyWindow(h); }
@@ -128,6 +134,7 @@ static void show(void) {
     if (!tw || !opening) return;
     char side = place(), m[64];
     ShowWindow(tw, SW_SHOW);
+    KillTimer(tw, OPEN_TIMER);
     if (!SetForegroundWindow(tw)) logf_("tray: not brought to the front");
     if (ctrl) ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
     opening = false; shown = true;
@@ -151,6 +158,7 @@ static void on_message(const std::string &js) {
         tray_close();
         if (d == "window") ui_open(inst_);
         else if (d == "help") ui_open_help(inst_);
+        else if (d == "settings") ui_open_at(inst_, "settings");
         else if (d == "diag") diag_save();
         else if (d == "log") app_open("log");
         else if (d == "ini") app_open("ini");
@@ -164,17 +172,18 @@ static void create_webview(void) {
     wchar_t data[MAX_PATH];
     ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\" APP_ID L"\\WebView2", data, MAX_PATH);
     SHCreateDirectoryExW(NULL, data, NULL);
+    unsigned g = gen;
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(NULL, data, NULL,
-        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([](HRESULT res, ICoreWebView2Environment *e) -> HRESULT {
+        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([g](HRESULT res, ICoreWebView2Environment *e) -> HRESULT {
+            if (g != gen || !tw) return S_OK;   // let go of meanwhile (timed out, crashed)
             if (FAILED(res) || !e) { fail("WebView2 environment failed", res); return S_OK; }
-            if (!tw) return S_OK;
             env = e;
-            return env->CreateCoreWebView2Controller(tw, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                [](HRESULT res, ICoreWebView2Controller *c) -> HRESULT {
+            HRESULT hc = env->CreateCoreWebView2Controller(tw, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                [g](HRESULT res, ICoreWebView2Controller *c) -> HRESULT {
+                    if (g != gen || !tw) { if (c) c->Close(); return S_OK; }
                     if (FAILED(res) || !c) { fail("WebView2 controller failed", res); return S_OK; }
-                    if (!tw) { c->Close(); return S_OK; }
                     ctrl = c;
-                    ctrl->get_CoreWebView2(&web);
+                    if (FAILED(ctrl->get_CoreWebView2(&web)) || !web) { fail("WebView2 has no page", E_FAIL); return S_OK; }
                     theme_bg();
                     ComPtr<ICoreWebView2Settings> s;
                     web->get_Settings(&s);
@@ -194,31 +203,35 @@ static void create_webview(void) {
                         w3->SetVirtualHostNameToFolderMapping(L"haku-control.ui", dir, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
                     EventRegistrationToken tok;
                     web->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-                        [](ICoreWebView2 *, ICoreWebView2WebMessageReceivedEventArgs *a) -> HRESULT {
+                        [g](ICoreWebView2 *, ICoreWebView2WebMessageReceivedEventArgs *a) -> HRESULT {
                             LPWSTR m = NULL;
+                            if (g != gen) return S_OK;
                             if (SUCCEEDED(a->TryGetWebMessageAsString(&m)) && m) { std::string js = narrow(m); CoTaskMemFree(m); on_message(js); }
                             return S_OK;
                         }).Get(), &tok);
                     web->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
                         [](ICoreWebView2 *, ICoreWebView2NewWindowRequestedEventArgs *a) -> HRESULT { a->put_Handled(TRUE); return S_OK; }).Get(), &tok);
                     web->add_NavigationCompleted(Callback<ICoreWebView2NavigationCompletedEventHandler>(
-                        [](ICoreWebView2 *, ICoreWebView2NavigationCompletedEventArgs *a) -> HRESULT {
+                        [g](ICoreWebView2 *, ICoreWebView2NavigationCompletedEventArgs *a) -> HRESULT {
                             BOOL ok = FALSE; a->get_IsSuccess(&ok);
-                            if (!ok) fail("page did not load", 0);
+                            if (!ok && g == gen) fail("page did not load", 0);
                             return S_OK;
                         }).Get(), &tok);
                     // a crashed browser part: let go of it all; the next click starts again (or gets the menu)
                     web->add_ProcessFailed(Callback<ICoreWebView2ProcessFailedEventHandler>(
-                        [](ICoreWebView2 *, ICoreWebView2ProcessFailedEventArgs *a) -> HRESULT {
+                        [g](ICoreWebView2 *, ICoreWebView2ProcessFailedEventArgs *a) -> HRESULT {
                             COREWEBVIEW2_PROCESS_FAILED_KIND k; a->get_ProcessFailedKind(&k);
                             logf_("tray: WebView2 process failed (%d)", (int)k);
-                            PostMessageW(tw, WM_CLOSE, 0, 0);
+                            if (g == gen && tw) PostMessageW(tw, WM_CLOSE, 0, 0);
                             return S_OK;
                         }).Get(), &tok);
                     RECT r; GetClientRect(tw, &r); ctrl->put_Bounds(r);
-                    web->Navigate(L"https://haku-control.ui/tray.html");
+                    HRESULT hn = web->Navigate(L"https://haku-control.ui/tray.html");
+                    if (FAILED(hn)) fail("page not opened", hn);
                     return S_OK;
                 }).Get());
+            if (FAILED(hc)) fail("WebView2 controller not started", hc);
+            return S_OK;
         }).Get());
     if (FAILED(hr)) fail("WebView2 runtime not available", hr);
 }
@@ -231,6 +244,8 @@ static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_SETFOCUS: if (ctrl) ctrl->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC); return 0;
     case WM_TIMER:
         if (wp == RELEASE_TIMER) { KillTimer(h, RELEASE_TIMER); if (!shown && !opening) { logf_("tray: let go of"); release(); } }
+        // no hello or height in time (a hung page or browser part): the menu, and a fresh start next click
+        if (wp == OPEN_TIMER) { KillTimer(h, OPEN_TIMER); if (opening) fail(page_ready ? "no height from the page" : "no hello from the page", 0); }
         return 0;
     case WM_TRAY_REFRESH: if (shown) send_state(); return 0;
     case WM_DISPLAYCHANGE: case WM_SETTINGCHANGE: if (shown) place(); return 0;
@@ -249,6 +264,7 @@ extern "C" int tray_visible(void) { return tw && (shown || opening); }
 extern "C" void tray_close(void) {
     if (!tw || (!shown && !opening)) return;
     shown = opening = false;
+    KillTimer(tw, OPEN_TIMER);   // closed while opening: no menu after all
     post("{\"type\":\"closed\"}");   // the page goes back to its first view for next time
     ShowWindow(tw, SW_HIDE);
     if (ctrl) {
@@ -283,12 +299,14 @@ extern "C" int tray_toggle(HINSTANCE inst, HWND icon) {
         DWORD round = 2 /* DWMWCP_ROUND */;   // Windows 11: the system's rounded corners and border; older: square
         DwmSetWindowAttribute(tw, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &round, sizeof(round));
         opening = true;
+        SetTimer(tw, OPEN_TIMER, OPEN_FIRST, NULL);
         theme_bg();
         create_webview();
         return tw != NULL || !opening;   // a synchronous failure has already shown the menu
     }
     KillTimer(tw, RELEASE_TIMER);
     opening = true;
+    SetTimer(tw, OPEN_TIMER, page_ready ? OPEN_AGAIN : OPEN_FIRST, NULL);
     theme_bg();
     if (ctrl) ctrl->put_IsVisible(TRUE);   // resumes a suspended page
     if (page_ready) { send_state(); post("{\"type\":\"open\"}"); }

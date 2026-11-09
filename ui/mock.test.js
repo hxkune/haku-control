@@ -438,7 +438,7 @@
     ok(!sel(6) || ![...sel(6).options].some(o => o.value.endsWith(':14')), 'a device already paired offered to another card');
     // the path taken does not answer: the card says so, it does not claim it is lit
     devById(8).online = 0; updateDevices();
-    ok(st(14).includes(t('dev.offline')), 'a failed handover shown as working: ' + st(14));
+    ok(st(14).includes(t('dev.offline.ctl')), 'a failed handover shown as working: ' + st(14));
     // restart: the core reads the pair from the settings again
     STATE.ext.devs.forEach(d => { d.same = d.held = 0; }); window.chrome.webview.postMessage(JSON.stringify({ cmd: 'hello' })); await wait(120);
     ok(devById(14).held && sel(8).value === 'orgb:14', 'the choice lost on restart');
@@ -1062,6 +1062,9 @@
     txbMove(.1, 0); ok(Math.abs(TXB.layers[0].x - .6) < 1e-9, 'the chosen text did not move');
     // a still picture: drawn again only on a change (the loop driven by hand: a background page gets no rAF)
     txbLoop(); let d0 = TXB.draws; txbLoop(); txbLoop(); ok(TXB.draws === d0, 'a still, unchanged: not drawn again: ' + (TXB.draws - d0));
+    ok(!TXB.raf, 'a still: the loop runs on with nothing to draw');
+    txbSel(-1); ok(TXB.raf, 'a change of the chosen layer asks for no frame'); txbLoop(); ok(!TXB.raf && TXB.draws === d0 + 1, 'the choice: drawn once, then stopped'); d0 = TXB.draws;
+    txbSel(0); txbLoop(); d0 = TXB.draws;
     txbMove(-.1, 0); txbLoop(); txbLoop(); ok(TXB.draws === d0 + 1, 'moved: drawn once: ' + (TXB.draws - d0));
     ti.value = 'GPU'; ti.dispatchEvent(new Event('input', { bubbles: true })); txbLoop(); ok(TXB.draws === d0 + 2, 'new text: drawn: ' + (TXB.draws - d0));
     document.body.classList.add('idle'); await wait(20); ti.value = 'CPU'; ti.dispatchEvent(new Event('input', { bubbles: true })); txbMove(.1, 0); txbLoop();
@@ -1413,7 +1416,8 @@
     const B = TXB, p = log.previews;
     ok(B && !B.busy && B.src === src && src.frames.every(f => !shut(f.bmp)) && B.layers.length === 1 && B.z === 2 && Math.abs(B.cx - .4) < 1e-9 && B.shape === '2:1', why + ': the work changed');
     ok(['#txb-go', '#txb-src', '#txb-cancel', '#txb-x', '#txb-shape', '#txb-zoom'].every(s => !$(s).disabled) && !$('#txb').classList.contains('hidden'), why + ': the builder is not usable');
-    await wait(80); ok(log.previews > p, why + ': the preview stopped');
+    // the preview draws each new frame of the animation (one lasts dur / frames): the loop must run and draw the next one
+    ok(B.raf, why + ': the preview loop stopped'); await wait(src.dur * 1000 / src.frames.length + 80); ok(log.previews > p, why + ': the preview stopped');
   };
 
   test('TRYX: a video frame failing to encode, the first or the second, ends the making, frees the encoder and every frame, keeps the work, and a retry saves', async () => {
@@ -1541,9 +1545,55 @@
     const none = JSON.parse(JSON.stringify(STATE));
     Object.assign(none, { bulbs: [], nano: { ctls: [] }, sticks: 0, msi: null, fans: { on: 0 }, ll: null }); none.ext.devs = [];
     emit(none); await wait(80);
-    ok(!$('#home-first').classList.contains('hidden') && $('#home-attn').classList.contains('hidden') && $('#home-cool').classList.contains('hidden'), 'nothing found: where to start not shown alone');
+    ok(!$('#home-first').classList.contains('hidden') && $('#home-attn').classList.contains('hidden') && $('#home-cool').classList.contains('hidden'), 'nothing found: where to start not shown alone: ' + [$('#home-first').className, $('#home-attn').className, $('#home-attn-list').textContent.replace(/\s+/g, ' '), $('#home-cool').className, gdOn()].join(' / '));
     emit(STATE); await wait(80);
     ok(['en', 'ru', 'fr'].every(l => ['home.first', 'home.attn', 'help.title', 'help.start.text', 'help.terms', 'help.terms.text', 'help.offline.text', 'help.orgb.text', 'help.conflict.text', 'help.fans.text', 'help.diag.text', 'help.diag.open'].every(k => STR[l][k])), 'a language misses the help texts');
+  });
+
+  test('home: a failed save, a failed profile and fans not given back are listed with their own action; one cause is one row; fixed ones go', async () => {
+    await fresh(); showTab('home');
+    const rows = () => [...$$('#home-attn-list .found-row')], find = s => rows().find(r => r.textContent.includes(s));
+    const keep = JSON.parse(JSON.stringify(STATE));
+    try {
+      STATE.unsaved = 1; emit(STATE); await wait(80);
+      let r = find(t('home.unsaved'));
+      ok(r && r.textContent.includes(t('home.unsaved.why')) && r.querySelector('[data-a="save"]').textContent === t('home.save.again') && !r.querySelector('[data-help]'), 'the unsaved row: ' + (r && r.innerHTML));
+      window.mockSaveFail = 1; sent.length = 0;
+      r.querySelector('[data-a="save"]').click(); await wait(120);
+      ok(sent.some(o => o.cmd === 'save_retry') && find(t('home.unsaved')), 'a save that fails again: the row must stay');
+      ok(find(t('home.unsaved')).querySelector('[data-a="save"]').disabled, 'Save again can be pressed again at once');
+      window.mockSaveFail = 0; await wait(3000);
+      find(t('home.unsaved')).querySelector('[data-a="save"]').click(); await wait(120);
+      ok(!find(t('home.unsaved')), 'the row stays after the save went through');
+
+      STATE.prof = { err: 1, id: 0, n: 1 }; emit(STATE); await wait(80);
+      r = find(t('prof.label'));
+      ok(r && r.querySelector('[data-a="prof"]'), 'no row for a profile that failed: ' + $('#home-attn-list').textContent);
+      STATE.prof = { err: 5, id: 0, n: 2 }; emit(STATE); await wait(80);
+      ok(!rows().some(x => x.querySelector('[data-a="prof"]')), 'a full profile list is not a problem to fix here');
+      STATE.prof = { err: 0, id: 0, n: 2 };
+
+      STATE.fans.wd = [3, 0]; STATE.fans.rfail = 2; emit(STATE); await wait(80);
+      r = find(t('fans.wd.fail', 'QUADRO', 2));
+      ok(r && r.querySelector('[data-a="open"]') && r.querySelector('[data-help="fans"]'), 'the fans not given back: ' + $('#home-attn-list').textContent);
+      r.querySelector('[data-a="open"]').click(); await wait(30);
+      ok($('#tab-fans').classList.contains('active'), 'Open does not go to Fans');
+      showTab('home'); STATE.fans.wd = [0, 0]; STATE.fans.rfail = 0;
+
+      const off = STATE.ext.devs.filter(d => !d.online && d.enabled && !d.own), base = STATE.ext.devs.length;
+      ok(off.length, 'the mock has no device waiting');
+      const twin = (n, id) => Object.assign(JSON.parse(JSON.stringify(off[0])), { id, name: n });
+      STATE.ext.devs.push(twin('Twin A', 901), twin('Twin B', 902), twin('Twin C', 903));
+      emit(STATE); await wait(80);
+      const same = rows().filter(x => x.textContent.includes('Twin'));
+      ok(same.length === 1 && same[0].textContent.includes(t('home.more', 2)), 'one cause, several rows: ' + same.map(x => x.textContent).join(' | '));
+      same[0].querySelector('[data-a="open"]').click(); await wait(30);
+      ok($('#tab-devices').classList.contains('active'), 'Open on a merged row does not go to Devices');
+      showTab('home');
+      STATE.ext.devs.length = base; emit(STATE); await wait(80);
+      ok(!rows().some(x => x.textContent.includes('Twin')), 'removed devices still listed');
+      ok(['en', 'ru', 'fr'].every(l => ['home.unsaved', 'home.unsaved.why', 'home.save.again', 'home.why', 'home.more'].every(k => STR[l][k])), 'a language misses the new Home texts');
+    } finally { window.mockSaveFail = 0; Object.assign(STATE, keep); emit(STATE); await wait(80); }
   });
 
   test('home cooling: old readings not shown as now, a lost QUADRO is one row while the board reads on; problems first, worst first, each opens its fan and goes once fixed', async () => {
@@ -1629,6 +1679,31 @@
     ok(tab === 'help' && $('#tab-help').classList.contains('active') && $('#help').offsetParent, 'not on the Help card: ' + tab);
     // the one message: no picture to draw on Help, so the core is told to slow its frames (frameNeed); nothing else
     ok(sent.length === 1 && sent[0].cmd === 'frames' && sent[0].live === 0, 'sent: ' + JSON.stringify(sent));
+    showTab('home');
+  });
+
+  test("the tray's Settings opens the Settings page, not Help", async () => {
+    await fresh(); showTab('home');
+    emit({ type: 'go', to: 'settings' }); await wait(80);
+    ok(tab === 'settings' && $('#tab-settings').classList.contains('active'), 'not on Settings: ' + tab);
+    ok($('#nav button[data-tab="settings"]').getAttribute('aria-current') === 'page', 'the nav does not say so');
+    showTab('home');
+  });
+
+  test('each page comes back where it was left this session; a jump to a card wins; nothing is stored', async () => {
+    await fresh(); const m = $('main'), max = () => m.scrollHeight - m.clientHeight;
+    showTab('help'); ok(max() > 200, 'Help too short to scroll here: ' + max());
+    m.scrollTop = 150; showTab('settings'); ok(m.scrollTop === 0, 'a page never seen does not start at the top: ' + m.scrollTop);
+    m.scrollTop = 40; showTab('help'); ok(m.scrollTop === 150, 'Help not back where it was: ' + m.scrollTop);
+    showTab('settings'); ok(m.scrollTop === Math.min(40, max()), 'Settings not back where it was: ' + m.scrollTop);
+    showTab('help'); showTab('help'); ok(m.scrollTop === 150, 'the same page again moved: ' + m.scrollTop);
+    showTab('settings'); tabScroll.help = 1e6; showTab('help'); ok(m.scrollTop === max(), 'not clamped to the page: ' + m.scrollTop);
+    // the Programs in the way jump scrolls to its card after the page is shown
+    m.scrollTop = 0; showTab('home'); const c = $('#cf-card'), hid = c.classList.contains('hidden'); c.classList.remove('hidden');
+    go('cf'); await wait(900); const r = c.getBoundingClientRect(), mr = m.getBoundingClientRect();
+    ok(r.bottom > mr.top && r.top < mr.bottom, 'the jump did not reach its card');
+    c.classList.toggle('hidden', hid);
+    ok(!Object.keys(localStorage).some(k => /scroll/i.test(k)), 'a scroll place was stored');
     showTab('home');
   });
 
@@ -1877,6 +1952,21 @@
     } finally { await gdBack(k); }
   });
 
+  test('device history and owner: a refusal by another program is its own event; haku owns it only while it reaches it, else the program or unknown', async () => {
+    await fresh();
+    const base = JSON.parse(JSON.stringify(STATE.ext.devs.find(d => d.online && d.enabled && !d.own && !d.held && !d.covered && !d.pro)));
+    const who = x => { const m = devWhy(Object.assign({}, base, x)).match(/<dt>([^<]*)<\/dt><dd>([^<]*)<\/dd>/g).find(r => r.startsWith('<dt>' + t('why.who') + '<'));
+      return m && m.replace(/^.*<dd>|<\/dd>$/g, ''); };
+    ok(who({}) === 'haku', 'reached: ' + who({}));
+    ok(who({ online: 0, fails: 2, info: 'no answer' }) === t('why.who.unk'), 'not reached, no reason: ' + who({ online: 0, fails: 2, info: 'no answer' }));
+    ok(who({ online: 0, fails: 1, kind: 'corsairlcd', info: 'iCUE.exe busy' }) === t('why.who.app', 'iCUE'), 'the program the driver names: ' + who({ online: 0, fails: 1, kind: 'corsairlcd', info: 'iCUE.exe busy' }));
+    const tx = who({ online: 0, fails: 1, kind: 'tryx', info: 'COM5 busy' });
+    ok(tx === (cfRun('tryx') ? t('why.who.app', cfApp('tryx').name) : t('why.who.busy')), 'a port refused, the program not named: ' + tx);
+    const ev = devEvText(Object.assign({}, base, { ev: [[1700000000, 1, 0, 1], [1700000060, 7, 0, 3], [1700000120, 2, 0, 1]] })).split('\n');
+    ok(ev.length === 3 && ev[0].endsWith(t('dev.ev.2')) && ev[1].endsWith(t('dev.ev.7') + ' ×3') && ev[2].endsWith(t('dev.ev.1')), 'the history: ' + ev.join(' | '));
+    ok(['en', 'ru', 'fr'].every(l => ['dev.ev.7', 'why.who.app', 'why.who.busy', 'why.who.unk'].every(k => STR[l][k])), 'a language misses the owner or history texts');
+  });
+
   test('guide test step: one steady colour on that device only, ended by Works, Problem, Stop, Back, leaving, the window, the core; never saved', async () => {
     const k = gdKeep();
     try {
@@ -1892,6 +1982,7 @@
       ok(gd('works') && gd('problem') && gd('stop') && !gd('check'), 'no Works / Problem / Stop');
       gd('works').click(); await wait(60);
       ok(tests().join() === 'zone.dev1,' && gdSt() === t('gd.t.ok') && gd('next').classList.contains('primary'), 'Works did not end it: ' + tests());
+      ok(sent.every(o => o.cmd === 'dev_test') && devById(1).cap === undefined, 'Works (the user\'s word) sent or marked more than the end of the test: ' + JSON.stringify(sent));
       const d2 = $('#gd-dev'); d2.value = '2'; d2.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
       sent.length = 0; gd('check').click(); await wait(60); gd('problem').click(); await wait(20);
       ok(tests().join() === 'zone.dev2,' && $$('#guide .gd-probs button').length === 4, 'Problem: ' + tests());
@@ -1912,6 +2003,12 @@
       ok(gdSt() === t('gd.t.ended') && gd('check'), 'the core ending it not shown: ' + gdSt());
       gd('check').click(); await wait(60); devById(2).online = 0; STATE.ext.devs[1].online = 0; gd('stop').click(); await wait(20);
       ok(gdSt() === t('gd.t.lost'), 'a lost device promised back: ' + gdSt());
+      // an error: the device drops while its test colour is on, nobody clicks anything
+      STATE.ext.devs[1].online = 1; emit(STATE); await wait(60); const d3 = $('#gd-dev'); d3.value = '2'; d3.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
+      sent.length = 0; gd('check').click(); await wait(1100);
+      ok(tests().join() === 'zone.dev2' && gdSt() === t('gd.t.on', 'Board'), 'the test did not start again: ' + tests() + ' / ' + gdSt());
+      STATE.ext.devs[1].online = 0; emit(STATE); await wait(60);
+      ok(tests().join() === 'zone.dev2,' && !GUIDE.test && gdSt() === t('gd.t.lost'), 'a device lost during its test left the colour on: ' + tests() + ' / ' + gdSt());
       ok(!sent.some(o => o.cmd === 'set' && /^zone\.|^profile\./.test(o.s) || /^profile/.test(o.cmd)), 'the test colour went into the settings: ' + JSON.stringify(sent));
       noHw();
     } finally { await gdBack(k); }
@@ -2682,6 +2779,15 @@
       tick(); let d0 = CMP.draws; tick(); tick(); tick(); ok(CMP.draws === d0, 'paused and unchanged: not drawn again: ' + (CMP.draws - d0));
       const r3 = $('#cdlg-edit input[data-p="o"]'); r3.value = 20; r3.dispatchEvent(new Event('input', { bubbles: true })); tick(); tick();
       ok(CMP.draws === d0 + 1, 'an edit on a pause: drawn once: ' + (CMP.draws - d0));
+      // paused, the loop itself stops (no frame asked for) and an edit or a resize asks for exactly one
+      tick(); ok(!CMP.raf, 'paused and unchanged: the loop still runs');
+      r3.value = 25; r3.dispatchEvent(new Event('input', { bubbles: true })); const w1 = CMP.raf; cmpWake(); cmpWake();
+      ok(w1 && CMP.raf === w1, 'an edit on a pause did not ask for one frame, or asked for several');
+      cancelAnimationFrame(CMP.raf); CMP.raf = 0; dispatchEvent(new Event('resize')); ok(CMP.raf, 'a resize on a pause asks for no frame');
+      tick(); ok(!CMP.raf, 'after that one frame the loop did not stop');
+      $('#cdlg-big').click(); ok(CMP.raf && $('#cdlg-view').width === 96, 'the enlarged view asks for no frame'); tick(); $('#cdlg-big').click(); tick();
+      $('#cdlg-ab').click(); ok(CMP.raf || !cmpDirty(), 'Before asks for no frame'); tick(); if (CMP.ab) $('#cdlg-ab').click(); tick();
+      ok(!CMP.raf, 'paused: a loop left running');
       d0 = CMP.draws; $('#cdlg-pp').click(); tick(); tick(); tick(); ok(CMP.draws - d0 === 3, 'playing: drawn each frame: ' + (CMP.draws - d0)); $('#cdlg-pp').click();
       const rt = $('#cdlg-rate'); rt.value = '2'; rt.dispatchEvent(new Event('change', { bubbles: true }));
       ok(CMP.rate === 2 && !JSON.stringify(S.cfg).includes('rate') && !sent.some(o => JSON.stringify(o).includes('rate')), 'the preview speed is not saved');

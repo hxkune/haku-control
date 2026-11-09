@@ -3,6 +3,22 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.63',
+    en: ['Tray panel: favourite and recent effects come first and a search narrows the list; up to 3 devices can be pinned on top; a device switch says so when the app did not confirm it; Settings opens the Settings page; a panel that does not open in time falls back to the menu.',
+         'Home lists what needs attention in groups, including settings that could not be saved, with a Save again button.',
+         'Devices: the history notes when another program has a device, and “Controlled by” says haku only while it reaches the device, otherwise the program or “unknown”. The guide’s test colour stops if the device drops.',
+         'Corsair screens: a picture keeps its timing without bursts, the brightness is sent again until the screen takes it, and a write that hangs no longer holds the app. Not yet tried on a real screen.',
+         'The effect builder and the screen editor no longer redraw while paused or unchanged.'],
+    ru: ['Панель трея: избранные и недавние эффекты идут первыми, есть поиск; до 3 устройств можно закрепить сверху; переключатель устройства сообщает, если программа его не подтвердила; «Настройки» открывают раздел настроек; если панель не открылась вовремя, показывается меню.',
+         'На главной проблемы сгруппированы, в том числе настройки, которые не удалось сохранить, с кнопкой «Сохранить снова».',
+         'Устройства: в истории отмечается, когда устройство занято другой программой, а «Управляет» показывает haku только при связи с устройством, иначе программу или «неизвестно». Тестовый цвет в помощнике выключается, если устройство пропало.',
+         'Экраны Corsair: картинка идёт ровно, без пачек кадров, яркость отправляется повторно, пока экран её не примет, а зависшая запись больше не держит программу. На настоящем экране ещё не проверено.',
+         'Конструктор эффектов и редактор экрана не перерисовываются на паузе и без изменений.'],
+    fr: ['Panneau de la barre des tâches : les effets favoris et récents passent en premier et une recherche filtre la liste ; jusqu’à 3 appareils peuvent être épinglés en haut ; l’interrupteur d’un appareil le signale quand l’application ne l’a pas confirmé ; Paramètres ouvre la page des paramètres ; un panneau qui ne s’ouvre pas à temps laisse place au menu.',
+         'L’accueil regroupe ce qui demande attention, y compris des réglages qui n’ont pas pu être enregistrés, avec un bouton Enregistrer à nouveau.',
+         'Appareils : l’historique note quand un autre programme tient un appareil, et « Piloté par » indique haku seulement tant qu’il l’atteint, sinon le programme ou « inconnu ». La couleur de test du guide s’arrête si l’appareil disparaît.',
+         'Écrans Corsair : une image garde son rythme sans rafales, la luminosité est renvoyée jusqu’à ce que l’écran la prenne, et une écriture bloquée ne retient plus l’application. Pas encore essayé sur un vrai écran.',
+         'Le constructeur d’effets et l’éditeur d’écran ne redessinent plus en pause ni sans changement.'] },
   { v: '0.4.62',
     en: ['Corsair screens: a picture now goes to the screen again every 100 ms instead of every second, and the rotation is set before the first one, as OpenLinkHub does: an iCUE LINK LCD stayed on its own temperature screen. Not yet tried on a real screen.'],
     ru: ['Экраны Corsair: картинка теперь отправляется на экран каждые 100 мс, а не раз в секунду, и перед первой задаётся поворот, как у OpenLinkHub: экран iCUE LINK LCD оставался на своей заставке с температурой. На настоящем экране ещё не проверено.'],

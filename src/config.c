@@ -189,6 +189,23 @@ void cfg_set(const char *section, const char *key, const char *value) {
     ReleaseSRWLockExclusive(&lock);
 }
 
+// [section] key as a comma list with item first, the same item (any case) not twice, at most max items; memory only
+void cfg_list_front(const char *section, const char *key, const char *item, int max) {
+    char out[LINE_LEN]; int n = snprintf(out, sizeof(out), "%s", item), c = 1;
+    size_t w0 = strlen(item);
+    if (!w0 || strchr(item, ',') || n >= (int)sizeof(out)) return;
+    char cur[LINE_LEN];
+    AcquireSRWLockExclusive(&lock);
+    const char *p = find(section, key, cur, NULL) >= 0 ? cur : "";
+    for (; *p && c < max; ) {
+        const char *e = strchr(p, ','); size_t w = e ? (size_t)(e - p) : strlen(p);
+        if (w && !(w == w0 && !_strnicmp(p, item, w)) && n + (int)w + 2 < (int)sizeof(out)) { n += snprintf(out + n, sizeof(out) - n, ",%.*s", (int)w, p); c++; }
+        p += w + (e ? 1 : 0);
+    }
+    set_locked(section, key, out);
+    ReleaseSRWLockExclusive(&lock);
+}
+
 // kv: key, value, key, value...; all of them land under one lock, so cfg_get_many never sees part of them
 void cfg_set_many(const char *section, const char *const *kv, int n) {
     AcquireSRWLockExclusive(&lock);
@@ -258,13 +275,18 @@ int cfg_sections(const char *prefix, char (*out)[64], int max) {
     return n;
 }
 
+static int save_bad;   // the last write failed and its changes are still only in memory
+
 int cfg_save_if_dirty(void) {
     AcquireSRWLockExclusive(&lock);
     int ok = 1;
     if (dirty && (ok = save())) dirty = 0;   // not saved: tried again on the next change
+    save_bad = dirty && !ok;
     ReleaseSRWLockExclusive(&lock);
     return ok;
 }
+
+int cfg_unsaved(void) { return save_bad && dirty; }
 
 void cfg_set_and_save(const char *section, const char *key, const char *value) {
     cfg_set(section, key, value);

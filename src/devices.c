@@ -268,7 +268,7 @@ static unsigned __stdcall worker(void *p) {
                 memset(last8[k], 0, sizeof(last8[k]));
                 if (d->cfg_leds > 0 && d->drv->per_led) d->nleds = min(d->cfg_leds, d->nleds > 0 ? d->nleds : d->cfg_leds);
                 if (d->nleds > EXT_MAX_LEDS) d->nleds = EXT_MAX_LEDS;
-                int back = d->nev && (d->ev[d->nev - 1].code == EV_LOST || d->ev[d->nev - 1].code == EV_FAIL);
+                int lc = d->nev ? d->ev[d->nev - 1].code : 0, back = lc == EV_LOST || lc == EV_FAIL || lc == EV_BUSY;
                 ext_event(d, back ? EV_BACK : EV_ONLINE, 0);
                 logf_("dev.%d (%s %s): online, %d LEDs %s%s", d->id, d->drv->kind, d->host, d->nleds, d->info, d->fails ? " (after failed attempts)" : "");
             } else if (o->ok) {   // removed, changed or switched off meanwhile: let go as it would have been, had it been taken
@@ -280,7 +280,7 @@ static unsigned __stdcall worker(void *p) {
                 d->fails++;
                 DWORD wait = retry_wait(d->fails);
                 d->next_try = now + wait;
-                ext_event(d, EV_FAIL, 0);
+                ext_event(d, ext_fail_ev(o->d.info), 0);   // this attempt's reason, not one left from before
                 if (wait != retry_wait(d->fails - 1))   // the first failure and each longer wait, not every attempt
                     logf_("dev.%d (%s %s): not reachable (%d attempts, %s): next try in %lu s", d->id, d->drv->kind, d->host,
                           d->fails, d->info[0] ? d->info : "no answer", wait / 1000);

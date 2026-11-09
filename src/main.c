@@ -991,6 +991,11 @@ static void profile_next(void) {
 
 // ---- interface for the settings window (ui_web.cpp); all called on the UI thread
 void  app_set_effect(int fx) { set_effect(fx); }
+// a pick from the page or the tray goes first in [general] fx_recent (the tray lists those first); "off" and unknown ids are not kept
+void  app_fx_recent(const char *id) {
+    int fx = effect_index(id);
+    if (fx != effect_index("off") && !_stricmp(g_effects[fx].id, id)) cfg_list_front("general", "fx_recent", g_effects[fx].id, 5);
+}
 void  app_set_brightness(float b, int save_now) { set_brightness_ex(b, save_now); }
 void  app_config_changed(int layout) {
     InterlockedIncrement(&cfg_gen);
@@ -1108,9 +1113,9 @@ static int status_body(char *out, int cap) {
     char gt[16] = "null", tz[32] = "";
     if (test_zone >= 0 && GetTickCount() - (DWORD)test_at < TEST_MS) zone_section(test_zone, tz, sizeof(tz));
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"ram_src\":[%ld,%ld],\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"rev\":%ld,\"test\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
+    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"ram_src\":[%ld,%ld],\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"unsaved\":%d,\"rev\":%ld,\"test\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
                      g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, ram_src & 3, ram_src >> 2 & 3, app_pc_own_now(),
-                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, g_state_rev, tz, effects_audio_state(), effects_temp_state());
+                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, cfg_unsaved(), g_state_rev, tz, effects_audio_state(), effects_temp_state());
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
@@ -1193,8 +1198,12 @@ int app_tray_json(char *out, int cap) {
     const char *mo = cfg_get("general", "ui_motion", "sys");
     jesc(a, sizeof(a), cfg_get("general", "theme", "dark")); jesc(b, sizeof(b), cfg_get("general", "unlocked", ""));
     n = snprintf(out, cap, "{\"type\":\"tray\",\"lang\":\"%s\",\"theme\":\"%s\",\"unlocked\":\"%s\",\"motion\":\"%s\",\"pro_off\":%d,"
-                 "\"fx\":\"%s\",\"off\":\"%s\",\"bri\":%d,\"pal\":[", lang == 1 ? "ru" : lang == 2 ? "fr" : "en", a, b,
+                 "\"fx\":\"%s\",\"off\":\"%s\",\"bri\":%d,", lang == 1 ? "ru" : lang == 2 ? "fr" : "en", a, b,
                  !strcmp(mo, "1") || !strcmp(mo, "0") ? mo : "sys", pro_off, g_effects[cur_effect].id, g_effects[off].id, (int)(brightness * 100 + 0.5f));
+    // the tray's own lists: favourite and recent effects first in its picker, pinned devices first on its main view
+    static const char *const lists[][2] = {{"fav", "fav"}, {"recent", "fx_recent"}, {"dpin", "tray_pin"}};
+    for (int i = 0; i < 3; i++) { jesc(a, sizeof(a), cfg_get("general", lists[i][1], "")); n += snprintf(out + n, cap - n, "\"%s\":\"%s\",", lists[i][0], a); }
+    n += snprintf(out + n, cap - n, "\"pal\":[");
     rgbf pal[MAX_PALETTE];
     EnterCriticalSection(&cs); int np = effects_palette(cur_effect, pal, MAX_PALETTE); LeaveCriticalSection(&cs);
     for (int i = 0; i < np; i++)
