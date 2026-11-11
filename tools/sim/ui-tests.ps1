@@ -57,7 +57,7 @@ try {
     try {
       $dev = $null
       for ($i = 0; $i -lt 150 -and -not $dev; $i++) { Start-Sleep -Milliseconds 200; if (Test-Path $portFile) { $dev = (Get-Content $portFile)[0] } }
-      if (-not $dev) { throw 'the browser did not open its DevTools port' }
+      if (-not $dev) { throw 'the browser did not open its DevTools port: ' + (@(Get-Content $errFile -ErrorAction SilentlyContinue | Where-Object { $_ -match ':ERROR:' }) -join ' | ') }
       $target = $null
       for ($i = 0; $i -lt 50 -and -not $target; $i++) {
         $list = Invoke-RestMethod "http://127.0.0.1:$dev/json/list" -UseBasicParsing   # Windows PowerShell: the array as one object
@@ -82,6 +82,9 @@ try {
       $conns += @(netstat -ano -p tcp | Select-String ":$Port\s" | Where-Object { $_.Line -notmatch 'TIME_WAIT' } | ForEach-Object { "${page}: " + ($_.Line -replace '\s+', ' ').Trim() })
       # only the browser started here, with its own child processes
       if (-not $br.HasExited) { & taskkill /T /F /PID $br.Id 2>&1 | Out-Null }
+      # and gone: on 1 core the killed browser still held its profile's lockfile when the next page's browser started,
+      # which then quit ("Lock file can not be created! Error code: 32") and the page never opened
+      $br.WaitForExit(30000) | Out-Null
     }
     if ($state) { $log += @($state.log) }
     if (-not ($state -and $state.done)) {
