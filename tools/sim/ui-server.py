@@ -7,5 +7,12 @@ import functools, http.server, sys
 class Server(http.server.ThreadingHTTPServer):
     request_queue_size = 128
 
+class Files(http.server.SimpleHTTPRequestHandler):
+    # each request also when it begins: one that never ends shows as a 'begin' with no answer after it (ui-tests.ps1)
+    def parse_request(self):
+        ok = super().parse_request()
+        if ok: self.log_message('begin %s', self.requestline)
+        return ok
+
 port, folder = int(sys.argv[1]), sys.argv[2]
-Server(('127.0.0.1', port), functools.partial(http.server.SimpleHTTPRequestHandler, directory=folder)).serve_forever()
+Server(('127.0.0.1', port), functools.partial(Files, directory=folder)).serve_forever()

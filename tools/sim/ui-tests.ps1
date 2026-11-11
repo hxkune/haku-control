@@ -34,7 +34,7 @@ function Cdp-Eval($ws, [string]$expr) {
   }
 }
 
-$srv = $null; $log = @(); $unfinished = @()
+$srv = $null; $log = @(); $unfinished = @(); $conns = @()
 # CPU time per process at the start: on a failure, who used the machine meanwhile (a slow runner, a scanner)
 $cpu0 = @{}; Get-Process | ForEach-Object { $cpu0["$($_.Id)"] = $_.CPU }
 $t0 = Get-Date
@@ -78,6 +78,8 @@ try {
     } catch { Write-Output "  ${page}: $_" }
     finally {
       if ($ws) { $ws.Dispose() }
+      # the connections to the test server open now, the browser still there (out of its 6 per server, or a server not reading)
+      $conns += @(netstat -ano -p tcp | Select-String ":$Port\s" | Where-Object { $_.Line -notmatch 'TIME_WAIT' } | ForEach-Object { "${page}: " + ($_.Line -replace '\s+', ' ').Trim() })
       # only the browser started here, with its own child processes
       if (-not $br.HasExited) { & taskkill /T /F /PID $br.Id 2>&1 | Out-Null }
     }
@@ -96,14 +98,19 @@ try {
   $srvErr = @($srvAll | Where-Object { $_ -notmatch '" (200|304) ' } | Select-Object -Last 30)
   # the requests since the last frame of the main page was asked for (which of its files reached the server)
   $last = -1; for ($i = 0; $i -lt $srvAll.Count; $i++) { if ($srvAll[$i] -match '"GET /index\.html\?mock HTTP') { $last = $i } }
-  $srvTail = if ($last -ge 0) { @($srvAll[$last..($srvAll.Count - 1)] | Where-Object { $_ -match '"GET ' } | Select-Object -First 30) } else { @() }
+  $srvTail = if ($last -ge 0) { @($srvAll[$last..($srvAll.Count - 1)] | Where-Object { $_ -match '"GET ' } | Select-Object -First 40) } else { @() }
+  # requests begun and never answered, over the whole run
+  $open = [ordered]@{}; foreach ($l in $srvAll) { if ($l -match 'begin (GET \S+)') { $open[$Matches[1]] = 1 + [int]$open[$Matches[1]] } elseif ($l -match '"(GET \S+) HTTP[^"]*" \d{3}' -and $open[$Matches[1]]) { $open[$Matches[1]]-- } }
+  $hung = @($open.Keys | Where-Object { $open[$_] -gt 0 } | ForEach-Object { "$_ x$($open[$_])" })
   Remove-Item $profileDir -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $errFile, $srvLog -Force -ErrorAction SilentlyContinue
 }
 $log | ForEach-Object { Write-Output $_ }
 $bad = @($log | Where-Object { $_ -like 'FAIL *' })
 if ($bad.Count -or $unfinished) {
-  $srvErr | ForEach-Object { Write-Output "  server: $_" }; $srvTail | ForEach-Object { Write-Output "  asked: $_" }
+  $srvErr | Where-Object { $_ -notmatch ' begin GET ' } | ForEach-Object { Write-Output "  server: $_" }; $srvTail | ForEach-Object { Write-Output "  asked: $_" }
+  Write-Output "  never answered: $(if ($hung) { $hung -join ', ' } else { 'none' })"
+  $conns | Select-Object -First 30 | ForEach-Object { Write-Output "  conn: $_" }
   Write-Output ("  cpu: {0} cores, {1:N0} s of the run; the most CPU seconds meanwhile:" -f [Environment]::ProcessorCount, ((Get-Date) - $t0).TotalSeconds)
   Get-Process | ForEach-Object { [pscustomobject]@{ n = $_.ProcessName; s = $_.CPU - [double]$cpu0["$($_.Id)"] } } | Group-Object n |
     ForEach-Object { [pscustomobject]@{ n = $_.Name; s = ($_.Group | Measure-Object s -Sum).Sum } } | Sort-Object s -Descending | Select-Object -First 8 |
