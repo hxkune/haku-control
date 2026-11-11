@@ -1093,9 +1093,9 @@
     }
     TXB.src = { frames, w: 200, h: 100, dur: .6 };
     // where a run that never ends stopped: the builder's own line while it makes the video, then the video's load
-    const name = document.title; let step = 'making', frames = 0, counting = 1;
-    const count = () => { frames++; if (counting) requestAnimationFrame(count); }; requestAnimationFrame(count);   // does the page still get frames
-    const shown = setInterval(() => { document.title = `${name} · ${step}: ${$('#txb-msg').textContent} · ${frames} frames in ${Math.round(performance.now() / 1000)} s`; }, 1000);
+    const name = document.title; let step = 'making', drawn = 0, counting = 1;
+    const count = () => { drawn++; if (counting) requestAnimationFrame(count); }; requestAnimationFrame(count);   // does the page still get frames
+    const shown = setInterval(() => { document.title = `${name} · ${step}: ${$('#txb-msg').textContent} · ${drawn} frames in ${Math.round(performance.now() / 1000)} s`; }, 1000);
     sent.length = 0; await txbMake();
     const o = sent.find(x => x.cmd === 'tryx_build');
     ok(o && o.ext === 'mp4' && $('#txb-msg').textContent === t('txb.saved'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }) + ' / ' + $('#txb-msg').textContent);
