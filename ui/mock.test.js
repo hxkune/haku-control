@@ -1284,6 +1284,21 @@
     } finally { if (TXB) txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit(); }
   });
 
+  test('Corsair LCD: an animation\'s pack lets the page run between frames, and Cancel stops it with nothing sent', async () => {
+    await fresh();
+    STATE.ext.devs.push(clDev('Corsair iCUE LINK LCD · screen · USB')); STATE.cfg['dev.15'] = { kind: 'corsairlcd' }; await fanEmit();
+    $('#dev-st-15').closest('.card').querySelector('.dev-build').click();
+    const c = document.createElement('canvas'); c.width = c.height = 100; c.getContext('2d').fillStyle = '#c33'; c.getContext('2d').fillRect(0, 0, 100, 100);
+    TXB.src = { frames: [{ bmp: await createImageBitmap(c), at: 0, dur: 2 }], w: 100, h: 100, dur: 2 };   // 50 frames
+    try {
+      sent.length = 0; const p = txbMake();
+      await wait(0);   // a timer of the page's: before the fix the whole pack ran first, the page frozen
+      ok(TXB.busy && TXB.stage === 'pack' && !$('#txb-cancel').disabled, 'the pack did not let the page run: ' + TXB.stage + ' ' + $('#txb-msg').textContent);
+      $('#txb-cancel').click(); await p;
+      ok(!sent.some(x => x.cmd === 'tryx_build') && $('#txb-msg').textContent === t('txb.stopped') && !TXB.busy, 'after Cancel: ' + $('#txb-msg').textContent);
+    } finally { if (TXB) txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit(); }
+  });
+
   // the builder open on a TRYX, and a stand-in ImageDecoder: a file's text names its plan { n, w, h, fail, hold }, frame i
   // waiting for hold[i]; it counts the decoders and frames it made and closed, and keeps every bitmap made meanwhile
   const txbOn = async () => {
@@ -1451,12 +1466,13 @@
     ok(B && !B.busy && B.src === src && src.frames.every(f => !shut(f.bmp)) && B.layers.length === 1 && B.z === 2 && Math.abs(B.cx - .4) < 1e-9 && B.shape === '2:1', why + ': the work changed');
     ok(['#txb-go', '#txb-src', '#txb-cancel', '#txb-x', '#txb-shape', '#txb-zoom'].every(s => !$(s).disabled) && !$('#txb').classList.contains('hidden'), why + ': the builder is not usable');
     // the preview draws each new frame of the animation (one lasts dur / frames): the loop must run and draw the next one
-    ok(B.raf, why + ': the preview loop stopped'); await wait(src.dur * 1000 / src.frames.length + 80); ok(log.previews > p, why + ': the preview stopped');
+    ok(B.raf, why + ': the preview loop stopped'); await until(() => log.previews > p, why + ': the next preview frame');
   };
 
   test('TRYX: a video frame failing to encode, the first or the second, ends the making, frees the encoder and every frame, keeps the work, and a retry saves', async () => {
-    await fresh(); const src = await txbAnim(.3); let log = null;
+    await fresh(); let log = null;
     try {
+      const src = await txbAnim(1.5);   // long enough for a second frame on a slow PC
       for (const n of [1, 2]) {
         log = fakeEncoder({ encode: n }); sent.length = 0;
         await within(txbMake());
@@ -1471,8 +1487,9 @@
   });
 
   test('TRYX: drawing a frame or the flush failing ends the making with the reason and frees it all', async () => {
-    await fresh(); const src = await txbAnim(.3); let log = null;
+    await fresh(); let log = null;
     try {
+      const src = await txbAnim(1.5);   // long enough for a second frame on a slow PC
       for (const [plan, e] of [[{ draw: 1 }, 'draw broke'], [{ draw: 2 }, 'draw broke'], [{ flush: 1 }, 'flush broke']]) {
         log = fakeEncoder(plan); sent.length = 0;
         await within(txbMake());
@@ -1483,15 +1500,19 @@
   });
 
   test('TRYX: Cancel or Escape while the video is made stops it, frees it, saves nothing, keeps the work; one making at a time; a retry saves', async () => {
-    await fresh(); const src = await txbAnim(1.5); let log = null;
+    await fresh(); let log = null; const now = performance.now;
     try {
+      const src = await txbAnim(1.5);
       for (const how of ['cancel', 'escape', 'cross']) {
         log = fakeEncoder(); sent.length = 0;
+        // the making's clock 10x slower until the click: a slow PC stalling before it must not let the video end first
+        const s0 = now.call(performance); performance.now = () => s0 + (now.call(performance) - s0) / 10;
         const p = txbMake(); await until(() => log.frames > 0, how + ': the first video frame');
         ok(TXB.busy && TXB.stage === 'frames' && !$('#txb-cancel').disabled && !$('#txb-x').disabled && $('#txb-go').disabled && $('#txb-src').disabled, how + ': while making: ' + JSON.stringify(log));
         await txbMake(); ok(log.enc === 1, how + ': a second making started');
         $('#txb').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); ok(!TXB.stop, how + ': a click beside the builder stopped it');
         if (how === 'cancel') $('#txb-cancel').click(); else if (how === 'cross') $('#txb-x').click(); else key(document.body, 'Escape');
+        performance.now = now;
         await within(p);
         ok($('#txb-msg').textContent === t('txb.stopped') && !$('#txb-msg').classList.contains('warn'), how + ': ' + $('#txb-msg').textContent);
         ok(log.tidy() && !sent.some(o => o.cmd === 'tryx_build') && log.draws < 60, how + ': left open, sent or ran on: ' + JSON.stringify(log));
@@ -1499,13 +1520,13 @@
       }
       log = fakeEncoder(); sent.length = 0; await within(txbMake(), 6000);
       ok(sent.some(o => o.cmd === 'tryx_build') && $('#txb-msg').textContent === t('txb.saved') && log.tidy(), 'the retry: ' + $('#txb-msg').textContent);
-    } finally { await txbOff(log); }
+    } finally { performance.now = now; await txbOff(log); }
   });
 
   test('TRYX: once the video is handed to the core, Cancel is off and never says it stopped what the core may have saved', async () => {
-    await fresh(); const src = await txbAnim(.3); const log = fakeEncoder();
+    await fresh(); const log = fakeEncoder();
     try {
-      sent.length = 0; const p = txbMake();
+      const src = await txbAnim(.3); sent.length = 0; const p = txbMake();
       await until(() => sent.some(o => o.cmd === 'tryx_build'), 'the video handed to the core');
       ok(TXB.busy && $('#txb-cancel').disabled && $('#txb-x').disabled && $('#txb-msg').textContent === t('txb.saving'), 'while saving: ' + $('#txb-msg').textContent);
       txbClose(); key(document.body, 'Escape');
@@ -1516,10 +1537,10 @@
   });
 
   test('TRYX: Cancel while the encoder flushes closes it and ends at once, nothing left unhandled or sent, the work kept; a retry saves', async () => {
-    await fresh(); const src = await txbAnim(.3); let log = fakeEncoder({ flush: 'hold' }), loose = [];
+    await fresh(); let log = fakeEncoder({ flush: 'hold' }), loose = [];
     const seen = e => loose.push(String(e.reason)); window.addEventListener('unhandledrejection', seen);
     try {
-      sent.length = 0; const p = txbMake();
+      const src = await txbAnim(.3); sent.length = 0; const p = txbMake();
       await until(() => TXB.stage === 'flush', 'the flush');
       ok(!log.encClosed && !$('#txb-cancel').disabled, 'before Cancel: ' + JSON.stringify(log));
       $('#txb-cancel').click(); await within(p, 1000);
@@ -1532,11 +1553,11 @@
   });
 
   test('TRYX: Cancel while the video is read for sending stops the read, and the read ending after it sends nothing', async () => {
-    await fresh(); const src = await txbAnim(.3); const log = fakeEncoder(), real = window.FileReader, go = gate(), rd = { reads: 0, aborts: 0, late: 0 };
+    await fresh(); const log = fakeEncoder(), real = window.FileReader, go = gate(), rd = { reads: 0, aborts: 0, late: 0 };
     // a read held until go, that ends even after abort(): only the builder may ignore it
     window.FileReader = class { readAsDataURL() { rd.reads++; go.then(() => { this.result = 'data:video/mp4;base64,AAAA'; rd.late++; this.onload?.(); }); } abort() { rd.aborts++; } };
     try {
-      sent.length = 0; const p = txbMake();
+      const src = await txbAnim(.3); sent.length = 0; const p = txbMake();
       await until(() => rd.reads, 'the read');
       ok(TXB.stage === 'read' && !$('#txb-cancel').disabled, 'while reading: ' + TXB.stage);
       $('#txb-cancel').click(); await within(p, 1000);

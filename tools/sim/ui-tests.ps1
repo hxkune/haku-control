@@ -21,15 +21,16 @@ function Cdp-Eval($ws, [string]$expr) {
   $msg = @{ id = $script:cdpId; method = 'Runtime.evaluate'; params = @{ expression = $expr; returnByValue = $true } } | ConvertTo-Json -Compress -Depth 5
   $b = [Text.Encoding]::UTF8.GetBytes($msg)
   if (-not $ws.SendAsync((New-Object 'ArraySegment[byte]' (, $b)), 'Text', $true, $none).Wait(10000)) { return $null }
-  $buf = New-Object byte[] 65536
+  # a receive that timed out is still running (a socket takes one at a time): the next call waits on that one, with its
+  # buffer and the part of the message read so far, rather than start a second receive (InvalidOperationException)
   while ($true) {
-    $ms = New-Object IO.MemoryStream
     do {
-      $t = $ws.ReceiveAsync((New-Object 'ArraySegment[byte]' (, $buf)), $none)
-      if (-not $t.Wait(10000)) { return $null }
-      $ms.Write($buf, 0, $t.Result.Count)
+      if (-not $script:rx) { $script:rx = $ws.ReceiveAsync((New-Object 'ArraySegment[byte]' (, $script:rxBuf)), $none) }
+      if (-not $script:rx.Wait(10000)) { return $null }
+      $t = $script:rx; $script:rx = $null
+      $script:rxMs.Write($script:rxBuf, 0, $t.Result.Count)
     } while (-not $t.Result.EndOfMessage)
-    $r = [Text.Encoding]::UTF8.GetString($ms.ToArray()) | ConvertFrom-Json
+    $r = [Text.Encoding]::UTF8.GetString($script:rxMs.ToArray()) | ConvertFrom-Json; $script:rxMs.SetLength(0)
     if ($r.id -eq $script:cdpId) { return $r.result.result.value }   # anything else is an event: skipped
   }
 }
@@ -67,7 +68,7 @@ try {
       if (-not $target) { throw "the browser did not open $page" }
       $ws = New-Object Net.WebSockets.ClientWebSocket
       $ws.ConnectAsync([uri]$target.webSocketDebuggerUrl, $none).Wait(10000) | Out-Null
-      $script:cdpId = 0
+      $script:cdpId = 0; $script:rx = $null; $script:rxBuf = New-Object byte[] 65536; $script:rxMs = New-Object IO.MemoryStream
       $end = (Get-Date).AddMinutes($Minutes)
       $q = 'JSON.stringify({ done: !!(window.TEST && TEST.done), log: window.TEST ? TEST.log : [], title: document.title, stage: typeof TXB !== "undefined" && TXB && TXB.stage || "" })'
       while ((Get-Date) -lt $end) {
@@ -81,10 +82,19 @@ try {
       # the connections to the test server open now, the browser still there (out of its 6 per server, or a server not reading)
       $conns += @(netstat -ano -p tcp | Select-String ":$Port\s" | Where-Object { $_.Line -notmatch 'TIME_WAIT' } | ForEach-Object { "${page}: " + ($_.Line -replace '\s+', ' ').Trim() })
       # only the browser started here, with its own child processes
-      if (-not $br.HasExited) { & taskkill /T /F /PID $br.Id 2>&1 | Out-Null }
+      # a child already on its way out makes taskkill say "could not be terminated": with 'Stop' that ended the run unreported
+      if (-not $br.HasExited) { try { & taskkill /T /F /PID $br.Id 2>&1 | Out-Null } catch {} }
       # and gone: on 1 core the killed browser still held its profile's lockfile when the next page's browser started,
       # which then quit ("Lock file can not be created! Error code: 32") and the page never opened
       $br.WaitForExit(30000) | Out-Null
+      # and its children too: on 1 core taskkill /T left some (GPU, network, storage), and they held the profile's lockfile.
+      # Only those with this run's own profile folder (a new GUID) in their command line
+      for ($i = 0; $i -lt 50; $i++) {
+        $left = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($profileDir) })
+        if (-not $left) { break }
+        $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Milliseconds 200
+      }
     }
     if ($state) { $log += @($state.log) }
     if (-not ($state -and $state.done)) {

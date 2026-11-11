@@ -4462,6 +4462,9 @@ async function txbPack(B, s, c, msg) {
   for (let i = 0; i < n; i++) {
     if (B.stop) throw t('txb.stopped');
     if (s?.el) await txbWait(B, txbSeek(s.el, i * step), () => { s.el.onseeked = s.el.onerror = null; });
+    // no video to wait on: a task per frame, or the page froze for the whole pack and Cancel could not be clicked.
+    // A posted message, not a timer: timers of a minimised (hidden) window run once a second
+    else await new Promise(r => { const m = new MessageChannel(); m.port1.onmessage = () => { m.port1.close(); r(); }; m.port2.postMessage(0); });
     txbDraw(c, i * step); parts.push([await jpg(), Math.max(40, Math.round(step * 1000))]);
     if (dur) msg.textContent = t('txb.rec.lcd', Math.round((i + 1) / n * 100));
   }

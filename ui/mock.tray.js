@@ -30,8 +30,11 @@
   const wasOn = {};   // a [dev.N] device's state when it was switched off, given back when switched on again
   let prev = 'aurora', opening = true;
   const L = [], sent = window.MOCK_SENT = [];
-  const emit = d => setTimeout(() => L.forEach(f => f({ data: JSON.parse(JSON.stringify(d)) })), 0);
-  const state = (ms = 40) => setTimeout(() => emit(S), ms);
+  // window.mockBusy: answers on their way; the tests wait for 0 rather than a guessed time (a slow PC lags the timers)
+  let busy = 0; Object.defineProperty(window, 'mockBusy', { get: () => busy });
+  const later = (f, ms) => { busy++; setTimeout(() => { try { f(); } finally { busy--; } }, ms); };
+  const emit = d => later(() => L.forEach(f => f({ data: JSON.parse(JSON.stringify(d)) })), 0);
+  const state = (ms = 40) => later(() => emit(S), ms);
   const palOf = id => PAL[id] || ['#888888'];
   window.mockOpen = () => { opening = true; emit(S); emit({ type: 'open' }); };   // a click on the icon, the page kept
   window.mockState = () => emit(S);                                              // a change made elsewhere
@@ -39,7 +42,7 @@
     addEventListener(t, f) { if (t === 'message') L.push(f); },
     postMessage(s) {
       const o = JSON.parse(s); sent.push(o);
-      if (o.cmd === 'hello') { setTimeout(() => { emit(S); emit({ type: 'open' }); }, 30); return; }
+      if (o.cmd === 'hello') { later(() => { emit(S); emit({ type: 'open' }); }, 30); return; }
       if (o.cmd === 'height') { if (opening) { opening = false; emit({ type: 'shown', side: 'b' }); } return; }
       if (o.cmd === 'close' || o.cmd === 'menu') { emit({ type: 'closed' }); return; }
       if (o.cmd === 'get') return state(0);

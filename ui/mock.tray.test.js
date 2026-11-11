@@ -9,17 +9,21 @@
   const q = s => document.querySelector(s), qa = s => [...document.querySelectorAll(s)];
   const cmds = c => sent.filter(o => o.cmd === c);
   const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-  const changed = async () => { window.mockState(); await wait(30); };
-  const reopen = async () => { sent.length = 0; window.mockOpen(); await wait(40); };
+  const until = async (f, what, ms = 5000) => { for (const end = Date.now() + ms; !f(); await wait(4)) if (Date.now() > end) throw new Error('never came: ' + what); };
+  // the fake core's answers all delivered (mock.tray.js counts them), not a guessed time: a slow PC lags its timers
+  const settle = async () => { await wait(0); await until(() => !window.mockBusy, 'the fake core answers'); };
+  const changed = async () => { window.mockState(); await settle(); };
+  const reopen = async () => { sent.length = 0; window.mockOpen(); await settle(); };
   const base = JSON.parse(JSON.stringify(S));
   const reset = async () => {   // the fake core back to how it started, the panel on its first view
     window.mockSilent = 0; window.mockProfFail = 0;
     for (const k of Object.keys(S)) delete S[k];
     Object.assign(S, JSON.parse(JSON.stringify(base)));
-    esc(); esc(); await wait(20); await reopen();   // back from a list if in one, then closed
+    esc(); esc(); await settle(); await reopen();   // back from a list if in one, then closed
   };
   q('#panel').style.width = '340px';   // the window's width (PANEL_W), not the test browser's
-  await wait(300);   // hello, the state, open, shown
+  // hello, the state, open, shown; a failure here shows in the first test
+  await until(() => cmds('hello').length, 'hello').then(settle).catch(() => {});
   const tests = [];
   const test = (name, fn) => tests.push([name, fn]);
 
@@ -32,17 +36,17 @@
 
   test('Escape closes from the first view; a ⋯ action asks the app and the panel goes back to its first view', async () => {
     await reset();
-    sent.length = 0; esc(); await wait(20);
+    sent.length = 0; esc(); await settle();
     ok(cmds('close').length === 1, 'Escape did not ask to close');
     ok(!q('#panel').classList.contains('in'), 'still marked open after "closed"');
     await reopen();
     q('[data-go="more"]').click(); await wait(10);
-    q('[data-menu="help"]').click(); await wait(20);
+    q('[data-menu="help"]').click(); await settle();
     ok(cmds('menu').length === 1 && cmds('menu')[0].do === 'help', 'help not asked for');
     ok(!q('#v-main').hidden && q('#v-more').hidden, 'not back on the first view after closing');
     await reopen(); q('[data-go="more"]').click(); await wait(10);
     q('#v-more [data-key="m-window"]').click(); await wait(20);
-    q('[data-menu="window"]').click(); await wait(20);
+    q('[data-menu="window"]').click(); await settle();
     ok(JSON.stringify(cmds('menu').map(m => m.do)) === '["settings","window"]', 'Settings / Open asked for: ' + JSON.stringify(cmds('menu')));
   });
 
@@ -100,21 +104,21 @@
     await reset();
     q('#power').click();
     ok(q('#state-txt').textContent === 'Sending…' && q('#power').getAttribute('aria-pressed') === 'true', 'shown as done before the core answered');
-    await wait(80);
+    await settle();
     ok(q('#power').getAttribute('aria-pressed') === 'false' && q('#state-txt').textContent === 'Lighting is off', 'not off after the state');
     ok(q('#fx .name').textContent === 'Off' && !q('#fx .pal'), 'the effect row');
-    q('#power').click(); await wait(80);
+    q('#power').click(); await settle();
     ok(q('#fx .name').textContent === 'Aurora', 'the effect did not come back');
   });
 
   test('a profile switch the core refuses: an error read out, the one in use stays selected', async () => {
     await reset();
     window.mockProfFail = 2;
-    q('[data-prof="2"]').click(); await wait(80);
+    q('[data-prof="2"]').click(); await settle();
     ok(q('[data-prof="1"]').getAttribute('aria-pressed') === 'true' && q('[data-prof="2"]').getAttribute('aria-pressed') === 'false', 'the refused one is shown selected');
     const e = q('#prof .err');
     ok(e && e.getAttribute('role') === 'alert' && e.textContent.includes('Games'), 'no error, or not about the one in use: ' + (e && e.textContent));
-    window.mockProfFail = 0; q('[data-prof="2"]').click(); await wait(200);
+    window.mockProfFail = 0; q('[data-prof="2"]').click(); await settle();
     ok(q('[data-prof="2"]').getAttribute('aria-pressed') === 'true' && !q('#prof .err'), 'the retry did not switch or the error stays');
   });
 
@@ -126,7 +130,7 @@
     await wait(5200);
     ok(q('#state-txt').textContent === 'Lighting is on' && q('#power').getAttribute('aria-pressed') === 'true', 'shown as off');
     ok(q('#err-power .err') && q('#live').textContent.includes('did not confirm'), 'no error said');
-    esc(); await wait(20); await reopen();
+    esc(); await settle(); await reopen();
     ok(!q('#err-power .err'), 'the old error is still there after reopening');
   });
 
@@ -153,8 +157,8 @@
     ok(row('Desk lamp').querySelector('.switch').getAttribute('aria-checked') === 'true', 'an unreachable one keeps the user\'s switch');
     ok(row('Corsair K70 RGB PRO').querySelector('.switch').getAttribute('aria-checked') === 'true', 'the switch is not the status');
     sent.length = 0;
-    row('Memory lighting').querySelector('.switch').click(); await wait(80);
-    row('Lian Li UNI HUB').querySelector('.switch').click(); await wait(80);
+    row('Memory lighting').querySelector('.switch').click(); await settle();
+    row('Lian Li UNI HUB').querySelector('.switch').click(); await settle();
     ok(JSON.stringify(sent) === JSON.stringify([{ cmd: 'toggle', k: 'ram_enabled' }, { cmd: 'set', s: 'dev.6', k: 'enabled', v: '1' }]), 'sent ' + JSON.stringify(sent));
     ok(row('Memory lighting').querySelector('small').textContent === 'Off', 'not off after the state');
   });
@@ -225,8 +229,8 @@
     ok(q('[data-fx="aurora"]').getAttribute('aria-current') === 'true', 'the current effect');
     ok(qa('#v-effects h3').pop().textContent === 'Your presets' && q('[data-preset="1"] .pal'), 'the presets with their colours');
     sent.length = 0;
-    q('[data-fx="fire"]').click(); await wait(80);
-    q('[data-preset="2"]').click(); await wait(80);
+    q('[data-fx="fire"]').click(); await settle();
+    q('[data-preset="2"]').click(); await settle();
     ok(JSON.stringify(sent) === JSON.stringify([{ cmd: 'effect', id: 'fire' }, { cmd: 'preset', id: 2 }]), 'sent ' + JSON.stringify(sent));
     ok(q('[data-preset="2"]').getAttribute('aria-current') === 'true' && q('[data-fx="ocean"]').getAttribute('aria-current') === 'false', 'the preset is not the current one, or its effect still is');
   });
@@ -241,7 +245,7 @@
     ok(ids().slice(0, 3).join() === 'fire,aurora,ocean' && ids().length === S.fxs.length && new Set(ids()).size === ids().length, 'order or repeats: ' + ids());
     find().focus(); await type('OCE');
     ok(ids().join() === 'ocean' && !q('#v-effects h3') && document.activeElement === find(), 'the search: ' + ids() + ' focus ' + document.activeElement.id);
-    sent.length = 0; key('Enter'); await wait(80);
+    sent.length = 0; key('Enter'); await settle();
     ok(JSON.stringify(cmds('effect')) === '[{"cmd":"effect","id":"ocean"}]', 'Enter did not take the first match: ' + JSON.stringify(sent));
     await type('zzz');
     ok(q('#fx-list .muted').textContent === 'Nothing matches “zzz”' && !ids().length, 'nothing found not said');
@@ -264,7 +268,7 @@
     q('[data-go="devices"]').click(); await wait(10);
     ok(q('#v-devices .hint').textContent.includes('up to 3'), 'no word on pinning');
     sent.length = 0;
-    for (const k of ['id:6', 'k:nanoleaf_enabled', 'id:4']) { q(`[data-pin="${k}"]`).click(); await wait(80); }
+    for (const k of ['id:6', 'k:nanoleaf_enabled', 'id:4']) { q(`[data-pin="${k}"]`).click(); await settle(); }
     ok(JSON.stringify(cmds('set').map(c => [c.s, c.k, c.v])) === '[["general","tray_pin","id:6"],["general","tray_pin","id:6,k:nanoleaf_enabled"],["general","tray_pin","id:6,k:nanoleaf_enabled,id:4"]]',
       'sent ' + JSON.stringify(cmds('set')));
     ok(q('[data-pin="id:4"]').getAttribute('aria-pressed') === 'true' && q('[data-pin="k:ram_enabled"]').disabled, 'a fourth one can be pinned');
@@ -276,7 +280,7 @@
     ok(names() === 'Lian Li UNI HUB|Nanoleaf Shapes' && q('[data-go="devices"]').textContent.includes('Show all 4'), 'by key, a removed one left out: ' + names());
     q('[data-go="devices"]').click(); await wait(10);
     ok(!q('[data-pin="k:ram_enabled"]').disabled, 'a removed device still holds a pin');
-    q('[data-pin="id:6"]').click(); await wait(80);
+    q('[data-pin="id:6"]').click(); await settle();
     ok(S.dpin === 'k:nanoleaf_enabled', 'unpinning: ' + S.dpin);
   });
 
@@ -285,7 +289,7 @@
     q('[data-go="more"]').click(); await wait(10);
     const pc = () => q('[data-pc]');
     ok(pc().textContent.includes('Hand over') && pc().textContent.includes('0 of 3'), 'before: ' + pc().textContent);
-    pc().click(); await wait(80);
+    pc().click(); await settle();
     ok(pc().textContent.includes('Light with haku') && pc().textContent.includes('3 of 3'), 'after: ' + pc().textContent);
     ok(!q('#v-main').contains(q('[data-menu="quit"]')), 'quit is on the first view');
   });
