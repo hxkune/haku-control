@@ -19,6 +19,7 @@ $p = Start-Process -FilePath $Setup -ArgumentList "/extract `"$to`"" -Wait -Pass
 if ($p.ExitCode -ne 0) { $bad += "setup /extract exited with $($p.ExitCode)" }
 else {
     $files = & (Join-Path $root 'scripts\pack.ps1') -List
+    $to = (Get-Item $to).FullName   # %TEMP% may be a short 8.3 path (RUNNER~1 on CI); the files below come back long
     $got = @(Get-ChildItem $to -Recurse -File | ForEach-Object { $_.FullName.Substring($to.Length + 1) })
     foreach ($name in $files.Keys) {
         $f = Join-Path $to $name
