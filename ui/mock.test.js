@@ -2992,6 +2992,7 @@
   setCfg('general', 'ui_motion', '1'); applyMotion();   // the tests move whatever this Windows says about motion
   for (const [name, fn] of tests) {
     if (only && !name.includes(only)) continue;
+    document.title = 'running: ' + name;   // what a run that never ends was on (tools/sim/ui-tests.ps1 prints it)
     try { await fn(); log.push('ok   ' + name); }
     catch (e) { R.failed++; log.push('FAIL ' + name + ': ' + e.message); }
   }

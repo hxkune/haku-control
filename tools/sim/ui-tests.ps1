@@ -20,7 +20,7 @@ try {
              --virtual-time-budget=1800000 --dump-dom $url 2>$null | Out-String
     # the first result follows <pre ...> on its line, the rest start lines
     $got = @([regex]::Matches($dom, '(?m)(?:^|(?<=<pre[^>]*>))(ok   |FAIL )[^<\r\n]*') | ForEach-Object { [Net.WebUtility]::HtmlDecode($_.Value) })
-    if (-not $got -and -not $Only) { $unfinished += $page }   # with -Only a page may simply have no such test
+    if (-not $got -and -not $Only) { $unfinished += "$page (" + [Net.WebUtility]::HtmlDecode(([regex]::Match($dom, '<title>([^<]*)</title>')).Groups[1].Value) + ')' }   # with -Only a page may simply have no such test
     $log += $got
   }
 } finally {
