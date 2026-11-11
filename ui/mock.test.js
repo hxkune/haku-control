@@ -1092,17 +1092,20 @@
       frames.push({ bmp: await createImageBitmap(c), at: i * .2, dur: .2 });
     }
     TXB.src = { frames, w: 200, h: 100, dur: .6 };
+    // the encoder and the mp4's decoder work on real threads, unseen by the run's virtual clock, which would run out meanwhile;
+    // a fetch in flight holds that clock, so here it moves 15 ms per fetch to the local server
+    let held = 1; (async () => { while (held) { await fetch('mock.js', { cache: 'no-store' }).catch(() => {}); await wait(15); } })();
     // where a run that never ends stopped: the builder's own line while it makes the video, then the video's load
-    const name = document.title; let step = 'making', drawn = 0, counting = 1;
-    const count = () => { drawn++; if (counting) requestAnimationFrame(count); }; requestAnimationFrame(count);   // does the page still get frames
-    const shown = setInterval(() => { document.title = `${name} · ${step}: ${$('#txb-msg').textContent} · ${drawn} frames in ${Math.round(performance.now() / 1000)} s`; }, 1000);
-    sent.length = 0; await txbMake();
-    const o = sent.find(x => x.cmd === 'tryx_build');
-    ok(o && o.ext === 'mp4' && $('#txb-msg').textContent === t('txb.saved'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }) + ' / ' + $('#txb-msg').textContent);
-    const v = document.createElement('video'); v.muted = true; v.src = 'data:video/mp4;base64,' + o.data; step = 'the made mp4 loading';
-    const err = await new Promise(r => { v.onloadeddata = () => r(''); v.onerror = () => r('error ' + v.error?.message); });
-    clearInterval(shown); counting = 0;
-    ok(!err && v.videoWidth === 1440 && v.videoHeight === 720 && Math.abs(v.duration - .6) < .15, `the mp4: ${err} ${v.videoWidth}x${v.videoHeight} ${v.duration} s`);
+    const name = document.title; let step = 'making';
+    const shown = setInterval(() => { document.title = `${name} · ${step}: ${$('#txb-msg').textContent} · ${Math.round(performance.now() / 1000)} s`; }, 1000);
+    try {
+      sent.length = 0; await txbMake();
+      const o = sent.find(x => x.cmd === 'tryx_build');
+      ok(o && o.ext === 'mp4' && $('#txb-msg').textContent === t('txb.saved'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }) + ' / ' + $('#txb-msg').textContent);
+      const v = document.createElement('video'); v.muted = true; v.src = 'data:video/mp4;base64,' + o.data; step = 'the made mp4 loading';
+      const err = await new Promise(r => { v.onloadeddata = () => r(''); v.onerror = () => r('error ' + v.error?.message); });
+      ok(!err && v.videoWidth === 1440 && v.videoHeight === 720 && Math.abs(v.duration - .6) < .15, `the mp4: ${err} ${v.videoWidth}x${v.videoHeight} ${v.duration} s`);
+    } finally { clearInterval(shown); held = 0; document.title = name; }
     txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
   });
 
