@@ -2,9 +2,21 @@
 // started without admin rights. Run without admin rights it checks the plain branch and forces the limited start;
 // run with them it also checks that the folder is a new one in Windows\Temp and that the child has no admin rights.
 #include "../../src/safetmp.h"
+#include <aclapi.h>
+#pragma comment(lib, "user32.lib")
 
 static int bad;
 #define CHECK(c, what) do { if (c) printf("ok   %s\n", what); else { printf("FAIL %s\n", what); bad = 1; } } while (0)
+// The integrity level a window station or desktop is labeled with (medium when it has no label). A desktop labeled
+// above medium takes no program without admin rights at all: it dies at start with 0xC0000142 (a service session).
+static DWORD label(HANDLE h) {
+    PSECURITY_DESCRIPTOR sd = NULL; PACL sacl = NULL; DWORD rid = SECURITY_MANDATORY_MEDIUM_RID; SYSTEM_MANDATORY_LABEL_ACE *a;
+    if (!GetSecurityInfo(h, SE_WINDOW_OBJECT, LABEL_SECURITY_INFORMATION, NULL, NULL, NULL, &sacl, &sd) && sacl &&
+        GetAce(sacl, 0, (void **)&a) && a->Header.AceType == SYSTEM_MANDATORY_LABEL_ACE_TYPE)
+        rid = *GetSidSubAuthority((PSID)&a->SidStart, 0);
+    if (sd) LocalFree(sd);
+    return rid;
+}
 static int exists(const wchar_t *p) { return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }
 
 int main(void) {
@@ -33,7 +45,11 @@ int main(void) {
         CHECK(!e.TokenIsElevated, "it has no admin rights");
         ResumeThread(pi.hThread); DWORD w = WaitForSingleObject(pi.hProcess, 10000); GetExitCodeProcess(pi.hProcess, &code);
         if (code != 7) printf("     wait %lu, exit code 0x%08lX\n", w, code);
-        CHECK(code == 7, "it runs and ends with its own code");
+        DWORD ws = label(GetProcessWindowStation()), dk = label(GetThreadDesktop(GetCurrentThreadId()));
+        printf("     window station labeled 0x%lX, desktop 0x%lX\n", ws, dk);
+        if (ws > SECURITY_MANDATORY_MEDIUM_RID || dk > SECURITY_MANDATORY_MEDIUM_RID)
+            printf("skip it runs and ends with its own code: no program without admin rights can start on this desktop\n");
+        else CHECK(code == 7, "it runs and ends with its own code");
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
     }
     puts(bad ? "safetmp: FAILED" : "safetmp: ok");
