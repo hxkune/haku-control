@@ -7,15 +7,29 @@
 
 static int bad;
 #define CHECK(c, what) do { if (c) printf("ok   %s\n", what); else { printf("FAIL %s\n", what); bad = 1; } } while (0)
-// The integrity level a window station or desktop is labeled with (medium when it has no label). A desktop labeled
-// above medium takes no program without admin rights at all: it dies at start with 0xC0000142 (a service session).
-static DWORD label(HANDLE h) {
-    PSECURITY_DESCRIPTOR sd = NULL; PACL sacl = NULL; DWORD rid = SECURITY_MANDATORY_MEDIUM_RID; SYSTEM_MANDATORY_LABEL_ACE *a;
-    if (!GetSecurityInfo(h, SE_WINDOW_OBJECT, LABEL_SECURITY_INFORMATION, NULL, NULL, NULL, &sacl, &sd) && sacl &&
-        GetAce(sacl, 0, (void **)&a) && a->Header.AceType == SYSTEM_MANDATORY_LABEL_ACE_TYPE)
-        rid = *GetSidSubAuthority((PSID)&a->SidStart, 0);
+// What the token limited_start makes may do with this window station or desktop (0: nothing). One that lets only
+// admins in takes no program without admin rights at all: it dies at start with 0xC0000142 (a service session).
+static DWORD limited_access(HANDLE h, const char *what) {
+    HANDLE t = NULL, r = NULL, imp = NULL; PSID mid = NULL; PSECURITY_DESCRIPTOR sd = NULL; wchar_t *s = NULL;
+    GENERIC_MAPPING gm = { STANDARD_RIGHTS_READ | 0x41, STANDARD_RIGHTS_WRITE | 0xBE, STANDARD_RIGHTS_EXECUTE | 0x100, STANDARD_RIGHTS_REQUIRED | 0x1FF };
+    PRIVILEGE_SET ps; DWORD psl = sizeof(ps), got = 0; BOOL st = FALSE;
+    if (!GetSecurityInfo(h, SE_WINDOW_OBJECT, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION, NULL, NULL, NULL, NULL, &sd) &&
+        ConvertSecurityDescriptorToStringSecurityDescriptorW(sd, SDDL_REVISION_1, DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION, &s, NULL))
+        printf("     %s: %ls\n", what, s);
+    if (sd && OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_QUERY, &t) &&
+        CreateRestrictedToken(t, LUA_TOKEN, 0, NULL, 0, NULL, 0, NULL, &r) && DuplicateToken(r, SecurityImpersonation, &imp) &&
+        ConvertStringSidToSidW(L"S-1-16-8192", &mid)) {
+        TOKEN_MANDATORY_LABEL ml = { { mid, SE_GROUP_INTEGRITY } };
+        SetTokenInformation(imp, TokenIntegrityLevel, &ml, sizeof(ml) + GetLengthSid(mid));
+        if (!AccessCheck(sd, imp, MAXIMUM_ALLOWED, &gm, &ps, &psl, &got, &st)) got = 0;
+    } else got = (DWORD)-1;   // not known: the check below stays on
+    if (s) LocalFree(s);
     if (sd) LocalFree(sd);
-    return rid;
+    if (mid) LocalFree(mid);
+    if (imp) CloseHandle(imp);
+    if (r) CloseHandle(r);
+    if (t) CloseHandle(t);
+    return got;
 }
 static int exists(const wchar_t *p) { return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }
 
@@ -45,10 +59,10 @@ int main(void) {
         CHECK(!e.TokenIsElevated, "it has no admin rights");
         ResumeThread(pi.hThread); DWORD w = WaitForSingleObject(pi.hProcess, 10000); GetExitCodeProcess(pi.hProcess, &code);
         if (code != 7) printf("     wait %lu, exit code 0x%08lX\n", w, code);
-        DWORD ws = label(GetProcessWindowStation()), dk = label(GetThreadDesktop(GetCurrentThreadId()));
-        printf("     window station labeled 0x%lX, desktop 0x%lX\n", ws, dk);
-        if (ws > SECURITY_MANDATORY_MEDIUM_RID || dk > SECURITY_MANDATORY_MEDIUM_RID)
-            printf("skip it runs and ends with its own code: no program without admin rights can start on this desktop\n");
+        DWORD ws = limited_access(GetProcessWindowStation(), "window station"), dk = limited_access(GetThreadDesktop(GetCurrentThreadId()), "desktop");
+        printf("     without admin rights: window station 0x%lX, desktop 0x%lX allowed\n", ws, dk);
+        if (!ws || !dk)
+            printf("skip it runs and ends with its own code: this desktop lets no program without admin rights in\n");
         else CHECK(code == 7, "it runs and ends with its own code");
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
     }
