@@ -447,7 +447,7 @@ void logf_(const char *fmt, ...) { (void)fmt; }
 // The fake transport: WriteFile and CancelIoEx as a HID driver does them. A write pends on its own thread, which
 // completes it the way the kernel does (InternalHigh, then Internal, then the event), fk_delay ms later or, once
 // cancelled, fk_cancel_ms later (-1: only when fk_release is set). It checks the buffer was not touched meanwhile.
-static volatile LONG fk_delay = 10, fk_cancel_ms = 0, fk_status = 0, fk_short, fk_sync_err, fk_pending, fk_writes, fk_cancels, fk_spoilt;
+static volatile LONG fk_delay = 10, fk_cancel_ms = 0, fk_status = 0, fk_short, fk_sync_err, fk_pending, fk_threads, fk_writes, fk_cancels, fk_spoilt;
 static HANDLE fk_cancel_ev, fk_release;
 static double fk_t0;
 static struct { double t; int mark; } lg[2048];
@@ -462,9 +462,10 @@ static DWORD WINAPI fk_done(void *arg) {
     io->o->InternalHigh = cancelled ? 0 : fk_short ? io->n - 1 : io->n;
     MemoryBarrier();
     io->o->Internal = cancelled ? 0xC0000120 : (ULONG_PTR)(ULONG)fk_status;   // STATUS_CANCELLED
+    InterlockedDecrement(&fk_pending);   // let go before the event, as the kernel: the waiter may check at once
     SetEvent(io->o->hEvent);
-    InterlockedDecrement(&fk_pending);
     free(io);
+    InterlockedDecrement(&fk_threads);
     return 0;
 }
 static BOOL fk_write(HANDLE h, LPCVOID b, DWORD n, LPDWORD wr, LPOVERLAPPED o) {
@@ -477,7 +478,7 @@ static BOOL fk_write(HANDLE h, LPCVOID b, DWORD n, LPDWORD wr, LPOVERLAPPED o) {
     io->o = o; io->b = p; io->n = n; memcpy(io->copy, p, n);
     ResetEvent(fk_cancel_ev);
     o->Internal = 0x103;   // STATUS_PENDING
-    InterlockedIncrement(&fk_pending);
+    InterlockedIncrement(&fk_pending); InterlockedIncrement(&fk_threads);
     CloseHandle(CreateThread(NULL, 0, fk_done, io, 0, NULL));
     SetLastError(ERROR_IO_PENDING);
     return FALSE;
@@ -496,7 +497,7 @@ static DWORD put(DWORD at, const unsigned char *j, DWORD len, int delay) {
 static cl_t U;
 static HANDLE th;
 static void fresh(void) {
-    while (fk_pending) Sleep(1);
+    while (fk_threads) Sleep(1);
     HANDLE ow = U.ow.hEvent, q = U.quit, w = U.wake;
     memset(&U, 0, sizeof(U)); U.ow.hEvent = ow; U.quit = q; U.wake = w; ResetEvent(q);
     U.h = (HANDLE)(INT_PTR)12; U.hf = (HANDLE)(INT_PTR)16; U.feat_len = 64; U.out_len = CL_REP; U.br = 100; U.heard = 3;
@@ -522,7 +523,7 @@ static double halt(void) {   // as stop_thread: how long the thread took to end
     assert(WaitForSingleObject(th, 5000) == WAIT_OBJECT_0);
     CloseHandle(th); free_pack(U.next); U.next = NULL;
     t = ms() - t;
-    while (fk_pending) Sleep(1);
+    while (fk_threads) Sleep(1);
     return t;
 }
 static double period(int from, int to) { assert(to - from >= 3); return (lg[to - 1].t - lg[from].t) / (to - 1 - from); }
@@ -549,7 +550,7 @@ static void io_tests(void) {
     fresh(); cl_write_ms = 100; cl_cancel_ms = 200; fk_delay = 5000; fk_cancel_ms = -1; ResetEvent(fk_release);
     assert(!write_rep(&U, r, 1) && U.wpend && fk_pending == 1);
     w0 = fk_writes; assert(!write_rep(&U, r, 1) && fk_writes == w0);
-    SetEvent(fk_release); while (fk_pending) Sleep(1); assert(!fk_spoilt);
+    SetEvent(fk_release); while (fk_threads) Sleep(1); assert(!fk_spoilt);
     // unplugged while the write was pending, or at once
     fresh(); fk_delay = 20; fk_status = (LONG)0xC000009D; assert(!write_rep(&U, r, 1) && GetLastError() == ERROR_DEVICE_NOT_CONNECTED);
     fresh(); fk_sync_err = ERROR_DEVICE_NOT_CONNECTED; assert(!write_rep(&U, r, 1) && GetLastError() == ERROR_DEVICE_NOT_CONNECTED && !fk_pending);

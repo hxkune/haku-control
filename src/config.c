@@ -434,7 +434,8 @@ int main(void) {
     cfg_get_many("fans", k, 3, v); assert(!v[0][0] && !v[2][0]);
     HANDLE w = CreateThread(NULL, 0, writer, NULL, 0, NULL);
     int mixed = 0, seen[2] = { 0 };
-    for (int i = 0; i < 200000; i++) {
+    // the writer may not get the CPU at once on a busy machine: read on until both of its changes were seen (10 s at most)
+    for (ULONGLONG t0 = GetTickCount64(), i = 0; i < 200000 || (!(seen[0] && seen[1]) && GetTickCount64() - t0 < 10000); i++) {
         cfg_get_many("fans", k, 3, v);
         if (!v[0][0]) continue;
         int cpu = !strcmp(v[0], "cpu");
