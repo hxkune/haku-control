@@ -32,8 +32,7 @@ int main(void) {
         if (OpenProcessToken(pi.hProcess, TOKEN_QUERY, &t)) { GetTokenInformation(t, TokenElevation, &e, sizeof(e), &n); CloseHandle(t); }
         CHECK(!e.TokenIsElevated, "it has no admin rights");
         ResumeThread(pi.hThread); DWORD w = WaitForSingleObject(pi.hProcess, 10000); GetExitCodeProcess(pi.hProcess, &code);
-        if (code != 7) printf("     wait %lu, exit code 0x%08lX
-", w, code);
+        if (code != 7) printf("     wait %lu, exit code 0x%08lX\n", w, code);
         CHECK(code == 7, "it runs and ends with its own code");
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
     }
