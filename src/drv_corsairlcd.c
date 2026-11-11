@@ -433,6 +433,8 @@ const ext_driver drv_corsairlcd = { "corsairlcd", "Corsair LCD", 2, 0, cl_open, 
 
 #else   // cl /DCORSAIR_LCD_TEST src\drv_corsairlcd.c
 #include <assert.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 static int fk_n, fk_len, fk_fail; static unsigned char fk_b[CL_FEAT];
 static volatile LONG fk_br_n, fk_br_v = -1;   // backlight reports tried, the last one the device took
 static BOOLEAN __stdcall fake_set(HANDLE h, PVOID b, ULONG n) {
@@ -608,6 +610,7 @@ static void io_tests(void) {
 
 int main(void) {
     unsigned char rep[CL_REP];
+    timeBeginPeriod(1);   // as main.c: the frame clock and the write waits are timed against a 1 ms timer
     for (int i = 0; i < (int)sizeof(jpg); i++) jpg[i] = (unsigned char)(i * 7 + 3);
     jpg[0] = 0xFF; jpg[1] = 0xD8; jpg[2] = 0xFF;
     // one short chunk: the last, its length, the LINK's family byte
