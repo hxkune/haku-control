@@ -36,7 +36,8 @@ function Cdp-Eval($ws, [string]$expr) {
 
 $srv = $null; $log = @(); $unfinished = @()
 try {
-  $srv = Start-Process python -ArgumentList '-m', 'http.server', $Port, '--bind', '127.0.0.1' -WorkingDirectory $ui -PassThru -WindowStyle Hidden
+  $srvLog = $profileDir + '.srv.log'
+  $srv = Start-Process python -ArgumentList '-m', 'http.server', $Port, '--bind', '127.0.0.1' -WorkingDirectory $ui -PassThru -WindowStyle Hidden -RedirectStandardError $srvLog
   $up = $false
   for ($i = 0; $i -lt 100 -and -not $up; $i++) {
     try { $up = (Invoke-WebRequest "http://127.0.0.1:$Port/index.html" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } catch { Start-Sleep -Milliseconds 200 }
@@ -87,11 +88,14 @@ try {
 } finally {
   if ($srv) { Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue }
   Start-Sleep -Milliseconds 300
+  # the test server's own trouble (not its line per request answered 200 or 304), said when a test failed
+  $srvErr = @(Get-Content $srvLog -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch '" (200|304) ' } | Select-Object -Last 30)
   Remove-Item $profileDir -Recurse -Force -ErrorAction SilentlyContinue
-  Remove-Item $errFile -Force -ErrorAction SilentlyContinue
+  Remove-Item $errFile, $srvLog -Force -ErrorAction SilentlyContinue
 }
 $log | ForEach-Object { Write-Output $_ }
 $bad = @($log | Where-Object { $_ -like 'FAIL *' })
+if ($bad.Count -or $unfinished) { $srvErr | ForEach-Object { Write-Output "  server: $_" } }
 if ($unfinished) { Write-Output "the tests never finished in $Minutes min: $($unfinished -join ', ')"; exit 1 }
 if (-not $log -and -not $Only) { Write-Output 'no results'; exit 1 }
 if ($bad.Count) { Write-Output "$($bad.Count) of $(@($log).Count) UI tests failed"; exit 1 }

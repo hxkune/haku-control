@@ -1930,7 +1930,14 @@
       // until its app.js has run: a slow PC may still be loading it after 1.5 s; a frame that never gets there is said with
       // where it stopped, and removed
       try { await until(() => fr.contentDocument && fr.contentDocument.URL.includes('mock') && fr.contentDocument.readyState !== 'loading' && fr.contentWindow.setCfg && fr.contentWindow.applyMotion, 'the intro page in its frame', 15000); }
-      catch (e) { const d = fr.contentDocument; fr.remove(); throw new Error(e.message + ' (' + (d ? d.URL.replace(/^.*\//, '') + ' ' + d.readyState + ' scripts ' + d.scripts.length : 'no document') + ')'); }
+      catch (e) {
+        const d = fr.contentDocument, P = fr.contentWindow && fr.contentWindow.performance, nm = s => s.replace(/^.*\//, '');
+        const n = P && P.getEntriesByType('navigation')[0], res = P ? P.getEntriesByType('resource').map(r => nm(r.name) + ':' + (r.responseStatus || '-') + '/' + r.decodedBodySize) : [];
+        const info = d ? [nm(d.URL), d.readyState, 'scripts ' + [...d.scripts].map(s => s.src ? nm(s.src) : 'inline').join(' '),
+          n ? 'page ' + (n.responseStatus || '-') + '/' + n.decodedBodySize + ' bytes' : 'no navigation entry', 'loaded ' + res.join(' '),
+          'ends ' + JSON.stringify(d.documentElement ? d.documentElement.outerHTML.slice(-160) : '')].join('; ') : 'no document';
+        fr.remove(); throw new Error(e.message + ' (' + info + ')');
+      }
       fr.contentWindow.setCfg('general', 'ui_motion', '1'); fr.contentWindow.applyMotion();   // whatever this Windows says
       fr.ms = Math.round(performance.now() - t0);
       return fr;
