@@ -1926,20 +1926,24 @@
     const open = async () => {
       const fr = document.createElement('iframe');
       fr.style.cssText = 'position:fixed;left:0;top:0;width:800px;height:600px;opacity:0;pointer-events:none';
-      fr.src = '?mock#intro'; document.body.appendChild(fr);
-      // until its app.js has run: a slow PC may still be loading it after 1.5 s; a frame that never gets there is said and removed
+      const t0 = performance.now(); fr.src = '?mock#intro'; document.body.appendChild(fr);
+      // until its app.js has run: a slow PC may still be loading it after 1.5 s; a frame that never gets there is said with
+      // where it stopped, and removed
       try { await until(() => fr.contentDocument && fr.contentDocument.URL.includes('mock') && fr.contentDocument.readyState !== 'loading' && fr.contentWindow.setCfg && fr.contentWindow.applyMotion, 'the intro page in its frame', 15000); }
-      catch (e) { fr.remove(); throw e; }
+      catch (e) { const d = fr.contentDocument; fr.remove(); throw new Error(e.message + ' (' + (d ? d.URL.replace(/^.*\//, '') + ' ' + d.readyState + ' scripts ' + d.scripts.length : 'no document') + ')'); }
       fr.contentWindow.setCfg('general', 'ui_motion', '1'); fr.contentWindow.applyMotion();   // whatever this Windows says
+      fr.ms = Math.round(performance.now() - t0);
       return fr;
     };
+    const seen = [], saw = fr => { const ov = fr.contentDocument.getElementById('intro'); seen.push(fr.ms + ' ms ' + (!ov ? 'gone' : ov.classList.contains('run') ? 'running' : 'off')); };
     const gone = fr => !fr.contentDocument.documentElement.classList.contains('intro') && !fr.contentDocument.getElementById('intro');
     // the moment before it starts is short (the mock's first state comes 30 ms after hello): a frame that got past it is opened again
     const before = fr => { const ov = fr.contentDocument.getElementById('intro'); return ov && !ov.classList.contains('run') && fr.contentDocument.documentElement.classList.contains('intro'); };
     let fr = await open();
     try {
-      for (let n = 1; n < 5 && !before(fr); n++) { fr.remove(); fr = await open(); }
-      ok(before(fr), 'the intro had already started or was gone, 5 times');
+      for (let n = 1; n < 5 && !before(fr); n++) { saw(fr); fr.remove(); fr = await open(); }
+      if (!before(fr)) saw(fr);
+      ok(before(fr), 'the intro had already started or was gone, 5 times: ' + seen.join(', '));
       fr.contentWindow.dispatchEvent(new fr.contentWindow.KeyboardEvent('keydown', { key: 'Escape' }));
       ok(gone(fr), 'a key before it loaded did not open the page');
       fr.remove(); fr = await open();
