@@ -1934,10 +1934,12 @@
       return fr;
     };
     const gone = fr => !fr.contentDocument.documentElement.classList.contains('intro') && !fr.contentDocument.getElementById('intro');
+    // the moment before it starts is short (the mock's first state comes 30 ms after hello): a frame that got past it is opened again
+    const before = fr => { const ov = fr.contentDocument.getElementById('intro'); return ov && !ov.classList.contains('run') && fr.contentDocument.documentElement.classList.contains('intro'); };
     let fr = await open();
     try {
-      const ov = fr.contentDocument.getElementById('intro');
-      ok(ov && !ov.classList.contains('run') && fr.contentDocument.documentElement.classList.contains('intro'), 'the intro had already started or was gone');
+      for (let n = 1; n < 5 && !before(fr); n++) { fr.remove(); fr = await open(); }
+      ok(before(fr), 'the intro had already started or was gone, 5 times');
       fr.contentWindow.dispatchEvent(new fr.contentWindow.KeyboardEvent('keydown', { key: 'Escape' }));
       ok(gone(fr), 'a key before it loaded did not open the page');
       fr.remove(); fr = await open();
