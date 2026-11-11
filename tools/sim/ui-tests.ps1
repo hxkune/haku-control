@@ -89,13 +89,17 @@ try {
   if ($srv) { Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue }
   Start-Sleep -Milliseconds 300
   # the test server's own trouble (not its line per request answered 200 or 304), said when a test failed
-  $srvErr = @(Get-Content $srvLog -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch '" (200|304) ' } | Select-Object -Last 30)
+  $srvAll = @(Get-Content $srvLog -ErrorAction SilentlyContinue)
+  $srvErr = @($srvAll | Where-Object { $_ -notmatch '" (200|304) ' } | Select-Object -Last 30)
+  # the requests since the last frame of the main page was asked for (which of its files reached the server)
+  $last = -1; for ($i = 0; $i -lt $srvAll.Count; $i++) { if ($srvAll[$i] -match '"GET /index\.html\?mock HTTP') { $last = $i } }
+  $srvTail = if ($last -ge 0) { @($srvAll[$last..($srvAll.Count - 1)] | Where-Object { $_ -match '"GET ' } | Select-Object -First 30) } else { @() }
   Remove-Item $profileDir -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $errFile, $srvLog -Force -ErrorAction SilentlyContinue
 }
 $log | ForEach-Object { Write-Output $_ }
 $bad = @($log | Where-Object { $_ -like 'FAIL *' })
-if ($bad.Count -or $unfinished) { $srvErr | ForEach-Object { Write-Output "  server: $_" } }
+if ($bad.Count -or $unfinished) { $srvErr | ForEach-Object { Write-Output "  server: $_" }; $srvTail | ForEach-Object { Write-Output "  asked: $_" } }
 if ($unfinished) { Write-Output "the tests never finished in $Minutes min: $($unfinished -join ', ')"; exit 1 }
 if (-not $log -and -not $Only) { Write-Output 'no results'; exit 1 }
 if ($bad.Count) { Write-Output "$($bad.Count) of $(@($log).Count) UI tests failed"; exit 1 }

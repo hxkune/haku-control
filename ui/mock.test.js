@@ -1936,7 +1936,11 @@
         const info = d ? [nm(d.URL), d.readyState, 'scripts ' + [...d.scripts].map(s => s.src ? nm(s.src) : 'inline').join(' '),
           n ? 'page ' + (n.responseStatus || '-') + '/' + n.decodedBodySize + ' bytes' : 'no navigation entry', 'loaded ' + res.join(' '),
           'ends ' + JSON.stringify(d.documentElement ? d.documentElement.outerHTML.slice(-160) : '')].join('; ') : 'no document';
-        fr.remove(); throw new Error(e.message + ' (' + info + ')');
+        // does the server answer the outer page right now (a stuck server, or only this frame's requests stuck)
+        const c = new AbortController(), t1 = performance.now(), tm = setTimeout(() => c.abort(), 5000);
+        const probe = await fetch('theme.css?probe', { cache: 'no-store', signal: c.signal }).then(r => r.status + ' in ' + Math.round(performance.now() - t1) + ' ms', x => 'failed: ' + x.name);
+        clearTimeout(tm);
+        fr.remove(); throw new Error(e.message + ' (' + info + '; theme.css from the outer page: ' + probe + ')');
       }
       fr.contentWindow.setCfg('general', 'ui_motion', '1'); fr.contentWindow.applyMotion();   // whatever this Windows says
       fr.ms = Math.round(performance.now() - t0);
