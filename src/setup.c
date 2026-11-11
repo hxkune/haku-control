@@ -625,7 +625,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
     INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_STANDARD_CLASSES }; InitCommonControlsEx(&icc);
     wchar_t program[MAX_PATH]; ExpandEnvironmentStringsW(L"%ProgramFiles%\\haku-control", program, MAX_PATH);
-    set_paths(program);
     ExpandEnvironmentStringsW(L"%APPDATA%\\haku-control", data_dir, MAX_PATH);
     // /extract <folder>: just unpack the program files (portable use, tests); no admin rights needed
     const wchar_t *ex = wcsstr(cmd, L"/extract ");
@@ -633,11 +632,16 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
         wchar_t to[MAX_PATH]; wcsncpy_s(to, MAX_PATH, ex + 9, _TRUNCATE);
         wchar_t *q = to; while (*q == L' ' || *q == L'"') q++;
         wchar_t *e = q + wcslen(q); while (e > q && (e[-1] == L' ' || e[-1] == L'"')) *--e = 0;
+        // a relative folder is the caller's working folder's (SHCreateDirectoryExW takes only full paths)
+        wchar_t full[MAX_PATH]; DWORD n = GetFullPathNameW(q, MAX_PATH, full, NULL);
+        if (n && n < MAX_PATH) q = full;
         SHCreateDirectoryExW(NULL, q, NULL);
         DWORD bytes; int ok = extract(q, &bytes);
         CoUninitialize();
         return ok ? 0 : 2;
     }
+    // after /extract: set_paths leaves the working folder, and a relative /extract folder means the caller's
+    set_paths(program);
     // install / uninstall need admin rights: ask for them by starting this exe again elevated
     if (!IsUserAnAdmin()) {
         wchar_t self[MAX_PATH]; GetModuleFileNameW(NULL, self, MAX_PATH);
