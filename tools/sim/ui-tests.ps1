@@ -40,7 +40,7 @@ $cpu0 = @{}; Get-Process | ForEach-Object { $cpu0["$($_.Id)"] = $_.CPU }
 $t0 = Get-Date
 try {
   $srvLog = $profileDir + '.srv.log'
-  $srv = Start-Process python -ArgumentList '-m', 'http.server', $Port, '--bind', '127.0.0.1' -WorkingDirectory $ui -PassThru -WindowStyle Hidden -RedirectStandardError $srvLog
+  $srv = Start-Process python -ArgumentList "`"$(Join-Path $PSScriptRoot 'ui-server.py')`"", $Port, "`"$ui`"" -WorkingDirectory $ui -PassThru -WindowStyle Hidden -RedirectStandardError $srvLog
   $up = $false
   for ($i = 0; $i -lt 100 -and -not $up; $i++) {
     try { $up = (Invoke-WebRequest "http://127.0.0.1:$Port/index.html" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } catch { Start-Sleep -Milliseconds 200 }
