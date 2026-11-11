@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.65',
+    en: ['Screen builder: Cancel while a video is being finished or prepared for sending now stops it at once, saves nothing and keeps your work.'],
+    ru: ['Конструктор экрана: «Отмена», пока видео дописывается или готовится к отправке, теперь сразу останавливает его, ничего не сохраняет и оставляет вашу работу.'],
+    fr: ['Créateur d’écran : Annuler pendant la finalisation ou la préparation à l’envoi d’une vidéo l’arrête aussitôt, n’enregistre rien et garde votre travail.'] },
   { v: '0.4.64',
     en: ['Safer updates and setups: an installer is kept in a folder only administrators can change until it runs, and every update must match its published SHA-256.',
          'Ollama, and OpenRGB from a folder outside Program Files, now run without administrator rights. Such an OpenRGB no longer drives memory and board lights; the copy haku sets up moves to Program Files (a one-time 22 MB download).',
