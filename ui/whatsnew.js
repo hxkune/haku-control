@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.66',
+    en: ['Corsair screen builder: the window no longer freezes while an animation is prepared, and Cancel stops it.',
+         'Setup: /extract with a relative folder unpacks into the folder it was started from.'],
+    ru: ['Конструктор экрана Corsair: окно больше не замирает, пока готовится анимация, и «Отмена» её останавливает.',
+         'Установщик: /extract с относительной папкой распаковывает в папку, откуда он запущен.'],
+    fr: ['Créateur d’écran Corsair : la fenêtre ne se fige plus pendant la préparation d’une animation, et Annuler l’arrête.',
+         'Installateur : /extract avec un dossier relatif décompresse dans le dossier d’où il a été lancé.'] },
   { v: '0.4.65',
     en: ['Updating from the app no longer fails with “A file or the folder is in use” when haku control was started from its shortcut.'],
     ru: ['Обновление из программы больше не прерывается ошибкой «Файл или папка заняты», если haku control запущена ярлыком.'],
