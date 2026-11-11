@@ -11,12 +11,18 @@ device runs its own effect.
   Each device can follow the main effect or run its own, with its own palette, colour or white (2700–6000 K).
 - **Profiles for every scenario** (gaming, work, night…): each keeps the effect and colours, which devices are on
   and the widgets on the Effects page. Switch them above the widgets, from the tray, the phone or a hotkey.
-- **Light on resources:** a small C core in the tray (~0.05 % CPU, a few MB of RAM). Unchanged frames are
-  never sent. The settings window (WebView2) exists only while it is open.
+- **Light on resources:** a small C core in the tray. On one PC (16 threads, the author's devices) it averaged
+  0.04 % of the CPU over 8 hours with about 10 MB in use (30 MB private); more devices, the *Screen* effect or video
+  on a Corsair screen cost more. Colours that did not change are mostly not sent again: network lights still get one
+  frame a second to stay in the stream, the memory one every 2 s, and a Corsair screen keeps getting its picture
+  while haku runs. The settings window (WebView2: about six processes and a few hundred MB) exists only while it is
+  open.
 - **Behaves like a light switch:** switching a device off in the app really turns it off. When the PC shuts down or sleeps,
   the room lights go dark (or keep / restore their own state, as you choose).
-- **Local only:** no account, no cloud, no telemetry. Devices are controlled over USB, SMBus and your LAN (a Pro
-  subscription key is checked with the store, see the [privacy policy](#privacy-policy)).
+- **Local first:** no account and no telemetry. Devices are controlled over USB, SMBus and your LAN. The internet is
+  used for the update check, a Pro key's check with the store, and only when you use them: Govee's cloud, the AiDot
+  and Tuya sign-ins, Divoom's device service, community presets and *Report a problem*. The full list is in the
+  [privacy policy](#privacy-policy).
 - English, Russian and French UI; dark, grey and light themes.
 
 ## Free and Pro
@@ -41,7 +47,7 @@ repository and is not under the GPL; versions up to 0.3.30 had all of it here, a
 
 | Device | How | Status |
 | --- | --- | --- |
-| Anything [OpenRGB](https://openrgb.org) supports (graphics cards, boards and RAM of any brand, keyboards, mice, fans…) | OpenRGB SDK server on this PC, listed under *PC → Other PC hardware*; every controller becomes a device, found again by name when OpenRGB renumbers them | protocol tested against a simulator |
+| Anything [OpenRGB](https://openrgb.org) supports (graphics cards, boards and RAM of any brand, keyboards, mice, fans…) | OpenRGB SDK server on this PC, listed under *Devices → Other PC hardware*; every controller becomes a device, found again by name when OpenRGB renumbers them | protocol tested against a simulator |
 | MSI Mystic Light: onboard LED + JRAINBOW1 ARGB header | own driver, USB HID, 185-byte protocol | verified on MPG B650I EDGE WIFI (MS-7D73); other boards are not touched |
 | ENE DRAM RGB, controller `AUDA0-E6K5-0101` (e.g. G.Skill Trident Z5 RGB) | own driver, SMBus via [PawnIO](https://pawnio.eu), AMD chipsets | verified; other controllers are detected and left alone |
 | NVIDIA GPU temperature (for the temperature effect) | NVML | verified |
@@ -79,7 +85,7 @@ The app only writes to hardware it has positively identified. It never writes to
 flash or changes SMBus addresses, and it restores each device's own effect when it exits.
 
 Any of the PC's devices can also be given back while haku runs: **Its own lighting** on a device's card (or **Give
-back to their apps** on the PC tab, or *PC: its own lighting* in the tray menu) puts back the effect it had before
+back to their apps** under *Devices → Lighting in this PC*, or *Hand over to the devices' own apps* in the tray panel) puts back the effect it had before
 haku (the board's Mystic Light setup, the memory's stored effect, an OpenRGB device's mode) and haku sends it nothing
 more, so MSI Center, iCUE, Armoury Crate, Synapse and the like can control it again. When every OpenRGB device is
 given back, the OpenRGB that haku started is closed too. The lights on the network are not affected.
@@ -106,7 +112,7 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
 - **WLED, Hue, Govee, LIFX, Yeelight, WiZ, Elgato:** *Devices → Find devices*, then *Add*. Govee and Yeelight need
   *LAN Control* switched on in their apps. Hue asks you to press the bridge's link button after adding.
 - **OpenRGB (graphics cards, other boards, RAM, coolers):** install OpenRGB, tick *Start at login*, *Start minimized*
-  and *Start server* in its general settings, then *PC → Other PC hardware* lists its controllers (*Add* / *Add all*).
+  and *Start server* in its general settings, then *Devices → Other PC hardware* lists its controllers (*Add* / *Add all*).
   Hardware haku control drives itself (the MSI board, ENE memory) is not offered there. If OpenRGB still drives
   the same MSI board or memory as haku control's own drivers, set `[devices] msi=0` / `ene=0`.
 - **Razer, SteelSeries, Logitech:** with the maker's own app running (Razer Synapse, SteelSeries GG, Logitech G
@@ -115,11 +121,11 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
   SteelSeries and Logitech: the keyboard and the other devices). The maker's app keeps running and gets the lighting
   back when haku control lets go. For Logitech, G HUB's *Allow games & applications to control my lighting* has to
   be on.
-- **Lighting in this PC** (*PC*, at the top) lists what haku control finds in the PC (the board, the memory, the
+- **Lighting in this PC** (*Devices*, at the top) lists what haku control finds in the PC (the board, the memory, the
   graphics cards, USB devices of lighting makers) and says for each which way it is lit: by haku control itself,
   through OpenRGB (with *Add* when OpenRGB found it but it is not added yet), OpenRGB still to set up, PawnIO
   missing for the memory, or no lighting known. Nothing is written to any device to find this out.
-- **Report a problem** (*Settings → Files*) sends what you write to the developer, with the diagnostics: the PC's
+- **Report a problem** (*Help*) sends what you write to the developer, with the diagnostics: the PC's
   hardware (board, BIOS, memory sticks, graphics cards and their maker, SMBus controller, USB devices of RGB makers,
   what OpenRGB sees), so it also serves to ask for support of a device.
 
@@ -128,20 +134,20 @@ them too. Without the installer, `scripts\uninstall.ps1` removes it (add `-Purge
   page pairs the next one. **Secretlab MAGRGB:** first turn the strip's API on in Nanoleaf Desktop (select the strip →
   *Enable API*), press *Connect* here, then *Connect to API* in Nanoleaf Desktop within 30 s.
 - **Govee without LAN Control (AI Sync Box 2...):** in the Govee Home app, *Profile → Settings → Apply for API Key*
-  (it comes by e-mail); paste it under *Devices → Sign-ins and pairing → Govee (cloud)*, then *Scan*. A sync box keeps
+  (it comes by e-mail); paste it under *Devices → Sign-ins and pairing → Govee (cloud)*, then *Find devices*. A sync box keeps
   its own screen sync and haku switches it on and off with the PC; other devices can take colours from haku, slowly
   (every command goes through Govee's cloud). The key is saved on this PC and sent only to Govee.
-- **Nanoleaf Pegboard / Screen Mirror Lightstrip (USB):** *Devices → Scan* finds them on USB; quit Nanoleaf Desktop
+- **Nanoleaf Pegboard / Screen Mirror Lightstrip (USB):** *Devices → Find devices* finds them on USB; quit Nanoleaf Desktop
   first, or both apps drive the lights at once.
 - **AiDot bulbs:** *Devices → Sign-ins and pairing → Sign in* with your AiDot app account, once. The password goes
   only to AiDot (RSA-encrypted, like their app does it) and is not stored; only each bulb's local key is saved.
   After that, everything runs locally. (`scripts\aidot-setup.ps1` does the same from PowerShell 7.)
-- **Lights on the PC's own Wi-Fi (optional):** *Settings → Windows hotspot* keeps the Windows Mobile Hotspot
+- **Lights on the PC's own Wi-Fi (optional):** *Settings → App → Windows hotspot* keeps the Windows Mobile Hotspot
   running, so lights can join a network that exists whenever the PC is on.
 
 ### Phone
 
-(haku Pro.) *Settings → Phone → Control from your phone* serves the same interface on your home network (port 8723).
+(haku Pro.) *Settings → Integrations → Control from your phone* serves the same interface on your home network (port 8723).
 Scan the QR code it shows with the phone camera (or open the address and type the PIN), then add the page to
 the home screen.
 Only private network addresses are served (and Tailscale's, for control from outside through your own tailnet);
@@ -156,7 +162,7 @@ POST http://<pc>:8723/api/cmd   header X-Haku-Token: <token from pairing>
 
 Type something like *"sunset on the beach"* or *"cosy evening with a book"* above the effects, and a language
 model picks the colours, the effect and its speed; *Apply* sets them on all lights. It runs on your PC through
-[Ollama](https://ollama.com) (free, offline, nothing is sent anywhere). *Settings → Colours from a description →
+[Ollama](https://ollama.com) (free, offline, nothing is sent anywhere). *Settings → Integrations → Colours from a description →
 Download and set up* installs Ollama (its installer from ollama.com, checked for Ollama's signature) and the model
 (`gemma3:4b`, 3.3 GB). The model is in memory only while it picks colours; *Ollama only when needed* also keeps
 Ollama itself out of Windows startup: haku control starts it for a request and closes it half a minute later.
@@ -164,17 +170,17 @@ Any chat model Ollama has works; `[mood] model=` picks one. Works from the phone
 
 ### Backup and sharing
 
-*Settings → Files → Backup* saves every setting and profile to one `.hakubackup` file, to keep or to move to another
+*Settings → Data → Backup* saves every setting and profile to one `.hakubackup` file, to keep or to move to another
 PC; *Restore* puts them back. Device keys and tokens, passwords, e-mail addresses, PINs and the licence are left out
 (the same rule as the diagnostics) and stay on each PC: restoring keeps this PC's own, and a device whose key is not
 here is paired once again. A preset's *Share* gives a short code (`haku:…`) with its look only (effect, colours,
-speed, brightness); *Import* on the presets tab adds it as a preset. The *Community* tab (next to *My presets*) lists presets
+speed, brightness); *Import* on the presets tab adds it as a preset. The *Community* tab (next to *Presets*) lists presets
 people published (popular or new, search, by effect): *Add* takes one, ♥ likes it, and *Publish* in a preset's
 *Share* window sends one for review. The site's side is described in `docs/community-api.md`.
 
 ### Home Assistant (haku Pro)
 
-*Settings → Home Assistant*: haku connects to the MQTT broker Home Assistant uses (usually its *Mosquitto broker*
+*Settings → Integrations → Home Assistant*: haku connects to the MQTT broker Home Assistant uses (usually its *Mosquitto broker*
 add-on; a Home Assistant user's name and password) and appears by itself through MQTT discovery as a light (on / off,
 brightness, the effects by name, an RGB colour as the Static effect) and a select with the profiles, for automations,
 dashboards and voice. The state goes back to Home Assistant as it changes, in haku or there. Topics: `haku/<pc>/…`.
@@ -186,8 +192,8 @@ The *Screen* effect lights the room with what is on the screen. Strips run aroun
 clockwise, as a backlight strip is laid), flat devices such as a Nanoleaf wall or a keyboard show it as a mosaic, and
 single lights take its average colour; each device's card can pick another part (the whole screen, the edges, left,
 right, top, bottom). The effect's speed sets how fast the lights follow. The screen is copied with DXGI Desktop
-Duplication and shrunk by the graphics card, so it costs next to nothing (about 0.1 % of an 8-core processor at
-2560x1440); it runs only while the effect is on. With more than one screen, the effect's panel picks which. Video
+Duplication and shrunk by the graphics card, so it costs little (about 0.1 % of an 8-core processor at 2560x1440,
+measured on the author's PC); it runs only while the effect is on. With more than one screen, the effect's panel picks which. Video
 protected against copying comes out dark, as in any screen capture.
 
 ## Build
@@ -245,8 +251,8 @@ purposes:
 
 - **Updates:** a minute after start and then every 6 hours it asks the GitHub API for the latest release of this
   repository (no data about you or your PC is sent). A newer release's installer is downloaded from GitHub, checked
-  (its SHA-256 as GitHub lists it) and installed by itself, after a notice from the tray; not while a full-screen
-  game or a presentation runs.
+  (its SHA-256 as GitHub lists it) and installed only when you press *Update* in the window; the tray just says a
+  new version is out (not over a full-screen game or a presentation). haku closes for the update and starts again.
 - **Supported versions:** at start and once a day it reads `policy/policy.txt` from this repository (nothing about
   you or your PC is sent). It is a list, signed with the author's key, of versions the author has stopped supporting:
   a version on it lets go of the lights, shows the author's message with a download link and closes. Nothing is

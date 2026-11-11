@@ -477,22 +477,22 @@ static int mac_s(char *o, const BYTE *m) { return sprintf(o, "%02x:%02x:%02x:%02
 // {"st":..,"err":..,"rep":..,"g":[{"mac","own":bound to this dongle (or the reply named no dongle: TL receivers leave it out),"ch","type","n","rpm":[],"pct":[],
 // "sync":1 its board ARGB sync would not go off for haku's colours, 2 would not go back on when haku let go (only then)}]}
 int ll_json(char *out, int cap) {
-    if (!th) return snprintf(out, cap, "{\"st\":\"none\"}");
+    if (!th) return jcat(out, cap, 0, "{\"st\":\"none\"}");
     EnterCriticalSection(&cs);
-    int n = snprintf(out, cap, "{\"st\":\"%s\",\"err\":%d,\"tx\":\"%s\",\"txe\":%d,\"rep\":%d,\"g\":[", S.st, S.err, S.tx, S.txe, S.reported);
+    int n = jcat(out, cap, 0, "{\"st\":\"%s\",\"err\":%d,\"tx\":\"%s\",\"txe\":%d,\"rep\":%d,\"g\":[", S.st, S.err, S.tx, S.txe, S.reported);
     for (int i = 0; i < S.n && n < cap - 200; i++) {
         const ll_dev *v = &S.d[i]; char a[18];
         mac_s(a, v->mac);
-        n += snprintf(out + n, cap - n, "%s{\"mac\":\"%s\",\"own\":%d,\"ch\":%d,\"type\":%d,\"n\":%d,\"rpm\":[", i ? "," : "", a, !memcmp(S.master, (BYTE[6]){ 0 }, 6) || !memcmp(v->master, S.master, 6), v->ch, v->type, v->n);
-        for (int f = 0; f < v->n; f++) n += snprintf(out + n, cap - n, "%s%d", f ? "," : "", v->rpm[f]);
-        n += snprintf(out + n, cap - n, "],\"pct\":[");
-        for (int f = 0; f < v->n; f++) n += snprintf(out + n, cap - n, "%s%d", f ? "," : "", (v->duty[f] * 100 + 127) / 255);
-        n += snprintf(out + n, cap - n, "]");
+        n = jcat(out, cap, n, "%s{\"mac\":\"%s\",\"own\":%d,\"ch\":%d,\"type\":%d,\"n\":%d,\"rpm\":[", i ? "," : "", a, !memcmp(S.master, (BYTE[6]){ 0 }, 6) || !memcmp(v->master, S.master, 6), v->ch, v->type, v->n);
+        for (int f = 0; f < v->n; f++) n = jcat(out, cap, n, "%s%d", f ? "," : "", v->rpm[f]);
+        n = jcat(out, cap, n, "],\"pct\":[");
+        for (int f = 0; f < v->n; f++) n = jcat(out, cap, n, "%s%d", f ? "," : "", (v->duty[f] * 100 + 127) / 255);
+        n = jcat(out, cap, n, "]");
         for (int k = 0; k < LL_GROUPS; k++)
-            if (!memcmp(L[k].mac, v->mac, 6) && (L[k].sfail == 1 && L[k].on && v->sync || L[k].sfail == 2 && !v->sync)) { n += snprintf(out + n, cap - n, ",\"sync\":%d", L[k].sfail); break; }
-        n += snprintf(out + n, cap - n, "}");
+            if (!memcmp(L[k].mac, v->mac, 6) && (L[k].sfail == 1 && L[k].on && v->sync || L[k].sfail == 2 && !v->sync)) { n = jcat(out, cap, n, ",\"sync\":%d", L[k].sfail); break; }
+        n = jcat(out, cap, n, "}");
     }
-    n += snprintf(out + n, cap - n, "]}");
+    n = jcat(out, cap, n, "]}");
     LeaveCriticalSection(&cs);
     return n;
 }

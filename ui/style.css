@@ -345,6 +345,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .cdlg-knob .select { margin-top: 0; padding: 6px 28px 6px 12px; background-position: right 10px center; }
 .cdlg-knob input[type=text], .cdlg-knob input[type=number] { padding: 6px 8px; min-width: 0; }
 .cdlg-knob input[type=number] { background-color: transparent; border: 1px solid var(--line2); color: var(--text); font: 13px var(--font); outline: none; width: 100%; }
+.cdlg-knob input[type=number]:focus { border-color: var(--strong); }   /* the outline is off: the border shows the focus */
 @media (max-width: 560px) { .cdlg-knob { grid-template-columns: 1fr 1fr; } }
 .cdlg-st { margin: 0; min-height: 1.3em; font-size: 12px; color: var(--muted); }
 .cdlg-st.draft { color: var(--text); }
@@ -468,6 +469,13 @@ canvas.live { width: 100%; display: block; border: 1px solid var(--line); backgr
 .fanic .fi-lit, .fanic .fi-glow { fill: none; stroke: var(--text); stroke-width: 1.6; }
 .fanic .fi-glow { stroke-width: 5; opacity: .13; }
 .fanic .f { fill: var(--text); }
+/* the fan pictures: lit in the lights' colour and turning while the fan runs, matte and still when it stops */
+.fanic.fan-art, .fan-defs { --fan-rgb-color: var(--live, #9a9aa4); --fan-rgb-opacity: 0; }
+.fanic.fan-art.on { --fan-rgb-opacity: 1; }
+.fan-defs { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+.fan-hd > .fanic.on .fb, .found-row .fanic.on .fb { animation: fan-turn 1.4s linear infinite; }
+@keyframes fan-turn { to { transform: rotate(360deg); } }
+body.calm .fanic .fb { animation: none; }
 .fan-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-top: 9px; }
 .fan-looks button { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; padding: 8px 4px 6px; background: none; border: 1px solid var(--line); border-radius: 10px; font: inherit; color: var(--muted); cursor: pointer; }
 .fan-looks button:hover { border-color: var(--line3); color: var(--text); }
@@ -775,8 +783,8 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev, 
 
 /* ---------------- devices tab */
 .found { display: flex; flex-direction: column; }
-.found-row { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 14px; padding: 11px 0; border-top: 1px solid var(--line); }
-.found-row .kind { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+.found-row { display: grid; grid-template-columns: 120px 1fr auto; align-items: center; gap: 14px; padding: 11px 0; border-top: 1px solid var(--line); }
+.found-row .kind { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }   /* 120px: the longest word (fr Refroidissement) fits; a longer one breaks, never runs into the name */
 .found-row .kind-ic { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .found-row .kind-ic .fanic { width: 30px; height: 30px; }
 .found-row .what b { display: block; font-weight: 600; }
@@ -963,7 +971,7 @@ nav button:active, .power:active, .fx:active, .seg button:active, .kbd:active { 
 /* the window behind others: the endless animations hold still and the background light changes without fading
    (each fade repaints the whole window for over a second) */
 body.idle .ambient i, body.idle .ambient i b, :root[data-theme="bubblegum"] body.idle *,
-:root[data-theme="kyoka"] body.idle *, :root[data-theme="verity"] body.idle *, body.idle .brand .logo, body.idle .brand .logo::after { animation-play-state: paused !important; }
+:root[data-theme="kyoka"] body.idle *, :root[data-theme="verity"] body.idle *, body.idle .brand .logo, body.idle .brand .logo::after, body.idle .fanic .fb { animation-play-state: paused !important; }
 body.idle .ambient { transition: none; }
 body.calm .ambient i, body.calm .tab, body.calm .card.pdlg, body.calm .popover, body.calm .wizard, body.calm .wz-step.on,
 body.calm .hero-menu, body.calm .acc-form, body.calm .prof-menu, body.calm .chip-pop, body.calm .undo,

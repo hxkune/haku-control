@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Packs the built program (bin\) into obj\payload.bin for haku-control-setup.exe (see src\setup.c for the format).
-param([string]$Bin = (Join-Path (Split-Path $PSScriptRoot) 'bin'), [string]$Out = (Join-Path (Split-Path $PSScriptRoot) 'obj\payload.bin'))
+# -List: only the names and their source files (tools\sim\setup-check.ps1 compares an unpacked installer with them)
+param([string]$Bin = (Join-Path (Split-Path $PSScriptRoot) 'bin'), [string]$Out = (Join-Path (Split-Path $PSScriptRoot) 'obj\payload.bin'), [switch]$List)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $files = [ordered]@{}
@@ -14,6 +15,8 @@ $files['SmbusPIIX4.COPYING.txt'] = Join-Path $root 'third_party\pawnio\COPYING'
 $files['LpcIO.COPYING.txt'] = Join-Path $root 'third_party\pawnio\COPYING'
 $files['AMDFamily17.COPYING.txt'] = Join-Path $root 'third_party\pawnio\COPYING'
 $files['IntelMSR.COPYING.txt'] = Join-Path $root 'third_party\pawnio\COPYING'
+
+if ($List) { return $files }
 
 $ms = New-Object IO.MemoryStream
 $w = New-Object IO.BinaryWriter($ms)

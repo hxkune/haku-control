@@ -209,14 +209,14 @@ void conflicts_tick(void) {
 // of its name is not signed by its maker (not ended); fail: still ran after Close (1) or End (2)
 int conflicts_json(char *out, int cap) {
     LONG r = run_m, in = inst_m, bd = bad_m, sf = soft_m, hf = hard_m; int b = busy;
-    int n = snprintf(out, cap, "{\"busy\":\"%s\",\"a\":[", b >= 0 && b < CF_N ? APPS[b].id : ""), first = 1;
+    int n = jcat(out, cap, 0, "{\"busy\":\"%s\",\"a\":[", b >= 0 && b < CF_N ? APPS[b].id : ""), first = 1;
     for (int a = 0; a < CF_N && n < cap - 200; a++) if ((r | in) >> a & 1) {
-        n += snprintf(out + n, cap - n, "%s{\"id\":\"%s\",\"name\":\"%s\",\"w\":\"%s\",\"cool\":%d,\"run\":%d,\"inst\":%d,\"bad\":%d,\"fail\":%d}", first ? "" : ",",
+        n = jcat(out, cap, n, "%s{\"id\":\"%s\",\"name\":\"%s\",\"w\":\"%s\",\"cool\":%d,\"run\":%d,\"inst\":%d,\"bad\":%d,\"fail\":%d}", first ? "" : ",",
                       APPS[a].id, APPS[a].name, APPS[a].w, APPS[a].cool, (int)(r >> a & 1), (int)(in >> a & 1), (int)(bd >> a & 1),
                       hf >> a & 1 ? 2 : (int)(sf >> a & 1));
         first = 0;
     }
-    return n + snprintf(out + n, cap - n, "]}");
+    return jcat(out, cap, n, "]}");
 }
 
 #ifdef CF_TEST   // cl /DCF_TEST src\conflicts.c advapi32.lib user32.lib: the matching and the rule, and the processes and apps of this PC

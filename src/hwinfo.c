@@ -389,16 +389,16 @@ void hw_scan_start(void) {
 // "hw":{"busy":0,"done":1,"items":[{"cat":"usb","maker":"Lian Li","name":"...","id":"0CF2:A200"}]}
 int hw_scan_json(char *out, int cap) {
     AcquireSRWLockShared(&scan_lk);
-    int n = snprintf(out, cap, "\"hw\":{\"busy\":%ld,\"done\":%d,\"items\":[", scan_busy, scan_done);
+    int n = jcat(out, cap, 0, "\"hw\":{\"busy\":%ld,\"done\":%d,\"items\":[", scan_busy, scan_done);
     for (int i = 0; i < scan_n && n < cap - 400; i++) {
         hw_item *x = &scan_items[i];
-        n += snprintf(out + n, cap - n, "%s{\"cat\":\"%s\",\"id\":\"%s\",\"maker\":\"", i ? "," : "", x->cat, x->id);
+        n = jcat(out, cap, n, "%s{\"cat\":\"%s\",\"id\":\"%s\",\"maker\":\"", i ? "," : "", x->cat, x->id);
         n += json_escape_to(out + n, cap - n, x->maker);
-        n += snprintf(out + n, cap - n, "\",\"name\":\"");
+        n = jcat(out, cap, n, "\",\"name\":\"");
         n += json_escape_to(out + n, cap - n, x->name);
-        n += snprintf(out + n, cap - n, "\"}");
+        n = jcat(out, cap, n, "\"}");
     }
-    n += snprintf(out + n, cap - n, "]}");
+    n = jcat(out, cap, n, "]}");
     ReleaseSRWLockShared(&scan_lk);
     return n;
 }

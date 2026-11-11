@@ -11,6 +11,7 @@
 #define COBJMACROS
 #include "common.h"
 #include "devices.h"
+#include "safetmp.h"
 #include "../res/version.h"
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -121,8 +122,8 @@ static int start_server(void) {   // (lk held)
     li.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;   // gone with this app, whatever happens
     if (job) SetInformationJobObject(job, JobObjectExtendedLimitInformation, &li, sizeof(li));
     swprintf(cmd, MAX_PATH + 16, L"\"%s\" serve", exe);
-    STARTUPINFOW si = { sizeof(si) }; PROCESS_INFORMATION pi;
-    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
+    PROCESS_INFORMATION pi;   // ollama.exe is in the user's folder: any program can change it, so no admin rights for it
+    if (!run_as_user(cmd, NULL, CREATE_NO_WINDOW | CREATE_SUSPENDED, &pi)) {
         logf_("ollama: could not start %ls (%lu)", exe, GetLastError());
         if (job) { CloseHandle(job); job = NULL; }
         return 0;
@@ -239,10 +240,11 @@ static int install_ollama(void) {
     if (cfg_geti("mood", "setup_test", 0)) { logf_("ollama setup: test build, installer checked, not run"); DeleteFileW(file); fail("test"); return 0; }
 #endif
     set_stage(ST_INSTALL, 0);
-    // Inno Setup: no windows, no questions; it installs for this user (no admin rights needed)
+    // Inno Setup: no windows, no questions; it installs for this user, so it runs without admin rights (a file
+    // swapped in %TEMP% after the check then gets nothing the swapping program does not have)
     wchar_t cmd[MAX_PATH + 64]; swprintf(cmd, MAX_PATH + 64, L"\"%s\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART", file);
-    STARTUPINFOW si = { sizeof(si) }; PROCESS_INFORMATION pi;
-    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) { fail("run"); return 0; }
+    PROCESS_INFORMATION pi;
+    if (!run_as_user(cmd, NULL, 0, &pi)) { logf_("ollama setup: could not run the installer (%lu)", GetLastError()); fail("run"); return 0; }
     DWORD code = 1;
     if (WaitForSingleObject(pi.hProcess, 15 * 60 * 1000) == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
@@ -321,7 +323,7 @@ int ollama_json(char *out, int cap) {
     int ours = srv != NULL;
     char e[24]; snprintf(e, sizeof(e), "%s", st_err);
     ReleaseSRWLockShared(&lk);
-    return snprintf(out, cap, "{\"exe\":%d,\"model\":%d,\"ours\":%d,\"on_demand\":%d,\"startup\":%d,\"stage\":%ld,\"pct\":%ld,\"err\":\"%s\"}",
+    return jcat(out, cap, 0, "{\"exe\":%d,\"model\":%d,\"ours\":%d,\"on_demand\":%d,\"startup\":%d,\"stage\":%ld,\"pct\":%ld,\"err\":\"%s\"}",
                     ollama_installed(), have_model(), ours, cfg_geti("mood", "ollama_on_demand", 0), lnk[0] && exists(lnk),
                     stage, pct, e);
 }

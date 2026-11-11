@@ -7,8 +7,11 @@
 //    ([openrgb] removed), not twice. [openrgb] auto=0 turns starting and adding off;
 //  - set up from the PC page: OpenRGB's portable zip from its official release on Codeberg, checked against the
 //    size and SHA-256 below (OpenRGB.exe is not signed), unpacked with Windows' own tar.exe into
-//    %LOCALAPPDATA%\haku-control\OpenRGB.
+//    %ProgramFiles%\haku-control-openrgb (%LOCALAPPDATA%\haku-control\OpenRGB when this app has no admin rights);
+//  - with admin rights only from a folder that needs them to change (Program Files): a copy anywhere else could be
+//    swapped by any program, so it is started without them and drives what needs none.
 #include "devices.h"
+#include "safetmp.h"
 #include <process.h>
 #include <tlhelp32.h>
 #include <shlobj.h>
@@ -26,7 +29,16 @@ static char su_err[16];
 
 static int exists(const wchar_t *p) { return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }
 
-static void own_dir(wchar_t *out) { ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\" APP_ID L"\\OpenRGB", out, MAX_PATH); }
+#define OLD_DIR L"%LOCALAPPDATA%\\" APP_ID L"\\OpenRGB"   // where haku's setup put it up to 0.4.63
+static void own_dir(wchar_t *out) { ExpandEnvironmentStringsW(tmp_elevated() ? L"%ProgramFiles%\\" APP_ID L"-openrgb" : OLD_DIR, out, MAX_PATH); }
+
+// p (a full path) is inside the folder env names
+static int under(const wchar_t *p, const wchar_t *env) {
+    wchar_t d[MAX_PATH]; DWORD n = ExpandEnvironmentStringsW(env, d, MAX_PATH);
+    if (!n || n > MAX_PATH || d[0] == L'%') return 0;   // (a variable that is not set stays as written)
+    size_t l = wcslen(d);
+    return !_wcsnicmp(p, d, l) && p[l] == L'\\';
+}
 
 // a running OpenRGB.exe (not one started here): its path
 static int running_copy(wchar_t *out) {
@@ -99,6 +111,15 @@ static int ensure_run(int (*answers)(void)) {
         return 0;
     }
     if (!orgbapp_exe(exe, 1)) return 0;
+    wcscpy_s(run, MAX_PATH, exe);
+    if (!GetFullPathNameW(run, MAX_PATH, exe, NULL)) return 0;   // no ".." past the checks below
+    int lim = tmp_elevated() && !under(exe, L"%ProgramFiles%") && !under(exe, L"%ProgramFiles(x86)%") && !under(exe, L"%ProgramW6432%");
+    static volatile LONG moved;
+    if (lim && under(exe, OLD_DIR) && !InterlockedExchange(&moved, 1)) {   // once a run; failing that, it runs limited
+        logf_("openrgb: haku's copy is in a folder any program can change; setting it up again in Program Files");
+        orgbapp_setup();   // starts it when done
+        return 0;
+    }
     AcquireSRWLockExclusive(&lk);
     if (!job) {
         job = CreateJobObjectW(NULL, NULL);
@@ -110,11 +131,13 @@ static int ensure_run(int (*answers)(void)) {
     swprintf(cmd, MAX_PATH + 32, L"\"%s\" --server", exe);
     wcscpy_s(dir, MAX_PATH, exe); wchar_t *s = wcsrchr(dir, L'\\'); if (s) *s = 0;
     STARTUPINFOW si = { sizeof(si) }; PROCESS_INFORMATION pi;
-    int ok = CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, dir, &si, &pi);
+    int ok = lim ? run_as_user(cmd, dir, CREATE_NO_WINDOW | CREATE_SUSPENDED, &pi)
+                 : CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, dir, &si, &pi);
     if (ok) {
         if (job) AssignProcessToJobObject(job, pi.hProcess);
         ResumeThread(pi.hThread); CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-        logf_("openrgb: started %ls --server", exe);
+        logf_("openrgb: started %ls --server%s", exe, lim ? " without admin rights (any program can change its folder): memory and board"
+              " lights that need them stay out. A copy in Program Files, or the one haku sets up, runs with them" : "");
     } else logf_("openrgb: could not start %ls (%lu)", exe, GetLastError());
     ReleaseSRWLockExclusive(&lk);
     if (!ok) return 0;
@@ -135,7 +158,7 @@ void orgbapp_removed(const char *name) {
     if (!name || !*name || removed_by_hand(name)) return;
     char v[1024]; const char *old = cfg_get("openrgb", "removed", "");
     snprintf(v, sizeof(v), "%s%s%s", old, *old ? "|" : "", name);
-    for (char *p = v; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=') *p = ' ';
+    cfg_clean_name(v);
     cfg_set_and_save("openrgb", "removed", v);
 }
 
@@ -244,6 +267,6 @@ void orgbapp_setup(void) {
 int orgbapp_json(char *out, int cap) {
     wchar_t exe[MAX_PATH];
     AcquireSRWLockShared(&lk); char e[16]; snprintf(e, sizeof(e), "%s", su_err); int ours = job != NULL; ReleaseSRWLockShared(&lk);
-    return snprintf(out, cap, "\"exe\":%d,\"auto\":%d,\"ours\":%d,\"setup\":%ld,\"pct\":%ld,\"err\":\"%s\"",
+    return jcat(out, cap, 0, "\"exe\":%d,\"auto\":%d,\"ours\":%d,\"setup\":%ld,\"pct\":%ld,\"err\":\"%s\"",
                     orgbapp_exe(exe, 0), orgbapp_auto(), ours, su_stage, su_pct, e);
 }

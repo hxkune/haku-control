@@ -29,12 +29,13 @@ const char *cfg_get(const char *section, const char *key, const char *def) {
 }
 float cfg_getf(const char *s, const char *k, float def) { const char *v = cfg_get(s, k, NULL); return v ? (float)atof(v) : def; }
 int cfg_geti(const char *s, const char *k, int def) { const char *v = cfg_get(s, k, NULL); return v ? atoi(v) : def; }
-void cfg_set(const char *section, const char *key, const char *value) {
+int cfg_set(const char *section, const char *key, const char *value) {
     int i = 0;
     while (i < nkv && (strcmp(kv[i].sec, section) || strcmp(kv[i].key, key))) i++;
     if (i == nkv && nkv < 256) nkv++;
     strcpy_s(kv[i].sec, sizeof(kv[i].sec), section); strcpy_s(kv[i].key, sizeof(kv[i].key), key);
     strcpy_s(kv[i].val, sizeof(kv[i].val), value);
+    return 1;
 }
 int cfg_palette(const char *section, rgbf *out, int max) {
     const char *v = cfg_get(section, "palette", NULL);

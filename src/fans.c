@@ -454,9 +454,9 @@ static unsigned __stdcall board_thread(void *arg) {
     EnterCriticalSection(&cs); strcpy_s(bd.chip, sizeof(bd.chip), chip); bd.n = bn; LeaveCriticalSection(&cs);
     do { InterlockedExchange(&beat[1], (LONG)(GetTickCount() | 1)); board_round(); } while (WaitForSingleObject(stop_ev, 2000) == WAIT_TIMEOUT);
     InterlockedExchange(&beat[1], 0);
-    EnterCriticalSection(&io); board_restore(); LeaveCriticalSection(&io);
+    EnterCriticalSection(&io); int left = board_restore(); LeaveCriticalSection(&io);
     sio_close();
-    return 0;
+    return (unsigned)left;   // fans_stop() reads it
 }
 
 static unsigned __stdcall fans_thread(void *arg) {
@@ -500,13 +500,13 @@ static unsigned __stdcall fans_thread(void *arg) {
     }
     InterlockedExchange(&beat[0], 0);
     EnterCriticalSection(&io);
-    restore_all();
+    int left = restore_all();
     if (hc != INVALID_HANDLE_VALUE) CloseHandle(hc);
     hc = INVALID_HANDLE_VALUE;
     LeaveCriticalSection(&io);
     if (rd != INVALID_HANDLE_VALUE) CloseHandle(rd);
     CloseHandle(ev);
-    return 0;
+    return (unsigned)left;   // fans_stop() reads it
 }
 
 // io within ms (a stalled or crashing thread may hold it); the caller leaves it
@@ -560,13 +560,32 @@ void fans_start(void) {
     wdth = (HANDLE)_beginthreadex(NULL, 0, wd_thread, NULL, 0, NULL);
 }
 
-void fans_stop(void) {
-    if (!th) return;
+// Exit: each thread gives its channels back as it ends and says how many it could not. One that does not end in time
+// (stuck in a driver call) is not killed: its channels are given back from here, if the device is free. A timeout is
+// never taken for success. Returns the channels not back (0: all back, or none taken); -1: not confirmed (busy).
+static DWORD stop_ms = 5000;   // per thread: a give-back is two tries 500 ms apart
+int fans_stop(void) {
+    if (!th) return 0;
     SetEvent(stop_ev);
     if (wdth) { WaitForSingleObject(wdth, 3000); CloseHandle(wdth); wdth = NULL; }
-    WaitForSingleObject(th, 3000);
-    CloseHandle(th); th = NULL;
-    if (bth) { WaitForSingleObject(bth, 3000); CloseHandle(bth); bth = NULL; }
+    HANDLE t[2] = { th, bth };
+    int left = 0, stuck = 0;
+    for (int k = 0; k < 2; k++) {
+        if (!t[k]) continue;
+        DWORD code = 0;
+        if (WaitForSingleObject(t[k], stop_ms) == WAIT_OBJECT_0 && GetExitCodeThread(t[k], &code)) left += (int)code;
+        else stuck |= 1 << k;
+        CloseHandle(t[k]);
+    }
+    th = bth = NULL;
+    if (!stuck) return left;
+    if (!io_try(2000)) { flog("fan control did not end and the device stayed busy: giving the channels back is not confirmed"); return -1; }
+    paused = 1;   // the stuck thread, should it come round, writes nothing more
+    if (stuck & 1) left += restore_all();
+    if (stuck & 2) left += board_restore();
+    LeaveCriticalSection(&io);
+    flog("fan control did not end in time; its channels were given back from the exit instead");
+    return left;
 }
 
 // an unhandled exception (main.c): every channel back to the QUADRO's and the board's own setting before the process
@@ -617,42 +636,42 @@ int fans_trouble(void) {
 }
 
 int fans_json(char *out, int cap) {
-    if (!th) return snprintf(out, cap, "{\"on\":0}");
+    if (!th) return jcat(out, cap, 0, "{\"on\":0}");
     DWORD now = GetTickCount(), at = (DWORD)gpu_at; LONG g = gpu_c; int cpuok = cpu_can(); float cpu = cpu_last();
     EnterCriticalSection(&cs);
     // f[i] is channel i+1: the QUADRO's four (null without one), then the board's (b:1)
-    int n = snprintf(out, cap, "{\"on\":%d", st.on || bd.n);
+    int n = jcat(out, cap, 0, "{\"on\":%d", st.on || bd.n);
     if (st.on || bd.n) {
-        n += snprintf(out + n, cap - n, ",\"q\":%d,\"paused\":%d,\"rfail\":%d,\"wd\":[%d,%d]", st.on, paused, rfail + brfail, wd_out[0], wd_out[1]);
-        if (bd.n) n += snprintf(out + n, cap - n, ",\"chip\":\"%s\"", bd.chip);
+        n = jcat(out, cap, n, ",\"q\":%d,\"paused\":%d,\"rfail\":%d,\"wd\":[%d,%d]", st.on, paused, rfail + brfail, wd_out[0], wd_out[1]);
+        if (bd.n) n = jcat(out, cap, n, ",\"chip\":\"%s\"", bd.chip);
         if (st.on) {
-            n += snprintf(out + n, cap - n, ",\"link\":%d,\"age\":%lu,\"serial\":\"%05d-%05d\",\"fw\":%d,\"flow\":%.1f,\"t\":[",
+            n = jcat(out, cap, n, ",\"link\":%d,\"age\":%lu,\"serial\":\"%05d-%05d\",\"fw\":%d,\"flow\":%.1f,\"t\":[",
                           st.link, now - st.seen, st.ser1, st.ser2, st.fw, st.flow / 10.0);
             for (int t = 0; t < 4; t++) {
-                if (st.temp[t] == 0x7FFF) n += snprintf(out + n, cap - n, "%snull", t ? "," : "");
-                else n += snprintf(out + n, cap - n, "%s%.1f", t ? "," : "", (short)st.temp[t] / 100.0);
+                if (st.temp[t] == 0x7FFF) n = jcat(out, cap, n, "%snull", t ? "," : "");
+                else n = jcat(out, cap, n, "%s%.1f", t ? "," : "", (short)st.temp[t] / 100.0);
             }
-            n += snprintf(out + n, cap - n, "]");
+            n = jcat(out, cap, n, "]");
         }
-        n += snprintf(out + n, cap - n, ",\"cpuok\":%d", cpuok);
-        if (isnan(cpu)) n += snprintf(out + n, cap - n, ",\"cpu\":null");
-        else n += snprintf(out + n, cap - n, ",\"cpu\":%.0f", cpu);
-        if (g > -1000 && at) n += snprintf(out + n, cap - n, ",\"gpu\":%ld,\"gage\":%lu,\"f\":[", g, now - at);
-        else n += snprintf(out + n, cap - n, ",\"gpu\":null,\"f\":[");
+        n = jcat(out, cap, n, ",\"cpuok\":%d", cpuok);
+        if (isnan(cpu)) n = jcat(out, cap, n, ",\"cpu\":null");
+        else n = jcat(out, cap, n, ",\"cpu\":%.0f", cpu);
+        if (g > -1000 && at) n = jcat(out, cap, n, ",\"gpu\":%ld,\"gage\":%lu,\"f\":[", g, now - at);
+        else n = jcat(out, cap, n, ",\"gpu\":null,\"f\":[");
         for (int f = 0; f < FANS + bd.n; f++) {
             const char *c = f ? "," : "";
-            if (f < FANS && !st.on) { n += snprintf(out + n, cap - n, "%snull", c); continue; }
-            if (f < FANS) n += snprintf(out + n, cap - n, "%s{\"rpm\":%d,\"pct\":%.1f,\"v\":%.2f,\"w\":%.2f", c, st.f[f].rpm, st.f[f].duty / 100.0, st.f[f].cv / 100.0, st.f[f].cw / 100.0);
-            else if (bd.pct[f - FANS] < 0) n += snprintf(out + n, cap - n, "%s{\"b\":1,\"rpm\":-1,\"pct\":null", c);
-            else n += snprintf(out + n, cap - n, "%s{\"b\":1,\"rpm\":%d,\"pct\":%d", c, bd.rpm[f - FANS], bd.pct[f - FANS]);
-            n += snprintf(out + n, cap - n, ",\"own\":%d,\"want\":%d,\"out\":%d,\"ok\":%d,\"em\":\"%s\",\"err\":\"%s\"}",
+            if (f < FANS && !st.on) { n = jcat(out, cap, n, "%snull", c); continue; }
+            if (f < FANS) n = jcat(out, cap, n, "%s{\"rpm\":%d,\"pct\":%.1f,\"v\":%.2f,\"w\":%.2f", c, st.f[f].rpm, st.f[f].duty / 100.0, st.f[f].cv / 100.0, st.f[f].cw / 100.0);
+            else if (bd.pct[f - FANS] < 0) n = jcat(out, cap, n, "%s{\"b\":1,\"rpm\":-1,\"pct\":null", c);
+            else n = jcat(out, cap, n, "%s{\"b\":1,\"rpm\":%d,\"pct\":%d", c, bd.rpm[f - FANS], bd.pct[f - FANS]);
+            n = jcat(out, cap, n, ",\"own\":%d,\"want\":%d,\"out\":%d,\"ok\":%d,\"em\":\"%s\",\"err\":\"%s\"}",
                           ch[f].own, ch[f].want < 0 ? ch[f].want : ch[f].want / 100, ch[f].out < 0 ? -1 : ch[f].out / 100, ch[f].ok, em_name[ch[f].em], er_name[ch[f].er]);
         }
-        n += snprintf(out + n, cap - n, "],\"log\":[");
-        for (int i = 0; i < lgn; i++) n += snprintf(out + n, cap - n, "%s{\"t\":\"%s\",\"m\":\"%s\",\"n\":%d}", i ? "," : "", lg[i].t, lg[i].m, lg[i].n);
-        n += snprintf(out + n, cap - n, "]");
+        n = jcat(out, cap, n, "],\"log\":[");
+        for (int i = 0; i < lgn; i++) n = jcat(out, cap, n, "%s{\"t\":\"%s\",\"m\":\"%s\",\"n\":%d}", i ? "," : "", lg[i].t, lg[i].m, lg[i].n);
+        n = jcat(out, cap, n, "]");
     }
-    n += snprintf(out + n, cap - n, "}");
+    n = jcat(out, cap, n, "}");
     LeaveCriticalSection(&cs);
     return n;
 }
@@ -699,6 +718,8 @@ static int lg_n(const char *s) { for (int i = 0; i < lgn; i++) if (strstr(lg[i].
 static unsigned __stdcall hold_io(void *a) {   // holds io until told: a stalled or crashing thread
     HANDLE *e = a; EnterCriticalSection(&io); SetEvent(e[0]); WaitForSingleObject(e[1], INFINITE); LeaveCriticalSection(&io); return 0;
 }
+static unsigned __stdcall ret_two(void *a) { (void)a; return 2; }   // a thread whose give-back left two channels
+static unsigned __stdcall wait_ev(void *a) { WaitForSingleObject((HANDLE)a, INFINITE); return 0; }   // stuck, not holding io
 int main(void) {
     InitializeCriticalSection(&cs); InitializeCriticalSection(&io);
     wchar_t ini[MAX_PATH]; state_path(ini); DeleteFileW(ini);
@@ -886,7 +907,19 @@ int main(void) {
     ResetEvent(hb[0]); ResetEvent(hb[1]); control(); assert(taken[0]);
     ht = (HANDLE)_beginthreadex(NULL, 0, hold_io, hb, 0, NULL); WaitForSingleObject(hb[0], INFINITE);
     th = (HANDLE)1; DWORD t0 = GetTickCount(); fans_crash(); th = NULL; assert(GetTickCount() - t0 < 4000 && taken[0] && !paused);
-    SetEvent(hb[1]); WaitForSingleObject(ht, INFINITE); CloseHandle(ht); CloseHandle(hb[0]); CloseHandle(hb[1]);
+    SetEvent(hb[1]); WaitForSingleObject(ht, INFINITE); CloseHandle(ht);
+    // exit: a thread's answer is the result; a stuck one is given back from here; a device held for ever is not "done"
+    stop_ev = CreateEventW(NULL, TRUE, FALSE, NULL); stop_ms = 200;
+    th = (HANDLE)_beginthreadex(NULL, 0, ret_two, NULL, 0, NULL); assert(fans_stop() == 2 && !th);
+    ResetEvent(hb[0]); ResetEvent(hb[1]); control(); assert(taken[0]);
+    th = (HANDLE)_beginthreadex(NULL, 0, wait_ev, hb[1], 0, NULL);
+    assert(fans_stop() == 0 && !taken[0] && !memcmp(dev + ctl_fan[0], O1, 3) && paused && !th);
+    SetEvent(hb[1]); paused = 0; ResetEvent(hb[1]); control(); assert(taken[0]);
+    ht = (HANDLE)_beginthreadex(NULL, 0, hold_io, hb, 0, NULL); WaitForSingleObject(hb[0], INFINITE);
+    DuplicateHandle(GetCurrentProcess(), ht, GetCurrentProcess(), &th, 0, FALSE, DUPLICATE_SAME_ACCESS);
+    t0 = GetTickCount(); assert(fans_stop() == -1 && taken[0] && GetTickCount() - t0 < 4000);
+    SetEvent(hb[1]); WaitForSingleObject(ht, INFINITE); CloseHandle(ht);
+    CloseHandle(stop_ev); stop_ev = NULL; CloseHandle(hb[0]); CloseHandle(hb[1]);
     set("fan1", ""); set("fan5", ""); control(); board_round(); assert(!taken[0] && !btaken[0]);
     set("fan5_pct", NULL);
     // the page's view

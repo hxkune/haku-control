@@ -406,7 +406,7 @@ int json_escape_to(char *out, int cap, const char *s) {
     for (; *s && n < cap - 8; s++) {
         unsigned char c = (unsigned char)*s;
         if (c == '"' || c == '\\') { out[n++] = '\\'; out[n++] = (char)c; }
-        else if (c < 0x20) n += snprintf(out + n, cap - n, "\\u%04x", c);
+        else if (c < 0x20) n = jcat(out, cap, n, "\\u%04x", c);
         else out[n++] = (char)c;
     }
     out[n] = 0;

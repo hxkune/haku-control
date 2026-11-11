@@ -1296,7 +1296,7 @@ function profGo(id) {
 }
 // the core's last refusal of a profile's save, switch, copy or delete (status prof: {err, id, n}, n counts them): a new
 // one is said until closed, and what waited on it stops waiting (the switcher's busy mark, the guide's save)
-const PROF_ERR = ['', 'write', 'leave', 'missing', 'bad', 'full', 'cfg'];
+const PROF_ERR = ['', 'write', 'leave', 'missing', 'bad', 'full', 'cfg', 'room'];
 function profErrCheck() {
   const e = S.prof; if (!e) return;
   if (PROF.errN < 0 || e.n <= PROF.errN) { PROF.errN = e.n; return; }   // ones from before the window opened are in the log
@@ -1846,7 +1846,7 @@ function cmpTools() {
   $('#cdlg-cap').textContent = [CMP.ab ? t('cmp.ab.on') : '', t('cmp.view.model'), CMP.L.some(L => on(L) && L.mp >= 0) ? t('cmp.view.demo') : '',
     so && !CMP.ab ? t('cmp.solo.on', CMP.L.indexOf(so) + 1) : '', so && !CMP.ab && so.blend === 4 ? t('cmp.mask.bw') : ''].filter(Boolean).join(' · ');
   const mv = $('#cdlg-moved'); mv.classList.toggle('hidden', !CMP.moved);
-  if (CMP.moved) $('#cdlg-moved-text').textContent = t(['', 'cmp.moved', 'cmp.moved.full', 'cmp.moved.fail', 'cmp.moved.saving'][CMP.moved]);
+  if (CMP.moved) $('#cdlg-moved-text').textContent = t(['', 'cmp.moved', 'cmp.moved.full', 'cmp.moved.fail', 'cmp.moved.saving', 'cmp.draft.cap'][CMP.moved]);
   $('#cdlg-moved-retry').classList.toggle('hidden', CMP.moved !== 3);
   $('#cdlg-rec').classList.toggle('hidden', !CMP.rec);
   if (CMP.rec) { const at = +cv('crecover', 'at', 0); $('#cdlg-rec-text').textContent = t('cmp.rec', at ? new Date(at).toLocaleString(LANG, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''); }
@@ -1933,7 +1933,7 @@ function cmpMovedSave() {
   const tok = CMP.tok; CMP.moved = 4;
   cmpDraftSave(err => {
     if (CMP.tok !== tok) return;
-    CMP.moved = !err ? 1 : err === 'full' ? 2 : 3; cmpTutOpts(); if (!CMP.away) cmpTools();
+    CMP.moved = !err ? 1 : err === 'full' ? 2 : err === 'cap' ? 5 : 3; cmpTutOpts(); if (!CMP.away) cmpTools();
   });
   if (!CMP.away) cmpTools();
 }
@@ -2191,7 +2191,7 @@ $('#cdlg-ask-keep').addEventListener('click', () => {
     b.disabled = false;
     if (CMP.tok !== tok) { if (!$('#cdlg-ask').classList.contains('hidden')) cmpAskBack(); return; }   // another profile came on: its banner says what became of it
     if (!err) { cmpAskBack(); cmpClose(); if (FX_TAB === 'presets') buildEffects(); return; }
-    $('#cdlg-ask-text').textContent = t(err === 'full' ? 'cmp.draft.full' : 'cmp.draft.fail');   // never one overwritten: the window stays
+    $('#cdlg-ask-text').textContent = t(err === 'full' ? 'cmp.draft.full' : err === 'cap' ? 'cmp.draft.cap' : 'cmp.draft.fail');   // never one overwritten: the window stays
     $('#cdlg-ask-keep span').textContent = t(err === 'full' ? 'cmp.ask.keep' : 'cmp.draft.retry');
     $('#cdlg-ask-export').classList.toggle('hidden', err === 'full'); cmpTutOpts();
   });
@@ -2707,9 +2707,36 @@ const KB = (() => {
 const kbLayout = n => KB[n >= 96 || n <= 24 ? 'full' : n >= 70 ? 'tkl' : 60];
 
 // One light drawn as what it is, in the box X, Y, W, H: cols are its LEDs (index 0 = start of the strip).
-// the TRYX screen is a picture: tryx.svg when on, tryx-off.svg when off
-const TRYX_IMG = Object.fromEntries([['on', 'tryx.svg'], ['off', 'tryx-off.svg']].map(([k, src]) =>
-  [k, Object.assign(new Image(), { src, onload: () => { if (typeof tab !== 'undefined' && tab === 'home') drawHero(); } })]));
+// A cooler with a screen is a picture: <name>-off.svg when off, else <name>.svg with its root style set by vars from the
+// light's colour (null: none). One picture at a time is made from the text: while it decodes, the last one is drawn.
+const heroAgain = () => { if (typeof tab !== 'undefined' && tab === 'home') drawHero(); };
+function tintPic(name, vars) {
+  const P = { off: Object.assign(new Image(), { src: name + '-off.svg', onload: heroAgain }), svg: '', img: null, want: null, busy: 0 };
+  fetch(name + '.svg', { cache: 'no-cache' }).then(r => r.text()).then(s => { P.svg = s; heroAgain(); }).catch(() => {});
+  return (on, col) => {
+    if (!on) return P.off;
+    col = /^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%]+\))$/i.test(col || '') ? col : '';
+    if (P.svg && !P.busy && col !== P.want) {
+      const im = new Image();
+      P.busy = 1; P.want = col;
+      im.onload = () => { P.img = im; P.busy = 0; heroAgain(); };
+      im.onerror = () => { P.busy = 0; };
+      im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(P.svg.replace(/(<svg[^>]*\sstyle=")[^"]*/, '$1' + vars(col)));
+    }
+    return P.img;
+  };
+}
+// TRYX: a glow behind the screen; Corsair LCD: its ring (with no colour the °C keeps its own grey)
+const TRYX_PIC = tintPic('tryx', k => k ? `--tryx-glow-color: ${k}; --tryx-glow-opacity: 1; --tryx-screen-opacity: 1` : '--tryx-glow-opacity: 0; --tryx-screen-opacity: 1');
+const CORSAIR_PIC = tintPic('corsair', k => k ? `--icue-ring-color: ${k}; --icue-ring-opacity: 1` : '--icue-ring-opacity: 0');
+// Divoom Times Frame: the DIVOOM tube and the ribbed foot glow; with the light off only its screen is on
+const FRAME_PIC = tintPic('divoom-frame', k => k ? `--divoom-rgb-color: ${k}; --divoom-rgb-opacity: 1; --divoom-screen-opacity: 1` : '--divoom-rgb-opacity: 0; --divoom-screen-opacity: 1');
+// a picture in the middle of the box, as large as it fits
+function drawPic(c, im, cx, cy, W, H) {
+  if (!im || !im.complete || !im.naturalWidth) return;
+  const r = im.naturalWidth / im.naturalHeight, w = Math.min(W, H * r), h = w / r;
+  c.drawImage(im, cx - w / 2, cy - h / 2, w, h);
+}
 // keys: a keyboard's real LED count (cols may be thinned out), which picks its layout
 function drawFixture(c, X, Y, W, H, type, cols, on, keys) {
   const dp = devicePixelRatio, n = cols.length, cx = X + W / 2, cy = Y + H / 2;
@@ -2794,9 +2821,10 @@ function drawFixture(c, X, Y, W, H, type, cols, on, keys) {
     c.restore();
     for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; line([[cx + Math.cos(a) * r * 0.26, cy + Math.sin(a) * r * 0.26], [cx + Math.cos(a + .55) * r * 0.78, cy + Math.sin(a + .55) * r * 0.78]], .1); }
     c.beginPath(); c.arc(cx, cy, r * 0.24, 0, 7); c.fillStyle = BODY; c.fill(); c.strokeStyle = EDGE; c.lineWidth = dp; c.stroke();
-  } else if (type === 'screen') {   // the TRYX cooler: its screen picture
-    const im = on ? TRYX_IMG.on : TRYX_IMG.off, r = im.naturalWidth / im.naturalHeight || 200 / 175, w = Math.min(W, H * r), h = w / r;
-    if (im.complete && im.naturalWidth) c.drawImage(im, cx - w / 2, cy - h / 2, w, h);
+  } else if (type === 'screen') {   // the TRYX cooler, the glow behind its screen in the light's colour
+    drawPic(c, TRYX_PIC(on, glow), cx, cy, W, H);
+  } else if (type === 'aio') {   // a Corsair LCD cooler, its ring in the light's colour
+    drawPic(c, CORSAIR_PIC(on, glow), cx, cy, W, H);
   } else if (type === 'keyboard') {   // a keyboard, 60% / TKL / full size by its key count, each key lit by its LED
     const L = kbLayout(keys || n), s = Math.min(W * 0.95 / L.w, H * 0.8 / L.h), ox = cx - L.w * s / 2, oy = cy - L.h * s / 2;
     const rr = (x, y, w, h, r) => { c.beginPath(); c.roundRect(ox + x * s, oy + y * s, w * s, h * s, r * s); };
@@ -2837,13 +2865,8 @@ function drawFixture(c, X, Y, W, H, type, cols, on, keys) {
       }
     }
     box(x + w * 0.12, y + bh, w * 0.1, 5 * dp, '#1a1a1a'); box(x + w * 0.78, y + bh, w * 0.1, 5 * dp, '#1a1a1a');
-  } else if (type === 'frame') {   // Divoom Times Frame: a screen on a foot, its light glowing on the wall behind it
-    const k = col(0), on1 = lit1(k), w = Math.min(W * 0.66, H * 1.15), h = w * 0.62, x = cx - w / 2, y = cy - h / 2 - H * 0.05;
-    if (on1) { c.save(); c.shadowColor = k; c.shadowBlur = 48 * dp; c.fillStyle = k; for (let i = 0; i < 2; i++) c.fillRect(x + w * 0.05, y + h * 0.08, w * 0.9, h * 0.84); c.restore(); }
-    box(cx - 2 * dp, y + h, 4 * dp, H * 0.08, '#1f1f1f');
-    box(cx - w * 0.18, y + h + H * 0.08, w * 0.36, 4 * dp, '#1a1a1a');
-    box(x, y, w, h, BODY);
-    c.fillStyle = DEEP; c.fillRect(x + 4 * dp, y + 4 * dp, w - 8 * dp, h - 8 * dp);
+  } else if (type === 'frame') {   // Divoom Times Frame: its screen, the side light in the light's colour
+    drawPic(c, FRAME_PIC(on, lit1(col(0)) ? col(0) : ''), cx, cy, W, H);
   } else if (type === 'keylight') {   // Elgato Key Light: an LED panel up on a tall pole and clamp, white only
     const k = col(0), on1 = lit1(k), h = H * 0.94, top = cy - h / 2;
     const pw = Math.min(W * 0.56, h * 0.75), ph = pw * 0.7, px = cx - pw / 2;
@@ -2877,7 +2900,8 @@ function drawExt(c, X, Y, W, H, k) {
   const d = S.ext.devs[k];
   if (!d) return;
   const cols = F.ext[k] || [], on = d.online && d.enabled, n = Math.max(1, cols.length || Math.min(d.leds || 1, 60));
-  drawFixture(c, X, Y, W, H, d.type || (d.per_led ? 'strip' : 'bulb'), [...Array(n)].map((_, i) => cols[i] || OFF), on, d.leds);
+  const type = d.type || (d.per_led ? 'strip' : 'bulb');
+  drawFixture(c, X, Y, W, H, type === 'screen' && d.kind === 'corsairlcd' ? 'aio' : type, [...Array(n)].map((_, i) => cols[i] || OFF), on, d.leds);
 }
 function label(c, text, x, y, bright) {
   const d = devicePixelRatio;
@@ -3822,7 +3846,7 @@ function buildDevices() {
     // TRYX: a screen card only (theme, own picture); its fans light from the motherboard's ARGB header, not from here
     const scr = isScreen(d);
     el.innerHTML = `<div class="card-head">
-        <div><h3>${esc(d.name)}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p>${checkedText(d.kind) ? `<p class="dev-info dev-chk">${checkedText(d.kind)}</p>` : ''}</div>
+        <div><h3>${esc(d.name)}${d.kind === 'corsairlcd' ? ` <span class="beta" title="${t('cl.beta.t')}">${t('fans.beta')}</span>` : ''}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p>${checkedText(d.kind) ? `<p class="dev-info dev-chk">${checkedText(d.kind)}</p>` : ''}</div>
         <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
       </div>
       ${scr ? '' : `<canvas class="live" id="dev-live-${d.id}" data-h="${d.per_led ? 70 : 90}"></canvas>
@@ -4615,7 +4639,7 @@ function updateLink() {
   const rows = !on || K.st !== 'ok' ? [] : (K.dev || []).map(d => {
     const psu = d.type === 11 && v.length, sub = psu ? v.map((x, i) => x.toFixed(2) + ' V ' + a[i].toFixed(2) + ' A').join(' · ') : t('link.ch', d.ch);
     const fan = linkKind(d.type) === 'fan';   // QX and LX: lit ring and hub; RX RGB (MAX): the hub; RX (MAX): none
-    return `<div class="found-row"><span class="kind${fan ? ' kind-ic' : ''}">${fan ? fanIcon({ 1: 'qx', 2: 'qx', 3: 'hub', 15: 'hub' }[d.type] || '') : ''}${t('link.k.' + linkKind(d.type))}</span>
+    return `<div class="found-row"><span class="kind${fan ? ' kind-ic' : ''}">${fan ? fanIcon({ 1: 'qx', 2: 'qx', 3: 'hub', 15: 'hub' }[d.type] || '', false, d.rpm > 0) : ''}${t('link.k.' + linkKind(d.type))}</span>
       <div class="what"><b>${esc(linkName(d))}</b><small>${esc(sub)}</small></div>
       <span class="added">${esc([psu && t('link.w', Math.round(w)), val(d)].filter(Boolean).join(' · '))}</span></div>`;
   });
@@ -5499,7 +5523,7 @@ function updateChips() {
 
 // ------------------------------------------------------------------ Home: what is not lit and why, the fans as they run
 // the same status the device cards and the chips use; nothing here is shown that the core did not report
-const HOME = { attn: [] };
+const HOME = { attn: [], cfgOk: 0 };
 function homeAttn() {
   const r = [], row = (o, kind, why, help, extra) => r.push({ n: o.n, h: o.h, kind, why, help, extra });
   for (const d of S.ext.devs) {
@@ -5515,6 +5539,8 @@ function homeAttn() {
   if (S.unsaved) r.push({ n: t('home.unsaved'), kind: t('dchk.c.left'), why: t('home.unsaved.why'), extra: 'save' });
   const e = S.prof || {}, pe = PROF_ERR[e.err];
   if (pe && pe !== 'full') r.push({ n: t('prof.label'), kind: t('dchk.c.left'), why: t('prof.err.' + pe, cv(profSec(e.id), 'name', '') || '#' + e.id, PROFILE_MAX), extra: 'prof' });
+  // changes the core refused since start because the settings file is full (config.c), until Got it
+  if ((S.cfg_full || 0) > HOME.cfgOk) r.push({ n: t('home.cfgfull'), kind: t('dchk.c.left'), why: t('home.cfgfull.why', S.cfg_full - HOME.cfgOk), extra: 'cfgok' });
   const F = S.fans || {}, wd = F.wd || [];
   [0, 1].forEach(k => { if (wd[k] === 2 || wd[k] === 3) r.push({ n: k ? t('fans.wd.board') : 'QUADRO', kind: t('dchk.c.left'), why: t(wd[k] === 2 ? 'fans.wd.busy' : 'fans.wd.fail', k ? t('fans.wd.board') : 'QUADRO', F.rfail || 1), help: 'fans', tab: 'fans' }); });
   return [...homeCool(), ...homeGroup(r)];
@@ -5555,7 +5581,7 @@ function updateHome() {
   const a = homeAttn(), btn = (k, v, txt, cls) => `<button class="btn small${cls || ' ghost'}" type="button" data-${k}="${esc(v)}"><span>${txt}</span></button>`;
   const html = a.map((x, i) => `<div class="found-row" data-i="${i}"><span class="kind">${esc(x.kind)}</span>
     <div class="what"><b>${esc(x.n)}</b><small>${esc(x.why)}</small></div>
-    <span class="added">${x.h || x.fan || x.tab ? btn('a', 'open', t('home.open'), ' ') : ''}${x.extra === 'retry' ? btn('a', 'retry', t('dev.retry')) : ''}${x.extra === 'cf' ? btn('a', 'cf', t('cf.title')) : ''}${x.extra === 'save' ? btn('a', 'save', t('home.save.again'), ' ') : ''}${x.extra === 'prof' ? btn('a', 'prof', t('prof.label')) : ''}${x.help ? btn('help', x.help, t('home.why')) : ''}</span></div>`).join('');
+    <span class="added">${x.h || x.fan || x.tab ? btn('a', 'open', t('home.open'), ' ') : ''}${x.extra === 'retry' ? btn('a', 'retry', t('dev.retry')) : ''}${x.extra === 'cf' ? btn('a', 'cf', t('cf.title')) : ''}${x.extra === 'save' ? btn('a', 'save', t('home.save.again'), ' ') : ''}${x.extra === 'prof' ? btn('a', 'prof', t('prof.label')) : ''}${x.extra === 'cfgok' ? btn('a', 'cfgok', t('home.cfgfull.ok')) : ''}${x.help ? btn('help', x.help, t('home.why')) : ''}</span></div>`).join('');
   const L = $('#home-attn-list');
   if (L.dataset.html !== html) { L.dataset.html = html; L.innerHTML = html; HOME.attn = a; }
   $('#home-attn').classList.toggle('hidden', !a.length);
@@ -5580,6 +5606,7 @@ $('#home-attn-list').addEventListener('click', e => {
   else if (b.dataset.a === 'retry' || b.dataset.a === 'save') { b.disabled = true; setTimeout(() => { b.disabled = false; }, 3000); send({ cmd: b.dataset.a === 'save' ? 'save_retry' : 'dev_retry' }); }
   else if (b.dataset.a === 'prof') $('#prof-btn').click();
   else if (b.dataset.a === 'cf') go('cf');
+  else if (b.dataset.a === 'cfgok') { HOME.cfgOk = S.cfg_full || 0; updateHome(); }
 });
 $('#home-cool').addEventListener('click', () => showTab('fans'));
 $('#home-go-fx').addEventListener('click', () => showTab('effects'));
@@ -5940,8 +5967,21 @@ const PUMP_SVG = '<rect x="8" y="8" width="84" height="84" rx="18" fill="#141414
   [0, 60, 120, 180, 240, 300].map(a => `<path d="${PUMP_BLADE}" transform="rotate(${a} 50 53)"/>`).join('') +
   '</g><circle cx="50" cy="53" r="9.5" fill="#b5b5b5" stroke="#d4d4d4" stroke-width="1.8"/>';
 const FAN_BLADES = Array.from({ length: 7 }, (_, k) => `<path transform="rotate(${(k * 360 / 7).toFixed(1)})" d="M-1.5-4.8C-2-10 1-15 6-16.8C9-15.8 11-14.3 12.3-12.3C8.5-9.5 5.5-6.5 3.8-3.3Z"/>`).join('');
+// four looks are pictures (ui/fan-<name>.svg): their gradients and filters go once into a hidden <svg> (the ids are
+// unique per file), the rest is drawn inline; .on lights them in --live and turns the blades (.fb)
+const FAN_ART = {};
+Object.entries({ '': 't30', ring: 'halo', qx: 'qx', inf: 'slinf' }).forEach(([look, n]) =>
+  fetch(`fan-${n}.svg`, { cache: 'no-cache' }).then(r => r.text()).then(t => {
+    const defs = (t.match(/<defs>([\s\S]*?)<\/defs>/) || [])[1] || '';
+    let d = $('svg.fan-defs');
+    if (!d) { d = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); d.setAttribute('class', 'fan-defs'); d.setAttribute('aria-hidden', 'true'); document.body.append(d); }
+    d.insertAdjacentHTML('beforeend', defs);
+    FAN_ART[look] = t.replace(/^[\s\S]*?<svg[^>]*>|<\/svg>\s*$/g, '').replace(/<defs>[\s\S]*?<\/defs>/, '').replace(/\sid="[^"]*"/g, '');
+    FAN.sig = ''; $('#fs-look').dataset.sig = ''; updateFans();
+  }).catch(() => {}));
 // sl: Lian Li SL has its LEDs down the sides
-function fanIcon(look, pump) {
+function fanIcon(look, pump, on) {
+  if (!pump && FAN_ART[look]) return `<svg class="fanic fan-art${on ? ' on' : ''}" data-look="${look}" viewBox="72 34.5 146 146" aria-hidden="true">${FAN_ART[look]}</svg>`;
   const ring = (r, o) => `<circle r="${r}"${o ? ` opacity="${o}"` : ''}/>`, hub = '<circle class="f" r="5"/>', bar = y => `<rect class="f" x="-14" y="${y}" width="28" height="2.4" rx="1.2"/>`;
   const lit = pump ? '' : { ring: ring(19), hub, qx: ring(18.5) + hub, sl: `<g transform="rotate(90)">${bar(-19.6) + bar(17.2)}</g>`, inf: ring(19) + ring(16.4, .55) + ring(13.8, .3) }[look] || '';
   const body = pump ? `<g transform="translate(-25 -25) scale(.5)">${PUMP_SVG}</g>`
@@ -5952,6 +5992,8 @@ const fanLook = i => cv('fans', fanKey(i, 'look'), '');
 const fanPump = i => cv('fans', fanKey(i, 'kind'), '') === 'pump';
 // a tile's: the fan's, or what every fan of the group shares (plain when they differ)
 const fanTileIcon = m => !m.length ? '' : fanIcon(new Set(m.map(fanLook)).size === 1 ? fanLook(m[0]) : '', m.every(fanPump));
+// a tile's fans turning (lit and spinning on its card)
+const fanRuns = m => m.some(i => !fanOld(i) && fanCh(i).rpm > 0);
 const fanDKey = o => !o ? '' : o.i != null ? 'f' + o.i : 'g' + o.g;
 // fans as widgets on Home: a group, or a fan in none ([ui] hero_fans lists the ones added: fang<n>, fan<i>)
 const heroFans = () => cv('ui', 'hero_fans', '').split(',').filter(Boolean);
@@ -6210,6 +6252,8 @@ function renderFanPanel() {
     if (fk) { const b = $('#fan-panel').querySelector(fk); if (b) b.focus(); }
   }
   $$('#fan-panel [data-live-f]').forEach(el => { el.innerHTML = fanRow(+el.dataset.liveF, !!el.closest('[data-g]')); });
+  $$('#fan-panel .fan-tile').forEach(el => { const ic = el.querySelector('.fan-hd > .fanic'), g = gs.find(x => String(x.n) === el.dataset.g);
+    if (ic) ic.classList.toggle('on', fanRuns(g ? g.m : [+el.dataset.f])); });
   $('#fan-add').classList.toggle('hidden', gs.length >= FAN_GROUPS);
   const off = fanAll().filter(fanHidden);
   $('#fan-removed').classList.toggle('hidden', !off.length);
@@ -6280,7 +6324,7 @@ function fanSheet() {
       const fl = document.activeElement && lk.contains(document.activeElement) && document.activeElement.dataset.v;
       lk.dataset.sig = lsig;
       lk.innerHTML = FAN_LOOKS.map(v => { const n = t('fans.look.' + (v || 'plain'));
-        return `<button type="button" data-v="${v}" class="${v === look ? 'on' : ''}" aria-pressed="${v === look}" title="${esc(n)}">${fanIcon(v)}<small>${esc(n.split(' (')[0])}</small></button>`; }).join('');
+        return `<button type="button" data-v="${v}" class="${v === look ? 'on' : ''}" aria-pressed="${v === look}" title="${esc(n)}">${fanIcon(v, false, true)}<small>${esc(n.split(' (')[0])}</small></button>`; }).join('');
       if (fl != null) { const b = lk.querySelector(`[data-v="${fl}"]`); if (b) b.focus(); }
     }
     ['min', 'fail', 'down'].forEach(k => { const el = $('#fs-' + k); if (document.activeElement !== el) el.value = cv('fans', fanKey(i, k), ''); });

@@ -17,10 +17,10 @@ static int fail(int code, int id) {
     err = code; err_id = id; err_n++;
     logf_("profile %d: %s", id, code == PE_WRITE ? "its file can't be written" : code == PE_LEAVE ? "the one in use can't be written, not switched" :
           code == PE_MISSING ? "its file is missing" : code == PE_BAD ? "its file is damaged, not used" : code == PE_FULL ? "all are taken" :
-          "the settings can't be written yet");
+          code == PE_ROOM ? "the settings file is full, nothing changed" : "the settings can't be written yet");
     return 0;
 }
-int prof_json(char *out, int cap) { return snprintf(out, cap, "{\"err\":%d,\"id\":%d,\"n\":%d}", err, err_id, err_n); }
+int prof_json(char *out, int cap) { return jcat(out, cap, 0, "{\"err\":%d,\"id\":%d,\"n\":%d}", err, err_id, err_n); }
 
 static void prof_file(int id, wchar_t *out) {
     wchar_t n[40]; swprintf(n, 40, L"profiles\\%d.ini", id);
@@ -104,8 +104,8 @@ int prof_parse(char *b, size_t len, prof_entry *e, int max) {
 }
 
 // profiles\N.ini -> the live setup, what the file doesn't have back to its default. Nothing changes unless the
-// whole file is good: 1 done, PROF_MISSING, PROF_BAD
-int prof_load(int id) {
+// whole file is good: 1 done, PROF_MISSING, PROF_BAD. In a cfg group: the caller takes it back when it did not fit
+static int load(int id) {
     static prof_entry e[4096]; static char secs[512][64]; static cfg_item it[512];
     wchar_t p[MAX_PATH]; prof_file(id, p);
     size_t len; char *b = slurp(p, &len);
@@ -124,6 +124,12 @@ int prof_load(int id) {
     for (int i = 0; i < n; i++) cfg_set(e[i].sec, e[i].key, e[i].val);
     return 1;
 }
+// as load, PROF_ROOM when it does not fit the settings: a setup half in would be neither profile
+int prof_load(int id) {
+    cfg_group_begin();
+    int r = load(id);
+    return cfg_group_end() ? r : PROF_ROOM;
+}
 
 // the one in use writes its changes to its file, then profile id's setup becomes the live one. 0: nothing changed
 // (the error is in prof_json): the one in use can't keep its changes, or id's file is missing or damaged
@@ -131,10 +137,12 @@ int prof_switch(int id) {
     if (!prof_exists(id)) return 0;
     int cur = cfg_geti("general", "profile", 0);
     if (cur != id && prof_exists(cur) && !prof_write(cur)) return fail(PE_LEAVE, cur);   // switching would lose them
-    int r = prof_load(id);
-    if (r != 1) return fail(r == PROF_MISSING ? PE_MISSING : PE_BAD, id);
+    cfg_group_begin();   // the setup and the mark of whose it is go in together
+    int r = load(id);
     char v[8]; snprintf(v, sizeof(v), "%d", id);
-    cfg_set("general", "profile", v);
+    if (r == 1) cfg_set("general", "profile", v);
+    if (!cfg_group_end()) r = PROF_ROOM;
+    if (r != 1) return fail(r == PROF_MISSING ? PE_MISSING : r == PROF_ROOM ? PE_ROOM : PE_BAD, id);
     return 1;
 }
 
@@ -145,7 +153,7 @@ void prof_saved(int id) { if (!cfg_save_if_dirty()) fail(PE_CFG, id); else err =
 // [profile.N] name: what was given (else the one it has, else "Profile N"), without what would break the file
 static const char *prof_name(const char *sec, int id, const char *name) {
     char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(sec, "name", ""));
-    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
+    cfg_clean_name(nm);
     if (!nm[0]) snprintf(nm, sizeof(nm), "Profile %d", id);
     cfg_set(sec, "name", nm);
     return cfg_get(sec, "name", "");
@@ -158,8 +166,10 @@ int prof_save(int id, const char *name) {
     if (!prof_exists(id) && !(id = prof_free())) return fail(PE_FULL, 0);
     if (!prof_write(id)) return fail(PE_WRITE, id);
     char sec[24], v[8]; snprintf(sec, sizeof(sec), "profile.%d", id); snprintf(v, sizeof(v), "%d", id);
+    cfg_group_begin();
     const char *nm = prof_name(sec, id, name);
     cfg_set("general", "profile", v);
+    if (!cfg_group_end()) return fail(PE_ROOM, id);   // a new one's file may stay: unnamed, it is no profile
     prof_saved(id);
     logf_("profile %d saved: %s", id, nm);
     return id;
@@ -187,6 +197,7 @@ int prof_dup(int src, const char *name) {
     if (!ok) return fail(PE_WRITE, id);
     char ss[24], sec[24]; snprintf(ss, sizeof(ss), "profile.%d", src); snprintf(sec, sizeof(sec), "profile.%d", id);
     static const char *own[] = { "name", "hotkey", "apps", "at", "days", "at_off", "pin" };
+    cfg_group_begin();
     int n = cfg_items(ss, it, 64);
     for (int i = 0; i < n; i++) {
         int skip = 0;
@@ -194,6 +205,7 @@ int prof_dup(int src, const char *name) {
         if (!skip) cfg_set(sec, it[i].key, it[i].val);
     }
     prof_name(sec, id, name);
+    if (!cfg_group_end()) { DeleteFileW(to); return fail(PE_ROOM, id); }   // never named, so its file goes too
     prof_saved(id);
     logf_("profile %d: a copy of %d", id, src);
     return id;

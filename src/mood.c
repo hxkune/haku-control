@@ -346,10 +346,10 @@ void mood_request(const char *text, int again) {
 int mood_json(char *out, int cap) {
     AcquireSRWLockShared(&lk);
     char nm[200]; jstr(nm, sizeof(nm), name);
-    int n = snprintf(out, cap, "{\"seq\":%d,\"busy\":%d,\"err\":\"%s\",\"name\":\"%s\",\"effect\":\"%s\",\"speed\":%d,\"model\":\"%s\",\"colors\":[",
+    int n = jcat(out, cap, 0, "{\"seq\":%d,\"busy\":%d,\"err\":\"%s\",\"name\":\"%s\",\"effect\":\"%s\",\"speed\":%d,\"model\":\"%s\",\"colors\":[",
                      seq, (int)busy, err, nm, effect, speed, model);
-    for (int i = 0; i < ncolors; i++) n += snprintf(out + n, cap - n, "%s\"%s\"", i ? "," : "", colors[i]);
-    n += snprintf(out + n, cap - n, "]}");
+    for (int i = 0; i < ncolors; i++) n = jcat(out, cap, n, "%s\"%s\"", i ? "," : "", colors[i]);
+    n = jcat(out, cap, n, "]}");
     ReleaseSRWLockShared(&lk);
     return n;
 }

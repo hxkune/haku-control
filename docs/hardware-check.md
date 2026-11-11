@@ -3,6 +3,20 @@
 What the software tests do not prove. Run by hand on a PC with the devices, OpenRGB installed and its SDK server on.
 Nothing here is run by haku on its own. Write down the device, the OpenRGB version and what you saw.
 
+**For every check, write down:**
+- the device model and its firmware;
+- the haku version (Settings → About) and the Windows build;
+- what you did, step by step;
+- what was expected (the line here) and what actually happened;
+- the log lines around it (`haku-control.log`, after a crash also `haku-control.prev.log`).
+
+Do not include device keys, passwords, PINs or licence keys. A check you could not run (no such device, no second monitor) stays **not checked**: say so. It is not "passed".
+
+Status words used in README and in the app:
+- **tested on hardware**: this list was run on that device and passed;
+- **simulator only**: checked against simulated devices or a fake server, never on the real one;
+- **experimental / beta**: may not work; the badge stays until the check here passes on real hardware. Mock or simulator results never remove it.
+
 ## OpenRGB: flicker and modes
 
 1. **Direct controller** (most boards, many RAM sticks, keyboards). Add it, run Flow for 5 minutes.
@@ -134,17 +148,58 @@ Experimental: built from OpenLinkHub's description of the protocol, not yet run 
 6. **Another program.** Start iCUE with haku open: the card says iCUE has the screen, and haku sends nothing until iCUE is closed.
 7. Send the `corsairlcd:` lines from the log, as they show the screen's reports and how it answered.
 
+## Exit, saving and update
+
+The self-tests check the order and the results in code (`tools/sim/run-tests.cmd`: fans, link, config, setup). They do not show what a real device does when haku closes, or how Windows treats the installer on your PC.
+
+1. **Quit with fans set.** Set a fixed speed on each fan part you have (QUADRO, board header, Lian Li), then Quit from the tray panel's ⋯.
+   - Every fan goes back to its own setting within a few seconds.
+   - The log has no `not confirmed` line. If it has one, write down which part.
+2. **Quit while the settings cannot be written.** Make `%APPDATA%\haku-control\settings.ini` read-only, change the brightness, then Quit.
+   - A dialog says the settings could not be saved and names the file. It offers Try again and Exit without saving.
+   - Cancel keeps haku running with the change. Try again fails again while the file is read-only.
+   - Clear read-only, then Try again: haku quits. Start it again: the new brightness is there.
+   - Exit without saving: haku quits, the fans are given back, the old brightness is there on the next start.
+3. **Sign out or restart with haku running** (the Windows session ends, which gives haku a few seconds only).
+   - After signing in again, the log of the previous run ends with the fans and lights given back. If it has `session end: cooling given back not confirmed`, write down which part.
+   - This path is best-effort: Windows may end haku before it is done.
+4. **Update notice.** With an older version installed and a newer one out, wait for the daily check (or restart haku).
+   - The tray says a new version is out. Nothing installs on its own.
+   - Settings → About shows the new version and says haku closes and starts again. Press Update: haku closes, the installer runs, haku starts again with the same settings, profiles and devices.
+   - A full-screen game or a presentation running: no tray notice until it ends.
+5. **Update while haku cannot give the fans back** (e.g. the QUADRO busy in aquasuite). The installer says the fans may not have been given back and asks before going on. Cancel leaves the installed version as it was.
+6. **Update with the folder in use.** Open a command prompt and `cd` into the program folder (it holds the folder), then run the setup.
+   - It reports that a file is in use and that the installed version was not changed.
+   - haku still starts from the Start menu.
+7. **Interrupted update.** Run the setup and end it in Task Manager while it copies. Run the setup again.
+   - The second run finishes the update normally (an unfinished copy is thrown away, a half-done swap is put back first).
+   - Ended exactly between its two folder renames, haku does not start until the setup is run again: write down if you ever see that.
+   - `%APPDATA%\haku-control` is not touched in any case.
+8. **Not enough disk space.** On a disk with less than about 70 MB free, the setup says so before touching the installed version.
+9. **Blocked version.** Not checked by hand: it needs the update server to mark a version as blocked. In code it is unchanged. It is checked at start and once a day; a blocked version lets the lights go, says why and quits.
+
+## Unplug, replug and conflicts
+
+These repeat the per-device steps above in one pass, for any device you have:
+- Unplug the device's USB while an effect runs. Its card says it is lost within about 10 s, and Home lists it under Needs attention. Plug it back: it comes back without restarting haku.
+- Start the device maker's own app (iCUE, aquasuite, L-Connect, Armoury Crate) with haku open. haku does not take the device from it, does not close it, and says what holds the device.
+
 ## Tray panel
 
-Checked so far only in a browser against a fake core (`tray.html?mock`, `tools/sim/ui-tests.ps1`). On a real PC:
-1. **Open and close.** A left click on the icon opens the panel next to it; a second click, Escape or a click elsewhere closes it. A double click opens the window. The right click still shows the old menu.
-2. **Where it opens.** Move the taskbar to each side, then turn on auto-hide: the panel sits by the icon, inside the screen, never under the taskbar. Repeat at 100 %, 150 % and 200 % scaling and on a second monitor with another scale (there Windows may blur it slightly). With the icon in the overflow (^) area, the panel opens near where it was clicked, inside the screen.
-3. **Controls.** Brightness drag: the lights follow and the panel stays open. Power, a profile, an effect, a preset, a device switch: each changes the lights and the window shows the same. Change the effect in the window: the open panel follows.
-4. **Keyboard and Narrator.** Tab goes through every control with a visible ring; Narrator reads the slider value, the switches' on/off and the profile in use.
-5. **Time and memory.** The log has `tray: open in N ms (first)` and `(again)` lines: write both down. Open and close it 30 times, then look at haku's memory and handles in Task Manager: they should not keep growing. After 30 s closed, the panel's WebView2 processes end.
-6. **Explorer restart.** End Explorer in Task Manager and start it again: the icon comes back and the panel still opens.
-7. **Fallback.** Rename `ui	ray.html` in the install folder (put it back afterwards): a left click shows the old menu instead, and the log says why.
-8. **Quit.** Quit from ⋯: the lights are handed back exactly as with Quit in the old menu.
+Checked so far only in a browser against a fake core (`tray.html?mock`, `tools/sim/ui-tests.ps1`) and in `tools/sim/tray_test.c`, which covers which click does what. On a real PC:
+1. **Open and close.**
+   - A left or a right click on the icon opens the panel next to it.
+   - A second click, Escape or a click elsewhere closes it. Clicking quickly many times never leaves two panels or a panel that reopens by itself.
+   - A double click opens the window, with no panel left open.
+   - The old menu shows only when the panel cannot be made (step 7).
+2. **Keyboard.** Win+B, arrow to haku's icon, then Enter and also Shift+F10 (or the menu key): the panel opens with the focus in it. Escape closes it.
+3. **Where it opens.** Move the taskbar to each side, then turn on auto-hide: the panel sits by the icon, inside the screen, never under the taskbar. Repeat at 100 %, 150 % and 200 % scaling and on a second monitor with another scale (there Windows may blur it slightly). With the icon in the overflow (^) area, the panel opens near where it was clicked, inside the screen.
+4. **Controls.** Brightness drag: the lights follow and the panel stays open. Power, a profile, an effect, a preset, a device switch: each changes the lights and the window shows the same. Change the effect in the window: the open panel follows.
+5. **Tab and Narrator.** Tab goes through every control with a visible ring; Narrator reads the slider value, the switches' on/off and the profile in use.
+6. **Time and memory.** The log has `tray: open in N ms (first)` and `(again)` lines: write both down. Open and close it 30 times, then look at haku's memory and handles in Task Manager: they should not keep growing. After 30 s closed, the panel's WebView2 processes end. Write down how many `msedgewebview2.exe` processes haku has with the window closed, with it open, and with the panel open.
+7. **Explorer restart.** With the panel open, end Explorer in Task Manager and start it again: the panel closes, the icon comes back, and both clicks open the panel again.
+8. **Fallback.** Rename `ui\tray.html` in the install folder (put it back afterwards): a left or right click shows the old menu instead, and the log says why.
+9. **Quit.** Quit from ⋯: the lights are handed back exactly as with Quit in the old menu, and a failed save asks as in "Exit, saving and update" step 2.
 
 ## Not to do as part of this check
 

@@ -196,5 +196,5 @@ void net_check_start(int id, const char *host) {
 }
 
 int net_check_json(char *out, int cap) {
-    return snprintf(out, cap, "{\"id\":%d,\"busy\":%d,\"res\":\"%s\",\"ms\":%u}", chk_id, (int)chk_busy, chk_res, chk_ms);
+    return jcat(out, cap, 0, "{\"id\":%d,\"busy\":%d,\"res\":\"%s\",\"ms\":%u}", chk_id, (int)chk_busy, chk_res, chk_ms);
 }

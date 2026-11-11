@@ -70,7 +70,8 @@ static void send_state(void) { char *b = big_buf(); app_state_json(b, 512 * 1024
 static void post_state(void) { InterlockedIncrement(&g_state_rev); send_state(); }
 // the window in the background: the page pauses its animations and the live view slows down (ui/app.js)
 static void post_focus(bool on) { post(on ? "{\"type\":\"focus\",\"on\":1}" : "{\"type\":\"focus\",\"on\":0}"); }
-static void post_status(void) { static char b[64 * 1024]; app_status_json(b, sizeof(b)); post(b); }
+static void post_status(void) { static char b[512 * 1024];   // many devices pass 64 KB
+    app_status_json(b, sizeof(b)); post(b); }
 // the live colours: 20 a second while the page draws them (Home, Devices, a device's sheet: {"cmd":"frames","live":1}),
 // else one in 400 ms for the background glow alone, which takes no more (ui/app.js frameNeed, ambient)
 static bool live_view = true;
@@ -211,14 +212,8 @@ static void on_message(const std::string &js) {
         else app_set(s.c_str(), k.c_str(), field(js, "v").c_str());
     }
     else if (cmd == "fans_set") {   // "key=value" lines, all written as one change; not in remote_allowed: the fans stay with this PC
-        std::string kv = field(js, "kv"); std::vector<std::string> part; std::vector<const char *> p; bool ok = true;
-        for (size_t a = 0, b; a < kv.size() && ok; a = b + 1) {
-            b = kv.find('\n', a); if (b == std::string::npos) b = kv.size();
-            std::string l = kv.substr(a, b - a); size_t eq = l.find('=');
-            ok = eq != std::string::npos && eq > 0 && part.size() < 256;   // a group of every channel with every source's curve fits
-            for (size_t i = 0; ok && i < eq; i++) ok = isalnum((unsigned char)l[i]) || l[i] == '_';
-            if (ok) { part.push_back(l.substr(0, eq)); part.push_back(l.substr(eq + 1)); }
-        }
+        std::string kv = field(js, "kv"); std::vector<std::string> part; std::vector<const char *> p;
+        bool ok = kv_lines(kv, 128, part);   // a group of every channel with every source's curve fits
         if (ok && !part.empty()) { for (const std::string &x : part) p.push_back(x.c_str()); app_set_fans(p.data(), (int)p.size() / 2); }
     }
     else if (cmd == "comp_apply") {   // the constructor's Apply: its 8 layers and 3 knobs as one change. Not in remote_allowed
@@ -230,7 +225,7 @@ static void on_message(const std::string &js) {
         for (int i = 0; ok && i < 11; i++) ok = part[2 * i] == keys[i];   // all of them, in order: an empty one is a cleared layer
         if (!ok) err = "bad";
         else if (other_profile(field(js, "p"), NULL, NULL)) err = "prof";
-        else { for (const std::string &x : part) p.push_back(x.c_str()); if (!app_comp_apply(p.data(), 11)) err = "save"; }
+        else { for (const std::string &x : part) p.push_back(x.c_str()); int r = app_comp_apply(p.data(), 11); if (r < 0) err = "cap"; else if (!r) err = "save"; }
         post_state();
         char b[96]; snprintf(b, sizeof(b), "{\"type\":\"comp_done\",\"req\":\"%s\",\"err\":\"%s\"}", req.c_str(), err.c_str());
         post(b);
@@ -250,7 +245,7 @@ static void on_message(const std::string &js) {
             if (slot.empty()) while (++n <= 16) { snprintf(sec, sizeof(sec), "cdraft.%d", n); if (!cfg_get(sec, "at", "")[0]) break; }
             for (const std::string &x : part) p.push_back(x.c_str());
             if (n > 16) err = "full";
-            else if (!app_draft_save(sec, p.data(), (int)p.size() / 2)) err = "save";
+            else if (int r = app_draft_save(sec, p.data(), (int)p.size() / 2); r <= 0) err = r < 0 ? "cap" : "save";
             if (!err.empty()) n = 0;
         }
         post_state();
@@ -279,7 +274,7 @@ static void on_message(const std::string &js) {
         int id = app_preset_save(atoi(field(js, "id").c_str()), field(js, "name").c_str(), field(js, "effect").c_str(),
                                  field(js, "palette").c_str(), field(js, "speed").c_str(), bri.c_str(), field(js, "zones").c_str(),
                                  field(js, "fx") == "cur", p.data(), has ? (int)p.size() / 2 : -1);
-        if (id && field(js, "apply") == "1") app_preset_apply(id);   // shows what was just made
+        if (id > 0 && field(js, "apply") == "1") app_preset_apply(id);   // shows what was just made
         post_state();
     }
     else if (cmd == "preset_delete") { app_preset_delete(atoi(field(js, "id").c_str())); post_state(); }
@@ -564,8 +559,10 @@ static bool remote_allowed(const std::string &js) {
     std::string s = field(js, "s"), k = field(js, "k");
     // plain names only: a space, "=" or "]" would write a different ini line than the one checked
     for (char c : s + k) if (!isalnum((unsigned char)c) && c != '.' && c != '_' && c != '-') return false;
-    return !s.empty() && !k.empty() && _stricmp(s.c_str(), "remote") && _stricmp(s.c_str(), "mqtt") && _stricmp(s.c_str(), "fans") && _stricmp(s.c_str(), "link") && _stricmp(s.c_str(), "conflicts") &&
-           !(!_stricmp(s.c_str(), "openrgb") && !_stricmp(k.c_str(), "path")) && !(!_stricmp(s.c_str(), "mood") && !_stricmp(k.c_str(), "ollama_path")) &&
+    for (char &c : s) c = (char)tolower((unsigned char)c);
+    for (char &c : k) c = (char)tolower((unsigned char)c);
+    return !s.empty() && !k.empty() && s != "remote" && s != "mqtt" && s != "fans" && s != "link" && s != "conflicts" && s != "pro" &&   // pro: the licence
+           !cfg_pc_only(s.c_str(), k.c_str()) &&
            !(!_strnicmp(s.c_str(), "dev.", 4) && !_strnicmp(k.c_str(), "media", 5));   // a file on this PC for the TRYX screen
 }
 

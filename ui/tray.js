@@ -15,7 +15,7 @@ const T = {
     pin: 'Keep {0} on the first screen', pinHint: 'Pin up to 3 devices to keep them on the first screen.',
     'err.write': 'The profile file could not be written.', 'err.leave': 'Not switched: the changes in “{0}” could not be saved.',
     'err.missing': 'Profile “{0}” was not used: its file is missing.', 'err.bad': 'Profile “{0}” was not used: its file is damaged.',
-    'err.cfg': 'Switched, but the settings file could not be written yet.', 'err.full': 'All profiles are taken.' },
+    'err.cfg': 'Switched, but the settings file could not be written yet.', 'err.full': 'All profiles are taken.', 'err.room': 'Not changed: the settings file is full.' },
   ru: { on: 'Подсветка включена', off: 'Подсветка выключена', power: 'Подсветка', bri: 'Яркость', prof: 'Профиль', profs: 'Профили',
     allProf: 'Все профили', fx: 'Эффект', fxs: 'Эффекты', presets: 'Ваши пресеты', preset: 'пресет', devs: 'Устройства',
     allDev: 'Показать все устройства: {0}', noDev: 'Устройств пока нет', open: 'Открыть haku control', more: 'Ещё', back: 'Назад',
@@ -28,7 +28,7 @@ const T = {
     pin: 'Держать {0} на первом экране', pinHint: 'Закрепите до 3 устройств, чтобы они были на первом экране.',
     'err.write': 'Не удалось записать файл профиля.', 'err.leave': 'Не переключено: изменения в «{0}» не удалось сохранить.',
     'err.missing': 'Профиль «{0}» не использован: его файл не найден.', 'err.bad': 'Профиль «{0}» не использован: его файл повреждён.',
-    'err.cfg': 'Переключено, но файл настроек пока не записан.', 'err.full': 'Все профили заняты.' },
+    'err.cfg': 'Переключено, но файл настроек пока не записан.', 'err.full': 'Все профили заняты.', 'err.room': 'Не изменено: файл настроек заполнен.' },
   fr: { on: 'L’éclairage est allumé', off: 'L’éclairage est éteint', power: 'Éclairage', bri: 'Luminosité', prof: 'Profil', profs: 'Profils',
     allProf: 'Tous les profils', fx: 'Effet', fxs: 'Effets', presets: 'Vos préréglages', preset: 'préréglage', devs: 'Appareils',
     allDev: 'Afficher les {0} appareils', noDev: 'Aucun appareil pour l’instant', open: 'Ouvrir haku control', more: 'Plus', back: 'Retour',
@@ -41,9 +41,9 @@ const T = {
     pin: 'Garder {0} sur le premier écran', pinHint: 'Épinglez jusqu’à 3 appareils pour les garder sur le premier écran.',
     'err.write': 'Le fichier du profil n’a pas pu être écrit.', 'err.leave': 'Pas de changement : les modifications de « {0} » n’ont pas pu être enregistrées.',
     'err.missing': 'Le profil « {0} » n’a pas été utilisé : son fichier est introuvable.', 'err.bad': 'Le profil « {0} » n’a pas été utilisé : son fichier est endommagé.',
-    'err.cfg': 'Changé, mais le fichier de réglages n’a pas encore pu être écrit.', 'err.full': 'Tous les profils sont pris.' },
+    'err.cfg': 'Changé, mais le fichier de réglages n’a pas encore pu être écrit.', 'err.full': 'Tous les profils sont pris.', 'err.room': 'Pas de changement : le fichier de réglages est plein.' },
 };
-const PROF_ERR = ['', 'write', 'leave', 'missing', 'bad', 'full', 'cfg'];   // profile.c, as app.js
+const PROF_ERR = ['', 'write', 'leave', 'missing', 'bad', 'full', 'cfg', 'room'];   // profile.c, as app.js
 const THEMES = ['dark', 'grey', 'light'], HIDDEN = ['verity', 'bubblegum', 'kyoka', 'akapzz'];
 const DEV_MAIN = 3, PIN_MAX = 3, CONFIRM_MS = 5000, BRI_MS = 80, BRI_HOLD = 600;
 let L = T.en, S = null, view = 'main', lastH = 0, side = 'b';

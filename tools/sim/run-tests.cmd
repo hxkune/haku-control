@@ -31,8 +31,11 @@ if not exist "%T%\effects_test.exe" (set "BAD=1") else (
   node tools\sim\preview_check.js "%D%" || set "BAD=1"
 )
 del /q "%D%" 2>nul
+call :one config   /DCFG_TEST src\config.c
 call :one profile  /W3 tools\sim\profile_test.c src\profile.c src\config.c
 call :one backup   /DHAKU_DEV tools\sim\backup_test.c src\backup.c src\config.c comdlg32.lib
+rem the installer's file part on folders under %TEMP%: never Program Files, never the running app
+call :one setup    /DSETUP_TEST src\setup.c user32.lib shell32.lib ole32.lib comctl32.lib advapi32.lib secur32.lib
 rem the remote check takes only the allowlist from ui_web.cpp; the rest of the program is left unlinked on purpose
 call :one remote   /std:c++17 /EHsc tools\sim\remote_test.cpp /link /FORCE:UNRESOLVED
 rem the fan, iCUE LINK and Lian Li parts test themselves against simulated devices (no USB or Super I/O is opened)
@@ -41,6 +44,10 @@ call :one link     /DLINK_TEST src\link.c
 call :one lianli   /DLL_TEST src\lianli.c
 call :one sio      /DSIO_TEST src\sio.c
 call :one corsairlcd /DCORSAIR_LCD_TEST src\drv_corsairlcd.c
+rem the tray icon's clicks: which goes to the panel, the window, nothing (the shell and the panel itself are not run)
+call :one tray     tools\sim\tray_test.c
+rem the folder for files run with admin rights, and a program started without them
+call :one safetmp  tools\sim\safetmp_test.c advapi32.lib
 
 echo === orgb (against the fake OpenRGB server)
 del /q "%T%\orgb_test.exe" 2>nul

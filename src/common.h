@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <math.h>
 
@@ -51,17 +52,34 @@ int         cfg_changed_on_disk(void);
 const char *cfg_get(const char *section, const char *key, const char *def);
 float       cfg_getf(const char *section, const char *key, float def);
 int         cfg_geti(const char *section, const char *key, int def);
-void        cfg_set(const char *section, const char *key, const char *value);
-void        cfg_set_many(const char *section, const char *const *kv, int n);   // n pairs, one change
+// a refused change leaves the settings as they were: CFG_FULL no line left for a new key (the file holds 4096),
+// CFG_LONG the key and value would not fit one line whole
+enum { CFG_OK = 1, CFG_FULL = 0, CFG_LONG = -1 };
+int         cfg_set(const char *section, const char *key, const char *value);
+int         cfg_set_many(const char *section, const char *const *kv, int n);   // n pairs, one change: all or none
+int         cfg_dropped(void);         // changes refused since start (the window tells about them)
+void        cfg_group_begin(void);     // many cfg_set as one change; cfg_group_end() 0: one was refused, all taken back
+int         cfg_group_end(void);
+int         cfg_write_to(const wchar_t *path);   // the settings in memory, whole, to another file; 0: not written
 void        cfg_get_many(const char *section, const char *const *keys, int n, char (*vals)[256]);   // read together; "" when not there
 int         cfg_save_if_dirty(void);   // 0: the file could not be written (the old one is left as it was)
 int         cfg_unsaved(void);         // 1: the last write failed, changes are only in memory until a write goes through
 void        cfg_set_and_save(const char *section, const char *key, const char *value);
 int         cfg_palette(const char *section, rgbf *out, int max);
 const wchar_t *cfg_path(void);
+// a name typed by the user, made safe as a settings value: nothing that reads as a section, a key or a comment
+static inline void cfg_clean_name(char *s) {
+    for (; *s; s++) if (*s == ';' || *s == '[' || *s == ']' || *s == '=' || (unsigned char)*s < 0x20) *s = ' ';
+}
+// settings only this PC's own window may change: they name a program haku starts or where its updates come from.
+// The phone page (ui_web.cpp) and a backup made elsewhere (backup.c) leave them alone.
+static inline int cfg_pc_only(const char *sec, const char *key) {
+    return (!strcmp(sec, "openrgb") && !strcmp(key, "path")) || (!strcmp(sec, "mood") && !strcmp(key, "ollama_path")) ||
+           (!strcmp(sec, "general") && !strcmp(key, "update_repo")) || (!strcmp(sec, "ui") && !strcmp(key, "devtools"));
+}
 int         cfg_json(char *out, int cap);   // whole config as {"section":{"key":"value"}}
 void        cfg_remove_section(const char *section);
-void        cfg_list_front(const char *section, const char *key, const char *item, int max);   // a recent-first list
+int         cfg_list_front(const char *section, const char *key, const char *item, int max);   // a recent-first list
 typedef struct { char key[64], val[256]; } cfg_item;
 int         cfg_items(const char *section, cfg_item *out, int max);      // a section's keys, copied
 int         cfg_sections(const char *prefix, char (*out)[64], int max);  // section names starting with prefix
@@ -74,12 +92,12 @@ int         file_commit(FILE *f, const wchar_t *tmp, const wchar_t *path);
 typedef int (*prof_keep_fn)(const char *sec, const char *key);
 extern prof_keep_fn prof_keep;   // does [sec] key belong to a profile's setup (main.c sets it)
 typedef struct { char sec[64], key[64], val[256]; } prof_entry;
-enum { PROF_MISSING = -1, PROF_BAD = -2 };
-enum { PE_WRITE = 1, PE_LEAVE, PE_MISSING, PE_BAD, PE_FULL, PE_CFG };
+enum { PROF_MISSING = -1, PROF_BAD = -2, PROF_ROOM = -3 };
+enum { PE_WRITE = 1, PE_LEAVE, PE_MISSING, PE_BAD, PE_FULL, PE_CFG, PE_ROOM };   // PE_ROOM: the settings file is full
 int  prof_exists(int id);
 int  prof_write(int id);                      // the live setup -> its file; 0: not written
 int  prof_parse(char *text, size_t len, prof_entry *e, int max);   // entries, or PROF_BAD
-int  prof_load(int id);                       // 1, PROF_MISSING or PROF_BAD (then nothing changed)
+int  prof_load(int id);                       // 1, PROF_MISSING, PROF_BAD or PROF_ROOM (then nothing changed)
 int  prof_switch(int id);                     // 1: id's setup is the live one; 0: nothing changed
 int  prof_save(int id, const char *name);     // its number, 0: none
 int  prof_dup(int src, const char *name);     // its number, 0: none
@@ -248,7 +266,7 @@ void sensors_close(void);
 
 // ---- fans.c: Aqua Computer QUADRO fan hub (own thread)
 void fans_start(void);
-void fans_stop(void);                    // its channels get their own settings back
+int  fans_stop(void);                    // its channels get their own settings back; how many are not (-1: not confirmed)
 void fans_suspend(int on);
 void fans_crash(void);                   // a crash: every channel its own setting back, nothing taken after
 void fans_feed(float gpu_temp, DWORD at); // the render loop's GPU reading and when it was taken, for curves
@@ -271,7 +289,7 @@ int  sio_put(int i, int mode, int cmd);  // mode 0 is manual at cmd 0..255; HAKU
 
 // ---- link.c: Corsair iCUE LINK hub and the PSU on it, read only (own thread, [link] on=1)
 void link_start(void);
-void link_stop(void);                    // hardware mode back if a visit left the hub in software mode
+int  link_stop(void);                    // hardware mode back if a visit left the hub in software mode; 0 back, 1 not, -1 not confirmed
 void link_suspend(int on);
 int  link_json(char *out, int cap);
 
@@ -293,7 +311,7 @@ int   app_preset_save(int id, const char *name, const char *effect, const char *
                       const char *const *fxkv, int nfx);   // id 0: new; returns its number, see main.c
 void  app_preset_apply(int id);
 void  app_preset_delete(int id);
-int   app_preset_copy(int src, const char *name);   // a new number with every key of src; 0: none free
+int   app_preset_copy(int src, const char *name);   // a new number with every key of src; 0: none free, -1: the settings file is full
 #define PROFILE_MAX 16
 int   app_profile_save(int id, const char *name);   // id 0: new, from the setup as it is now; see main.c
 void  app_profile_apply(int id);
@@ -303,8 +321,8 @@ int   app_profile_dup(int src, const char *name);   // a copy of profile src; re
 void  ui_refresh_state(void);   // the open window gets the whole state (settings included) again
 void  app_set_brightness(float b, int save_now);
 void  app_set_fans(const char *const *kv, int n);   // key, value pairs written as one change
-int   app_draft_save(const char *sec, const char *const *kv, int n);   // a constructor draft's whole section; 0: not on disk, taken back out
-int   app_comp_apply(const char *const *kv, int n);   // the constructor's [custom] keys as one change; 0: not written to disk
+int   app_draft_save(const char *sec, const char *const *kv, int n);   // a constructor draft's whole section; 0: not on disk, taken back out, -1: no room
+int   app_comp_apply(const char *const *kv, int n);   // the constructor's [custom] keys as one change; 0: not written to disk, -1: no room, not taken
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
 void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled
 void  app_pc_own(int own);                         // the PC's lighting given back to its own programs (1) / taken by haku (0)
@@ -351,7 +369,8 @@ void  mqtt_refresh(void);             // the profiles or the language changed: a
 void  mqtt_stop(void);
 int   mqtt_json(char *out, int cap);
 int   app_effect_now(void);           // the effect showing (index into g_effects)
-void  app_profiles_flush(void);       // the profile in use writes what changed in it to its file
+int   app_profiles_flush(void);       // the profile in use writes what changed in it to its file; 0: it could not
+void  backup_recover(void);           // at start, after cfg_load: finishes or takes back a restore cut off part way
 void  app_reload_all(void);           // settings replaced on disk (a restored backup): everything reads them again
 // a backup of the settings without this PC's secrets (backup.c); owner: the window for the file dialogs
 void  backup_save(void *owner);
@@ -392,6 +411,15 @@ void  app_tray_menu(void);                      // the classic tray menu (main.c
 
 // ---- log
 void logf_(const char *fmt, ...);
+
+// appends to a text in out: what does not fit is cut, the result never passes cap - 1 (n += snprintf would walk past the end)
+static inline int jcat(char *out, int cap, int n, const char *fmt, ...) {
+    if (n >= cap - 1) return n;
+    va_list a; va_start(a, fmt);
+    int w = vsnprintf(out + n, (size_t)(cap - n), fmt, a);
+    va_end(a);
+    return w < 0 || w >= cap - n ? cap - 1 : n + w;
+}
 
 static inline float clampf(float v, float a, float b) { return v < a ? a : v > b ? b : v; }
 static inline float fractf(float v) { return v - floorf(v); }

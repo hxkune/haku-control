@@ -23,6 +23,11 @@ int main() {
     // what was refused before stays refused
     check(!remote_allowed("{\"cmd\":\"set\",\"s\":\"remote\",\"k\":\"token\",\"v\":\"x\"}"), "remote settings still refused");
     check(!remote_allowed("{\"cmd\":\"set\",\"s\":\"openrgb\",\"k\":\"path\",\"v\":\"x\"}"), "a program path still refused");
+    check(!remote_allowed("{\"cmd\":\"set\",\"s\":\"OpenRGB\",\"k\":\"Path\",\"v\":\"x\"}"), "the same in other letter case refused");
+    check(!remote_allowed("{\"cmd\":\"set\",\"s\":\"general\",\"k\":\"update_repo\",\"v\":\"x/y\"}"), "the update source refused");
+    check(!remote_allowed("{\"cmd\":\"set\",\"s\":\"ui\",\"k\":\"devtools\",\"v\":\"1\"}"), "the developer tools refused");
+    check(!remote_allowed("{\"cmd\":\"set\",\"s\":\"pro\",\"k\":\"key_ok\",\"v\":\"1\"}"), "the licence refused");
+    check(remote_allowed("{\"cmd\":\"set\",\"s\":\"general\",\"k\":\"brightness\",\"v\":\"0.5\"}"), "brightness is let through");
     check(!remote_allowed("{\"cmd\":\"quit\"}"), "quit still refused");
     check(!remote_allowed("{\"cmd\":\"backup_load\"}"), "restore still refused outside test builds");
     printf(fails ? "remote_allowed: %d FAILED\n" : "remote_allowed: all ok\n", fails);

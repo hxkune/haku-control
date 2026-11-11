@@ -627,15 +627,15 @@ void orgb_check_start(void) {
 // "orgb":{"state":2,"ctls":[{"i":0,"type":2,"kind":"graphics card","name":"...","leds":8}]}
 int orgb_json(char *out, int cap) {
     AcquireSRWLockShared(&chk_lk);
-    int n = snprintf(out, cap, "\"orgb\":{\"state\":%d,", chk_state);
+    int n = jcat(out, cap, 0, "\"orgb\":{\"state\":%d,", chk_state);
     n += orgbapp_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"ctls\":[");
+    n = jcat(out, cap, n, ",\"ctls\":[");
     for (int i = 0; i < chk_n && n < cap - 300; i++) {
-        n += snprintf(out + n, cap - n, "%s{\"i\":%d,\"type\":%d,\"kind\":\"%s\",\"leds\":%d,\"name\":\"", i ? "," : "", chk[i].idx, chk[i].type, chk[i].kind, chk[i].leds);
+        n = jcat(out, cap, n, "%s{\"i\":%d,\"type\":%d,\"kind\":\"%s\",\"leds\":%d,\"name\":\"", i ? "," : "", chk[i].idx, chk[i].type, chk[i].kind, chk[i].leds);
         n += json_escape_to(out + n, cap - n, chk[i].name);
-        n += snprintf(out + n, cap - n, "\"}");
+        n = jcat(out, cap, n, "\"}");
     }
-    n += snprintf(out + n, cap - n, "]}");
+    n = jcat(out, cap, n, "]}");
     ReleaseSRWLockShared(&chk_lk);
     return n;
 }

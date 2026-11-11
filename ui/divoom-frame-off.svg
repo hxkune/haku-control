@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="100%" height="100%" fill="none">
+  <defs>
+    <linearGradient id="tf-off-front" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#222226" />
+      <stop offset="50%" stop-color="#141417" />
+      <stop offset="100%" stop-color="#0c0c0e" />
+    </linearGradient>
+    <linearGradient id="tf-off-side" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181c" />
+      <stop offset="100%" stop-color="#09090b" />
+    </linearGradient>
+    <linearGradient id="tf-off-glass" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181c" />
+      <stop offset="50%" stop-color="#0a0a0c" />
+      <stop offset="100%" stop-color="#050507" />
+    </linearGradient>
+  </defs>
+  <g id="divoom-times-frame-stealth-off">
+    <path d="M 88,35 L 114,27 L 114,180 L 88,176 Z" fill="url(#tf-off-side)" stroke="#25252b" stroke-width="1.4" stroke-linejoin="round" />
+    <path d="M 114,27 L 196,42 L 196,174 L 114,180 Z" fill="url(#tf-off-front)" stroke="#2e2e36" stroke-width="1.5" stroke-linejoin="round" />
+    <g transform="translate(88, 35) skewY(-14.5)">
+      <rect x="3" y="6" width="20" height="133" rx="2" fill="#08080a" stroke="#1c1c22" stroke-width="1" />
+      <path d="M 7,12 L 17,12 C 19,15 19,20 17,23 L 7,23 L 17,29 L 7,35 L 17,40 L 7,45 C 6,51 18,51 18,56 C 18,61 6,61 7,56 C 6,67 18,67 18,72 C 18,77 6,77 7,72 L 7,82 L 17,85 L 7,90 L 17,94 L 7,99 L 7,104" stroke="#222228" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+      <path d="M 7,12 L 17,12 C 19,15 19,20 17,23 L 7,23 L 17,29 L 7,35 L 17,40 L 7,45 C 6,51 18,51 18,56 C 18,61 6,61 7,56 C 6,67 18,67 18,72 C 18,77 6,77 7,72 L 7,82 L 17,85 L 7,90 L 17,94 L 7,99 L 7,104" stroke="#32323a" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+      <rect x="4" y="105" width="9.5" height="31" rx="1.2" fill="#1a1a20" stroke="#26262e" stroke-width="0.8" />
+      <g stroke="#08080a" stroke-width="1.2">
+        <line x1="3.5" y1="109" x2="14" y2="109" /><line x1="3.5" y1="113" x2="14" y2="113" />
+        <line x1="3.5" y1="117" x2="14" y2="117" /><line x1="3.5" y1="121" x2="14" y2="121" />
+        <line x1="3.5" y1="125" x2="14" y2="125" /><line x1="3.5" y1="129" x2="14" y2="129" />
+        <line x1="3.5" y1="133" x2="14" y2="133" />
+      </g>
+      <rect x="15.5" y="99" width="5.5" height="37" rx="1" fill="#141418" stroke="#24242c" stroke-width="0.8" />
+    </g>
+    <path d="M 121,36 L 190,48 L 190,157 L 121,161 Z" fill="url(#tf-off-glass)" stroke="#222228" stroke-width="1.2" stroke-linejoin="round" />
+    <path d="M 121,36 L 127,41 L 127,154 L 121,161" fill="#ffffff" fill-opacity="0.02" stroke="#ffffff" stroke-opacity="0.05" stroke-width="0.8" />
+    <path d="M 127,154 L 190,151" stroke="#ffffff" stroke-opacity="0.04" stroke-width="0.8" />
+    <g transform="translate(121, 165) skewY(-4)">
+      <text x="0" y="7" fill="#52525c" font-family="sans-serif" font-size="5.5" font-weight="bold" letter-spacing="0.2">Times Frame</text>
+      <rect x="54" y="1" width="14" height="6" rx="1" fill="#1e1e24" stroke="#32323a" stroke-width="0.8" />
+    </g>
+    <path d="M 122,37 L 154,42.5 L 136,158.5 L 122,160 Z" fill="#ffffff" opacity="0.025" />
+  </g>
+</svg>

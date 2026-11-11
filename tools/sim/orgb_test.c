@@ -21,12 +21,13 @@ const char *cfg_get(const char *section, const char *key, const char *def) {
     for (int i = 0; i < nkv; i++) if (!strcmp(kv[i].sec, section) && !strcmp(kv[i].key, key)) return kv[i].val;
     return def;
 }
-void cfg_set(const char *section, const char *key, const char *value) {
+int cfg_set(const char *section, const char *key, const char *value) {
     int i = 0;
     while (i < nkv && (strcmp(kv[i].sec, section) || strcmp(kv[i].key, key))) i++;
     if (i == nkv && nkv < 64) nkv++;
     strcpy_s(kv[i].sec, sizeof(kv[i].sec), section); strcpy_s(kv[i].key, sizeof(kv[i].key), key);
     strcpy_s(kv[i].val, sizeof(kv[i].val), value);
+    return 1;
 }
 int cfg_save_if_dirty(void) { return 1; }
 void logf_(const char *fmt, ...) { va_list a; va_start(a, fmt); printf("     log: "); vprintf(fmt, a); printf("\n"); va_end(a); }

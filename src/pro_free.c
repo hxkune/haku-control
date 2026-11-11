@@ -9,7 +9,7 @@ void pro_start(void) {}
 int  pro_active(void) { return 1; }
 void pro_set_key(const char *key) { (void)key; }
 void pro_buy(void) {}
-int  pro_json(char *out, int cap) { return snprintf(out, cap, "null"); }
+int  pro_json(char *out, int cap) { return jcat(out, cap, 0, "null"); }
 
 // Nanoleaf over the network
 int  nano_start(void) { return 0; }
@@ -27,7 +27,7 @@ void nano_pair_start_ip(const char *ip) { (void)ip; }
 void nano_forget(int slot) { (void)slot; }
 void nano_relayout(void) {}
 void nano_suspend(int sleeping) { (void)sleeping; }
-int  nano_json(char *out, int cap) { return snprintf(out, cap, "{\"pair\":0,\"max\":0,\"ctls\":[],\"none\":1}"); }
+int  nano_json(char *out, int cap) { return jcat(out, cap, 0, "{\"pair\":0,\"max\":0,\"ctls\":[],\"none\":1}"); }
 
 // AiDot bulbs
 int  lights_start(void) { return 0; }
@@ -45,7 +45,7 @@ void accounts_aidot_login(const char *country, const char *email, const char *pa
 void accounts_tuya_login(const char *region, const char *access_id, const char *secret) { (void)region; (void)access_id; (void)secret; }
 void accounts_govee_login(const char *api_key) { (void)api_key; }
 int  accounts_json(char *out, int cap) {
-    return snprintf(out, cap, "{\"none\":1,\"aidot\":{\"state\":0,\"msg\":\"\",\"found\":0,\"countries\":[]},"
+    return jcat(out, cap, 0, "{\"none\":1,\"aidot\":{\"state\":0,\"msg\":\"\",\"found\":0,\"countries\":[]},"
                     "\"tuya\":{\"state\":0,\"msg\":\"\",\"found\":0,\"regions\":[]},\"govee\":{\"state\":0,\"msg\":\"\",\"found\":0,\"saved\":0}}");
 }
 
@@ -53,11 +53,11 @@ int  accounts_json(char *out, int cap) {
 void mqtt_apply(void) {}
 void mqtt_refresh(void) {}
 void mqtt_stop(void) {}
-int  mqtt_json(char *out, int cap) { return snprintf(out, cap, "null"); }
+int  mqtt_json(char *out, int cap) { return jcat(out, cap, 0, "null"); }
 
 // phone control
 void remote_apply(void) {}
 void remote_stop(void) {}
 void remote_forget(void) {}
 void remote_new_pin(void) {}
-int  remote_json(char *out, int cap) { return snprintf(out, cap, "{\"enabled\":0,\"on\":0,\"port\":0,\"pin\":\"\",\"paired\":0,\"urls\":[],\"none\":1}"); }
+int  remote_json(char *out, int cap) { return jcat(out, cap, 0, "{\"enabled\":0,\"on\":0,\"port\":0,\"pin\":\"\",\"paired\":0,\"urls\":[],\"none\":1}"); }

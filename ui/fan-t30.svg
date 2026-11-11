@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="100%" height="100%" fill="none" style="--fan-rgb-color: #ff3385; --fan-rgb-opacity: 1;">
+  <defs>
+    <linearGradient id="t30-frame" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#28282e" />
+      <stop offset="50%" stop-color="#16161a" />
+      <stop offset="100%" stop-color="#0d0d10" />
+    </linearGradient>
+    <filter id="t30-glow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+    </filter>
+  </defs>
+  <g id="industrial-stealth-fan" transform="translate(145, 107.5)">
+    <rect x="-64" y="-64" width="128" height="128" rx="12" fill="url(#t30-frame)" stroke="#383842" stroke-width="1.8" />
+    <g fill="#141418" stroke="#2c2c34" stroke-width="1.2">
+      <path d="M -64,-44 L -44,-64 L -60,-64 A 4,4 0 0 0 -64,-60 Z" />
+      <path d="M 64,-44 L 44,-64 L 60,-64 A 4,4 0 0 1 64,-60 Z" />
+      <path d="M 64,44 L 44,64 L 60,64 A 4,4 0 0 1 64,60 Z" />
+      <path d="M -64,44 L -44,64 L -60,64 A 4,4 0 0 1 -64,60 Z" />
+    </g>
+    <circle r="56" fill="#08080a" stroke="#282830" stroke-width="2" />
+    <circle r="53" stroke="#18181d" stroke-width="1" stroke-dasharray="6 4" />
+    <g class="fb" fill="#1c1c22" stroke="#30303a" stroke-width="1.1">
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" />
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" transform="rotate(40)" />
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" transform="rotate(80)" />
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" transform="rotate(120)" />
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" transform="rotate(160)" />
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" transform="rotate(200)" />
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" transform="rotate(240)" />
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" transform="rotate(280)" />
+      <path d="M 0,-19 C 16,-24 34,-36 51,-26 C 48,-14 30,-10 12,-14 Z" transform="rotate(320)" />
+    </g>
+    <g style="transition: opacity 0.25s ease; opacity: var(--fan-rgb-opacity, 1)">
+      <circle r="38" stroke="#ffffff" stroke-opacity="0.06" stroke-width="20" stroke-dasharray="10 8" />
+      <g stroke-width="2.8" stroke-linecap="round" filter="url(#t30-glow)" style="stroke: var(--fan-rgb-color, #ff3385)">
+        <line x1="-56" y1="-38" x2="-38" y2="-56" />
+        <line x1="56" y1="-38" x2="38" y2="-56" />
+        <line x1="56" y1="38" x2="38" y2="56" />
+        <line x1="-56" y1="38" x2="-38" y2="56" />
+      </g>
+      <g stroke-width="2" stroke-linecap="round" style="stroke: var(--fan-rgb-color, #ff3385)">
+        <line x1="-56" y1="-38" x2="-38" y2="-56" />
+        <line x1="56" y1="-38" x2="38" y2="-56" />
+        <line x1="56" y1="38" x2="38" y2="56" />
+        <line x1="-56" y1="38" x2="-38" y2="56" />
+      </g>
+      <circle r="21" stroke-width="1.5" opacity="0.85" style="stroke: var(--fan-rgb-color, #ff3385)"/>
+    </g>
+    <circle r="21" fill="#18181d" stroke="#34343e" stroke-width="1.8" />
+    <circle r="14" fill="#101014" stroke="#25252d" stroke-width="1" />
+    <circle r="4.5" fill="#2c2c35" stroke="#454552" stroke-width="1" />
+  </g>
+</svg>

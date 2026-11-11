@@ -32,5 +32,5 @@ like the rest of the project.
 
 - C core (`src/`): C11-ish, MSVC, no external dependencies. Keep a comment at the top of each file that
   explains what it talks to and how.
-- UI (`ui/`): plain HTML/CSS/JS, no build step. Every visible text goes into `ui/i18n.js` in **both** English and Russian.
+- UI (`ui/`): plain HTML/CSS/JS, no build step. Every visible text goes into `ui/i18n.js` in English, Russian and French.
 - Build with `build.cmd`; it must stay warning-free.

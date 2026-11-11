@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="200" height="175" fill="none" style="--icue-ring-color: #ff3385; --icue-ring-opacity: 1;">
+  <defs>
+    <!-- matte pump body -->
+    <linearGradient id="corsair-mono-body" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#28282d" />
+      <stop offset="55%" stop-color="#151518" />
+      <stop offset="100%" stop-color="#0e0e10" />
+    </linearGradient>
+
+    <!-- 3D side face -->
+    <linearGradient id="corsair-side-depth" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181c" />
+      <stop offset="100%" stop-color="#0a0a0c" />
+    </linearGradient>
+
+    <!-- soft glow for the RGB ring -->
+    <filter id="icue-ring-blur" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="7" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <g id="corsair-icue-widget">
+    <!-- back/left part of the body (3D depth) -->
+    <rect x="74" y="45" width="124" height="124" rx="34" transform="translate(8, 0) skewY(4) scale(0.95, 1)" fill="url(#corsair-side-depth)" stroke="#26262c" stroke-width="1.5" />
+
+    <!-- front of the pump body -->
+    <g transform="translate(14, -2) skewY(3.5) scale(0.94, 1)">
+      
+      <!-- glow around the body, in the ring colour -->
+      <circle id="icue-ambient-glow" cx="145" cy="105" r="52" stroke-width="8" style="stroke: var(--icue-ring-color, #3a3a42); opacity: calc(var(--icue-ring-opacity, 0) * 0.35)" filter="url(#icue-ring-blur)" />
+
+      <!-- squircle body -->
+      <rect x="82" y="42" width="126" height="126" rx="34" fill="url(#corsair-mono-body)" stroke="#45454f" stroke-width="1.6" />
+      
+      <!-- inner dark bevel -->
+      <rect x="87" y="47" width="116" height="116" rx="30" fill="#101013" stroke="#282830" stroke-width="1" />
+
+      <!-- RGB ring: the custom properties icue-ring-color and icue-ring-opacity (0: dark ring) -->
+      <!-- unlit diffuser, seen when the ring opacity is 0 -->
+      <circle id="icue-ring-base" cx="145" cy="105" r="49" fill="#09090b" stroke="#2a2a32" stroke-width="4.5" />
+
+      <!-- the lit ring -->
+      <circle id="icue-rgb-ring" cx="145" cy="105" r="49" fill="none" style="stroke: var(--icue-ring-color, #ff3385); stroke-opacity: var(--icue-ring-opacity, 1)" stroke-width="4.5" filter="url(#icue-ring-blur)" />
+
+      <!-- sharp LED core over the glow -->
+      <circle id="icue-rgb-ring-core" cx="145" cy="105" r="49" fill="none" style="stroke: var(--icue-ring-color, #ff3385); stroke-opacity: var(--icue-ring-opacity, 1)" stroke-width="3.5" />
+
+      <!-- 24 diffuser segments (24 LEDs) -->
+      <circle id="icue-ring-segments-mask" cx="145" cy="105" r="49" fill="none" stroke="#101013" stroke-opacity="0.35" stroke-width="4.8" stroke-dasharray="1.2 11.62" />
+
+      <!-- the screen -->
+      <!-- screen bezel -->
+      <circle cx="145" cy="105" r="44" fill="#060608" stroke="#222228" stroke-width="2" />
+      <path d="M 145,61 A 44,44 0 0 1 145,149" stroke="#34343d" stroke-width="1.5" fill="none" />
+
+      <!-- screen content -->
+      <g id="icue-lcd-content">
+        <!-- tech segments -->
+        <circle cx="145" cy="105" r="38" stroke="#26262e" stroke-width="2.5" stroke-dasharray="32 10 15 8 45 12" />
+        
+        <!-- temperature gauge: the custom property icue-gauge-color -->
+        <circle cx="145" cy="105" r="31" stroke="#18181d" stroke-width="3.5" />
+        <circle id="icue-screen-gauge" cx="145" cy="105" r="31" style="stroke: var(--icue-gauge-color, #d4d4dc)" stroke-width="3.5" stroke-dasharray="135 200" stroke-linecap="round" transform="rotate(135 145 105)" />
+
+        <!-- sensor text -->
+        <text x="145" y="88" fill="#8c8c96" font-family="monospace, sans-serif" font-size="6.5" font-weight="bold" letter-spacing="0.8" text-anchor="middle">CPU TEMP</text>
+        <text id="icue-temp-value" x="145" y="115" fill="#ffffff" font-family="sans-serif" font-size="28" font-weight="bold" text-anchor="middle">42</text>
+        <text x="145" y="127" style="fill: var(--icue-ring-color, #a0a0aa)" font-family="monospace, sans-serif" font-size="7.5" font-weight="bold" text-anchor="middle">°C</text>
+      </g>
+
+      <!-- glass highlight -->
+      <path d="M 110,76 A 42,42 0 0 1 172,72 L 126,138 A 42,42 0 0 1 110,76 Z" fill="#ffffff" opacity="0.035" />
+    </g>
+  </g>
+</svg>

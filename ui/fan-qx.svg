@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="100%" height="100%" fill="none" style="--fan-rgb-color: #ff3385; --fan-rgb-opacity: 1;">
+  <defs>
+    <linearGradient id="qx-frame" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#25252b" />
+      <stop offset="50%" stop-color="#141418" />
+      <stop offset="100%" stop-color="#0b0b0e" />
+    </linearGradient>
+    <radialGradient id="qx-hub-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="20%" stop-opacity="0.85" style="stop-color: var(--fan-rgb-color, #ff3385)"/>
+      <stop offset="70%" stop-opacity="0.2" style="stop-color: var(--fan-rgb-color, #ff3385)"/>
+      <stop offset="100%" stop-color="#09090b" stop-opacity="0" />
+    </radialGradient>
+    <filter id="qx-glow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+    </filter>
+  </defs>
+  <g id="corsair-icue-qx-fan" transform="translate(145, 107.5)">
+    <circle r="62" filter="url(#qx-glow)" style="transition: opacity 0.25s ease; fill: var(--fan-rgb-color, #ff3385); opacity: calc(var(--fan-rgb-opacity, 1) * 0.28)" />
+    <rect x="-64" y="-64" width="128" height="128" rx="22" fill="url(#qx-frame)" stroke="#34343d" stroke-width="1.6" />
+    <g fill="#101014" stroke="#25252c" stroke-width="1">
+      <circle cx="-50" cy="-50" r="4" /><circle cx="50" cy="-50" r="4" />
+      <circle cx="50" cy="50" r="4" /><circle cx="-50" cy="50" r="4" />
+    </g>
+    <circle r="54" fill="#08080a" stroke="#1e1e24" stroke-width="1.5" />
+    <g class="fb" id="qx-blades-static" fill="#18181e" stroke="#282832" stroke-width="1.1">
+      <path d="M 0,-15 C 12,-28 28,-34 45,-24 C 42,-8 25,-4 10,-8 Z" />
+      <path d="M 0,-15 C 12,-28 28,-34 45,-24 C 42,-8 25,-4 10,-8 Z" transform="rotate(45)" />
+      <path d="M 0,-15 C 12,-28 28,-34 45,-24 C 42,-8 25,-4 10,-8 Z" transform="rotate(90)" />
+      <path d="M 0,-15 C 12,-28 28,-34 45,-24 C 42,-8 25,-4 10,-8 Z" transform="rotate(135)" />
+      <path d="M 0,-15 C 12,-28 28,-34 45,-24 C 42,-8 25,-4 10,-8 Z" transform="rotate(180)" />
+      <path d="M 0,-15 C 12,-28 28,-34 45,-24 C 42,-8 25,-4 10,-8 Z" transform="rotate(225)" />
+      <path d="M 0,-15 C 12,-28 28,-34 45,-24 C 42,-8 25,-4 10,-8 Z" transform="rotate(270)" />
+      <path d="M 0,-15 C 12,-28 28,-34 45,-24 C 42,-8 25,-4 10,-8 Z" transform="rotate(315)" />
+    </g>
+    <circle r="54" stroke="#222229" stroke-width="5.5" />
+    <g id="qx-rgb-active" style="transition: opacity 0.25s ease; opacity: var(--fan-rgb-opacity, 1)">
+      <circle r="49" fill="url(#qx-hub-glow)" />
+      <circle r="34" stroke="#ffffff" stroke-opacity="0.1" stroke-width="12" stroke-dasharray="14 12" />
+      <circle r="54" stroke-width="6" filter="url(#qx-glow)" opacity="0.8" style="stroke: var(--fan-rgb-color, #ff3385)"/>
+      <circle r="54" stroke-width="4.5" style="stroke: var(--fan-rgb-color, #ff3385)"/>
+      <circle r="54" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.2" />
+      <circle r="54" stroke="#101014" stroke-opacity="0.35" stroke-width="5" stroke-dasharray="1.5 12.6" />
+      <g stroke="#1c1c22" stroke-width="3.5" stroke-linecap="round">
+        <line x1="-36" y1="-36" x2="-41" y2="-41" />
+        <line x1="36" y1="-36" x2="41" y2="-41" />
+        <line x1="36" y1="36" x2="41" y2="41" />
+        <line x1="-36" y1="36" x2="-41" y2="41" />
+      </g>
+    </g>
+    <circle r="17" fill="#121216" stroke="#383844" stroke-width="2" />
+    <circle r="17" stroke-width="1.5" style="transition: stroke-opacity 0.25s ease; stroke: var(--fan-rgb-color, #ff3385); stroke-opacity: calc(var(--fan-rgb-opacity, 1) * 0.85)" />
+    <circle r="8" fill="#1c1c22" stroke="#2c2c36" stroke-width="1" />
+  </g>
+</svg>

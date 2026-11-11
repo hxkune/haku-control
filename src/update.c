@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Updates are not optional: a minute after start and then every 6 hours this asks GitHub for the latest release of
-// the repo the build came from, and a newer one is installed by itself (after a tray notice), only not while a
-// full-screen game or a presentation runs: then it waits and tries again every 10 minutes. "Update" in the window
-// does the same at once. An update downloads that release's
-// haku-control-setup.exe, checks it (the size and SHA-256 GitHub lists for it; once releases are signed, and this
-// exe is, the signature too) and runs it with /update: it installs without questions, keeps autostart as it was,
-// closes this app and starts the new one.
+// A minute after start and then every 6 hours this asks GitHub for the latest release of the repo the build came
+// from. A newer one is told by the tray (not over a full-screen game or a presentation: then later) and installs
+// only from the window's "Update" button. An update downloads that release's haku-control-setup.exe into a folder
+// only administrators can write, checks it (the SHA-256 GitHub lists for it or the release's .sha256 file: without
+// one nothing is run; the size; once releases are signed, and this exe is, the signature too) and runs it with
+// /update: it installs without questions, keeps autostart as it was, closes this app and starts the new one.
 #include "common.h"
 #include "devices.h"
+#include "safetmp.h"
 #include "../res/version.h"
 #include <shellapi.h>
 #include <winhttp.h>
@@ -33,9 +33,14 @@ enum { INST_IDLE, INST_DOWNLOAD, INST_VERIFY, INST_RUN, INST_ERROR };
 static SRWLOCK lk = SRWLOCK_INIT;
 static HANDLE th, stop_ev, now_ev;
 
+// The repo is the build's own. settings.ini is writable without administrator rights and the installer runs with
+// them, so a line there must not choose where it comes from (test builds only: they never run the installer).
 static const char *repo(void) {
+#ifdef HAKU_DEV
     const char *r = cfg_get("general", "update_repo", "");
-    return *r ? r : HAKU_REPO;
+    if (*r) return r;
+#endif
+    return HAKU_REPO;
 }
 
 // "v1.2.3" / "1.2" -> comparable number; -1 when it is not a version
@@ -270,6 +275,7 @@ static void check(void) {
     }
     char want[300]; snprintf(want, sizeof(want), "https://github.com/%s/releases/download/", r);
     if (_strnicmp(au, want, strlen(want))) au[0] = 0;   // only from this repo's releases
+    if (newer && au[0] && !sha[0]) { check_without_api(r); return; }   // no digest in the answer: the release's .sha256 file
     AcquireSRWLockExclusive(&lk);
     if (newer) { snprintf(latest, sizeof(latest), "%s", *tag == 'v' || *tag == 'V' ? tag + 1 : tag); snprintf(page, sizeof(page), "%s", url); }
     else latest[0] = page[0] = 0;
@@ -278,15 +284,17 @@ static void check(void) {
     logf_("update: latest release %s%s", tag, newer ? " (newer)" : "");
 }
 
-// A newer release found: installed now, unless the user is in a full-screen game or a presentation (then later).
-// Returns 1 when it has to wait.
-static int auto_install(void) {
+// A newer release found: the tray says so, once a version (not over a full-screen game or a presentation: later).
+// It installs only from the window's Update button, so haku closes when the person chooses, never by itself.
+// Returns 1 when the notice has to wait.
+static int tell_new(void) {
+    static char told[32];
     AcquireSRWLockShared(&lk);
     int have = latest[0] && asset_url[0];
     char ver[32]; snprintf(ver, sizeof(ver), "%s", latest);
     ReleaseSRWLockShared(&lk);
     LONG s = inst_state;
-    if (!have || s == INST_DOWNLOAD || s == INST_VERIFY || s == INST_RUN) return 0;
+    if (!have || !strcmp(told, ver) || s == INST_DOWNLOAD || s == INST_VERIFY || s == INST_RUN) return 0;
 #ifdef HAKU_DEV
     if (!cfg_get("general", "update_fake_version", NULL)) return 0;   // test builds: only when pretending to be older
 #endif
@@ -295,14 +303,13 @@ static int auto_install(void) {
         logf_("update: %s waits, a full-screen app runs", ver);
         return 1;
     }
-    wchar_t t[160], w[40]; MultiByteToWideChar(CP_UTF8, 0, ver, -1, w, 40);
-    swprintf(t, 160, TR(L"Updating haku control to %s. The lights come back in a few seconds.",
-                        L"Обновляю haku control до %s. Подсветка вернётся через несколько секунд.",
-                        L"Mise à jour de haku control vers %s. L'éclairage revient dans quelques secondes."), w);
+    wchar_t t[256], w[40]; MultiByteToWideChar(CP_UTF8, 0, ver, -1, w, 40);
+    swprintf(t, 256, TR(L"haku control %s is out. Update from the window: haku closes and starts again in a few seconds.",
+                        L"Вышел haku control %s. Обновите из окна: haku закроется и через несколько секунд запустится снова.",
+                        L"haku control %s est sorti. Mettez à jour depuis la fenêtre : haku se ferme et redémarre en quelques secondes."), w);
     app_notify(L"haku control", t);
-    logf_("update: installing %s by itself", ver);
-    Sleep(4000);   // the notice is read first
-    update_install();
+    logf_("update: %s is out, told in the tray", ver);
+    snprintf(told, sizeof(told), "%s", ver);
     return 0;
 }
 
@@ -318,22 +325,13 @@ static unsigned __stdcall run(void *arg) {
         static DWORD last; DWORD now = GetTickCount();
         if (r == WAIT_TIMEOUT || !last || now - last > 60 * 1000) { last = now; check(); diag_fixed_check(); }
         else { wait = 60 * 1000 - (now - last); continue; }
-        wait = auto_install() ? 10 * 60 * 1000 : 6 * 3600 * 1000;
+        wait = tell_new() ? 10 * 60 * 1000 : 6 * 3600 * 1000;
     }
     return 0;
 }
 
 // installers downloaded by an earlier update (the one that ran is no longer in use)
-static void clean_downloads(void) {
-    wchar_t dir[MAX_PATH], pat[MAX_PATH], f[MAX_PATH];
-    GetTempPathW(MAX_PATH, dir); wcscat_s(dir, MAX_PATH, L"haku-control-update");
-    swprintf(pat, MAX_PATH, L"%s\\*.exe", dir);
-    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do { swprintf(f, MAX_PATH, L"%s\\%s", dir, fd.cFileName); DeleteFileW(f); } while (FindNextFileW(h, &fd));
-    FindClose(h);
-    RemoveDirectoryW(dir);
-}
+static void clean_downloads(void) { tmp_clean(L"haku-control-update", L"haku-control-setup-*.exe"); }
 
 void update_start(void) {
     clean_downloads();
@@ -346,7 +344,8 @@ void update_start(void) {
 void update_stop(void) {
     if (!th) return;
     SetEvent(stop_ev);
-    WaitForSingleObject(th, 3000);
+    // still in a network call: it keeps its events (it waits on them), the exit ends it
+    if (WaitForSingleObject(th, 3000) != WAIT_OBJECT_0) return;
     CloseHandle(th); CloseHandle(stop_ev); CloseHandle(now_ev);
     th = NULL;
 }
@@ -402,21 +401,6 @@ static int download(const char *url, const wchar_t *to, long long *got_bytes) {
     return ok;
 }
 
-static int sha256_file(const wchar_t *file, char *hex) {
-    FILE *f = _wfopen(file, L"rb");
-    if (!f) return 0;
-    BCRYPT_ALG_HANDLE a; BCRYPT_HASH_HANDLE h; BYTE d[32];
-    BCryptOpenAlgorithmProvider(&a, BCRYPT_SHA256_ALGORITHM, NULL, 0);
-    BCryptCreateHash(a, &h, NULL, 0, NULL, 0, 0);
-    static BYTE buf[64 * 1024]; size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) BCryptHashData(h, buf, (ULONG)n, 0);
-    fclose(f);
-    BCryptFinishHash(h, d, 32, 0);
-    BCryptDestroyHash(h); BCryptCloseAlgorithmProvider(a, 0);
-    for (int i = 0; i < 32; i++) sprintf(hex + i * 2, "%02x", d[i]);
-    return 1;
-}
-
 // Authenticode check (the file's own signature, no revocation lookups over the network)
 static int signed_ok(const wchar_t *file) {
     WINTRUST_FILE_INFO fi = { sizeof(fi) }; fi.pcwszFilePath = file;
@@ -437,8 +421,7 @@ static unsigned __stdcall install_run(void *arg) {
     ReleaseSRWLockShared(&lk);
     if (!url[0]) { inst_fail("nofile"); return 0; }
     wchar_t dir[MAX_PATH], file[MAX_PATH];
-    GetTempPathW(MAX_PATH, dir); wcscat_s(dir, MAX_PATH, L"haku-control-update");
-    CreateDirectoryW(dir, NULL);
+    if (!admin_tmp(L"haku-control-update", dir)) { inst_fail("download"); return 0; }   // nowhere safe to keep it until it runs
     swprintf(file, MAX_PATH, L"%s\\haku-control-setup-%hs.exe", dir, ver);
     logf_("update: downloading %s", url);
     long long got = 0;
@@ -448,13 +431,13 @@ static unsigned __stdcall install_run(void *arg) {
     InterlockedExchange(&inst_state, INST_VERIFY); ui_refresh();
     char hex[65] = "";
     wchar_t self[MAX_PATH]; GetModuleFileNameW(NULL, self, MAX_PATH);
-    int ok = got > 100 * 1024 && (!size || got == size) && sha256_file(file, hex) && (!sha[0] || !_stricmp(hex, sha));
+    int ok = got > 100 * 1024 && (!size || got == size) && sha256_hex(file, hex) && sha[0] && !_stricmp(hex, sha);   // no known SHA-256, no install
     FILE *f = ok ? _wfopen(file, L"rb") : NULL; char mz[2] = "";
     if (f) { fread(mz, 1, 2, f); fclose(f); }
     ok = ok && mz[0] == 'M' && mz[1] == 'Z';
     if (ok && signed_ok(self) && !signed_ok(file)) ok = 0;   // a signed app only takes a signed update
     if (!ok) { logf_("update: check failed (%lld bytes, sha256 %s, expected %s)", got, hex, sha[0] ? sha : "-"); DeleteFileW(file); inst_fail("verify"); return 0; }
-    logf_("update: %s checked (%lld bytes%s)", ver, got, sha[0] ? ", sha256 matches" : "");
+    logf_("update: %s checked (%lld bytes, sha256 matches)", ver, got);
 
     InterlockedExchange(&inst_state, INST_RUN); ui_refresh();
 #ifdef HAKU_DEV
@@ -484,7 +467,7 @@ void update_install(void) {
 // latest/url empty when up to date; can: the release has an installer to take; inst: INST_*
 int update_json(char *out, int cap) {
     AcquireSRWLockShared(&lk);
-    int n = snprintf(out, cap, "{\"version\":\"%s\",\"repo\":%d,\"latest\":\"%s\",\"url\":\"%s\",\"can\":%d,\"inst\":%ld,\"pct\":%ld,\"err\":\"%s\"}",
+    int n = jcat(out, cap, 0, "{\"version\":\"%s\",\"repo\":%d,\"latest\":\"%s\",\"url\":\"%s\",\"can\":%d,\"inst\":%ld,\"pct\":%ld,\"err\":\"%s\"}",
                      HAKU_VER_STR, *repo() != 0, latest, page, asset_url[0] != 0, inst_state, inst_pct, inst_err);
     ReleaseSRWLockShared(&lk);
     return n;

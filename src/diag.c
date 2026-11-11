@@ -256,7 +256,7 @@ int diag_json(char *out, int cap) {
     AcquireSRWLockShared(&lk);
     char text[8192], report[2048];
     json_escape_to(text, sizeof(text), f_text); json_escape_to(report, sizeof(report), f_report);
-    int n = snprintf(out, cap, "{\"busy\":%d,\"ok\":%d,\"file\":\"%s\",\"report\":{\"busy\":%d,\"ok\":%d,\"id\":\"%s\",\"err\":\"%s\"},"
+    int n = jcat(out, cap, 0, "{\"busy\":%d,\"ok\":%d,\"file\":\"%s\",\"report\":{\"busy\":%d,\"ok\":%d,\"id\":\"%s\",\"err\":\"%s\"},"
                      "\"fixed\":{\"id\":\"%s\",\"rid\":\"%s\",\"text\":\"%s\",\"report\":\"%s\"}}",
                      (int)busy, last_ok, last_file, (int)rbusy, r_ok, r_id, r_err, f_id, f_rid, text, report);
     ReleaseSRWLockShared(&lk);
@@ -275,12 +275,12 @@ static unsigned __stdcall report_run(void *arg) {
     int ok = 0, code = 0;
     if (body) {
         static const char *const L[] = { "en", "ru", "fr" };
-        int n = snprintf(body, cap, "{\"action\":\"report\",\"install\":\"%s\",\"version\":\"%s\",\"lang\":\"%s\",\"pro\":%d,\"text\":\"",
+        int n = jcat(body, cap, 0, "{\"action\":\"report\",\"install\":\"%s\",\"version\":\"%s\",\"lang\":\"%s\",\"pro\":%d,\"text\":\"",
                          r->install, HAKU_VER_STR, L[app_lang()], pro_active() ? 1 : 0);
         n += json_escape_to(body + n, cap - n, r->text);
-        n += snprintf(body + n, cap - n, "\",\"contact\":\"");
+        n = jcat(body, cap, n, "\",\"contact\":\"");
         n += json_escape_to(body + n, cap - n, r->contact);
-        n += snprintf(body + n, cap - n, "\",\"diag\":\"");
+        n = jcat(body, cap, n, "\",\"diag\":\"");
         if (b.p) n += json_escape_to(body + n, cap - n, b.p);
         snprintf(body + n, cap - n, "\"}");
         code = web_post(cfg_get("report", "api", "https://hakune.blog/api/report.php"), "text/plain", body, resp, sizeof(resp));

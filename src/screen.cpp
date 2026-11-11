@@ -190,5 +190,5 @@ extern "C" int screen_json(char *out, int cap) {
     AcquireSRWLockShared(&lk);
     int n = snprintf(out, cap, "\"screen\":{\"on\":%ld,\"have\":%d,\"monitors\":%ld,\"w\":%d,\"h\":%d,\"err\":\"%s\"}", running, have, monitors, gw, gh, err);
     ReleaseSRWLockShared(&lk);
-    return n;
+    return n < 0 || n >= cap ? cap - 1 : n;   // what was written, never more than fits
 }

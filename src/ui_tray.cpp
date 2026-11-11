@@ -3,7 +3,7 @@
 // It shares the settings window's WebView2 folder and virtual host but loads only its own light page.
 // Shown: state from app_tray_json, commands through ui_dispatch (the phone's checks). Closed: hidden and suspended;
 // 30 s later the browser part is let go of, so nothing of it runs while haku sits in the tray.
-// Any failure leaves the right-click menu, and a left click falls back to it (app_tray_menu), once: so does a page
+// Any failure falls back to the classic menu (app_tray_menu), once, for that click: so does a page
 // that never says hello and its height (OPEN_TIMER). What a released browser part still answers is ignored (gen).
 extern "C" {
 #include "common.h"

@@ -33,8 +33,12 @@ window.chrome = { webview: {
     const profSec = s => s === 'custom' || s === 'general' || STATE.effects.some(e => e.id === s);
     if (o.cmd === 'set' && o.p && o.p !== (G.profile || '') && profSec(o.s)) { setTimeout(() => emit(STATE), 30); return; }
     if (o.cmd === 'set') (C[o.s] = C[o.s] || {})[o.k] = o.v;
+    // config.c full (window.mockCfgFull = 1): what adds lines is refused whole and counted in cfg_full (comp_apply, draft_save,
+    // preset_save and preset_copy here); the page is told by the reply's err 'cap' or by the count
+    const full = window.mockCfgFull && ['comp_apply', 'draft_save', 'preset_save', 'preset_copy'].includes(o.cmd);
+    if (full) { STATE.cfg_full++; if (o.cmd.startsWith('preset')) { setTimeout(() => emit(STATE), 30); return; } }
     // main.c app_comp_apply: the 11 lines into [custom] at once; window.mockCompFail = 'bad' | 'save' | 'silent'
-    if (o.cmd === 'comp_apply') { const no = window.mockCompFail, err = no === 'bad' ? 'bad' : o.p && o.p !== (G.profile || '') ? 'prof' : no === 'save' ? 'save' : '';
+    if (o.cmd === 'comp_apply') { const no = window.mockCompFail, err = full ? 'cap' : no === 'bad' ? 'bad' : o.p && o.p !== (G.profile || '') ? 'prof' : no === 'save' ? 'save' : '';
       if (no !== 'silent') { if (!err || err === 'save') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); (C.custom = C.custom || {})[l.slice(0, e)] = l.slice(e + 1); });
         setTimeout(() => { emit(STATE); emit({ type: 'comp_done', req: o.req, err }); }, 40); } }
     // ui_web.cpp draft_save: the 14 lines in order into the first free [cdraft.N] or, slot r, [crecover] (no lines: cleared);
@@ -43,6 +47,7 @@ window.chrome = { webview: {
       const L = o.kv ? o.kv.split('\n').map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]) : [];
       let err = (o.slot === '' || o.slot === 'r') && (L.length === 14 ? L.every((x, i) => x[0] === K[i]) && L[1][1] : !L.length && o.slot === 'r') ? '' : 'bad', n = 0, sec = 'crecover';
       if (!err && o.slot === '') { n = 1; while (n <= 16 && (C['cdraft.' + n] || {}).at) n++; sec = 'cdraft.' + n; if (n > 16) err = 'full'; }
+      if (!err && full) err = 'cap';
       if (!err && no === 'save') err = 'save';
       if (no === 'silent') return;
       if (err) n = 0; else { delete C[sec]; if (L.length) C[sec] = Object.fromEntries(L); }
@@ -111,7 +116,7 @@ window.chrome = { webview: {
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
 const panels = (LAY || LAYOUTS.blocks).panels;
 const STATE = {
-  type: 'state', test: '', unsaved: 0, prof: { err: 0, id: 0, n: 0 }, perf: { fps10: 299, chg10: 299, avg_us: 420, max_us: 1900, want: 30 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
+  type: 'state', test: '', unsaved: 0, cfg_full: 0, prof: { err: 0, id: 0, n: 0 }, perf: { fps10: 299, chg10: 299, avg_us: 420, max_us: 1900, want: 30 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
     { cat: 'gpu', maker: 'ASUS', name: 'NVIDIA GeForce RTX 4070', id: '10DE:2786' }, { cat: 'usb', maker: 'Corsair', name: 'K70 RGB PRO', id: '1B1C:1BB3' },
     { cat: 'usb', maker: 'Wooting', name: 'Wooting 60HE v2', id: '31E3:1342' }, { cat: 'usb', maker: 'Lian Li', name: 'LianLi-Strimer Plus-1.5', id: '0CF2:A200' }] },
   orgb: { state: 2, exe: 1, auto: 1, ours: 1, setup: 0, pct: 0, err: '', ctls: [{ i: 0, type: 5, kind: 'keyboard', leds: 104, name: 'Keyboard' }, { i: 1, type: 3, kind: 'cooler', leds: 16, name: 'Fan hub' },

@@ -49,6 +49,32 @@ jobs:
         shell: pwsh
         run: tools\sim\ui-tests.ps1
 
+      # the installer unpacks to exactly what pack.ps1 packed, at res\version.h's version (and the tag's, on a tag)
+      - name: Installer check
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
+          tools\sim\setup-check.ps1 -Version $tag
+          if ($LASTEXITCODE) { exit 1 }
+
+      # the tests write their logs under %TEMP% (not runner.temp): gathered here for the artifact
+      - name: Gather the logs of a failed run
+        if: failure()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory failed-logs -Force | Out-Null
+          Copy-Item build.log failed-logs -ErrorAction SilentlyContinue
+          Copy-Item "$env:TEMP\haku-tests\*.log" failed-logs -ErrorAction SilentlyContinue
+          Get-ChildItem $env:TEMP -Directory -Filter 'haku-setup-check-*' | ForEach-Object { Copy-Item $_.FullName failed-logs -Recurse }
+
+      - name: Keep the logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: failed-run-logs
+          if-no-files-found: ignore
+          path: failed-logs
+
       # ---- signing, step 1: the program's own executables (they go into the installer afterwards)
       - name: Upload the executables for signing
         if: env.SIGN == 'true'
@@ -116,24 +142,11 @@ jobs:
         run: Copy-Item signed-setup\haku-control-setup.exe dist -Force
 
       # the installer's SHA-256 beside it: haku checks updates against it when the GitHub API is out of reach
-      - name: Checksum
-        shell: pwsh
-        run: |
-          $h = (Get-FileHash dist\haku-control-setup.exe -Algorithm SHA256).Hash.ToLower()
-          [IO.File]::WriteAllText("dist\haku-control-setup.exe.sha256", "$h  haku-control-setup.exe`n")
-
-      - name: Package
+      - name: Checksum and package
         shell: pwsh
         run: |
           $v = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { 'dev-' + $env:GITHUB_SHA.Substring(0, 7) }
-          $pkg = "haku-control-$v"
-          New-Item -ItemType Directory "$pkg\scripts" | Out-Null
-          Copy-Item bin "$pkg\bin" -Recurse
-          Copy-Item scripts\install.ps1, scripts\uninstall.ps1, scripts\stop.ps1, scripts\aidot-setup.ps1 "$pkg\scripts"
-          Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $pkg
-          foreach ($m in 'SmbusPIIX4', 'LpcIO', 'AMDFamily17', 'IntelMSR') { Copy-Item third_party\pawnio\COPYING "$pkg\bin\$m.COPYING.txt" }
-          Compress-Archive -Path "$pkg\*" -DestinationPath "$pkg.zip"
-          "PKG=$pkg" >> $env:GITHUB_ENV
+          scripts\package.ps1 -Version $v
 
       - uses: actions/upload-artifact@v7
         with:

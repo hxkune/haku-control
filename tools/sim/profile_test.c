@@ -117,6 +117,17 @@ int main(void) {
     start(BASE); put(L"profiles\\2.ini", "; haku control profile 2 v2: cut\r\n[general]\r\n");
     CHECK(prof_dup(2, "Copy") == 0 && err() == PE_BAD && !prof_exists(3), "a damaged profile is not copied");
 
+    // ---- the settings file full: a switch, a new profile and a copy are refused whole, nothing of them half in
+    start(BASE); put(L"profiles\\2.ini", "; haku control profile 2 v2: big\r\n[general]\r\neffect=static\r\n[flow]\r\na1=1\r\na2=2\r\n; end\r\n");
+    { wchar_t p3[MAX_PATH]; app_data_path(L"profiles\\3.ini", p3); DeleteFileW(p3); }
+    { char k[16]; for (int i = 0; i < 5000; i++) { snprintf(k, sizeof(k), "k%d", i); if (cfg_set("pad", k, "1") != CFG_OK) break; } }
+    CHECK(!prof_switch(2) && err() == PE_ROOM && cfg_geti("general", "profile", 0) == 1 && !strcmp(cfg_get("general", "effect", ""), "flow") &&
+          cfg_geti("flow", "speed", 0) == 5 && !cfg_get("flow", "a1", NULL), "settings full: switch refused whole, the live setup as it was");
+    CHECK(prof_save(0, "Film") == 0 && err() == PE_ROOM && !prof_exists(3) && cfg_geti("general", "profile", 0) == 1, "settings full: no new profile");
+    CHECK(prof_dup(1, "Copy") == 0 && err() == PE_ROOM && !prof_exists(3) && !there(L"profiles\\3.ini"), "settings full: no copy, its file gone");
+    cfg_remove_section("pad");
+    CHECK(prof_switch(2) && cfg_geti("flow", "a1", 0) == 1, "room again: the switch goes through");
+
     // ---- delete and the start
     start(BASE); put(L"profiles\\2.ini", NIGHT);
     file_fail = 1; prof_delete(2); file_fail = 0;

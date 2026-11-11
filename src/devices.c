@@ -527,12 +527,14 @@ int ext_add(const char *kind, const char *host, int sub, const char *name, int l
     }
     if (!id) return 0;
     char sec[16], v[16]; snprintf(sec, sizeof(sec), "dev.%d", id);
+    cfg_group_begin();   // a device half written would come back as one with no address or kind
     cfg_set(sec, "kind", kind);
     cfg_set(sec, "host", host);
     snprintf(v, sizeof(v), "%d", sub); cfg_set(sec, "sub", v);
     cfg_set(sec, "name", name && name[0] ? name : ext_driver_by_kind(kind)->title);
     snprintf(v, sizeof(v), "%d", leds > 0 ? leds : 0); cfg_set(sec, "leds", v);
     cfg_set(sec, "enabled", "1");
+    if (!cfg_group_end()) { logf_("devices: %s %s not added, the settings file is full", kind, host); return 0; }
     cfg_save_if_dirty();
     ext_reload();
     logf_("devices: added dev.%d %s %s", id, kind, host);
@@ -568,7 +570,7 @@ void ext_remove(int id) {
 
 // {"devs":[...],"found":[...],"scanning":0,"kinds":[...]}
 int ext_json(char *out, int cap) {
-    int n = snprintf(out, cap, "{\"devs\":[");
+    int n = jcat(out, cap, 0, "{\"devs\":[");
     AcquireSRWLockShared(&lk);
     for (int k = 0; k < nslots && n < cap - 800; k++) {
         slot_t *s = &slots[k];
@@ -584,11 +586,11 @@ int ext_json(char *out, int cap) {
         const char *md = cfg_get(sec, "media", ""); wchar_t mw[MAX_PATH]; int mx = 0;
         if (*md && MultiByteToWideChar(CP_UTF8, 0, md, -1, mw, MAX_PATH)) mx = GetFileAttributesW(mw) == INVALID_FILE_ATTRIBUTES;
         const ext_driver *drv = ext_driver_by_kind(s->kind);
-        n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
+        n = jcat(out, cap, n, "%s{\"id\":%d,\"kind\":\"%s\",\"title\":\"%s\",\"name\":\"%s\",\"host\":\"%s\",\"sub\":%d,"
                       "\"leds\":%d,\"per_led\":%d,\"online\":%d,\"fails\":%d,\"enabled\":%d,\"own\":%d,\"same\":%d,\"held\":%d,\"covered\":%d,\"cap\":%d,\"type\":\"%s\",\"info\":\"%s\",\"pro\":%d,\"zones\":\"%s\",\"sent\":%ld,\"ns\":%ld,\"nf\":%ld,\"mx\":%d,\"ev\":[%s]}",
                       k ? "," : "", s->id, s->kind, drv ? drv->title : s->kind, nm, host, s->sub, s->nleds, s->per_led, s->online, s->fails, s->enabled, s->own, s->same, s->held, s->covered, s->cap, s->type, inf, pro_kind(s->kind), zs, s->sent ? (long)(GetTickCount() - (DWORD)s->sent) : -1L, (long)s->nsent, (long)s->nfail, mx, ev);
     }
-    n += snprintf(out + n, cap - n, "],\"found\":[");
+    n = jcat(out, cap, n, "],\"found\":[");
     for (int i = 0; i < nfound && n < cap - 600; i++) {
         disc_t *f = &found[i];
         char nm[140], inf[200], host[140];
@@ -601,13 +603,13 @@ int ext_json(char *out, int cap) {
             if (!strcmp(slots[k].kind, f->kind) && !strcmp(slots[k].host, f->host) && slots[k].sub >= 0 &&
                 slots[k].sub % 1000 == f->sub % 1000 && (slots[k].sub >= 1000) != (f->sub >= 1000)) clash = 1;
         const ext_driver *drv = ext_driver_by_kind(f->kind);
-        n += snprintf(out + n, cap - n, "%s{\"kind\":\"%s\",\"title\":\"%s\",\"host\":\"%s\",\"sub\":%d,\"name\":\"%s\",\"leds\":%d,\"info\":\"%s\",\"added\":%d,\"clash\":%d}",
+        n = jcat(out, cap, n, "%s{\"kind\":\"%s\",\"title\":\"%s\",\"host\":\"%s\",\"sub\":%d,\"name\":\"%s\",\"leds\":%d,\"info\":\"%s\",\"added\":%d,\"clash\":%d}",
                       i ? "," : "", f->kind, drv ? drv->title : f->kind, host, f->sub, nm, f->nleds, inf, added, clash);
     }
     ReleaseSRWLockShared(&lk);
-    n += snprintf(out + n, cap - n, "],\"scanning\":%d,\"kinds\":[", (int)scanning);
+    n = jcat(out, cap, n, "],\"scanning\":%d,\"kinds\":[", (int)scanning);
     for (int i = 0; i < NDRV; i++)
-        n += snprintf(out + n, cap - n, "%s{\"kind\":\"%s\",\"title\":\"%s\",\"per_led\":%d,\"pro\":%d}", i ? "," : "", drivers[i]->kind, drivers[i]->title, drivers[i]->per_led, pro_kind(drivers[i]->kind));
-    n += snprintf(out + n, cap - n, "]}");
+        n = jcat(out, cap, n, "%s{\"kind\":\"%s\",\"title\":\"%s\",\"per_led\":%d,\"pro\":%d}", i ? "," : "", drivers[i]->kind, drivers[i]->title, drivers[i]->per_led, pro_kind(drivers[i]->kind));
+    n = jcat(out, cap, n, "]}");
     return n;
 }

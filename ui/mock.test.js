@@ -545,18 +545,19 @@
 
   test('fans: a card looks like its fan: picked in its settings, shared by a group, a pump its own; iCUE LINK and Lian Li on their own', async () => {
     await fresh(); await fanReset();
-    const ic = i => $(`#fan-panel [data-f="${i}"] .fanic`), lit = el => el.querySelectorAll('.fi-lit > *').length;
-    ok(ic(0) && !lit(ic(0)), 'a plain fan by default');
+    const ic = i => $(`#fan-panel [data-f="${i}"] .fanic`), lit = el => el.querySelectorAll('.fi-lit > *').length, look = el => el.dataset.look;
+    ok(ic(0) && look(ic(0)) === '', 'a plain fan by default (its picture)');
+    ok(ic(0).classList.contains('on') && !ic(2).classList.contains('on'), 'lit and turning while it runs, still when stopped');
     await fanSheetOf(0);
     ok($$('#fs-look button').length === 6 && $('#fs-look [data-v=""]').classList.contains('on'), 'the picker');
     $('#fs-look [data-v="inf"]').click(); await wait(60);
-    ok(STATE.cfg.fans.fan1_look === 'inf' && lit(ic(0)) === 3 && $('#fs-look [data-v="inf"]').getAttribute('aria-pressed') === 'true', 'picked: ' + STATE.cfg.fans.fan1_look);
+    ok(STATE.cfg.fans.fan1_look === 'inf' && look(ic(0)) === 'inf' && $('#fs-look [data-v="inf"]').getAttribute('aria-pressed') === 'true', 'picked: ' + STATE.cfg.fans.fan1_look);
     $('#fs-kind [data-v="pump"]').click(); await wait(60);
     ok($('#fs-look-f').classList.contains('hidden') && ic(0).innerHTML.includes(PUMP_BLADE) && !ic(0).querySelector('.fi-bl'), 'a pump: its block and impeller, no picker');
     setCfg('fans', 'fan1_kind', ''); setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1,2'); setCfg('fans', 'fan2_look', 'inf'); FAN.sig = ''; updateFans();
-    ok(lit($('#fan-panel [data-g="1"] .fanic')) === 3, 'a group of the same look shows it');
+    ok(look($('#fan-panel [data-g="1"] .fanic')) === 'inf', 'a group of the same look shows it');
     setCfg('fans', 'fan2_look', 'sl'); FAN.sig = ''; updateFans();
-    ok(!lit($('#fan-panel [data-g="1"] .fanic')), 'a mixed group shows a plain one');
+    ok(look($('#fan-panel [data-g="1"] .fanic')) === '', 'a mixed group shows a plain one');
     updateLL(); const ll = $$('#ll-list .found-row');
     ok(ll.length === 2 && ll.every(r => r.querySelectorAll('.fi-lit rect').length === 2), 'Lian Li groups: lit edges');
     // lianli.c's give-up after 10 asks: the group says its board ARGB sync would not go off, or back on
@@ -1548,6 +1549,24 @@
     ok(!$('#home-first').classList.contains('hidden') && $('#home-attn').classList.contains('hidden') && $('#home-cool').classList.contains('hidden'), 'nothing found: where to start not shown alone: ' + [$('#home-first').className, $('#home-attn').className, $('#home-attn-list').textContent.replace(/\s+/g, ' '), $('#home-cool').className, gdOn()].join(' / '));
     emit(STATE); await wait(80);
     ok(['en', 'ru', 'fr'].every(l => ['home.first', 'home.attn', 'help.title', 'help.start.text', 'help.terms', 'help.terms.text', 'help.offline.text', 'help.orgb.text', 'help.conflict.text', 'help.fans.text', 'help.diag.text', 'help.diag.open'].every(k => STR[l][k])), 'a language misses the help texts');
+  });
+
+  test('home: changes refused by a full settings file are said once, with how many; Got it hides them until the next', async () => {
+    await fresh(); showTab('home');
+    const row = () => [...$$('#home-attn-list .found-row')].find(r => r.textContent.includes(t('home.cfgfull'))), n0 = presets().length;
+    try {
+      ok(!row(), 'a full settings file said before anything was refused');
+      window.mockCfgFull = 1;
+      send({ cmd: 'preset_save', id: '0', name: 'cap test', effect: 'fire' }); await wait(120);
+      ok(presets().length === n0 && !presets().some(p => p.name === 'cap test'), 'a refused preset still came in');
+      let r = row();
+      ok(r && r.textContent.includes(t('home.cfgfull.why', 1)) && r.querySelector('[data-a="cfgok"]'), 'no row for the refused change: ' + $('#home-attn-list').textContent);
+      r.querySelector('[data-a="cfgok"]').click(); await wait(60);
+      ok(!row(), 'Got it did not hide the row');
+      send({ cmd: 'preset_copy', id: String((presets()[0] || {}).id || 1), name: 'x' }); await wait(120);
+      r = row(); ok(r && r.textContent.includes(t('home.cfgfull.why', 1)), 'a new refusal after Got it is not counted from there: ' + (r && r.textContent));
+      ok(['en', 'ru', 'fr'].every(l => ['home.cfgfull', 'home.cfgfull.why', 'home.cfgfull.ok', 'cmp.st.err.cap', 'cmp.draft.cap', 'prof.err.room', 'bk.full', 'bk.bad_prof'].every(k => STR[l][k])), 'a language misses a full-settings text');
+    } finally { window.mockCfgFull = 0; HOME.cfgOk = STATE.cfg_full; updateHome(); }
   });
 
   test('home: a failed save, a failed profile and fans not given back are listed with their own action; one cause is one row; fixed ones go', async () => {

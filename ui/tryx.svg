@@ -1,59 +1,91 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="200" height="175" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="200" height="175" fill="none" style="--tryx-glow-color: #ff3385; --tryx-glow-opacity: 1; --tryx-screen-opacity: 1;">
   <defs>
-    <linearGradient id="argb-grad-solo" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff3385" />
-      <stop offset="50%" stop-color="#a83279" />
-      <stop offset="100%" stop-color="#ffaa33" />
+    <!-- matte dark body -->
+    <linearGradient id="tryx-mono-body" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#26262a" />
+      <stop offset="63%" stop-color="#141417" />
+      <stop offset="100%" stop-color="#202024" />
     </linearGradient>
 
-    <linearGradient id="screen-body-solo" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#242426" />
-      <stop offset="50%" stop-color="#121214" />
-      <stop offset="100%" stop-color="#242426" />
+    <!-- screen off (black glass) -->
+    <linearGradient id="tryx-glass-off" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181b" />
+      <stop offset="55%" stop-color="#0a0a0c" />
+      <stop offset="100%" stop-color="#060608" />
     </linearGradient>
 
-    <filter id="soft-glow-solo" x="-30%" y="-30%" width="160%" height="160%">
+    <!-- highlight on the screen bend -->
+    <linearGradient id="tryx-curve-rot" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0" />
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.07" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- soft glow behind the screen -->
+    <filter id="tryx-ambient-blur" x="-35%" y="-35%" width="170%" height="170%">
       <feGaussianBlur stdDeviation="12" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
     </filter>
   </defs>
 
-  <g id="tryx-screen-only">
-    <!-- glow behind -->
-    <path d="M 75,48 L 128,64 Q 145,69 162,64 L 218,48 L 218,148 L 162,166 Q 145,172 128,166 L 75,148 Z" fill="url(#argb-grad-solo)" opacity="0.28" filter="url(#soft-glow-solo)" />
-
-    <!-- top cover of the body -->
-    <path d="M 75,48 L 87,43 L 136,57 Q 145,60 154,57 L 206,43 L 218,48 L 162,64 Q 145,69 128,64 Z" fill="#222225" stroke="#383840" stroke-width="1.2" stroke-linejoin="round" />
-
-    <!-- L-display body -->
-    <path d="M 75,48 L 128,64 Q 145,69 162,64 L 218,48 A 4,4 0 0 1 222,52 L 222,146 A 5,5 0 0 1 218,150 L 162,168 Q 145,174 128,168 L 75,150 A 5,5 0 0 1 71,146 L 71,52 A 4,4 0 0 1 75,48 Z" fill="url(#screen-body-solo)" stroke="url(#argb-grad-solo)" stroke-width="2" />
-
-    <!-- AMOLED screen -->
-    <path d="M 79,56 L 128,71 Q 145,76 162,71 L 214,56 L 214,143 L 162,160 Q 145,165 128,160 L 79,143 Z" fill="#09080c" stroke="#242429" stroke-width="1" />
-
-    <!-- gradient accent on the fold -->
-    <path d="M 132,72 Q 145,76 158,72 L 158,160 Q 145,164 132,160 Z" fill="url(#argb-grad-solo)" opacity="0.14" />
-
-    <!-- left half of the UI -->
-    <g id="screen-left-ui">
-      <line x1="86" y1="68" x2="122" y2="79" stroke="#ffaa33" stroke-width="2.5" stroke-linecap="round" />
-      <text x="86" y="93" fill="#ff5599" font-family="monospace, sans-serif" font-size="11" font-weight="bold" transform="skewY(16)">38.6°C</text>
-      <line x1="86" y1="92" x2="120" y2="102" stroke="#262629" stroke-width="1" />
-      <text x="86" y="114" fill="#ffaa33" font-family="monospace, sans-serif" font-size="10" font-weight="bold" transform="skewY(16)">4533</text>
-      <path d="M 86,126 Q 94,122 102,130 T 122,135" stroke="#ff3385" stroke-width="2" fill="none" stroke-linecap="round" />
-      <line x1="86" y1="136" x2="122" y2="147" stroke="#ff3385" stroke-width="1" stroke-opacity="0.4" />
+  <g id="tryx-panorama-widget">
+    <!-- glow behind the screen: the custom properties tryx-glow-color and tryx-glow-opacity -->
+    <g id="tryx-ambient-glow" style="opacity: var(--tryx-glow-opacity, 1)">
+      <!-- soft halo behind the body, in its L shape -->
+      <path d="M 64,46 L 148,61 Q 164,64 178,58 L 220,42 L 224,148 L 178,170 Q 164,177 148,173 L 64,156 Z" fill-opacity="0.32" style="fill: var(--tryx-glow-color, #ff3385); stroke: var(--tryx-glow-color, #ff3385)" stroke-width="6" stroke-opacity="0.25" filter="url(#tryx-ambient-blur)" />
     </g>
 
-    <!-- right half of the UI -->
-    <g id="screen-right-ui">
-      <line x1="168" y1="78" x2="195" y2="70" stroke="#ffaa33" stroke-width="2.5" stroke-linecap="round" />
-      <g transform="translate(188, 108) skewY(-16)">
-        <circle r="17" stroke="#2a1a2e" stroke-width="3.5" fill="none" />
-        <circle r="17" stroke="url(#argb-grad-solo)" stroke-width="3.5" stroke-dasharray="75 110" stroke-linecap="round" fill="none" transform="rotate(-135)" />
-        <text x="0" y="4" fill="#ffffff" font-family="monospace, sans-serif" font-size="10" font-weight="bold" text-anchor="middle">120</text>
+    <!-- body and screen -->
+    <!-- top of the body (3D face) -->
+    <path d="M 68,50 L 82,44 L 154,56 Q 164,58 172,54 L 204,41 L 216,46 L 178,62 Q 164,68 148,65 Z" fill="#222226" stroke="#383840" stroke-width="1.2" stroke-linejoin="round" />
+
+    <!-- curved L body -->
+    <path d="M 68,50 L 148,65 Q 164,68 178,62 L 216,46 A 4,4 0 0 1 220,50 L 220,144 A 5,5 0 0 1 216,148 L 178,166 Q 164,173 148,169 L 68,152 A 5,5 0 0 1 64,148 L 64,54 A 4,4 0 0 1 68,50 Z" fill="url(#tryx-mono-body)" stroke="#383842" stroke-width="1.5" />
+
+    <!-- thin coloured edge, on with the glow -->
+    <path d="M 68,50 L 148,65 Q 164,68 178,62 L 216,46 A 4,4 0 0 1 220,50 L 220,144 A 5,5 0 0 1 216,148 L 178,166 Q 164,173 148,169 L 68,152 A 5,5 0 0 1 64,148 L 64,54 A 4,4 0 0 1 68,50 Z" fill="none" stroke-width="1.2" style="stroke: var(--tryx-glow-color, #ff3385); stroke-opacity: calc(var(--tryx-glow-opacity, 1) * 0.45)" />
+
+    <!-- the screen off, always under -->
+    <path d="M 72,58 L 148,72 Q 164,75 178,69 L 212,54 L 212,141 L 178,158 Q 164,164 148,161 L 72,145 Z" fill="url(#tryx-glass-off)" stroke="#1c1c20" stroke-width="1" />
+
+    <!-- the screen on: the custom property tryx-screen-opacity -->
+    <g id="tryx-screen-content" style="opacity: var(--tryx-screen-opacity, 1)">
+      <!-- black AMOLED background -->
+      <path d="M 72,58 L 148,72 Q 164,75 178,69 L 212,54 L 212,141 L 178,158 Q 164,164 148,161 L 72,145 Z" fill="#060608" stroke="#28282e" stroke-width="1" />
+
+      <!-- depth on the bend -->
+      <path d="M 149,72 Q 164,75 177,69 L 177,158 Q 164,164 149,161 Z" fill="url(#tryx-curve-rot)" />
+
+      <!-- left face -->
+      <g id="screen-left-ui">
+        <line x1="80" y1="68" x2="136" y2="78" stroke="#8c8c96" stroke-width="2.5" stroke-linecap="round" />
+        <text id="tryx-temp-value" x="80" y="96" fill="#e2e2e8" font-family="monospace, sans-serif" font-size="13" font-weight="bold" transform="skewY(10)">38.6°C</text>
+        <!-- small thermometer in the glow colour -->
+        <circle cx="138" cy="108" r="2" style="fill: var(--tryx-glow-color, #8c8c96)" />
+        <line x1="138" y1="99" x2="138" y2="107" style="stroke: var(--tryx-glow-color, #8c8c96)" stroke-width="1.8" stroke-linecap="round" />
+
+        <line x1="80" y1="98" x2="142" y2="109" stroke="#2c2c32" stroke-width="1" />
+        <text id="tryx-rpm-value" x="80" y="118" fill="#a0a0aa" font-family="monospace, sans-serif" font-size="11.5" font-weight="bold" transform="skewY(10)">4533</text>
+        <text x="114" y="118" fill="#686872" font-family="monospace, sans-serif" font-size="7.5" font-weight="bold" transform="skewY(10)">RPM</text>
+
+        <path d="M 80,130 Q 92,124 106,133 T 142,138" stroke="#d4d4dc" stroke-width="2" fill="none" stroke-linecap="round" />
+        <line x1="80" y1="140" x2="142" y2="151" stroke="#52525c" stroke-width="1" />
       </g>
-      <path d="M 166,148 L 206,135" stroke="#2a1a2e" stroke-width="3" stroke-linecap="round" />
-      <path d="M 166,148 L 192,139.5" stroke="#ff3385" stroke-width="3" stroke-linecap="round" />
+
+      <!-- right face -->
+      <g id="screen-right-ui">
+        <line x1="182" y1="76" x2="204" y2="67" stroke="#8c8c96" stroke-width="2.5" stroke-linecap="round" />
+        <g transform="translate(195, 107) skewY(-22) scale(0.82, 1)">
+          <circle r="16" stroke="#222228" stroke-width="3.5" fill="none" />
+          <circle r="16" stroke="#d4d4dc" stroke-width="3.5" stroke-dasharray="70 105" stroke-linecap="round" fill="none" transform="rotate(-135)" />
+          <text x="0" y="3.5" fill="#ffffff" font-family="monospace, sans-serif" font-size="9.5" font-weight="bold" text-anchor="middle">120</text>
+        </g>
+        <path d="M 181,148 L 207,137" stroke="#222228" stroke-width="3" stroke-linecap="round" />
+        <path d="M 181,148 L 198,140.8" stroke="#a0a0aa" stroke-width="3" stroke-linecap="round" />
+      </g>
     </g>
+
+    <!-- glass highlights, on and off -->
+    <path d="M 149,72 Q 164,75 177,69 L 177,158 Q 164,164 149,161 Z" fill="#ffffff" opacity="0.02" pointer-events="none" />
+    <path d="M 73,59 L 138,71 L 104,151 L 73,144 Z" fill="#ffffff" opacity="0.025" pointer-events="none" />
   </g>
 </svg>

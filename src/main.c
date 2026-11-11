@@ -5,6 +5,7 @@
 // Unchanged frames are not sent, and the loop slows down to 5 Hz while nothing changes.
 #include "devices.h"   // common.h, and https_download / sha256_hex
 #include "xfade.h"
+#include "safetmp.h"
 #include <shellapi.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -14,6 +15,8 @@
 #include <share.h>
 #include <tlhelp32.h>
 #include <signal.h>
+#include <commctrl.h>
+#include "trayev.h"
 #include "../res/version.h"
 
 // visual styles for the settings window controls
@@ -672,7 +675,8 @@ static int palette_ok(const char *s) {
 // current one, else 5..100. zones: "1" takes every device's own colours as they are now, "keep" leaves the ones
 // saved before, anything else drops them. fx_cur: the effect's settings as they are now even over an edited preset of
 // the same effect (the constructor saves what is on screen). fxkv (nfx key, value pairs, nfx -1: none): the effect's
-// settings given, a constructor's draft not applied. Returns the preset's number (0: all PRESET_MAX are taken).
+// settings given, a constructor's draft not applied. Returns the preset's number (0: all PRESET_MAX are taken,
+// -1: the settings file is full, nothing changed).
 int app_preset_save(int id, const char *name, const char *effect, const char *palette, const char *speed,
                     const char *bri, const char *zones, int fx_cur, const char *const *fxkv, int nfx) {
     char sec[24];
@@ -683,7 +687,7 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
     }
     snprintf(sec, sizeof(sec), "preset.%d", id);
     char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(sec, "name", ""));
-    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
+    cfg_clean_name(nm);
     if (!nm[0]) snprintf(nm, sizeof(nm), "Preset %d", id);
     int keep = zones && !_stricmp(zones, "keep") && cfg_geti(sec, "zones", 0), take = zones && !strcmp(zones, "1");
     static cfg_item kept[512];
@@ -691,6 +695,7 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
     const char *eff = effect && *effect ? g_effects[effect_index(effect)].id : g_effects[cur_effect].id;
     // the effect's own settings: an edited preset of the same effect keeps its own, anything else takes the current ones
     int fx_kept = nfx < 0 && !fx_cur && !_stricmp(cfg_get(sec, "effect", ""), eff) && cfg_geti(sec, "fx", 0);
+    cfg_group_begin();   // the old preset goes only when the new one fits whole
     cfg_remove_section(sec);
     cfg_set(sec, "name", nm);
     cfg_set(sec, "effect", eff);
@@ -741,6 +746,7 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
                 cfg_set(sec, key, v);
             }
     }
+    if (!cfg_group_end()) { logf_("preset %d not saved: the settings file is full, nothing changed", id); return -1; }
     cfg_save_if_dirty();
     logf_("preset %d saved: %s (%s)%s%s", id, nm, eff, with_bri ? ", brightness" : "", with_zones ? ", device colours" : "");
     return id;
@@ -752,6 +758,7 @@ void app_preset_apply(int id) {
     if (!eff) return;
     int fx = effect_index(eff);
     char e[32]; snprintf(e, sizeof(e), "%s", g_effects[fx].id);
+    cfg_group_begin();   // the preset goes on whole or not at all: never half its settings over the current ones
     const char *pal = cfg_get(sec, "palette", "");
     if (*pal) cfg_set(e, "palette", pal);
     const char *sp = cfg_get(sec, "speed", "");
@@ -779,6 +786,7 @@ void app_preset_apply(int id) {
         }
         cfg_set("general", "sync", cfg_get(sec, "sync", "1"));
     }
+    if (!cfg_group_end()) { logf_("preset %d not applied: the settings file is full, nothing changed", id); ui_refresh_state(); return; }
     const char *br = cfg_get(sec, "brightness", "");
     if (*br) set_brightness_ex((float)atof(br) / 100.0f, 0);
     app_config_changed(0);
@@ -790,7 +798,8 @@ void app_preset_apply(int id) {
 }
 
 // a copy of a preset under the first free number: every key as it is (the effect's settings, a constructor's layers,
-// the devices' own colours), a new name; not applied. Returns the new number (0: no such preset, or all are taken)
+// the devices' own colours), a new name; not applied. Returns the new number (0: no such preset, or all are taken;
+// -1: the settings file is full, nothing changed)
 int app_preset_copy(int src, const char *name) {
     char from[24], sec[24];
     snprintf(from, sizeof(from), "preset.%d", src);
@@ -800,11 +809,13 @@ int app_preset_copy(int src, const char *name) {
     if (!id) return 0;
     static cfg_item it[512];
     int n = cfg_items(from, it, 512);
-    for (int i = 0; i < n; i++) cfg_set(sec, it[i].key, it[i].val);
     char nm[80]; snprintf(nm, sizeof(nm), "%s", name && *name ? name : cfg_get(from, "name", ""));
-    for (char *p = nm; *p; p++) if (*p == ';' || *p == '[' || *p == ']' || *p == '=' || (unsigned char)*p < 0x20) *p = ' ';
+    cfg_clean_name(nm);
     if (!nm[0]) snprintf(nm, sizeof(nm), "Preset %d", id);
+    cfg_group_begin();   // a copy cut short would be a preset missing some of its settings
+    for (int i = 0; i < n; i++) cfg_set(sec, it[i].key, it[i].val);
     cfg_set(sec, "name", nm);
+    if (!cfg_group_end()) { logf_("preset %d not copied: the settings file is full, nothing changed", src); return -1; }
     cfg_save_if_dirty();
     logf_("preset %d copied to %d", src, id);
     return id;
@@ -965,9 +976,10 @@ void app_profile_delete(int id) {
     PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
 }
 
-void app_profiles_flush(void) {
+int app_profiles_flush(void) {
     int cur = cfg_geti("general", "profile", 0);
-    if (profile_exists(cur) && !prof_write(cur)) logf_("profile %d: its file can't be written", cur);
+    if (profile_exists(cur) && !prof_write(cur)) { logf_("profile %d: its file can't be written", cur); return 0; }
+    return 1;
 }
 
 void app_reload_all(void) {
@@ -1059,7 +1071,7 @@ static int jesc(char *out, int cap, const char *s) {
     for (; *s && n < cap - 8; s++) {
         unsigned char c = (unsigned char)*s;
         if (c == '"' || c == '\\') { out[n++] = '\\'; out[n++] = (char)c; }
-        else if (c < 0x20) n += snprintf(out + n, cap - n, "\\u%04x", c);
+        else if (c < 0x20) n = jcat(out, cap, n, "\\u%04x", c);
         else out[n++] = (char)c;
     }
     out[n] = 0;
@@ -1081,16 +1093,17 @@ static volatile LONG pawnio_busy;
 static unsigned __stdcall pawnio_run(void *arg) {
     (void)arg;
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-    wchar_t f[MAX_PATH]; GetTempPathW(MAX_PATH, f); wcscat_s(f, MAX_PATH, L"PawnIO_setup.exe");
+    wchar_t d[MAX_PATH] = L"", f[MAX_PATH] = L"";
     char hex[65] = ""; DWORD code = 1;
-    if (https_download(PAWNIO_URL, f, PAWNIO_SIZE, NULL) && sha256_hex(f, hex) && !strcmp(hex, PAWNIO_SHA)) {
+    if (admin_tmp(L"haku-control-pawnio", d)) swprintf(f, MAX_PATH, L"%s\\PawnIO_setup.exe", d);   // checked, then run with admin rights
+    if (f[0] && https_download(PAWNIO_URL, f, PAWNIO_SIZE, NULL) && sha256_hex(f, hex) && !strcmp(hex, PAWNIO_SHA)) {
         SHELLEXECUTEINFOW si = { sizeof(si) };   // "runas": no prompt when this app is elevated, as it usually is
         si.fMask = SEE_MASK_NOCLOSEPROCESS; si.lpVerb = L"runas"; si.lpFile = f; si.lpParameters = L"-install -silent"; si.nShow = SW_HIDE;
         if (ShellExecuteExW(&si) && si.hProcess) {
             WaitForSingleObject(si.hProcess, 120000); GetExitCodeProcess(si.hProcess, &code); CloseHandle(si.hProcess);
         }
     } else logf_("pawnio: the download failed or is not PawnIO 2.2.0's setup (sha256 %s)", hex);
-    DeleteFileW(f);
+    DeleteFileW(f); RemoveDirectoryW(d);
     int ok = pawnio_installed();
     logf_("pawnio: %s (setup ended with %lu)", ok ? "installed" : "not installed", code);
     if (ok) InterlockedExchange(&need_reinit, 1);   // the memory is looked for again
@@ -1113,75 +1126,76 @@ static int status_body(char *out, int cap) {
     char gt[16] = "null", tz[32] = "";
     if (test_zone >= 0 && GetTickCount() - (DWORD)test_at < TEST_MS) zone_section(test_zone, tz, sizeof(tz));
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = snprintf(out, cap, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"ram_src\":[%ld,%ld],\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"unsaved\":%d,\"rev\":%ld,\"test\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
+    int n = jcat(out, cap, 0, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"ram_src\":[%ld,%ld],\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"unsaved\":%d,\"rev\":%ld,\"test\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
                      g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, ram_src & 3, ram_src >> 2 & 3, app_pc_own_now(),
                      off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, cfg_unsaved(), g_state_rev, tz, effects_audio_state(), effects_temp_state());
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
-        n += snprintf(out + n, cap - n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
+        n = jcat(out, cap, n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
     }
-    n += snprintf(out + n, cap - n, "],\"nano\":");
+    n = jcat(out, cap, n, "],\"nano\":");
     n += nano_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"ext\":");
+    n = jcat(out, cap, n, ",\"ext\":");
     n += ext_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"pro\":");
+    n = jcat(out, cap, n, ",\"pro\":");
     n += pro_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"prof\":");
+    n = jcat(out, cap, n, ",\"prof\":");
     n += prof_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"backup\":");
+    n = jcat(out, cap, n, ",\"cfg_full\":%d", cfg_dropped());   // changes refused since start: the settings file was full
+    n = jcat(out, cap, n, ",\"backup\":");
     n += backup_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"fans\":");
+    n = jcat(out, cap, n, ",\"fans\":");
     n += fans_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"ll\":");
+    n = jcat(out, cap, n, ",\"ll\":");
     n += ll_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"link\":");
+    n = jcat(out, cap, n, ",\"link\":");
     n += link_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"cf\":");
+    n = jcat(out, cap, n, ",\"cf\":");
     n += conflicts_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"mqtt\":");
+    n = jcat(out, cap, n, ",\"mqtt\":");
     n += mqtt_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"remote\":");
+    n = jcat(out, cap, n, ",\"remote\":");
     n += remote_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"update\":");
+    n = jcat(out, cap, n, ",\"update\":");
     n += update_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"accounts\":");
+    n = jcat(out, cap, n, ",\"accounts\":");
     n += accounts_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"mood\":");
+    n = jcat(out, cap, n, ",\"mood\":");
     n += mood_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"ollama\":");
+    n = jcat(out, cap, n, ",\"ollama\":");
     n += ollama_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"netchk\":");
+    n = jcat(out, cap, n, ",\"netchk\":");
     n += net_check_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"perf\":{\"fps10\":%ld,\"chg10\":%ld,\"avg_us\":%ld,\"max_us\":%ld,\"want\":%d}", perf_fps10, perf_chg10, perf_avg_us, perf_max_us, fps);
-    n += snprintf(out + n, cap - n, ",\"diag\":");
+    n = jcat(out, cap, n, ",\"perf\":{\"fps10\":%ld,\"chg10\":%ld,\"avg_us\":%ld,\"max_us\":%ld,\"want\":%d}", perf_fps10, perf_chg10, perf_avg_us, perf_max_us, fps);
+    n = jcat(out, cap, n, ",\"diag\":");
     n += diag_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",");
+    n = jcat(out, cap, n, ",");
     n += orgb_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",");
+    n = jcat(out, cap, n, ",");
     n += hw_scan_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",");
+    n = jcat(out, cap, n, ",");
     n += screen_json(out + n, cap - n);
     return n;
 }
 
 int app_status_json(char *out, int cap) {
-    int n = snprintf(out, cap, "{\"type\":\"status\",");
+    int n = jcat(out, cap, 0, "{\"type\":\"status\",");
     n += status_body(out + n, cap - n);
-    n += snprintf(out + n, cap - n, "}");
+    n = jcat(out, cap, n, "}");
     return n;
 }
 
 int app_state_json(char *out, int cap) {
-    int n = snprintf(out, cap, "{\"type\":\"state\",\"autostart\":%d,\"effects\":[", app_autostart(-1));
+    int n = jcat(out, cap, 0, "{\"type\":\"state\",\"autostart\":%d,\"effects\":[", app_autostart(-1));
     for (int i = 0; i < g_effect_count; i++) {
         char t[128]; WideCharToMultiByte(CP_UTF8, 0, effect_title(i), -1, t, sizeof(t), NULL, NULL);
-        n += snprintf(out + n, cap - n, "%s{\"id\":\"%s\",\"title\":\"%s\"}", i ? "," : "", g_effects[i].id, t);
+        n = jcat(out, cap, n, "%s{\"id\":\"%s\",\"title\":\"%s\"}", i ? "," : "", g_effects[i].id, t);
     }
-    n += snprintf(out + n, cap - n, "],");
+    n = jcat(out, cap, n, "],");
     n += status_body(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"cfg\":");
+    n = jcat(out, cap, n, ",\"cfg\":");
     n += cfg_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, "}");
+    n = jcat(out, cap, n, "}");
     return n;
 }
 
@@ -1197,47 +1211,47 @@ int app_tray_json(char *out, int cap) {
     int off = effect_off_index(), n, lang = app_lang();
     const char *mo = cfg_get("general", "ui_motion", "sys");
     jesc(a, sizeof(a), cfg_get("general", "theme", "dark")); jesc(b, sizeof(b), cfg_get("general", "unlocked", ""));
-    n = snprintf(out, cap, "{\"type\":\"tray\",\"lang\":\"%s\",\"theme\":\"%s\",\"unlocked\":\"%s\",\"motion\":\"%s\",\"pro_off\":%d,"
+    n = jcat(out, cap, 0, "{\"type\":\"tray\",\"lang\":\"%s\",\"theme\":\"%s\",\"unlocked\":\"%s\",\"motion\":\"%s\",\"pro_off\":%d,"
                  "\"fx\":\"%s\",\"off\":\"%s\",\"bri\":%d,", lang == 1 ? "ru" : lang == 2 ? "fr" : "en", a, b,
                  !strcmp(mo, "1") || !strcmp(mo, "0") ? mo : "sys", pro_off, g_effects[cur_effect].id, g_effects[off].id, (int)(brightness * 100 + 0.5f));
     // the tray's own lists: favourite and recent effects first in its picker, pinned devices first on its main view
     static const char *const lists[][2] = {{"fav", "fav"}, {"recent", "fx_recent"}, {"dpin", "tray_pin"}};
-    for (int i = 0; i < 3; i++) { jesc(a, sizeof(a), cfg_get("general", lists[i][1], "")); n += snprintf(out + n, cap - n, "\"%s\":\"%s\",", lists[i][0], a); }
-    n += snprintf(out + n, cap - n, "\"pal\":[");
+    for (int i = 0; i < 3; i++) { jesc(a, sizeof(a), cfg_get("general", lists[i][1], "")); n = jcat(out, cap, n, "\"%s\":\"%s\",", lists[i][0], a); }
+    n = jcat(out, cap, n, "\"pal\":[");
     rgbf pal[MAX_PALETTE];
     EnterCriticalSection(&cs); int np = effects_palette(cur_effect, pal, MAX_PALETTE); LeaveCriticalSection(&cs);
     for (int i = 0; i < np; i++)
-        n += snprintf(out + n, cap - n, "%s\"#%02x%02x%02x\"", i ? "," : "", (int)(clampf(pal[i].r, 0, 1) * 255 + .5f),
+        n = jcat(out, cap, n, "%s\"#%02x%02x%02x\"", i ? "," : "", (int)(clampf(pal[i].r, 0, 1) * 255 + .5f),
                       (int)(clampf(pal[i].g, 0, 1) * 255 + .5f), (int)(clampf(pal[i].b, 0, 1) * 255 + .5f));
-    n += snprintf(out + n, cap - n, "],\"fxs\":[");
+    n = jcat(out, cap, n, "],\"fxs\":[");
     for (int i = 0, first = 1; i < g_effect_count && n < cap - 1200; i++) {
         if (i == off) continue;
         jesc_w(a, sizeof(a), effect_title(i));
-        n += snprintf(out + n, cap - n, "%s{\"id\":\"%s\",\"t\":\"%s\"}", first ? "" : ",", g_effects[i].id, a); first = 0;
+        n = jcat(out, cap, n, "%s{\"id\":\"%s\",\"t\":\"%s\"}", first ? "" : ",", g_effects[i].id, a); first = 0;
     }
-    n += snprintf(out + n, cap - n, "],\"profile\":%d,\"profiles\":[", cfg_geti("general", "profile", 0));
+    n = jcat(out, cap, n, "],\"profile\":%d,\"profiles\":[", cfg_geti("general", "profile", 0));
     for (int i = 1, first = 1; i <= PROFILE_MAX && n < cap - 1200; i++) {
         snprintf(sec, sizeof(sec), "profile.%d", i);
         if (!profile_exists(i)) continue;
         jesc(a, sizeof(a), cfg_get(sec, "name", ""));
-        n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"n\":\"%s\",\"pin\":%d}", first ? "" : ",", i, a, cfg_geti(sec, "pin", 0) != 0); first = 0;
+        n = jcat(out, cap, n, "%s{\"id\":%d,\"n\":\"%s\",\"pin\":%d}", first ? "" : ",", i, a, cfg_geti(sec, "pin", 0) != 0); first = 0;
     }
-    n += snprintf(out + n, cap - n, "],\"prof\":");
+    n = jcat(out, cap, n, "],\"prof\":");
     n += prof_json(out + n, cap - n);
-    n += snprintf(out + n, cap - n, ",\"preset\":%d,\"presets\":[", cfg_geti("general", "preset", 0));
+    n = jcat(out, cap, n, ",\"preset\":%d,\"presets\":[", cfg_geti("general", "preset", 0));
     for (int i = 1, first = 1; i <= PRESET_MAX && n < cap - 1200; i++) {
         snprintf(sec, sizeof(sec), "preset.%d", i);
         const char *fx = cfg_get(sec, "effect", NULL);
         if (!fx) continue;
         jesc(a, sizeof(a), cfg_get(sec, "name", "")); jesc(b, sizeof(b), cfg_get(sec, "palette", ""));
         char f[64]; jesc(f, sizeof(f), fx);
-        n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"n\":\"%s\",\"fx\":\"%s\",\"pal\":\"%s\"}", first ? "" : ",", i, a, f, b); first = 0;
+        n = jcat(out, cap, n, "%s{\"id\":%d,\"n\":\"%s\",\"fx\":\"%s\",\"pal\":\"%s\"}", first ? "" : ",", i, a, f, b); first = 0;
     }
     // devices as the tray menu lists them; a toggled one is a [layout] key ("k"), a [dev.N] one its number ("id")
-    n += snprintf(out + n, cap - n, "],\"devs\":[");
+    n = jcat(out, cap, n, "],\"devs\":[");
     int nd = 0;
 #define TRAY_DEV(key, name, st) do { jesc_w(a, sizeof(a), name); \
-        n += snprintf(out + n, cap - n, "%s{\"k\":\"%s\",\"n\":\"%s\",\"s\":\"%s\"}", nd++ ? "," : "", key, a, st); } while (0)
+        n = jcat(out, cap, n, "%s{\"k\":\"%s\",\"n\":\"%s\",\"s\":\"%s\"}", nd++ ? "," : "", key, a, st); } while (0)
     if (have_ene && ene_count() > 0) TRAY_DEV("ram_enabled", TR(L"Memory lighting", L"Подсветка памяти", L"Éclairage de la mémoire"), !ram_on ? "off" : ram_own ? "own" : "on");
     if (have_msi) TRAY_DEV("gpu_enabled", TR(L"ARGB strip lighting", L"Подсветка ARGB-ленты", L"Éclairage du ruban ARGB"), !gpu_on ? "off" : msi_own ? "own" : "on");
     if (lights_count()) TRAY_DEV("lights_enabled", TR(L"AiDot bulbs", L"Лампочки AiDot", L"Ampoules AiDot"), !lights_on ? "off" : pro_off ? "pro" : "on");
@@ -1254,10 +1268,10 @@ int app_tray_json(char *out, int cap) {
         // the order the window's device list says it in (app.js catInfo)
         const char *st = !(f & 1) ? "off" : (f & 4) ? "own" : (f & 16) ? "busy" : (f & 32) && pro_off ? "pro" : (f & 64) ? "nosup"
                        : (f & 2) ? "on" : (f & 8) ? "offline" : "connecting";
-        n += snprintf(out + n, cap - n, "%s{\"id\":%d,\"n\":\"%s\",\"s\":\"%s\"}", nd++ ? "," : "", id, a, st);
+        n = jcat(out, cap, n, "%s{\"id\":%d,\"n\":\"%s\",\"s\":\"%s\"}", nd++ ? "," : "", id, a, st);
     }
     int pn, po; pc_own_count(&pn, &po);
-    n += snprintf(out + n, cap - n, "],\"pc\":[%d,%d]}", pn, po);
+    n = jcat(out, cap, n, "],\"pc\":[%d,%d]}", pn, po);
     return n < cap ? n : cap - 1;
 }
 
@@ -1270,7 +1284,7 @@ int app_frame_json(char *out, int cap) {
     LeaveCriticalSection(&cs);
     int per[EXT_SLOTS] = { 0 };
     for (int i = 0; i < sc.count; i++) if (sc.leds[i].dev == DEV_EXT) { int k = sc.leds[i].zone - ZONE_EXT0; if (k >= 0 && k < EXT_SLOTS) per[k]++; }
-    int n = snprintf(out, cap, "{\"type\":\"frame\",\"l\":[");
+    int n = jcat(out, cap, 0, "{\"type\":\"frame\",\"l\":[");
     int first = 1;
     for (int i = 0; i < sc.count && n < cap - 32; i++) {
         int dev = sc.leds[i].dev, idx = sc.leds[i].index;
@@ -1283,16 +1297,16 @@ int app_frame_json(char *out, int cap) {
             }
             dev = 100 + k;
         } else if (dev == DEV_NANO) dev = 200 + sc.leds[i].zone - ZONE_NANO0;
-        n += snprintf(out + n, cap - n, "%s[%d,%d,\"%02x%02x%02x\"]", first ? "" : ",", dev, idx,
+        n = jcat(out, cap, n, "%s[%d,%d,\"%02x%02x%02x\"]", first ? "" : ",", dev, idx,
                       (int)(clampf(c[i].r, 0, 1) * 255 + .5f), (int)(clampf(c[i].g, 0, 1) * 255 + .5f), (int)(clampf(c[i].b, 0, 1) * 255 + .5f));
         first = 0;
     }
-    n += snprintf(out + n, cap - n, "]}");
+    n = jcat(out, cap, n, "]}");
     return n;
 }
 
 void app_set(const char *s, const char *k, const char *v) {
-    cfg_set(s, k, v);
+    if (cfg_set(s, k, v) != CFG_OK) { ui_refresh_state(); return; }   // refused whole (counted for the window): the page gets the old value back
     SetTimer(hwnd, SAVE_TIMER, 500, NULL);
     if (!_stricmp(s, "general") && !_stricmp(k, "fps")) { int f = atoi(v); fps = f < 5 ? 5 : f > 60 ? 60 : f; }
     if (!_stricmp(s, "hotkeys") || !_stricmp(s, "general") || !_strnicmp(s, "profile.", 8)) PostMessageW(hwnd, WM_REHOTKEY, 0, 0);   // also refreshes the tray tip (language)
@@ -1308,19 +1322,21 @@ void app_set(const char *s, const char *k, const char *v) {
 }
 
 // the constructor's layers and knobs ([custom] l1..l8, k1..k3, checked by the caller) as one change, written to disk
-// now: 1 written, 0 in use but not on disk yet (written with the next change)
+// now: 1 written, 0 in use but not on disk yet (written with the next change), -1 not taken: the settings file is full
 int app_comp_apply(const char *const *kv, int n) {
-    cfg_set_many("custom", kv, n);
+    if (cfg_set_many("custom", kv, n) != CFG_OK) return -1;
     app_config_changed(0);
     return cfg_save_if_dirty();
 }
 
 // a constructor draft's section ([cdraft.N], [crecover]) as these n pairs, n 0 clears it, written to disk now: 1 written.
 // One not written is taken back out, so the page is never told of a draft the disk lacks (a recovery copy's older
-// version may stay on disk until the next write)
+// version may stay on disk until the next write). -1: it does not fit the settings file, the old one stays as it was
 int app_draft_save(const char *sec, const char *const *kv, int n) {
+    cfg_group_begin();
     cfg_remove_section(sec);
     if (n) cfg_set_many(sec, kv, n);
+    if (!cfg_group_end()) return -1;
     if (cfg_save_if_dirty()) return 1;
     if (n) cfg_remove_section(sec);
     return 0;
@@ -1328,7 +1344,7 @@ int app_draft_save(const char *sec, const char *const *kv, int n) {
 
 // the fan panel's curve, its source and the other sources' curves, as one change (fans.c reads them together)
 void app_set_fans(const char *const *kv, int n) {
-    cfg_set_many("fans", kv, n);
+    if (cfg_set_many("fans", kv, n) != CFG_OK) { ui_refresh_state(); return; }   // none of it taken: the fans keep the curve they run
     SetTimer(hwnd, SAVE_TIMER, 500, NULL);
     app_config_changed(0);
 }
@@ -1578,6 +1594,36 @@ static void open_in_editor(const wchar_t *file) {
     ShellExecuteW(NULL, L"open", L"notepad.exe", file, NULL, SW_SHOWNORMAL);
 }
 
+// Exit: what is only in memory (the half-second save not run yet) is written first. ask 0 (an exit from outside: setup,
+// stop.ps1, a blocked version) tries once and goes; ask 1 (the person's Exit) says when it fails: Try again, Exit
+// without saving, or stay. Cooling is not held up: until the window goes, everything runs as before. 1: exit now
+static int save_before_exit(int ask) {
+    static int asking;
+    if (asking) return 0;   // the question is already up (Exit clicked again meanwhile)
+    KillTimer(hwnd, SAVE_TIMER);
+    while (!cfg_save_if_dirty()) {
+        logf_("exit: the settings could not be written");
+        if (!ask) return 1;
+        wchar_t text[MAX_PATH + 300];
+        swprintf(text, MAX_PATH + 300, L"%s\n%s", TR(L"The latest changes are not on disk yet. The file:", L"Последние изменения ещё не записаны на диск. Файл:", L"Les derniers changements ne sont pas encore sur le disque. Le fichier :"), cfg_path());
+        TASKDIALOG_BUTTON b[] = { { 100, TR(L"Try again", L"Повторить", L"Réessayer") },
+                                  { 101, TR(L"Exit without saving", L"Выйти без сохранения", L"Quitter sans enregistrer") } };
+        TASKDIALOGCONFIG c = { sizeof(c) };
+        c.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS;
+        c.dwCommonButtons = TDCBF_CANCEL_BUTTON;
+        c.pszWindowTitle = L"haku control"; c.pszMainIcon = TD_WARNING_ICON;
+        c.pszMainInstruction = TR(L"The settings could not be saved", L"Не удалось сохранить настройки", L"Impossible d'enregistrer les réglages");
+        c.pszContent = text; c.cButtons = 2; c.pButtons = b; c.nDefaultButton = 100;
+        int btn = IDCANCEL;
+        asking = 1;
+        if (FAILED(TaskDialogIndirect(&c, &btn, NULL, NULL))) btn = IDCANCEL;
+        asking = 0;
+        if (btn == 101) { logf_("exit: without saving, as asked"); return 1; }
+        if (btn != 100) { SetTimer(hwnd, SAVE_TIMER, 500, NULL); return 0; }   // stays; the save is tried again as usual
+    }
+    return 1;
+}
+
 static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     static UINT taskbar_created, quit_msg, show_msg;
     switch (msg) {
@@ -1620,6 +1666,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         ui_refresh_state();
         return 0;
     case WM_BLOCKED:   // this version was stopped by its author: the lights are let go of as on quit
+        save_before_exit(0);
         DestroyWindow(h);
         return 0;
     case WM_REHOTKEY:
@@ -1628,13 +1675,11 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         update_tip();
         return 0;
     case WM_TRAY: {
-        // left: the quick panel (the menu when it cannot be made); double: the window; right: the menu, always
+        // a click (either button, or the keyboard): the quick panel, the menu only when it cannot be made; double: the window
         static int dbl;
-        UINT ev = LOWORD(lp);
-        if (ev == NIN_BALLOONUSERCLICK) ui_open(app_inst);   // a notice clicked
-        else if (ev == WM_LBUTTONDBLCLK) { dbl = 1; tray_close(); ui_open(app_inst); }
-        else if (ev == WM_LBUTTONUP) { if (dbl) dbl = 0; else if (!tray_toggle(app_inst, hwnd)) show_menu(); }
-        else if (ev == WM_RBUTTONUP) { tray_close(); show_menu(); }
+        int act = tray_event(LOWORD(lp), &dbl);
+        if (act == TRAY_WINDOW) { tray_close(); ui_open(app_inst); }
+        else if (act == TRAY_PANEL && !tray_toggle(app_inst, hwnd)) show_menu();
         return 0;
     }
     case WM_COMMAND: {
@@ -1659,7 +1704,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         else if (id >= ID_NANO_ON && id < ID_NANO_ON + NANO_MAX) { char key[32]; nano_key(id - ID_NANO_ON, key, sizeof(key)); app_toggle_device(key); }
         else if (id == ID_SETTINGS) open_in_editor(cfg_path());
         else if (id == ID_LOG) app_open("log");
-        else if (id == ID_EXIT) DestroyWindow(h);
+        else if (id == ID_EXIT) { if (save_before_exit(1)) DestroyWindow(h); }
         return 0;
     }
     case WM_HOTKEY: {
@@ -1684,17 +1729,25 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_QUERYENDSESSION:
         return TRUE;
     case WM_ENDSESSION:
-        // shutdown / log off: room lights get their exit action while the network is still up
-        if (wp) { running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000); close_devices(1); nano_stop(); lights_stop(); ext_stop(); fans_stop(); ll_stop(); link_stop(); }
+        // shutdown / log off, a few seconds at most: cooling given back first, one try at the settings (no question),
+        // then the board, and room lights get their exit action while the network is still up
+        if (wp) {
+            running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000);
+            int fl = fans_stop(); ll_stop(); int ln = link_stop();
+            if (fl || ln) logf_("session end: cooling given back not confirmed (fans %d, link %d)", fl, ln);
+            KillTimer(h, SAVE_TIMER); if (!cfg_save_if_dirty()) logf_("session end: the settings could not be written");
+            close_devices(1); nano_stop(); lights_stop(); ext_stop();
+        }
         return 0;
     case WM_DESTROY:
         Shell_NotifyIconW(NIM_DELETE, &nid);
         PostQuitMessage(0);
         return 0;
     }
-    if (msg == quit_msg && quit_msg) { DestroyWindow(h); return 0; }
+    if (msg == quit_msg && quit_msg) { save_before_exit(0); DestroyWindow(h); return 0; }   // setup waits: no question
     if (msg == show_msg && show_msg) { ui_open(app_inst); return 0; }
-    if (msg == taskbar_created && taskbar_created) {   // explorer restarted
+    if (msg == taskbar_created && taskbar_created) {   // explorer restarted: the icon again, the panel placed by the old one closed
+        tray_close();
         nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;   // (the last change left only one of them set)
         Shell_NotifyIconW(NIM_ADD, &nid);
         return 0;
@@ -1782,6 +1835,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS);
 
     cfg_load(p);
+    backup_recover();   // a restore cut off part way: finished or taken back before anything reads the settings
     prof_keep = profile_key; prof_check();
     if (policy_blocked(blocked_msg, sizeof(blocked_msg), blocked_url, sizeof(blocked_url))) {   // before any device is touched
         logf_("this version was stopped by its author");
@@ -1838,6 +1892,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     SetEvent(ram_event);
     WaitForSingleObject(th_render, 3000);
     WaitForSingleObject(th_ram, 3000);
+    // cooling first, before the slow stops on the network (they may wait seconds on a lost light); its answer
+    // is the exit code: 3 (setup reads it) when a fan or the iCUE LINK hub was not confirmed back on its own control
+    int fl = fans_stop(); ll_stop(); int ln = link_stop();
+    if (fl || ln) logf_("exit: cooling given back not confirmed (fans %d, link %d)", fl, ln);
     close_devices(1);
     lights_stop();
     nano_stop();
@@ -1846,14 +1904,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     mqtt_stop();
     update_stop();
     hotspot_watch_stop();
-    fans_stop();
-    ll_stop();
-    link_stop();
     sensors_close();
     timeEndPeriod(1);
     logf_("exit");
     if (blocked_msg[0]) show_blocked();
     if (logfile) fclose(logfile);
     CloseHandle(single);
-    return 0;
+    return fl || ln ? 3 : 0;
 }

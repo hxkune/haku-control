@@ -208,11 +208,12 @@ static unsigned __stdcall link_thread(void *arg) {
         if (ok) set_st(L_OK); else { let_go(); set_st(L_ERR); }
 #endif
     }
+    int left = 0;   // link_stop() reads it
 #ifndef HAKU_DEV
-    if (need_hw && h != INVALID_HANDLE_VALUE && !hw_mode()) logf_("link: hardware mode not taken on exit: iCUE or a restart gives the hub its control back");
+    if (need_hw && h != INVALID_HANDLE_VALUE && !hw_mode()) { left = 1; logf_("link: hardware mode not taken on exit: iCUE or a restart gives the hub its control back"); }
 #endif
     let_go();
-    return 0;
+    return (unsigned)left;
 }
 
 void link_start(void) {
@@ -222,34 +223,38 @@ void link_start(void) {
     th = (HANDLE)_beginthreadex(NULL, 0, link_thread, NULL, 0, NULL);
 }
 
-void link_stop(void) {
-    if (!th) return;
+// 0: the hub has its own control (or was never visited); 1: it did not take it back; -1: the thread did not end in time
+int link_stop(void) {
+    if (!th) return 0;
     SetEvent(stop_ev);
-    WaitForSingleObject(th, 5000);
+    DWORD code = 0;
+    int r = WaitForSingleObject(th, 5000) == WAIT_OBJECT_0 && GetExitCodeThread(th, &code) ? (int)code : -1;
     CloseHandle(th); th = NULL;
+    if (r < 0) logf_("link: did not end in time, the hub's control back is not confirmed");
+    return r;
 }
 
 // sleep: no visits (one cut short by sleep would leave the hub in software mode)
 void link_suspend(int on) { paused = on; }
 
 int link_json(char *out, int cap) {
-    if (!th) return snprintf(out, cap, "{\"st\":\"off\",\"found\":0}");
+    if (!th) return jcat(out, cap, 0, "{\"st\":\"off\",\"found\":0}");
     EnterCriticalSection(&cs);
-    int n = snprintf(out, cap, "{\"st\":\"%s\",\"found\":%d,\"app\":\"%s\",\"fw\":\"%d.%d.%d\",\"hw\":%d,\"age\":%lu,\"dev\":[",
+    int n = jcat(out, cap, 0, "{\"st\":\"%s\",\"found\":%d,\"app\":\"%s\",\"fw\":\"%d.%d.%d\",\"hw\":%d,\"age\":%lu,\"dev\":[",
                      st_name[L.st], L.found, L.app, L.fw[0], L.fw[1], L.fw[2], L.hw, L.seen ? GetTickCount() - L.seen : 0);
     for (int i = 0; i < L.nd; i++) {
         int c = L.d[i].ch, r = L.rpm[c], t = L.t[c];
-        n += snprintf(out + n, cap - n, "%s{\"ch\":%d,\"type\":%d,\"model\":%d,\"rpm\":", i ? "," : "", c, L.d[i].type, L.d[i].model);
-        n += r == NONE ? snprintf(out + n, cap - n, "null") : snprintf(out + n, cap - n, "%d", r);
-        n += t == NONE ? snprintf(out + n, cap - n, ",\"t\":null}") : snprintf(out + n, cap - n, ",\"t\":%.1f}", t / 10.0);
+        n = jcat(out, cap, n, "%s{\"ch\":%d,\"type\":%d,\"model\":%d,\"rpm\":", i ? "," : "", c, L.d[i].type, L.d[i].model);
+        n = r == NONE ? jcat(out, cap, n, "null") : jcat(out, cap, n, "%d", r);
+        n = t == NONE ? jcat(out, cap, n, ",\"t\":null}") : jcat(out, cap, n, ",\"t\":%.1f}", t / 10.0);
     }
-    n += snprintf(out + n, cap - n, "],\"hub_t\":");
-    n += L.nd && L.t[0] != NONE ? snprintf(out + n, cap - n, "%.1f", L.t[0] / 10.0) : snprintf(out + n, cap - n, "null");
-    n += snprintf(out + n, cap - n, ",\"v\":[");
-    for (int i = 0; i < L.nr; i++) n += snprintf(out + n, cap - n, "%s%.2f", i ? "," : "", L.v[i] / 1000.0);
-    n += snprintf(out + n, cap - n, "],\"a\":[");
-    for (int i = 0; i < L.nr; i++) n += snprintf(out + n, cap - n, "%s%.2f", i ? "," : "", L.a[i] / 100.0);
-    n += snprintf(out + n, cap - n, "]}");
+    n = jcat(out, cap, n, "],\"hub_t\":");
+    n = L.nd && L.t[0] != NONE ? jcat(out, cap, n, "%.1f", L.t[0] / 10.0) : jcat(out, cap, n, "null");
+    n = jcat(out, cap, n, ",\"v\":[");
+    for (int i = 0; i < L.nr; i++) n = jcat(out, cap, n, "%s%.2f", i ? "," : "", L.v[i] / 1000.0);
+    n = jcat(out, cap, n, "],\"a\":[");
+    for (int i = 0; i < L.nr; i++) n = jcat(out, cap, n, "%s%.2f", i ? "," : "", L.a[i] / 100.0);
+    n = jcat(out, cap, n, "]}");
     LeaveCriticalSection(&cs);
     return n;
 }

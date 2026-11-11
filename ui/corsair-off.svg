@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="200" height="175" fill="none">
+  <defs>
+    <!-- matte dark body -->
+    <linearGradient id="corsair-mono-body-off" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#222226" />
+      <stop offset="55%" stop-color="#131316" />
+      <stop offset="100%" stop-color="#0c0c0e" />
+    </linearGradient>
+
+    <!-- 3D side face -->
+    <linearGradient id="corsair-side-depth-off" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#151518" />
+      <stop offset="100%" stop-color="#09090b" />
+    </linearGradient>
+
+    <!-- screen off (black glass) -->
+    <linearGradient id="corsair-glass-off" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a1e" />
+      <stop offset="50%" stop-color="#0b0b0d" />
+      <stop offset="100%" stop-color="#060608" />
+    </linearGradient>
+  </defs>
+
+  <g id="corsair-screen-mono-off-rotated">
+    <!-- back/left part of the body (3D depth) -->
+    <rect x="74" y="45" width="124" height="124" rx="34" transform="translate(8, 0) skewY(4) scale(0.95, 1)" fill="url(#corsair-side-depth-off)" stroke="#222226" stroke-width="1.5" />
+
+    <!-- front of the pump body -->
+    <g transform="translate(14, -2) skewY(3.5) scale(0.94, 1)">
+      <!-- squircle body -->
+      <rect x="82" y="42" width="126" height="126" rx="34" fill="url(#corsair-mono-body-off)" stroke="#333338" stroke-width="1.5" />
+      
+      <!-- inner bevel -->
+      <rect x="87" y="47" width="116" height="116" rx="30" fill="#0e0e10" stroke="#202025" stroke-width="1" />
+
+      <!-- unlit diffuser ring -->
+      <circle cx="145" cy="105" r="49" fill="#09090b" stroke="#26262c" stroke-width="3.5" />
+      
+      <!-- screen off -->
+      <circle cx="145" cy="105" r="44" fill="url(#corsair-glass-off)" stroke="#1c1c20" stroke-width="1.5" />
+      <path d="M 145,61 A 44,44 0 0 1 145,149" stroke="#282830" stroke-width="1" fill="none" />
+
+      <!-- diagonal highlight on the black glass -->
+      <path d="M 110,76 A 42,42 0 0 1 172,72 L 126,138 A 42,42 0 0 1 110,76 Z" fill="#ffffff" opacity="0.03" />
+    </g>
+  </g>
+</svg>
