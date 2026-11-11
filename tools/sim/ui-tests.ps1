@@ -35,6 +35,9 @@ function Cdp-Eval($ws, [string]$expr) {
 }
 
 $srv = $null; $log = @(); $unfinished = @()
+# CPU time per process at the start: on a failure, who used the machine meanwhile (a slow runner, a scanner)
+$cpu0 = @{}; Get-Process | ForEach-Object { $cpu0["$($_.Id)"] = $_.CPU }
+$t0 = Get-Date
 try {
   $srvLog = $profileDir + '.srv.log'
   $srv = Start-Process python -ArgumentList '-m', 'http.server', $Port, '--bind', '127.0.0.1' -WorkingDirectory $ui -PassThru -WindowStyle Hidden -RedirectStandardError $srvLog
@@ -99,7 +102,13 @@ try {
 }
 $log | ForEach-Object { Write-Output $_ }
 $bad = @($log | Where-Object { $_ -like 'FAIL *' })
-if ($bad.Count -or $unfinished) { $srvErr | ForEach-Object { Write-Output "  server: $_" }; $srvTail | ForEach-Object { Write-Output "  asked: $_" } }
+if ($bad.Count -or $unfinished) {
+  $srvErr | ForEach-Object { Write-Output "  server: $_" }; $srvTail | ForEach-Object { Write-Output "  asked: $_" }
+  Write-Output ("  cpu: {0} cores, {1:N0} s of the run; the most CPU seconds meanwhile:" -f [Environment]::ProcessorCount, ((Get-Date) - $t0).TotalSeconds)
+  Get-Process | ForEach-Object { [pscustomobject]@{ n = $_.ProcessName; s = $_.CPU - [double]$cpu0["$($_.Id)"] } } | Group-Object n |
+    ForEach-Object { [pscustomobject]@{ n = $_.Name; s = ($_.Group | Measure-Object s -Sum).Sum } } | Sort-Object s -Descending | Select-Object -First 8 |
+    ForEach-Object { Write-Output ("  cpu: {0,8:N1} s  {1}" -f $_.s, $_.n) }
+}
 if ($unfinished) { Write-Output "the tests never finished in $Minutes min: $($unfinished -join ', ')"; exit 1 }
 if (-not $log -and -not $Only) { Write-Output 'no results'; exit 1 }
 if ($bad.Count) { Write-Output "$($bad.Count) of $(@($log).Count) UI tests failed"; exit 1 }
