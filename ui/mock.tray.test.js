@@ -336,6 +336,7 @@
   const only = decodeURIComponent(location.hash.slice(1));
   for (const [name, fn] of tests) {
     if (only && !name.includes(only)) continue;
+    document.title = 'running: tray: ' + name;   // what a run that never ends was on (tools/sim/ui-tests.ps1 prints it)
     try { await fn(); log.push('ok   tray: ' + name); }
     catch (e) { R.failed++; log.push('FAIL tray: ' + name + ': ' + e.message); }
   }

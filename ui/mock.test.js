@@ -5,6 +5,8 @@
   const sent = [], bridge = window.chrome.webview, post = bridge.postMessage;
   bridge.postMessage = s => { sent.push(JSON.parse(s)); post.call(bridge, s); };
   const wait = ms => new Promise(r => setTimeout(r, ms));
+  // a state waited for in bounded real time (the run is in real time: tools/sim/ui-tests.ps1), named when it never comes
+  const until = async (f, what, ms = 4000) => { for (const end = Date.now() + ms; !f(); await wait(4)) if (Date.now() > end) throw new Error('never came: ' + what); };
   const log = [], R = window.TEST = { done: false, failed: 0, log };
   const ok = (c, msg) => { if (!c) throw new Error(msg); };
   const sets = (s, k) => sent.filter(o => o.cmd === 'set' && o.s === s && o.k === k);
@@ -107,14 +109,14 @@
   test('a window keeps Tab inside and gives focus back when it closes', async () => {
     await fresh();
     const opener = document.createElement('button'); opener.textContent = 'opener'; document.body.appendChild(opener); opener.focus();
-    const w = $('#report-dlg'); reportDialog(); await wait(80);
-    ok(w.contains(document.activeElement), 'focus did not move into the window');
+    const w = $('#report-dlg'); reportDialog();
+    await until(() => w.contains(document.activeElement), 'the focus moving into the window');
     const f = [...w.querySelectorAll('button, input, textarea, select, [href]')].filter(x => !x.disabled && x.offsetParent);
     f[f.length - 1].focus(); ok(key(f[f.length - 1], 'Tab').defaultPrevented && document.activeElement === f[0], 'Tab left the window');
     const e = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }); f[0].dispatchEvent(e);
     ok(e.defaultPrevented && document.activeElement === f[f.length - 1], 'Shift+Tab left the window');
-    key(document.body, 'Escape'); await wait(60);
-    ok(w.classList.contains('hidden'), 'Escape did not close it');
+    key(document.body, 'Escape');
+    await until(() => w.classList.contains('hidden') && document.activeElement === opener, 'Escape closing it and the focus going back');
     ok(document.activeElement === opener, 'focus is on ' + (document.activeElement.id || document.activeElement.tagName));
     opener.remove();
   });
@@ -726,14 +728,23 @@
     m.value = '35'; m.dispatchEvent(new Event('change'));
     closeSheet(); await wait(80);
     setCfg('fans', 'g1_name', 'Front'); setCfg('fans', 'g1', '1'); setCfg('fans', 'fan1', 'fix'); setCfg('fans', 'fan1_pct', '60'); FAN.sig = ''; updateFans();
-    $('#fan-panel [data-g="1"]').click(); await wait(120); $('#fs-lim').open = true;
     const b2 = () => $('#fs-members [data-m="1"]');
+    $('#fan-panel [data-g="1"]').click(); await until(() => FAN.open?.g === 1 && b2(), 'the group window');   // beside the panel on a wide window, else the sheet $('#fs-lim').open = true;
     ok(b2().textContent.includes(t('fans.join', fanMode(0))) && b2().textContent.includes(t('fans.join.min', 35)), 'no preview: ' + b2().textContent);
-    b2().focus(); const el = document.activeElement; updateFans(); updateFans();
-    ok(document.activeElement === el && el.isConnected, 'a status took the focus away');
-    b2().click(); await wait(60);
-    ok(cv('fans', 'fan2', '') === 'fix' && cv('fans', 'fan2_pct', '') === '60' && cv('fans', 'fan2_min', '') === '35', 'joined: mode/pct copied, its own floor kept');
-    ok(document.activeElement && document.activeElement.dataset.m === '1', 'focus lost after the click');
+    // where the focus went, when it is lost: the focused element, the windows open and the focus moves since here
+    const moves = [], seen = e => moves.push(e.type + ':' + (e.target.dataset?.m != null ? 'm' + e.target.dataset.m : e.target.id || e.target.tagName));
+    const where = () => JSON.stringify({ active: document.activeElement?.id || document.activeElement?.dataset?.m || document.activeElement?.tagName, page: document.hasFocus(),
+      open: [...document.querySelectorAll('#sheet:not(.hidden), dialog[open], [role="dialog"]:not(.hidden)')].map(e => e.id || e.className), moves: moves.slice(-12) });
+    document.addEventListener('focusin', seen, true); document.addEventListener('focusout', seen, true);
+    try {
+      b2().focus(); const el = document.activeElement;
+      ok(el === b2(), 'the fan button took no focus: ' + where());
+      updateFans(); updateFans();
+      ok(document.activeElement === el && el.isConnected, 'a status took the focus away: ' + where());
+      b2().click(); await wait(60);
+      ok(cv('fans', 'fan2', '') === 'fix' && cv('fans', 'fan2_pct', '') === '60' && cv('fans', 'fan2_min', '') === '35', 'joined: mode/pct copied, its own floor kept');
+      ok(document.activeElement && document.activeElement.dataset.m === '1', 'focus lost after the click: ' + where());
+    } finally { document.removeEventListener('focusin', seen, true); document.removeEventListener('focusout', seen, true); }
     await fanReset();
   });
 
@@ -1092,9 +1103,6 @@
       frames.push({ bmp: await createImageBitmap(c), at: i * .2, dur: .2 });
     }
     TXB.src = { frames, w: 200, h: 100, dur: .6 };
-    // the encoder and the mp4's decoder work on real threads, unseen by the run's virtual clock, which would run out meanwhile;
-    // a fetch in flight holds that clock, so here it moves 15 ms per fetch to the local server
-    let held = 1; (async () => { while (held) { await fetch('mock.js', { cache: 'no-store' }).catch(() => {}); await wait(15); } })();
     // where a run that never ends stopped: the builder's own line while it makes the video, then the video's load
     const name = document.title; let step = 'making';
     const shown = setInterval(() => { document.title = `${name} · ${step}: ${$('#txb-msg').textContent} · ${Math.round(performance.now() / 1000)} s`; }, 1000);
@@ -1103,10 +1111,10 @@
       const o = sent.find(x => x.cmd === 'tryx_build');
       ok(o && o.ext === 'mp4' && $('#txb-msg').textContent === t('txb.saved'), 'sent: ' + JSON.stringify(o && { ...o, data: o.data.slice(0, 8) }) + ' / ' + $('#txb-msg').textContent);
       const v = document.createElement('video'); v.muted = true; v.src = 'data:video/mp4;base64,' + o.data; step = 'the made mp4 loading';
-      const err = await new Promise(r => { v.onloadeddata = () => r(''); v.onerror = () => r('error ' + v.error?.message); });
+      const err = await new Promise(r => { v.onloadeddata = () => r(''); v.onerror = () => r('error ' + v.error?.message); setTimeout(() => r('never loaded in 15 s'), 15000); });
       ok(!err && v.videoWidth === 1440 && v.videoHeight === 720 && Math.abs(v.duration - .6) < .15, `the mp4: ${err} ${v.videoWidth}x${v.videoHeight} ${v.duration} s`);
-    } finally { clearInterval(shown); held = 0; document.title = name; }
-    txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+      v.removeAttribute('src'); v.load();
+    } finally { clearInterval(shown); document.title = name; if (TXB) txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit(); }
   });
 
   // a Corsair LCD (drv_corsairlcd.c): its pack "HKLCD1\0\0" + [u32 length, u16 ms, JPEG]..., read back as the driver does
@@ -1122,7 +1130,7 @@
     while (p < j.length && j[p] === 0xff) { const m = j[p + 1], n = j[p + 2] << 8 | j[p + 3]; r.push({ m: m.toString(16), b: j.slice(p + 4, p + 2 + n) }); if (m === 0xda) break; p += 2 + n; }
     return r;
   };
-  const clPixel = async (jpg, x, y) => { const c = document.createElement('canvas'); c.width = c.height = 480; const g = c.getContext('2d'); g.drawImage(await createImageBitmap(new Blob([jpg], { type: 'image/jpeg' })), 0, 0); return [...g.getImageData(x, y, 1, 1).data.slice(0, 3)]; };
+  const clPixel = async (jpg, x, y) => { const c = document.createElement('canvas'); c.width = c.height = 480; const g = c.getContext('2d'); const b = await createImageBitmap(new Blob([jpg], { type: 'image/jpeg' })); g.drawImage(b, 0, 0); b.close(); return [...g.getImageData(x, y, 1, 1).data.slice(0, 3)]; };
 
   test('the check level (README facts): on the card and in Add before anything is added; one model checked is not the line; a kind with no fact has none', async () => {
     await fresh();
@@ -1267,12 +1275,13 @@
       frames.push({ bmp: await createImageBitmap(c), at: i * .2, dur: .2 });
     }
     TXB.src = { frames, w: 100, h: 100, dur: .6 };
-    sent.length = 0; await txbMake();
-    const o = sent.find(x => x.cmd === 'tryx_build'), f = o && clFrames(o.data);
-    ok(f && f.length === 16 && f[0].ms === 1000 && f.slice(1).every(x => x.ms === 40), 'frames: ' + JSON.stringify(f?.map(x => x.ms)));
-    const first = await clPixel(f[1].jpg, 240, 240), last = await clPixel(f[15].jpg, 240, 240);
-    ok(first[0] > 160 && last[2] > 160, `the animation: first ${first}, last ${last}`);
-    txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit();
+    try {
+      sent.length = 0; await txbMake();
+      const o = sent.find(x => x.cmd === 'tryx_build'), f = o && clFrames(o.data);
+      ok(f && f.length === 16 && f[0].ms === 1000 && f.slice(1).every(x => x.ms === 40), 'frames: ' + JSON.stringify(f?.map(x => x.ms)));
+      const first = await clPixel(f[1].jpg, 240, 240), last = await clPixel(f[15].jpg, 240, 240);
+      ok(first[0] > 160 && last[2] > 160, `the animation: first ${first}, last ${last}`);
+    } finally { if (TXB) txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit(); }
   });
 
   // the builder open on a TRYX, and a stand-in ImageDecoder: a file's text names its plan { n, w, h, fail, hold }, frame i
@@ -1282,7 +1291,20 @@
     STATE.cfg['dev.14'] = { kind: 'tryx', media: 'old.jpg' }; await fanEmit();
     $('#dev-st-14').closest('.card').querySelector('.dev-build').click();
   };
-  const txbOff = async () => { if (TXB) { TXB.busy = 0; txbClose(); } STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit(); };
+  // after a TRYX test, passed or failed: 1. stop a making as Cancel does, and a save the core never answered, 2. let the
+  // frames the test held go, 3. wait in bounded real time for the making and the picks (ops) to end, 4. put the stand-ins
+  // back, 5. close the builder. One that never ends leaves the page broken: the run stops there (the loop at the bottom)
+  const txbOff = async (log, ...ops) => {
+    const B = TXB;
+    if (B?.rec) txbClose();
+    B?.wait?.done({ ok: 0, err: 'wait' });
+    log?.release?.();
+    let over = 0; Promise.all(ops.map(o => Promise.resolve(o).catch(() => {}))).then(() => { over = 1; });
+    for (const end = Date.now() + 5000; (!over || B?.busy) && Date.now() < end;) await wait(10);
+    log?.restore();
+    if (!over || B?.busy) throw Object.assign(new Error('the clean-up: ' + (B?.busy ? 'the making never ended, at ' + B.stage : 'a pick never ended')), { broken: 1 });
+    if (TXB) txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.14']; await fanEmit();
+  };
   const fakeDecoder = plans => {
     const real = { D: window.ImageDecoder, cib: window.createImageBitmap }, log = { dec: 0, decClosed: 0, imgs: 0, imgClosed: 0, bmps: [] };
     window.ImageDecoder = class {
@@ -1298,6 +1320,7 @@
     };
     window.createImageBitmap = async (...a) => { const b = await real.cib.call(window, ...a); log.bmps.push(b); return b; };
     log.restore = () => { window.ImageDecoder = real.D; window.createImageBitmap = real.cib; };
+    log.release = () => Object.values(plans).forEach(p => Object.values(p.hold || {}).forEach(g => g.go()));
     log.tidy = () => log.dec === log.decClosed && log.imgs === log.imgClosed;
     return log;
   };
@@ -1327,9 +1350,9 @@
 
   test('TRYX: of two picks the newer one wins whichever ends first, the other frees what it made, and nothing saves meanwhile', async () => {
     await fresh(); await txbOn();
-    const A = { n: 3, w: 200, h: 100, hold: { 1: gate() } }, B = { n: 2, w: 120, h: 60 }, log = fakeDecoder({ A, B });
+    const A = { n: 3, w: 200, h: 100, hold: { 1: gate() } }, B = { n: 2, w: 120, h: 60 }, log = fakeDecoder({ A, B }); let a = null;
     try {
-      const a = txbLoad(gif('A')); await wait(30);
+      a = txbLoad(gif('A')); await until(() => log.bmps.length, 'the first frame of A');
       ok($('#txb-go').disabled && $('#txb-msg').textContent === t('txb.loading'), 'no loading state');
       sent.length = 0; await txbMake(); ok(!sent.some(o => o.cmd === 'tryx_build'), 'it saved while loading');
       await txbLoad(gif('B')); const bBmps = TXB.src.frames.map(f => f.bmp);
@@ -1338,33 +1361,34 @@
       ok(TXB.src.w === 120 && bBmps.every(b => !shut(b)) && $('#txb-msg').textContent === t('txb.anim', .2), 'A, ending last, took over: ' + $('#txb-msg').textContent);
       ok(log.bmps.length >= 3 && log.bmps.filter(b => !bBmps.includes(b)).every(shut) && log.tidy(), 'A left something open: ' + JSON.stringify(log));
       ok(!$('#txb-go').disabled, 'saving stayed off');
-    } finally { log.restore(); await txbOff(); }
+    } finally { await txbOff(log, a); }
   });
 
   test('TRYX: a pick that breaks after a newer one loaded leaves the newer one as it is', async () => {
     await fresh(); await txbOn();
-    const A = { n: 4, w: 200, h: 100, fail: 2, hold: { 1: gate() } }, B = { n: 2, w: 120, h: 60 }, log = fakeDecoder({ A, B });
+    const A = { n: 4, w: 200, h: 100, fail: 2, hold: { 1: gate() } }, B = { n: 2, w: 120, h: 60 }, log = fakeDecoder({ A, B }); let a = null;
     try {
-      const a = txbLoad(gif('A')); await wait(30);
+      a = txbLoad(gif('A')); await until(() => log.bmps.length, 'the first frame of A');
       await txbLoad(gif('B')); const src = TXB.src;
       A.hold[1].go(); await a;
       ok(TXB.src === src && src.frames.every(f => !shut(f.bmp)) && $('#txb-msg').textContent === t('txb.anim', .2) && !$('#txb-go').disabled, 'B was touched: ' + $('#txb-msg').textContent);
       ok(log.bmps.filter(b => !src.frames.some(f => f.bmp === b)).every(shut) && log.tidy(), 'A left something open: ' + JSON.stringify(log));
-    } finally { log.restore(); await txbOff(); }
+    } finally { await txbOff(log, a); }
   });
 
   test('TRYX: closing the builder after the first frame stops the decoding, frees it all, and the builder opens again ready', async () => {
     await fresh(); await txbOn();
-    const A = { n: 5, w: 200, h: 100, hold: { 1: gate() } }, log = fakeDecoder({ A });
+    const A = { n: 5, w: 200, h: 100, hold: { 1: gate() } }, log = fakeDecoder({ A }); let a = null;
     try {
-      const a = txbLoad(gif('A')); await wait(30);
+      // frame 1 is held: once the first bitmap is there, no other can come
+      a = txbLoad(gif('A')); await until(() => log.bmps.length, 'the first frame');
       ok(log.bmps.length === 1, 'the first frame: ' + log.bmps.length);
       txbClose(); ok(!TXB && $('#txb').classList.contains('hidden'), 'it did not close while loading');
       A.hold[1].go(); await a;
       ok(log.imgs <= 2 && log.bmps.every(shut) && log.tidy() && !TXB, 'after closing: ' + JSON.stringify(log));
       $('#dev-st-14').closest('.card').querySelector('.dev-build').click();
       ok(TXB && !TXB.src && !$('#txb-go').disabled && $('#txb-msg').textContent === '', 'reopened: ' + $('#txb-msg').textContent);
-    } finally { log.restore(); await txbOff(); }
+    } finally { await txbOff(log, a); }
   });
 
   test('TRYX: a frame breaking halfway frees the frames made, closes the decoder and keeps the picture there before', async () => {
@@ -1377,7 +1401,7 @@
       ok(TXB.src === src && !shut(src.bmp) && $('#txb-msg').textContent === t('txb.bad') && $('#txb-msg').classList.contains('warn') && !$('#txb-go').disabled, 'after the broken one: ' + $('#txb-msg').textContent);
       const made = log.bmps.filter(b => b !== src.bmp);
       ok(made.length === 2 && made.every(shut) && log.tidy(), 'left open: ' + JSON.stringify(log));
-    } finally { log.restore(); await txbOff(); }
+    } finally { await txbOff(log); }
   });
 
   test('TRYX: big animation frames come down to the screen size and past the memory cap the animation is cut short, saying so', async () => {
@@ -1390,7 +1414,7 @@
       ok($('#txb-msg').textContent === t('txb.cut', 3.2) && $('#txb-msg').classList.contains('warn') && !$('#txb-go').disabled, 'the message: ' + $('#txb-msg').textContent);
       ok(log.bmps.length === 33 && shut(log.bmps[32]) && log.tidy(), 'the frame over the cap: ' + JSON.stringify({ n: log.bmps.length, dec: log.dec, decClosed: log.decClosed }));
       txbClose(); ok(log.bmps.every(shut), 'closing left frames open');
-    } finally { log.restore(); await txbOff(); }
+    } finally { await txbOff(log); }
   });
 
   // a stand-in VideoEncoder and VideoFrame (plan: the encode call that throws, a failing flush), counting what was made
@@ -1406,8 +1430,9 @@
         if (++log.encoded === plan.encode) throw new Error('encode broke');
         this.out({ byteLength: 4, timestamp: f.timestamp, type: o.keyFrame ? 'key' : 'delta', copyTo: b => b.set([0, 0, 0, 1]) }, { decoderConfig: { description: new Uint8Array([1, 66, 0, 40]) } });
       }
-      flush() { return plan.flush ? Promise.reject(new Error('flush broke')) : Promise.resolve(); }
-      close() { this.state = 'closed'; log.encClosed++; }
+      // 'hold': pending until the encoder is closed, then an AbortError, as a real one does
+      flush() { return plan.flush === 'hold' ? new Promise((r, no) => { this.held = no; }) : plan.flush ? Promise.reject(new Error('flush broke')) : Promise.resolve(); }
+      close() { this.state = 'closed'; log.encClosed++; this.held?.(new DOMException('closed', 'AbortError')); }
     };
     window.VideoFrame = class { constructor(c, { timestamp }) { this.timestamp = timestamp; log.frames++; } close() { log.framesClosed++; } };
     window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16); window.cancelAnimationFrame = clearTimeout;
@@ -1416,7 +1441,7 @@
     log.tidy = () => log.enc === log.encClosed && log.frames === log.framesClosed;
     return log;
   };
-  const within = (p, ms = 4000) => Promise.race([p, wait(ms).then(() => { throw new Error('it never ended: busy=' + TXB?.busy); })]);
+  const within = (p, ms = 4000) => Promise.race([p, wait(ms).then(() => { throw new Error('it never ended: busy=' + TXB?.busy + ', at ' + TXB?.stage); })]);
   const txbAnim = async dur => { await txbOn(); $('#txb-text').click(); txbZoom(2);
     const frames = [];
     for (let i = 0; i < 3; i++) { const c = document.createElement('canvas'); c.width = 400; c.height = 200; frames.push({ bmp: await createImageBitmap(c), at: i * dur / 3, dur: dur / 3 }); }
@@ -1442,7 +1467,7 @@
       log = fakeEncoder(); sent.length = 0; await within(txbMake());
       const o = sent.find(x => x.cmd === 'tryx_build');
       ok(o && o.ext === 'mp4' && $('#txb-msg').textContent === t('txb.saved') && !$('#txb-msg').classList.contains('warn') && log.tidy() && log.frames > 2, 'the retry: ' + $('#txb-msg').textContent + ' ' + JSON.stringify(log));
-    } finally { log?.restore(); await txbOff(); }
+    } finally { await txbOff(log); }
   });
 
   test('TRYX: drawing a frame or the flush failing ends the making with the reason and frees it all', async () => {
@@ -1454,7 +1479,7 @@
         ok($('#txb-msg').textContent === t('txb.fail', e) && log.tidy() && !sent.some(o => o.cmd === 'tryx_build'), JSON.stringify(plan) + ': ' + $('#txb-msg').textContent + ' ' + JSON.stringify(log));
         await txbKept(src, log, JSON.stringify(plan)); log.restore(); log = null;
       }
-    } finally { log?.restore(); await txbOff(); }
+    } finally { await txbOff(log); }
   });
 
   test('TRYX: Cancel or Escape while the video is made stops it, frees it, saves nothing, keeps the work; one making at a time; a retry saves', async () => {
@@ -1462,8 +1487,8 @@
     try {
       for (const how of ['cancel', 'escape', 'cross']) {
         log = fakeEncoder(); sent.length = 0;
-        const p = txbMake(); await wait(100);
-        ok(TXB.busy && log.frames > 0 && !$('#txb-cancel').disabled && !$('#txb-x').disabled && $('#txb-go').disabled && $('#txb-src').disabled, how + ': while making: ' + JSON.stringify(log));
+        const p = txbMake(); await until(() => log.frames > 0, how + ': the first video frame');
+        ok(TXB.busy && TXB.stage === 'frames' && !$('#txb-cancel').disabled && !$('#txb-x').disabled && $('#txb-go').disabled && $('#txb-src').disabled, how + ': while making: ' + JSON.stringify(log));
         await txbMake(); ok(log.enc === 1, how + ': a second making started');
         $('#txb').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); ok(!TXB.stop, how + ': a click beside the builder stopped it');
         if (how === 'cancel') $('#txb-cancel').click(); else if (how === 'cross') $('#txb-x').click(); else key(document.body, 'Escape');
@@ -1474,20 +1499,51 @@
       }
       log = fakeEncoder(); sent.length = 0; await within(txbMake(), 6000);
       ok(sent.some(o => o.cmd === 'tryx_build') && $('#txb-msg').textContent === t('txb.saved') && log.tidy(), 'the retry: ' + $('#txb-msg').textContent);
-    } finally { log?.restore(); await txbOff(); }
+    } finally { await txbOff(log); }
   });
 
   test('TRYX: once the video is handed to the core, Cancel is off and never says it stopped what the core may have saved', async () => {
     await fresh(); const src = await txbAnim(.3); const log = fakeEncoder();
     try {
       sent.length = 0; const p = txbMake();
-      while (!sent.some(o => o.cmd === 'tryx_build')) await wait(4);
+      await until(() => sent.some(o => o.cmd === 'tryx_build'), 'the video handed to the core');
       ok(TXB.busy && $('#txb-cancel').disabled && $('#txb-x').disabled && $('#txb-msg').textContent === t('txb.saving'), 'while saving: ' + $('#txb-msg').textContent);
       txbClose(); key(document.body, 'Escape');
       await within(p);
       ok($('#txb-msg').textContent === t('txb.saved') && !$('#txb').classList.contains('hidden') && log.tidy(), 'after: ' + $('#txb-msg').textContent);
       await txbKept(src, log, 'saved');
-    } finally { log.restore(); await txbOff(); }
+    } finally { await txbOff(log); }
+  });
+
+  test('TRYX: Cancel while the encoder flushes closes it and ends at once, nothing left unhandled or sent, the work kept; a retry saves', async () => {
+    await fresh(); const src = await txbAnim(.3); let log = fakeEncoder({ flush: 'hold' }), loose = [];
+    const seen = e => loose.push(String(e.reason)); window.addEventListener('unhandledrejection', seen);
+    try {
+      sent.length = 0; const p = txbMake();
+      await until(() => TXB.stage === 'flush', 'the flush');
+      ok(!log.encClosed && !$('#txb-cancel').disabled, 'before Cancel: ' + JSON.stringify(log));
+      $('#txb-cancel').click(); await within(p, 1000);
+      ok($('#txb-msg').textContent === t('txb.stopped') && !$('#txb-msg').classList.contains('warn') && log.tidy() && !sent.some(o => o.cmd === 'tryx_build'), 'after Cancel: ' + $('#txb-msg').textContent + ' ' + JSON.stringify(log));
+      await txbKept(src, log, 'flush'); log.restore();
+      ok(!loose.length, 'unhandled: ' + loose);
+      log = fakeEncoder(); await within(txbMake());
+      ok(sent.some(o => o.cmd === 'tryx_build') && $('#txb-msg').textContent === t('txb.saved') && log.tidy(), 'the retry: ' + $('#txb-msg').textContent);
+    } finally { window.removeEventListener('unhandledrejection', seen); await txbOff(log); }
+  });
+
+  test('TRYX: Cancel while the video is read for sending stops the read, and the read ending after it sends nothing', async () => {
+    await fresh(); const src = await txbAnim(.3); const log = fakeEncoder(), real = window.FileReader, go = gate(), rd = { reads: 0, aborts: 0, late: 0 };
+    // a read held until go, that ends even after abort(): only the builder may ignore it
+    window.FileReader = class { readAsDataURL() { rd.reads++; go.then(() => { this.result = 'data:video/mp4;base64,AAAA'; rd.late++; this.onload?.(); }); } abort() { rd.aborts++; } };
+    try {
+      sent.length = 0; const p = txbMake();
+      await until(() => rd.reads, 'the read');
+      ok(TXB.stage === 'read' && !$('#txb-cancel').disabled, 'while reading: ' + TXB.stage);
+      $('#txb-cancel').click(); await within(p, 1000);
+      go.go(); await until(() => rd.late, 'the read ending');
+      ok(rd.aborts === 1 && $('#txb-msg').textContent === t('txb.stopped') && !sent.some(o => o.cmd === 'tryx_build') && log.tidy(), 'after: ' + $('#txb-msg').textContent + ' ' + JSON.stringify(rd));
+      await txbKept(src, log, 'read');
+    } finally { window.FileReader = real; go.go(); await txbOff(log); }
   });
 
   test('OpenRGB: a board whose connectors have 0 LEDs says it needs setup, even switched off, and opens its LED counts', async () => {
@@ -1727,8 +1783,8 @@
     showTab('settings'); tabScroll.help = 1e6; showTab('help'); ok(m.scrollTop === max(), 'not clamped to the page: ' + m.scrollTop);
     // the Programs in the way jump scrolls to its card after the page is shown
     m.scrollTop = 0; showTab('home'); const c = $('#cf-card'), hid = c.classList.contains('hidden'); c.classList.remove('hidden');
-    go('cf'); await wait(900); const r = c.getBoundingClientRect(), mr = m.getBoundingClientRect();
-    ok(r.bottom > mr.top && r.top < mr.bottom, 'the jump did not reach its card');
+    go('cf');
+    await until(() => { const r = c.getBoundingClientRect(), mr = m.getBoundingClientRect(); return r.bottom > mr.top && r.top < mr.bottom; }, 'the jump reaching its card');
     c.classList.toggle('hidden', hid);
     ok(!Object.keys(localStorage).some(k => /scroll/i.test(k)), 'a scroll place was stored');
     showTab('home');
@@ -1871,8 +1927,9 @@
       const fr = document.createElement('iframe');
       fr.style.cssText = 'position:fixed;left:0;top:0;width:800px;height:600px;opacity:0;pointer-events:none';
       fr.src = '?mock#intro'; document.body.appendChild(fr);
-      // until its app.js has run: a slow PC may still be loading it after 1.5 s
-      let i = 0; while (i++ < 2000 && !(fr.contentDocument && fr.contentDocument.URL.includes('mock') && fr.contentDocument.readyState !== 'loading' && fr.contentWindow.setCfg && fr.contentWindow.applyMotion)) await wait(5);
+      // until its app.js has run: a slow PC may still be loading it after 1.5 s; a frame that never gets there is said and removed
+      try { await until(() => fr.contentDocument && fr.contentDocument.URL.includes('mock') && fr.contentDocument.readyState !== 'loading' && fr.contentWindow.setCfg && fr.contentWindow.applyMotion, 'the intro page in its frame', 15000); }
+      catch (e) { fr.remove(); throw e; }
       fr.contentWindow.setCfg('general', 'ui_motion', '1'); fr.contentWindow.applyMotion();   // whatever this Windows says
       return fr;
     };
@@ -2802,8 +2859,13 @@
       const a = pix(); await wait(120); const b = pix(); ok(a === b && CMP.t === 5 && $('#cdlg-tv').textContent === '5.0', 'scrubbed to 5: the same frame');
       $('#cdlg-rs').click(); ok(CMP.t === 0 && $('#cdlg-tv').textContent === '0.0', 'from the start');
       tr.value = 5; tr.dispatchEvent(new Event('input', { bubbles: true })); ok(pix() === a, 'back at 5: the same frame again');
-      // paused: no frames until what they show changes, then one (the loop driven by hand: a background page gets no rAF)
-      let T = performance.now() + 1e4; const tick = () => { cancelAnimationFrame(CMP.raf); cmpPreview(T += 40); };
+      // paused: no frames until what they show changes, then one. The loop is driven by hand on one clock: frames asked
+      // for wait in a queue that never runs (a real frame's time could pass the hand clock and stop the preview's)
+      const raf = window.requestAnimationFrame, caf = window.cancelAnimationFrame, Q = new Map(); let qid = 1e6;
+      caf(CMP.raf); caf(ANIM.raf); caf(PDLG.raf); CMP.raf = ANIM.raf = PDLG.raf = 0;
+      window.requestAnimationFrame = cb => (Q.set(++qid, cb), qid); window.cancelAnimationFrame = i => Q.delete(i);
+      let T = Math.max(performance.now(), CMP.last || 0); const tick = () => { cancelAnimationFrame(CMP.raf); cmpPreview(T += 40); };
+      try {
       tick(); let d0 = CMP.draws; tick(); tick(); tick(); ok(CMP.draws === d0, 'paused and unchanged: not drawn again: ' + (CMP.draws - d0));
       const r3 = $('#cdlg-edit input[data-p="o"]'); r3.value = 20; r3.dispatchEvent(new Event('input', { bubbles: true })); tick(); tick();
       ok(CMP.draws === d0 + 1, 'an edit on a pause: drawn once: ' + (CMP.draws - d0));
@@ -2819,7 +2881,7 @@
       d0 = CMP.draws; $('#cdlg-pp').click(); tick(); tick(); tick(); ok(CMP.draws - d0 === 3, 'playing: drawn each frame: ' + (CMP.draws - d0)); $('#cdlg-pp').click();
       const rt = $('#cdlg-rate'); rt.value = '2'; rt.dispatchEvent(new Event('change', { bubbles: true }));
       ok(CMP.rate === 2 && !JSON.stringify(S.cfg).includes('rate') && !sent.some(o => JSON.stringify(o).includes('rate')), 'the preview speed is not saved');
-      $('#cdlg-pp').click(); await wait(200); ok(CMP.play && CMP.t > 0, 'playing again: ' + CMP.t);
+      $('#cdlg-pp').click(); tick(); tick(); ok(CMP.play && CMP.t > 0, 'playing again: ' + CMP.t);
       rt.value = '1'; rt.dispatchEvent(new Event('change', { bubbles: true }));
       // the clock runs on past a minute (no jump back to 0); the slider shows the minute it is in
       if (CMP.play) $('#cdlg-pp').click();
@@ -2827,6 +2889,7 @@
       ok(CMP.t > 60 && CMP.t < 70 && +tr.min === 60 && +tr.max === 120 && $('#cdlg-tv').textContent === CMP.t.toFixed(1), 'past a minute, the time goes on: ' + CMP.t + ' in ' + tr.min + '..' + tr.max);
       tr.value = 70; tr.dispatchEvent(new Event('input', { bubbles: true })); ok(CMP.t === 70, 'scrubbed in the second minute: ' + CMP.t);
       $('#cdlg-rs').click(); ok(CMP.t === 0 && +tr.min === 0 && +tr.max === 60, 'from the start: the first minute again');
+      } finally { window.requestAnimationFrame = raf; window.cancelAnimationFrame = caf; Q.clear(); CMP.raf = ANIM.raf = PDLG.raf = 0; previewWake(); cmpWake(); }
       // Before: the applied composition at the same moment, size and colours; nothing sent; an edit shows the draft again
       tr.value = 5; tr.dispatchEvent(new Event('input', { bubbles: true }));
       const v = $('#cdlg-view'), draftPix = pix(), s0 = sent.length;
@@ -3003,7 +3066,7 @@
     if (only && !name.includes(only)) continue;
     document.title = 'running: ' + name;   // what a run that never ends was on (tools/sim/ui-tests.ps1 prints it)
     try { await fn(); log.push('ok   ' + name); }
-    catch (e) { R.failed++; log.push('FAIL ' + name + ': ' + e.message); }
+    catch (e) { R.failed++; log.push('FAIL ' + name + ': ' + e.message); if (e.broken) { log.push('FAIL the run stopped: the page is left broken'); break; } }
   }
   R.done = true;
   const box = document.createElement('pre');

@@ -4218,7 +4218,7 @@ function txbOpen(d, from) {
 }
 const txbFreeSrc = s => { if (!s) return; if (s.el) { s.el.pause(); URL.revokeObjectURL(s.el.src); } (s.frames || []).forEach(f => f.bmp.close()); s.bmp?.close(); };
 function txbClose() {
-  if (TXB?.rec) TXB.stop = 1;   // while the video is made, closing stops it instead and keeps the work
+  if (TXB?.rec) { TXB.stop = 1; TXB.abort?.(); }   // while the video is made, closing stops it instead and keeps the work
   if (!TXB || TXB.busy) return;
   txbFreeSrc(TXB.src); TXB.layers.forEach(l => l.bmp?.close());
   $('#txb').classList.add('hidden');
@@ -4441,6 +4441,19 @@ function txbJpeg({ width: w, height: h, data: px }, q) {
   const r = new Uint8Array(head.length + out.length + 2); r.set(head); r.set(out, head.length); r.set([0xff, 0xd9], r.length - 2);
   return r;
 }
+// a wait of the making that Cancel ends at once: stop() stops what it waits on (the encoder, the reader, the video), the
+// wait throws "stopped", and a later settle of p is ignored
+const txbWait = (B, p, stop) => new Promise((r, no) => {
+  let over = 0;
+  p.then(v => { if (!over++) { B.abort = null; r(v); } }, e => { if (!over++) { B.abort = null; no(e); } });
+  B.abort = () => { if (over++) return; B.abort = null; try { stop?.(); } catch {} no(t('txb.stopped')); };
+  if (B.stop) B.abort();
+});
+// a seek that may not happen (already there): its handler set first, gone after
+const txbSeek = (el, at) => new Promise((r, no) => {
+  el.onseeked = () => { el.onseeked = el.onerror = null; r(); }; el.onerror = () => { el.onseeked = el.onerror = null; no(t('txb.fail', 'seek')); };
+  el.currentTime = at; if (!el.seeking) el.onseeked();
+});
 async function txbPack(B, s, c, msg) {
   const x = c.getContext('2d'), jpg = () => new Blob([txbJpeg(x.getImageData(0, 0, c.width, c.height), 85)]);
   x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
@@ -4448,7 +4461,7 @@ async function txbPack(B, s, c, msg) {
   if (s?.el) s.el.pause();
   for (let i = 0; i < n; i++) {
     if (B.stop) throw t('txb.stopped');
-    if (s?.el) { s.el.currentTime = i * step; await new Promise(r => { s.el.onseeked = r; }); }
+    if (s?.el) await txbWait(B, txbSeek(s.el, i * step), () => { s.el.onseeked = s.el.onerror = null; });
     txbDraw(c, i * step); parts.push([await jpg(), Math.max(40, Math.round(step * 1000))]);
     if (dur) msg.textContent = t('txb.rec.lcd', Math.round((i + 1) / n * 100));
   }
@@ -4467,10 +4480,11 @@ async function txbMake() {
   // while the video is made, Cancel and the cross stay on: they stop it (txbClose); once sent, the save is the core's
   const busy = on => { B.busy = on; $('#txb').querySelectorAll('button, input, select').forEach(e => { e.disabled = on && !(B.rec && (e.id === 'txb-cancel' || e.id === 'txb-x')); }); };
   let enc = null;
-  B.stop = 0; B.rec = vid; busy(1); msg.classList.remove('warn');
+  // B.stage: where the making is (prepare, frames, flush, pack, read, reply); the tests name it when one never ends
+  B.stop = 0; B.rec = vid; B.stage = 'prepare'; busy(1); msg.classList.remove('warn');
   try {
     let blob;
-    if (B.lcd) blob = await txbPack(B, s, c, msg);
+    if (B.lcd) { B.stage = 'pack'; blob = await txbPack(B, s, c, msg); }
     else if (!vid) { txbDraw(c, 0); blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .9)); }
     else {
       // WebCodecs, the software encoder first: MediaRecorder's mp4 came out empty on some PCs (its hardware encoder failing quietly)
@@ -4478,6 +4492,7 @@ async function txbMake() {
       let cfg = null;
       for (const o of [{ codec: 'avc1.42E028', hardwareAcceleration: 'prefer-software' }, { codec: 'avc1.42E028' }, { codec: 'avc1.42E01F' }])
         if (!cfg && window.VideoEncoder && (await VideoEncoder.isConfigSupported({ ...base, ...o }).catch(() => ({}))).supported) cfg = { ...base, ...o };
+      if (B.stop) throw t('txb.stopped');   // Cancel during the checks above, which cannot be stopped
       if (!cfg) throw t('txb.novideo');
       const chunks = []; let desc = null, err = null;
       enc = new VideoEncoder({ error: e => { err = e; }, output: (ch, meta) => {
@@ -4485,8 +4500,8 @@ async function txbMake() {
         const b = new Uint8Array(ch.byteLength); ch.copyTo(b); chunks.push({ b, t: ch.timestamp, key: ch.type === 'key' });
       } });
       enc.configure(cfg);
-      if (s.el) { s.el.loop = false; s.el.pause(); s.el.currentTime = 0; await new Promise(r => { s.el.onseeked = r; }); await s.el.play(); }
-      const t0 = performance.now(); let last = -1, n = 0;
+      if (s.el) { s.el.loop = false; s.el.pause(); await txbWait(B, txbSeek(s.el, 0), () => { s.el.onseeked = s.el.onerror = null; }); await txbWait(B, s.el.play(), () => s.el.pause()); }
+      const t0 = performance.now(); let last = -1, n = 0; B.stage = 'frames';
       // in real time, at most 30 frames a second, on a timer: rAF frames may never come (a hidden window, a headless test on a slow PC)
       // a frame's error ends the wait (each frame runs in its own timer call, out of reach of the catch below)
       await new Promise((r, no) => { const step = () => { try {
@@ -4499,15 +4514,19 @@ async function txbMake() {
         }
         msg.textContent = t('txb.rec', Math.round(tt / s.dur * 100)); setTimeout(step, 15);
       } catch (e) { no(e); } }; step(); });
-      if (!err && !B.stop) await enc.flush().catch(e => { err = e; });
+      // Cancel closes the encoder: the flush it waits on ends with an AbortError, taken as stopped below
+      B.stage = 'flush';
+      if (!err && !B.stop) await txbWait(B, enc.flush(), () => enc.close()).catch(e => { err = e; });
       if (B.stop) throw t('txb.stopped');
       if (err || !desc || !chunks.length) throw t('txb.fail', err?.message || 'no video frames');
-      blob = new Blob([txbMp4(c.width, c.height, desc, chunks, s.dur)], { type: 'video/mp4' });
+      B.stage = 'pack'; blob = new Blob([txbMp4(c.width, c.height, desc, chunks, s.dur)], { type: 'video/mp4' });
     }
     if (blob.size > 16 << 20) throw t('txb.big');
-    const data = await new Promise((r, no) => { const f = new FileReader(); f.onload = () => r(f.result.slice(f.result.indexOf(',') + 1)); f.onerror = no; f.readAsDataURL(blob); });
+    let rd = null; B.stage = 'read';
+    const data = await txbWait(B, new Promise((r, no) => { const f = rd = new FileReader(); f.onload = () => r(f.result.slice(f.result.indexOf(',') + 1)); f.onerror = () => no(f.error); f.readAsDataURL(blob); }), () => rd.abort());
+    if (B.stop) throw t('txb.stopped');   // the last point Cancel can stop it: from here the core has it
     // the core answers this request (tryx_built): until it says saved, the builder keeps everything for another try
-    const req = String(++TXB_REQ); msg.textContent = t('txb.saving'); B.rec = false; busy(1);   // too late to stop from here
+    const req = String(++TXB_REQ); B.stage = 'reply'; msg.textContent = t('txb.saving'); B.rec = false; busy(1);   // too late to stop from here
     const r = await new Promise(done => {
       const tm = setTimeout(() => done({ ok: 0, err: 'wait' }), 20000);
       B.wait = { req, done: m => { clearTimeout(tm); done(m); } };
@@ -4520,7 +4539,7 @@ async function txbMake() {
   finally {
     if (enc && enc.state !== 'closed') enc.close();
     if (vid && s.el) { s.el.loop = true; s.el.play().catch(() => {}); }
-    B.rec = false; B.stop = 0; B.dirty = 1; busy(0); txbLayers(); txbLoop();
+    B.rec = false; B.stop = 0; B.abort = null; B.stage = ''; B.dirty = 1; busy(0); txbLayers(); txbLoop();
   }
 }
 let TXB_REQ = 0;
