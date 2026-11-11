@@ -60,14 +60,25 @@ static inline void tmp_clean(const wchar_t *tag, const wchar_t *files) {
     }
 }
 
-// cmd started with this user's rights but no admin rights (the token Windows gives a program started normally)
+// cmd started with this user's rights but no admin rights (the token Windows gives a program started normally).
+// An admin token names the Administrators group as the owner of what it makes and lets only it and the system in;
+// with that group dropped the child could not open its own process and died at start (0xC0000142). So the owner
+// and the default access go to the user, as in the token of a program started normally.
 static inline int limited_start(wchar_t *cmd, const wchar_t *dir, DWORD flags, PROCESS_INFORMATION *pi) {
-    HANDLE t = NULL, r = NULL; PSID mid = NULL; int ok = 0;
+    HANDLE t = NULL, r = NULL; PSID mid = NULL; int ok = 0; DWORD n;
+    union { TOKEN_USER u; BYTE b[sizeof(TOKEN_USER) + SECURITY_MAX_SID_SIZE]; } tu;
+    BYTE sys[SECURITY_MAX_SID_SIZE], acl[sizeof(ACL) + 2 * (sizeof(ACCESS_ALLOWED_ACE) + SECURITY_MAX_SID_SIZE)];
     STARTUPINFOW si = { sizeof(si) };
     if (OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT, &t) &&
-        CreateRestrictedToken(t, LUA_TOKEN, 0, NULL, 0, NULL, 0, NULL, &r) && ConvertStringSidToSidW(L"S-1-16-8192", &mid)) {   // medium integrity
+        CreateRestrictedToken(t, LUA_TOKEN, 0, NULL, 0, NULL, 0, NULL, &r) && ConvertStringSidToSidW(L"S-1-16-8192", &mid) &&   // medium integrity
+        GetTokenInformation(r, TokenUser, &tu, sizeof(tu), &n) && (n = sizeof(sys), CreateWellKnownSid(WinLocalSystemSid, NULL, sys, &n)) &&
+        InitializeAcl((PACL)acl, sizeof(acl), ACL_REVISION) && AddAccessAllowedAce((PACL)acl, ACL_REVISION, GENERIC_ALL, tu.u.User.Sid) &&
+        AddAccessAllowedAce((PACL)acl, ACL_REVISION, GENERIC_ALL, (PSID)sys)) {
         TOKEN_MANDATORY_LABEL ml = { { mid, SE_GROUP_INTEGRITY } };
+        TOKEN_OWNER ow = { tu.u.User.Sid };
+        TOKEN_DEFAULT_DACL dd = { (PACL)acl };
         ok = SetTokenInformation(r, TokenIntegrityLevel, &ml, sizeof(ml) + GetLengthSid(mid)) &&
+             SetTokenInformation(r, TokenOwner, &ow, sizeof(ow)) && SetTokenInformation(r, TokenDefaultDacl, &dd, sizeof(dd)) &&
              CreateProcessAsUserW(r, NULL, cmd, NULL, NULL, FALSE, flags, NULL, dir, &si, pi);
     }
     DWORD e = GetLastError();
