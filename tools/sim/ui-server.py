@@ -1,4 +1,5 @@
-# The UI tests' file server (tools/sim/ui-tests.ps1): python -m http.server with a deeper queue of connections.
+# The UI tests' file server (tools/sim/ui-tests.ps1): python -m http.server with a deeper queue of connections and
+# connections kept open.
 # Its queue of 5 overflowed on a 2-core runner when Chrome opened its connections at once; Windows then dropped the
 # rest and Chrome tried again 1, 2, 4... s later: a frame's style sheet came after 7 s, a fetch after 18 s.
 #   python tools/sim/ui-server.py <port> <folder>
@@ -8,6 +9,9 @@ class Server(http.server.ThreadingHTTPServer):
     request_queue_size = 128
 
 class Files(http.server.SimpleHTTPRequestHandler):
+    # connections kept open: with HTTP/1.0 each file was a new connection, and on the 2-core runner a new connection
+    # now and then took seconds, so a frame's files came one by one 1-4 s apart and its scripts missed the test's wait
+    protocol_version = 'HTTP/1.1'
     # each request also when it begins: one that never ends shows as a 'begin' with no answer after it (ui-tests.ps1)
     def parse_request(self):
         ok = super().parse_request()
