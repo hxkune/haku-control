@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.65',
+    en: ['Updating from the app no longer fails with “A file or the folder is in use” when haku control was started from its shortcut.'],
+    ru: ['Обновление из программы больше не прерывается ошибкой «Файл или папка заняты», если haku control запущена ярлыком.'],
+    fr: ['La mise à jour depuis l’application n’échoue plus avec « Un fichier ou le dossier est utilisé » quand haku control a été lancé par son raccourci.'] },
   { v: '0.4.64',
     en: ['Screen builder: Cancel while a video is being finished or prepared for sending now stops it at once, saves nothing and keeps your work.',
          'Safer updates and setups: an installer is kept in a folder only administrators can change until it runs, and every update must match its published SHA-256.',

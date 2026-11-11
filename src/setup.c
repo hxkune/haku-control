@@ -612,6 +612,9 @@ static void set_paths(const wchar_t *program) {
     wcscpy_s(dest, MAX_PATH, program);
     swprintf(dest_new, MAX_PATH, L"%s.new", dest);
     swprintf(dest_old, MAX_PATH, L"%s.old", dest);
+    // the working folder comes from whoever started this: the app's update starts it from the program folder
+    // (its shortcut's "Start in"), and a process's working folder cannot be renamed (sharing violation)
+    wchar_t sys[MAX_PATH]; GetSystemDirectoryW(sys, MAX_PATH); SetCurrentDirectoryW(sys);
 }
 
 #ifndef SETUP_TEST
@@ -754,6 +757,11 @@ int wmain(void) {
     CloseHandle(f);   // before reading it back
     CHECK(sw == 0 && is_old() && clean(), "a file in use: the previous version is not intact");
     CHECK(update_files() == 1 && is_new() && clean(), "running again after a failure");
+    // started from inside the program folder (the app's update, its shortcut's "Start in"): the swap still works
+    installed();
+    CHECK(SetCurrentDirectoryW(dest), "could not enter the program folder");
+    set_paths(dest);
+    CHECK(update_files() == 1 && is_new() && clean(), "started from inside the program folder");
     // the second rename fails (the new folder held): the previous version is put back
     installed();
     CHECK(recover() && stage(pkg, pkg_len, NULL, &bytes), "staging");
