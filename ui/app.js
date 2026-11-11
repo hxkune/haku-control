@@ -4487,8 +4487,8 @@ async function txbMake() {
       enc.configure(cfg);
       if (s.el) { s.el.loop = false; s.el.pause(); s.el.currentTime = 0; await new Promise(r => { s.el.onseeked = r; }); await s.el.play(); }
       const t0 = performance.now(); let last = -1, n = 0;
-      // in real time, at most 30 frames a second (a hidden window slows the frames down)
-      // a frame's error ends the wait (each frame runs in its own rAF call, out of reach of the catch below)
+      // in real time, at most 30 frames a second, on a timer: rAF frames may never come (a hidden window, a headless test on a slow PC)
+      // a frame's error ends the wait (each frame runs in its own timer call, out of reach of the catch below)
       await new Promise((r, no) => { const step = () => { try {
         const tt = s.el ? s.el.currentTime : (performance.now() - t0) / 1000;
         if (tt >= s.dur || s.el?.ended || err || B.stop) return r();
@@ -4497,7 +4497,7 @@ async function txbMake() {
           const f = new VideoFrame(c, { timestamp: Math.round(tt * 1e6) });
           try { enc.encode(f, { keyFrame: n++ % 60 === 0 }); } finally { f.close(); }
         }
-        msg.textContent = t('txb.rec', Math.round(tt / s.dur * 100)); requestAnimationFrame(step);
+        msg.textContent = t('txb.rec', Math.round(tt / s.dur * 100)); setTimeout(step, 15);
       } catch (e) { no(e); } }; step(); });
       if (!err && !B.stop) await enc.flush().catch(e => { err = e; });
       if (B.stop) throw t('txb.stopped');
