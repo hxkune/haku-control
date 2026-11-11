@@ -1868,7 +1868,8 @@
       const fr = document.createElement('iframe');
       fr.style.cssText = 'position:fixed;left:0;top:0;width:800px;height:600px;opacity:0;pointer-events:none';
       fr.src = '?mock#intro'; document.body.appendChild(fr);
-      let i = 0; while (i++ < 300 && !(fr.contentDocument && fr.contentDocument.URL.includes('mock') && fr.contentDocument.readyState !== 'loading')) await wait(5);
+      // until its app.js has run: a slow PC may still be loading it after 1.5 s
+      let i = 0; while (i++ < 2000 && !(fr.contentDocument && fr.contentDocument.URL.includes('mock') && fr.contentDocument.readyState !== 'loading' && fr.contentWindow.setCfg && fr.contentWindow.applyMotion)) await wait(5);
       fr.contentWindow.setCfg('general', 'ui_motion', '1'); fr.contentWindow.applyMotion();   // whatever this Windows says
       return fr;
     };
