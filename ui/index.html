@@ -39,7 +39,11 @@
     <button data-tab="fans" class="pc-only">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 12c-1.5-3-1-6.5 1.5-6.5s2.5 3.5-1.5 6.5zM12 12c3.3.2 6 2.3 4.8 4.5S12.8 16.6 12 12zM12 12c-1.8 2.8-5 4.2-6.3 2s1.4-4.4 6.3-2z"/></svg>
       <span data-i18n="nav.cooling">Cooling</span></button>
-    <button data-tab="help" class="nav-end">
+    <!-- not a page: the notices waiting for the user (an answer to a report, a new version, Pro running out) -->
+    <button type="button" id="notes-btn" class="nav-end pc-only" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24"><path d="M5 17.5h14l-1.8-2.6v-4.4a5.2 5.2 0 0 0-10.4 0v4.4z"/><path d="M12 3v2.3"/><path class="f" d="M10 19.5h4l-2 2z"/></svg>
+      <span data-i18n="nav.notes">Notifications</span><i id="notes-n"></i></button>
+    <button data-tab="help">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.4a2.75 2.75 0 1 1 3.9 2.5c-.75.35-1.2.95-1.2 1.75v.6"/><circle class="f" cx="12" cy="16.9" r="1.1"/></svg>
       <span data-i18n="nav.help">Help</span></button>
     <button data-tab="settings">
@@ -965,6 +969,14 @@
     <p class="hint fixed-was hidden" id="fixed-was"><span data-i18n="fixed.was">Your report:</span> <span id="fixed-report"></span></p>
     <p class="hint" id="fixed-hint" data-i18n="fixed.hint">The fix comes with the latest version of haku, which installs itself.</p>
     <div class="btn-row"><button class="btn ghost hidden" type="button" id="fixed-answer"><span data-i18n="fixed.answer">Answer</span></button><button class="btn primary" type="button" id="fixed-ok"><span data-i18n="wn.ok">Got it</span></button></div>
+  </div>
+</div>
+<!-- the notices behind the bell in the side bar -->
+<div class="sheet-wrap pdlg-wrap hidden" id="notes">
+  <div class="card pdlg wn" role="dialog" aria-modal="true" aria-labelledby="notes-title">
+    <div class="pdlg-head"><h3 id="notes-title" data-i18n="nav.notes">Notifications</h3></div>
+    <div class="wn-list notes-list" id="notes-list"></div>
+    <div class="btn-row"><button class="btn primary" type="button" id="notes-x"><span data-i18n="close">Close</span></button></div>
   </div>
 </div>
 <!-- what is new: once after an update, and from Settings -->

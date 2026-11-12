@@ -1805,6 +1805,41 @@
     delete STATE.diag; emit(STATE); await wait(80);
   });
 
+  test('the bell: counts the notices not looked at, opening it clears the count; an answer closed by Escape waits there until Got it', async () => {
+    await fresh();
+    const upd = STATE.update, pro = STATE.pro, n = () => $('#notes-n').textContent, heads = () => $$('#notes-list h4').map(h => h.textContent).join('|');
+    const shut = id => $(id).classList.contains('hidden');
+    STATE.update = { ...upd, latest: '' }; setCfg('general', 'notes_seen', ''); emit(STATE); await wait(80);
+    ok(n() === '', 'a count with nothing to tell: ' + n());
+    $('#notes-btn').click(); await wait(40);
+    ok(!shut('#notes') && !$('#notes-list h4') && $('#notes-list').textContent === t('notes.empty'), 'not the empty list: ' + $('#notes-list').textContent);
+    key(document.body, 'Escape'); await wait(40);
+    ok(shut('#notes') && !$('#notes-btn').classList.contains('active') && !sent.some(m => m.cmd === 'set' && m.k !== 'notes_seen'), 'the bell did not close, or it acts as a page');
+    // an answer and a new version: both counted, the answer opens by itself; Escape leaves it under the bell
+    STATE.update = upd; STATE.diag = { fixed: { id: 'dddddddddd', rid: 'dddddddddd', text: 'try 0.4.70', report: 'the fan stops' } }; emit(STATE); await wait(80);
+    ok(n() === '2' && !shut('#fixed'), 'two notices, the answer open: ' + n() + ' / ' + !shut('#fixed'));
+    sent.length = 0; key(document.body, 'Escape'); await wait(60); emit(STATE); await wait(80);
+    ok(shut('#fixed') && !sent.some(m => m.cmd === 'report_seen'), 'Escape counted as read, or the answer came back');
+    ok(n() === '2', 'the answer closed unread is not counted: ' + n());
+    $('#notes-btn').click(); await wait(40);
+    ok(heads() === t('fixed.r.title') + '|' + t('notes.upd', upd.latest), 'the list: ' + heads());
+    ok(n() === '' && cv('general', 'notes_seen', '') === 'rdddddddddd u' + upd.latest, 'looked at, still counted: ' + n() + ' / ' + cv('general', 'notes_seen', ''));
+    ok(!UNDO.length, 'looking at the notices can be undone: ' + JSON.stringify(UNDO));
+    $('#notes-list [data-n="0"]').click(); await wait(40);
+    ok(shut('#notes') && !shut('#fixed') && $('#fixed-text').textContent === 'try 0.4.70', 'Read did not open the answer');
+    STATE.diag = {}; $('#fixed-ok').click(); await wait(60); emit(STATE); await wait(80);
+    ok(sent.some(m => m.cmd === 'report_seen' && m.id === 'dddddddddd'), 'Got it not sent: ' + JSON.stringify(sent));
+    ok(n() === '', 'a count after the answer was read: ' + n());
+    // Pro off: one more, with the way to the key
+    STATE.pro = { ...pro, on: 0, state: 'free', days: 0 }; emit(STATE); await wait(80);
+    ok(n() === '1', 'Pro going off not counted: ' + n());
+    $('#notes-btn').click(); await wait(40);
+    ok(heads() === t('notes.upd', upd.latest) + '|' + t('notes.pro.trial'), 'the list with Pro off: ' + heads());
+    $('#notes-list [data-n="1"][data-a="1"]').click(); await wait(120);
+    ok(shut('#notes') && $('#nav button[data-tab="settings"]').classList.contains('active'), 'Enter a key did not go to Settings');
+    STATE.pro = pro; delete STATE.diag; emit(STATE); await wait(80); showTab('home');
+  });
+
   test("help: the tray's Help opens the Help card, sends nothing", async () => {
     await fresh(); showTab('home'); sent.length = 0;
     emit({ type: 'go', to: 'help' }); await wait(80);
@@ -2374,6 +2409,9 @@
       shown(true); motion('0'); showTab('devices'); $('#cat-reset').click();
       $('#cat-where [data-v="room"]').click(); $('#cat-reset').click();
       ok(!moving(), 'tiles move with motion off');
+      // at rest the mark is a dot at the middle of the open page: both its ends are there
+      const at = $('#nav [data-tab="devices"]'), mid = at.offsetTop + at.offsetHeight / 2, ends = ['--nl', '--nt'].map(v => parseFloat(getComputedStyle($('#nav')).getPropertyValue(v)));
+      ok(ends.every(v => Math.abs(v - mid) < .01), 'the dot not at the middle of devices: ' + ends + ' vs ' + mid);
       // neither spring gives the nav a scroll bar: a released button a little past its size, the mark past the last page
       const n = $('#nav'), last = $('#nav [data-tab="settings"]'), box = () => [n.clientWidth, n.clientHeight, n.scrollHeight].join(), was = box();
       last.style.scale = 1.02; n.style.setProperty('--ny', n.scrollHeight + 'px');

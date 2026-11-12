@@ -839,6 +839,7 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev, 
   nav button { flex: 1 0 64px; flex-direction: column; gap: 3px; padding: 8px 0 7px; justify-content: center; --cut: 0px; clip-path: none; }
   nav button span { font-size: 10px; }
   nav button i { display: none; }
+  nav #notes-n:not(:empty) { display: block; position: absolute; top: 3px; left: calc(50% + 5px); margin: 0; }
   nav button.active { background: none; color: var(--strong); }
   nav button.active svg { filter: drop-shadow(0 0 6px rgba(var(--ink), .6)); }
   nav button svg { width: 19px; height: 19px; }
@@ -1233,6 +1234,12 @@ header .prof-err { left: auto; right: 0; }
 .wn-list li::marker { color: var(--faint); }
 .fixed-text { margin: 4px 0 12px; padding: 8px 12px; border-left: 2px solid var(--line); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow-y: auto; }
 .fixed-was { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 80px; overflow-y: auto; }
+/* the bell in the side bar: how many notices were not looked at yet, and the notices */
+#notes-btn { position: relative; }
+nav #notes-n:not(:empty) { min-width: 18px; padding: 1px 5px; background: var(--strong); color: var(--on-strong); font-weight: 600; text-align: center; }
+.notes-list h4 { font: 600 14px var(--font); letter-spacing: 0; text-transform: none; color: var(--text); }
+.notes-list p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.notes-list .btn-row { margin-top: 10px; }
 
 /* ---- theme switch with the secret-code field beside it */
 .set-row:has(> .theme-ctl) { flex-wrap: wrap; row-gap: 10px; }
@@ -1706,11 +1713,19 @@ header .prof-menu { left: auto; right: 0; }
   header .prof-menu { left: 0; right: auto; }
 }
 
-/* ---- the nav: one mark slides to the page shown (app.js sets --ny/--nh); no queue, a new page retargets it */
+/* ---- the nav: one dot sits beside the page shown (app.js sets --ny/--nh); no queue, a new page retargets it.
+   Its two ends go to the same place at different speeds, so on the way it stretches into a pill and closes up again. */
+@property --nl { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --nt { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @media (min-width: 701px) {
-  /* a background, not a box of its own: springing past the last page it gives the nav nothing to scroll to */
-  nav { position: relative; background: linear-gradient(var(--live, var(--strong)) 0 0) 0 var(--ny, 0) / 3px var(--nh, 0) no-repeat local;
-    transition: background-position .28s cubic-bezier(.3, 1.4, .5, 1), background-size .2s; }
+  /* backgrounds, not a box of its own: springing past the last page the mark gives the nav nothing to scroll to */
+  nav { position: relative; --nd: min(6px, var(--nh, 0px)); --nc: calc(var(--ny, 0px) + var(--nh, 0px) / 2); --nl: var(--nc); --nt: var(--nc);
+    --ndot: radial-gradient(circle closest-side, var(--live, var(--strong)) calc(100% - .5px), transparent);
+    background:
+      var(--ndot) 4px calc(min(var(--nl), var(--nt)) - var(--nd) / 2) / var(--nd) var(--nd) no-repeat local,
+      var(--ndot) 4px calc(max(var(--nl), var(--nt)) - var(--nd) / 2) / var(--nd) var(--nd) no-repeat local,
+      linear-gradient(var(--live, var(--strong)) 0 0) 4px min(var(--nl), var(--nt)) / var(--nd) max(var(--nl) - var(--nt), var(--nt) - var(--nl)) no-repeat local;
+    transition: --nl .2s cubic-bezier(.2, .8, .3, 1), --nt .44s cubic-bezier(.6, 0, .3, 1.3); }
   nav button.active { box-shadow: none; }
   body.calm nav { transition: none; }
 }

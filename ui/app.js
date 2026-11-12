@@ -719,7 +719,7 @@ $('#aidot-form').addEventListener('submit', e => {
   updateAccounts();
 });
 
-// the nav's one sliding mark (style.css nav::before): a new page retargets it, nothing queues
+// the nav's one moving dot (style.css draws it from --ny/--nh): a new page retargets it, nothing queues
 function navMark() {
   const b = $('#nav button.active'), n = $('#nav');
   n.style.setProperty('--ny', (b ? b.offsetTop : 0) + 'px'); n.style.setProperty('--nh', (b ? b.offsetHeight : 0) + 'px');
@@ -805,7 +805,7 @@ document.addEventListener('pointermove', e => {
   c.style.setProperty('--mx', (e.clientX - r.left) + 'px');
   c.style.setProperty('--my', (e.clientY - r.top) + 'px');
 }, { passive: true });
-$$('#nav button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$$('#nav button[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));   // the bell is no page
 $$('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
 
 // ------------------------------------------------------------------ colour picker
@@ -4105,7 +4105,7 @@ $('#cat-add').addEventListener('click', () => go('add'));
 $('#cat-find').addEventListener('click', () => { go('add'); S.ext.scanning = 1; updateDevices(); send({ cmd: 'scan' }); });
 // ---- undo the last change (Ctrl+Z, or the button that shows for a few seconds after one): a setting, the effect or the
 // brightness. The core then sends its whole state again, so every control shows the value back.
-const UNDO = [], UNDO_SKIP = /^(general\.(seen_version|welcome|unlocked|recent|guide)|community\..*)$/;
+const UNDO = [], UNDO_SKIP = /^(general\.(seen_version|notes_seen|welcome|unlocked|recent|guide)|community\..*)$/;
 // One entry is one action: everything written while one event is handled (a group's look on all its devices,
 // a device moved between groups) goes back together; each change keeps the value it replaced.
 let undoing = false, undoHide = 0, undoCur = null;
@@ -5244,11 +5244,15 @@ $('#wn-ok').addEventListener('click', whatsNewClose);
 $('#wn').addEventListener('pointerdown', e => { if (e.target.id === 'wn') whatsNewClose(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#wn').classList.contains('hidden')) whatsNewClose(); });
 $('#wn-open').addEventListener('click', () => whatsNew(true));
-// ---- a report this PC sent, marked as done on the site or answered there (diag.c, diag_fixed_check): shown once,
-// then not asked about. A reply's id is "<reply>,<report>" when the report is done too.
-function fixedCheck() {
+// ---- a report this PC sent, marked as done on the site or answered there (diag.c, diag_fixed_check): opens by itself
+// once, and from the bell (now) until Got it or Answer says it was read; closed any other way it waits under the bell.
+// A reply's id is "<reply>,<report>" when the report is done too.
+let fixedAuto = '';
+function fixedCheck(now) {
   const F = (S.diag || {}).fixed || {};
   if (!F.id || document.documentElement.classList.contains('remote') || !$('#fixed').classList.contains('hidden')) return;
+  if (!now && fixedAuto === F.id) return;
+  fixedAuto = F.id;
   const reply = !!F.rid, key = (el, k) => { el.dataset.i18n = k; el.textContent = t(k); };
   key($('#fixed-title'), reply ? 'fixed.r.title' : 'fixed.title');
   key($('#fixed-body'), reply ? 'fixed.r.body' : 'fixed.body');
@@ -5261,12 +5265,13 @@ function fixedCheck() {
   $('#fixed').dataset.rid = /^[0-9a-f]{10}$/.test(F.rid || '') ? F.rid : '';
   $('#fixed').classList.remove('hidden');
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#fixed').classList.contains('hidden')) $('#fixed-ok').click(); });
-$('#fixed').addEventListener('pointerdown', e => { if (e.target.id === 'fixed') $('#fixed-ok').click(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#fixed').classList.add('hidden'); });
+$('#fixed').addEventListener('pointerdown', e => { if (e.target.id === 'fixed') $('#fixed').classList.add('hidden'); });
 $('#fixed-ok').addEventListener('click', () => {
   $('#fixed').classList.add('hidden');
   send({ cmd: 'report_seen', id: $('#fixed').dataset.id });
   S.diag = Object.assign({}, S.diag, { fixed: {} });
+  updateNotes();
 });
 // the answer is a new report, starting with the one it answers so the developer finds it
 $('#fixed-answer').addEventListener('click', () => {
@@ -5275,6 +5280,40 @@ $('#fixed-answer').addEventListener('click', () => {
   reportDialog();
   if (rid && !$('#report-text').value) $('#report-text').value = 'Re #' + rid + ': ';
 });
+// ---- the bell in the side bar: what waits for the user, made from the state each time (an answer to a report, a new
+// version, Pro running out or off). Kept is only which of them were looked at ([general] notes_seen), for its count.
+let NOTES = [], notesSig = null;
+function notesList() {
+  const L = [], F = (S.diag || {}).fixed || {}, U = S.update || {}, P = S.pro;
+  const pro = [[t('pro.buy'), () => send({ cmd: 'open', what: 'pro' })], [t('pro.lock.key'), proGoKey]];
+  if (F.id) L.push({ id: 'r' + F.id, h: t(F.rid ? 'fixed.r.title' : 'fixed.title'), p: F.text || '', acts: [[t('notes.read'), () => fixedCheck(true)]] });
+  if (U.repo && U.latest) L.push({ id: 'u' + U.latest, h: t('notes.upd', U.latest), p: t('upd.avail', U.latest), acts: [[t(U.can ? 'upd.install' : 'upd.page', U.latest), () => {
+    showTab('settings'); setCat('about'); setTimeout(() => $('#upd-row').scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+    if (U.can) $('#upd-install').click(); else send({ cmd: 'open', what: 'release' });
+  }]] });
+  if (P && P.state === 'trial' && P.days <= 3) L.push({ id: P.days <= 1 ? 'pt1' : 'pt', h: P.days <= 1 ? t('pro.trial.last') : t('pro.trial', P.days), p: t('notes.trial'), acts: pro });
+  if (P && P.state === 'free') L.push({ id: 'pf' + (P.until || ''), h: t(P.key ? 'notes.pro.key' : 'notes.pro.trial'), p: t('pro.off'), acts: pro });
+  return L;
+}
+function updateNotes() {
+  NOTES = notesList();
+  const seen = cv('general', 'notes_seen', '').split(' '), ids = NOTES.map(n => n.id).join(' '), open = !$('#notes').classList.contains('hidden');
+  $('#notes-n').textContent = !open && NOTES.filter(n => !seen.includes(n.id)).length || '';
+  if (!open) return;
+  if (ids !== cv('general', 'notes_seen', '')) setCfg('general', 'notes_seen', ids);   // looked at: the count goes
+  const sig = LANG + NOTES.map(n => n.id + n.h + n.p).join('\n');
+  if (sig === notesSig) return;   // the state comes several times a second: the buttons stay the same ones
+  notesSig = sig;
+  $('#notes-list').innerHTML = NOTES.map((n, i) => `<section><h4>${esc(n.h)}</h4><p class="muted">${esc(n.p)}</p><div class="btn-row">${
+    n.acts.map((a, j) => `<button class="btn small ${j ? 'ghost' : 'primary'}" type="button" data-n="${i}" data-a="${j}">${esc(a[0])}</button>`).join('')}</div></section>`).join('') ||
+    `<p class="muted">${t('notes.empty')}</p>`;
+}
+function notesClose() { if ($('#notes').classList.contains('hidden')) return; $('#notes').classList.add('hidden'); updateNotes(); $('#notes-btn').focus(); }
+$('#notes-btn').addEventListener('click', () => { notesSig = null; $('#notes').classList.remove('hidden'); updateNotes(); $('#notes-x').focus(); });
+$('#notes-x').addEventListener('click', notesClose);
+$('#notes').addEventListener('pointerdown', e => { if (e.target.id === 'notes') notesClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') notesClose(); });
+$('#notes-list').addEventListener('click', e => { const b = e.target.closest('[data-n]'); if (!b) return; const act = NOTES[b.dataset.n].acts[b.dataset.a][1]; notesClose(); act(); });
 
 // diagnostics: one text file in Downloads (log, settings, devices, network), without keys or passwords
 // ---- reporting a problem: a window where the person says what happened; it goes to the developer with the
@@ -6711,7 +6750,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); } else updateFxState();
   if (bulbsChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck();
+  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck(); updateNotes();
   if (nanoLayoutChanged) drawAll();
   cmpWake();
 }

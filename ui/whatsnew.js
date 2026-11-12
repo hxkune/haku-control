@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.70',
+    en: ['New: a Notifications button in the side bar, above Help. It keeps the developer’s answer to your report, a new version and news about Pro, with a count of what you have not looked at yet.',
+         'An answer to a report closed with Escape or a click outside is no longer lost: it waits under Notifications until you press “Got it” or answer.',
+         'The mark of the current page in the side bar is now a dot that stretches on its way to the page you pick.'],
+    ru: ['Новое: кнопка «Уведомления» в боковой панели, над «Справкой». В ней лежат ответ разработчика на ваш отчёт, новая версия и новости о Pro, со счётчиком того, что вы ещё не смотрели.',
+         'Ответ на отчёт, закрытый через Escape или кликом мимо, больше не теряется: он ждёт в «Уведомлениях», пока вы не нажмёте «Понятно» или не ответите.',
+         'Отметка текущей страницы в боковой панели теперь точка, которая растягивается по пути к выбранной странице.'],
+    fr: ['Nouveau : un bouton Notifications dans la barre latérale, au-dessus de l’Aide. Il garde la réponse du développeur à votre signalement, une nouvelle version et les nouvelles de Pro, avec le nombre de celles que vous n’avez pas encore vues.',
+         'Une réponse à un signalement fermée avec Échap ou par un clic à côté n’est plus perdue : elle attend dans Notifications jusqu’à ce que vous appuyiez sur « Compris » ou répondiez.',
+         'La marque de la page actuelle dans la barre latérale est maintenant un point qui s’étire en allant vers la page choisie.'] },
   { v: '0.4.69',
     en: ['Fixed: a scroll bar no longer flashes under Settings in the side bar when you switch pages.'],
     ru: ['Исправлено: под «Настройками» в боковой панели больше не мелькает полоса прокрутки при переключении страниц.'],
