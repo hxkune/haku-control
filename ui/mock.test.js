@@ -2008,9 +2008,17 @@
       ok(before(fr), 'the intro had already started or was gone, 5 times: ' + seen.join(', '));
       fr.contentWindow.dispatchEvent(new fr.contentWindow.KeyboardEvent('keydown', { key: 'Escape' }));
       ok(gone(fr), 'a key before it loaded did not open the page');
-      fr.remove(); fr = await open();
-      let i = 0; while (i++ < 60 && !fr.contentDocument.querySelector('#intro.run')) await wait(50);
-      ok(fr.contentDocument.querySelector('#intro.run'), 'the intro did not start');
+      // a frame whose intro was over before this test could switch motion on (a slow load, or a Windows that asks for
+      // less motion) says nothing about the intro: it is opened again, as above
+      const run = fr => fr.contentDocument.querySelector('#intro.run');
+      let i = 0; seen.length = 0;
+      for (let n = 0; n < 5; n++) {
+        fr.remove(); fr = await open();
+        for (i = 0; i++ < 60 && !run(fr) && !gone(fr);) await wait(50);
+        if (run(fr)) break;
+        saw(fr);
+      }
+      ok(run(fr), 'the intro did not start, 5 times: ' + seen.join(', '));
       Object.defineProperty(fr.contentDocument, 'hidden', { value: true, configurable: true }); fr.contentDocument.dispatchEvent(new Event('visibilitychange'));
       ok(gone(fr) && !fr.contentDocument.documentElement.classList.contains('intro-out'), 'the background did not end it, or ended it with the coming in');
       fr.remove(); fr = await open();

@@ -3,7 +3,7 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
-  { v: '0.4.67',
+  { v: '0.4.68',
     en: ['Tidier pages: “Programs in the way” is now on Devices, light behaviour on exit and the frame rate are under Settings → Control, and Help starts with “Report a problem”. Long explanations are folded.',
          'New motion: buttons spring under a press, pages come in from the side you went to, dialogs grow from the click. “Animations off” still switches all of it off.',
          'Experimental, off by default: haku can drive a Corsair iCUE LINK System Hub (fans, pump and LEDs). The switch is on Cooling; it has not been checked on a real hub yet.'],
