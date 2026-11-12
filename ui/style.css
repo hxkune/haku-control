@@ -1537,7 +1537,7 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .12s linear infinite; 
 @media (max-width: 700px) { nav button.active svg { color: var(--live, var(--strong)); } }
 /* a short window: the pages scroll, brightness, power and the timer stay in view below them; Help and Settings at the bottom */
 @media (min-width: 701px) {
-  nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-bottom: 6px; }
+  nav { flex: 1 1 auto; min-height: 0; overflow: hidden auto; scrollbar-width: thin; padding-bottom: 6px; }   /* never sideways: a released button springs a little past its width */
   nav .nav-end { margin-top: auto; }
   nav > * { flex: none; }
   .side-foot { flex: none; padding-top: 12px; }
@@ -1708,11 +1708,11 @@ header .prof-menu { left: auto; right: 0; }
 
 /* ---- the nav: one mark slides to the page shown (app.js sets --ny/--nh); no queue, a new page retargets it */
 @media (min-width: 701px) {
-  nav { position: relative; }
-  nav::before { content: ""; position: absolute; left: 0; top: 0; width: 3px; height: var(--nh, 0); border-radius: 3px; pointer-events: none;
-    background: var(--live, var(--strong)); transform: translateY(var(--ny, 0)); transition: transform .28s cubic-bezier(.3, 1.4, .5, 1), height .2s; }
+  /* a background, not a box of its own: springing past the last page it gives the nav nothing to scroll to */
+  nav { position: relative; background: linear-gradient(var(--live, var(--strong)) 0 0) 0 var(--ny, 0) / 3px var(--nh, 0) no-repeat local;
+    transition: background-position .28s cubic-bezier(.3, 1.4, .5, 1), background-size .2s; }
   nav button.active { box-shadow: none; }
-  body.calm nav::before { transition: none; }
+  body.calm nav { transition: none; }
 }
 
 /* ---- Devices: the catalogue */

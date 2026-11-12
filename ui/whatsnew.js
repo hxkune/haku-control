@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.69',
+    en: ['Fixed: a scroll bar no longer flashes under Settings in the side bar when you switch pages.'],
+    ru: ['Исправлено: под «Настройками» в боковой панели больше не мелькает полоса прокрутки при переключении страниц.'],
+    fr: ['Corrigé : une barre de défilement n’apparaît plus sous Réglages dans la barre latérale quand vous changez de page.'] },
   { v: '0.4.68',
     en: ['Tidier pages: “Programs in the way” is now on Devices, light behaviour on exit and the frame rate are under Settings → Control, and Help starts with “Report a problem”. Long explanations are folded.',
          'New motion: buttons spring under a press, pages come in from the side you went to, dialogs grow from the click. “Animations off” still switches all of it off.',

@@ -2374,6 +2374,11 @@
       shown(true); motion('0'); showTab('devices'); $('#cat-reset').click();
       $('#cat-where [data-v="room"]').click(); $('#cat-reset').click();
       ok(!moving(), 'tiles move with motion off');
+      // neither spring gives the nav a scroll bar: a released button a little past its size, the mark past the last page
+      const n = $('#nav'), last = $('#nav [data-tab="settings"]'), box = () => [n.clientWidth, n.clientHeight, n.scrollHeight].join(), was = box();
+      last.style.scale = 1.02; n.style.setProperty('--ny', n.scrollHeight + 'px');
+      const sprung = box(); last.style.scale = ''; navMark();
+      ok(sprung === was, 'the nav scrolls under its own motion: ' + was + ' -> ' + sprung);
       motion('1'); $('#cat-where [data-v="room"]').click(); $('#cat-reset').click();
       ok(moving(), 'no tile moved with motion on');
     } finally { motionBack(w); STATE.ext.devs.pop(); emit(STATE); await wait(80); }
