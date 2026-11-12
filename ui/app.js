@@ -725,11 +725,15 @@ function navMark() {
   n.style.setProperty('--ny', (b ? b.offsetTop : 0) + 'px'); n.style.setProperty('--nh', (b ? b.offsetHeight : 0) + 'px');
 }
 addEventListener('resize', navMark);
+// where a page's blocks come in from (style.css, tab-in): -1, 0 or 1 across and down
+function enterFrom(x, y) { const m = $('main').style; m.setProperty('--inx', x); m.setProperty('--iny', y); }
 function showTab(p) {
   p = route(p);
   if (p !== 'home' && GUIDE.test) { gdTestEnd(); updateGuide(); }   // the test colour is only on while its step is in view
   SHEET.back = null; closeSheet();   // a page change keeps the focus where it went
   if (tab) tabScroll[tab] = $('main').scrollTop;   // back to the same place; a jump to a card scrolls after this
+  const ord = $$('#nav button').map(b => b.dataset.tab), dir = Math.sign(ord.indexOf(p) - ord.indexOf(tab)) || 1;
+  enterFrom(...(matchMedia('(max-width: 700px)').matches ? [dir, 0] : [0, dir]));   // the bottom bar is a row, the side bar a column
   tab = p;
   $$('#nav button').forEach(b => { const on = b.dataset.tab === p; b.classList.toggle('active', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + p));
@@ -743,26 +747,56 @@ function showTab(p) {
   try { localStorage.setItem('tab', p); } catch (e) { }
 }
 // the jumps from Help, Home and the guide: a page, the Add sheet (from where it is), the OpenRGB set-up in it, the
-// programs in the way (under Help)
+// programs in the way (on Devices, under this PC's lighting; the Room filter hides them, so it gives way to PC)
 function go(w) {
   if (w === 'add' || w === 'orgb') {
     openSheet({ k: 'add' }, innerWidth / 2, innerHeight / 3);
     if (w === 'orgb') setTimeout(() => $('#sheet .pc-more')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
     return;
   }
-  if (w === 'cf') { showTab('help'); const c = $('#cf-card'); if (!c.classList.contains('hidden')) setTimeout(() => c.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); return; }
+  if (w === 'cf') {
+    showTab('devices'); const c = $('#cf-card');
+    if (CAT.where === 'room') { CAT.where = 'pc'; saveCat(); buildCatalog(); }
+    if (!c.classList.contains('hidden')) setTimeout(() => c.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+    return;
+  }
   showTab(w);
 }
 // Settings in groups: one shown at a time (cat-off, as hidden is also set on some cards by what they show)
 function setCat(v) {
   v = $(`#set-cats button[data-v="${v}"]`) ? v : 'app';
-  $$('#tab-settings [data-cat]').forEach(c => c.classList.toggle('cat-off', c.dataset.cat !== v));
+  const ord = $$('#set-cats button').map(b => b.dataset.v), was = ord.indexOf(($('#set-cats button.on') || { dataset: {} }).dataset.v);
+  enterFrom(was < 0 ? 0 : Math.sign(ord.indexOf(v) - was), 0);
+  let n = 0;   // the cards of the category come in one after another (style.css, tab-in)
+  $$('#tab-settings [data-cat]').forEach(c => { const off = c.dataset.cat !== v; c.classList.toggle('cat-off', off); if (!off) c.style.setProperty('--mi', n++); });
   $$('#set-cats button').forEach(b => { b.classList.toggle('on', b.dataset.v === v); b.setAttribute('aria-selected', b.dataset.v === v); });
   try { localStorage.setItem('setcat', v); } catch (e) { }
 }
 $$('#set-cats button').forEach(b => b.addEventListener('click', () => setCat(b.dataset.v)));
 try { setCat(localStorage.getItem('setcat')); } catch (e) { setCat('app'); }
 
+// every button sinks under the pointer and springs back on release. On the `scale` property, so the hover and :active
+// transforms stay as they are; the smaller the control, the deeper it goes. Off with animations off
+let pressEl = null, pressAn = null;
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest && e.target.closest('button, .btn, label.switch, .fx, .kbd, [role="button"], summary');
+  if (!el || el.disabled || !el.animate || document.body.classList.contains('calm')) return;
+  pressUp();
+  const s = Math.min(.98, Math.max(.88, 1 - 6 / Math.max(el.offsetWidth, el.offsetHeight, 1)));
+  pressEl = el; pressAn = el.animate({ scale: [1, s] }, { duration: 90, easing: 'ease-out', fill: 'forwards' });
+}, { capture: true, passive: true });
+function pressUp() {
+  if (!pressEl) return;
+  const el = pressEl, from = getComputedStyle(el).scale; pressEl = null; pressAn.cancel();
+  if (el.isConnected) el.animate({ scale: [from === 'none' ? 1 : from, 1] }, { duration: 320, easing: 'cubic-bezier(.3, 1.8, .5, 1)' });
+}
+addEventListener('pointerup', pressUp, true); addEventListener('pointercancel', pressUp, true);
+// a dialog grows from the click that asked for it: the pointer, or the middle of the control for a key press
+document.addEventListener('click', e => {
+  let x = e.clientX, y = e.clientY;
+  if (!e.detail && e.target.getBoundingClientRect) { const r = e.target.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
+  $$('.card.pdlg').forEach(d => { d.style.setProperty('--px', x + 'px'); d.style.setProperty('--py', y + 'px'); });
+}, true);
 // cursor spotlight on cards and effect tiles
 document.addEventListener('pointermove', e => {
   const c = e.target.closest && e.target.closest('.card, .fx');
@@ -4652,7 +4686,7 @@ const linkName = d => d.type === 11 ? ['HX1000i', 'HX1200i', 'HX1500i'][d.model]
   d.type === 17 ? 'TITAN ' + ({ 0: 240, 4: 240, 1: 280, 2: 360, 5: 360, 3: 420 }[d.model] || '') + ' AIO' : LINK_TYPES[d.type] || t('link.k.dev') + ' ' + d.type;
 function updateLink() {
   const K = S.link || {}, ctl = cv('link', 'ctl', '0') === '1', on = ctl || cv('link', 'on', '0') === '1';   // control reads the hub too
-  $('#link-card').classList.toggle('hidden', !K.found && !on);
+  $('#lk-card').classList.toggle('hidden', !K.found && !on);   // one card on Cooling: these readings, and updateLk's switch under them
   $('#link-on').checked = on; $('#link-on').disabled = ctl; $('#link-on').setAttribute('aria-label', t('link.on'));
   $('#link-status').textContent = !on ? t('link.st.off') : K.st === 'ok' ? t('link.st.ok', K.fw, Math.round((K.age || 0) / 1000)) :
     t('link.st.' + (K.st || 'off'), K.app || '');
@@ -4695,7 +4729,6 @@ $('#link-on').addEventListener('change', e => { setCfg('link', 'on', e.target.ch
 // takes it up to 10 s after the switch and gives it back (hardware mode) when switched off, on close and on sleep
 function updateLk() {
   const K = S.link || {}, ctl = cv('link', 'ctl', '0') === '1', why = ['app', 'orgb', 'err', 'dev', 'nohub'].includes(K.st);
-  $('#lk-card').classList.toggle('hidden', !K.found && !ctl);
   $('#lk-ctl').checked = ctl;
   $('#lk-status').textContent = !ctl ? t('lk.st.off') : why ? t('link.st.' + K.st, K.app || '') : K.refuse ? t('lk.st.refuse', K.refuse)
     : !K.held ? t('lk.st.wait') : [t('lk.st.held'), K.hot && t('lk.st.hot'), !K.leds && t('lk.st.noleds')].filter(Boolean).join(' · ');

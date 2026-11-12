@@ -137,7 +137,7 @@ Readings (control off, the default):
 - Compare the rpm and the coolant temperature with iCUE, both open in turn.
 - With iCUE running, the page says iCUE holds the hub, and haku waits.
 
-Control (Cooling → iCUE LINK → the switch). Close iCUE and OpenLinkHub first; keep HWiNFO or the page open on the coolant temperature.
+Control (Cooling → iCUE LINK → "Drive the iCUE LINK hub", the lower switch of the card). Close iCUE and OpenLinkHub first; keep HWiNFO or the page open on the coolant temperature.
 1. **Taken.** Switch it on: within 10 s the card says "haku drives the hub" and the log has `link: control of the hub taken (software mode)`. Fans go to 50%, the pump to 100%. A chain with an LCD cap or more than 512 LEDs says its lights are not driven.
 2. **OpenRGB.** With OpenRGB installed, `%APPDATA%\OpenRGB\OpenRGB.json` has `"Corsair iCUE Link System Hub": false` while this is on, and `true` again once it is off or haku is closed (it goes back to `false` when haku starts with control on).
 3. **Speeds.** One fan fixed at 30%, then 80%; another on a GPU curve: the rpm follows. Set the pump to 30%: it stays at 50% (the slider stops there).

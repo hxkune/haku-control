@@ -126,9 +126,8 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .dot.warn { background: linear-gradient(90deg, var(--strong) 50%, transparent 50%); border-color: var(--strong); }
 .dot.off { border-color: var(--faint); }
 
-.tab { display: none; animation: fade .18s ease; }
+.tab { display: none; }
 .tab.active { display: block; }
-@keyframes fade { from { opacity: 0; } }
 
 .card {
   position: relative;
@@ -286,7 +285,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .fx.add b { color: var(--muted); }
 .fx.add:hover b { color: var(--text); }
 .card.pdlg { width: min(440px, 100%); display: flex; flex-direction: column; gap: 12px; background-color: var(--menu); border-color: var(--line2); --lc: var(--line2);
-  animation: rise .25s cubic-bezier(.2, .75, .25, 1); }
+  animation: dlg-in .26s cubic-bezier(.2, 1.2, .35, 1); transform-origin: calc(var(--px, 50vw) - 50vw + 50%) calc(var(--py, 50vh) - 50vh + 50%); }
 .pdlg::after { display: none; }
 .pdlg-wrap { place-items: center !important; padding: 16px !important; background: rgba(var(--scrim), .72); }
 .pdlg h3 { margin: 0; }
@@ -598,6 +597,7 @@ body.calm .fanic .fb { animation: none; }
 .ha-state.bad { color: #ff7a7a; }
 /* backup, sharing presets */
 .bk-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.bk-btns .btn { white-space: nowrap; }
 #bk-note.bad, #share-msg { color: var(--strong); }
 .share-dlg { width: min(460px, 100%); }
 .share-dlg textarea { width: 100%; margin-top: 12px; padding: 10px 12px; resize: vertical; background-color: transparent; border: 1px solid var(--line2);
@@ -656,7 +656,7 @@ body.no-net #accounts, body.no-net #phone-card { display: none !important; }
   position: fixed; z-index: 50; width: 268px; padding: 14px;
   background-color: var(--menu); border: 1px solid var(--line2);
   box-shadow: 0 30px 60px -12px rgba(0, 0, 0, .8);
-  animation: pop .14s ease;
+  animation: menu-in .18s cubic-bezier(.2, 1.3, .4, 1);
 }
 @keyframes pop { from { opacity: 0; transform: scale(.97); } }
 #pk-sv { width: 240px; height: 150px; border-radius: 12px; display: block; cursor: crosshair; }
@@ -964,7 +964,6 @@ input[type=text], .own-item, .sw, .addr {
 }
 nav button:active, .power:active, .fx:active, .seg button:active, .kbd:active { transform: scale(.985); }
 
-@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 
 /* Settings -> Animations off ([general] ui_motion=0, or "As in Windows" with Windows' animation effects off):
    body.calm (app.js). Spinners of running work stay */
@@ -973,7 +972,7 @@ nav button:active, .power:active, .fx:active, .seg button:active, .kbd:active { 
 body.idle .ambient i, body.idle .ambient i b, :root[data-theme="bubblegum"] body.idle *,
 :root[data-theme="kyoka"] body.idle *, :root[data-theme="verity"] body.idle *, body.idle .brand .logo, body.idle .brand .logo::after, body.idle .fanic .fb { animation-play-state: paused !important; }
 body.idle .ambient { transition: none; }
-body.calm .ambient i, body.calm .tab, body.calm .card.pdlg, body.calm .popover, body.calm .wizard, body.calm .wz-step.on,
+body.calm .ambient i, body.calm .card.pdlg, body.calm .popover, body.calm .wizard, body.calm .wz-step.on,
 body.calm .hero-menu, body.calm .acc-form, body.calm .prof-menu, body.calm .chip-pop, body.calm .undo,
 body.calm .code input.bad, body.calm .code input.ok { animation: none; }
 body.calm .fx:hover { transform: none; }
@@ -1023,7 +1022,7 @@ body.calm .fx:not(.comm) small { transition: none; }
 .hero-menu {
   position: absolute; bottom: 48px; right: 12px; z-index: 3; width: 240px; padding: 14px 16px;
   display: flex; flex-direction: column; gap: 10px; background: var(--menu); border: 1px solid var(--line2);
-  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, .8); animation: pop .14s ease;
+  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, .8); animation: menu-in .18s cubic-bezier(.2, 1.3, .4, 1);
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
 }
 .hero-menu .lbl { margin-bottom: 2px; }
@@ -1039,8 +1038,8 @@ body.calm .fx:not(.comm) small { transition: none; }
   translate: var(--dx) var(--dy);
 }
 .sheet.wide { width: min(860px, 100%); }
-.sheet.in { animation: sheet-in .2s cubic-bezier(.2, .8, .25, 1); }
-@keyframes sheet-in { from { opacity: 0; transform: translateY(8px); } }
+.sheet.in { animation: sheet-in .26s cubic-bezier(.2, 1.15, .35, 1); }
+@keyframes sheet-in { from { opacity: 0; transform: scale(.84); } }
 .sheet:hover { border-color: var(--line2); }
 .sheet::after { display: none; }
 .sheet-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 18px; border-bottom: 1px solid var(--line); cursor: grab; flex: none; }
@@ -1141,7 +1140,7 @@ header .prof-err { left: auto; right: 0; }
   position: absolute; top: 44px; left: 0; width: 320px; max-width: calc(100vw - 32px); padding: 8px;
   max-height: calc(100vh - 180px); overflow-y: auto; scrollbar-width: thin;   /* a profile's settings open in a short window */
   display: flex; flex-direction: column; gap: 4px; background: var(--menu); border: 1px solid var(--line2);
-  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, .8); animation: pop .14s ease;
+  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, .8); animation: menu-in .18s cubic-bezier(.2, 1.3, .4, 1);
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
 }
 .prof-list { display: flex; flex-direction: column; gap: 2px; }
@@ -1563,7 +1562,7 @@ body.ky-pressing > *:not(.kyoka-ov) { animation: ky-shake .12s linear infinite; 
 .chip-pop {
   position: fixed; z-index: 40; min-width: 180px; max-width: 280px; padding: 12px 14px;
   display: flex; flex-direction: column; gap: 8px; background: var(--menu); border: 1px solid var(--line2);
-  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, .8); animation: pop .14s ease; font-size: 12.5px;
+  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, .8); animation: menu-in .18s cubic-bezier(.2, 1.3, .4, 1); font-size: 12.5px;
 }
 .chip-pop .off-row { display: flex; align-items: center; gap: 8px; color: var(--text); padding: 0; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
 .chip-pop .off-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: underline; text-decoration-color: var(--line3); text-underline-offset: 3px; }
@@ -1711,7 +1710,7 @@ header .prof-menu { left: auto; right: 0; }
 @media (min-width: 701px) {
   nav { position: relative; }
   nav::before { content: ""; position: absolute; left: 0; top: 0; width: 3px; height: var(--nh, 0); border-radius: 3px; pointer-events: none;
-    background: var(--live, var(--strong)); transform: translateY(var(--ny, 0)); transition: transform .18s cubic-bezier(.2, .7, .2, 1), height .18s; }
+    background: var(--live, var(--strong)); transform: translateY(var(--ny, 0)); transition: transform .28s cubic-bezier(.3, 1.4, .5, 1), height .2s; }
   nav button.active { box-shadow: none; }
   body.calm nav::before { transition: none; }
 }
@@ -1760,3 +1759,26 @@ details { interpolate-size: allow-keywords; }
 details::details-content { block-size: 0; overflow: clip; transition: block-size .2s ease, content-visibility .2s allow-discrete; }
 details[open]::details-content { block-size: auto; }
 body.calm details::details-content { transition: none; }
+
+/* ---------------- motion: pages, dialogs and menus come in fast and with a direction. Everything here is off with
+   Settings -> Animations off (body.calm); the press spring of the buttons is in app.js */
+/* a page's blocks rise one after another; --inx/--iny (showTab, setCat, on main) say where from: the page below in the
+   side bar comes from below, the next one in the bottom bar or the next settings category from the right. The shift is
+   on `translate` and stays inside main's padding, so nothing scrolls and no block's own transform is touched */
+@keyframes tab-in { from { opacity: 0; translate: calc(var(--inx, 0) * 10px) calc(var(--iny, 1) * 12px); } }
+body:not(.calm, .idle) .tab.active > :not(.set-grid, .fx-layout, #fan-main), body:not(.calm, .idle) .tab.active > .set-grid > .card,
+body:not(.calm, .idle) .tab.active > .set-grid > .set-col > .card, body:not(.calm, .idle) .tab.active > .fx-layout > *,
+body:not(.calm, .idle) .tab.active > #fan-main > * {
+  animation: tab-in .28s cubic-bezier(.2, .8, .25, 1) backwards; animation-delay: calc(min(var(--mi, 0), 6) * 30ms);
+}
+.tab > :nth-child(2), .set-col > .card:nth-child(2), .fx-layout > :nth-child(2), #fan-main > :nth-child(2) { --mi: 1; }
+.tab > :nth-child(3), .set-col > .card:nth-child(3) { --mi: 2; }
+.tab > :nth-child(4), .set-col > .card:nth-child(4) { --mi: 3; }
+.tab > :nth-child(5), .set-col > .card:nth-child(5) { --mi: 4; }
+.tab > :nth-child(6), .set-col > .card:nth-child(6) { --mi: 5; }
+.tab > :nth-child(n + 7), .set-col > .card:nth-child(n + 7) { --mi: 6; }
+/* a dialog grows from the click that asked for it (--px/--py, app.js), a menu from the corner it hangs on */
+@keyframes dlg-in { from { opacity: 0; transform: scale(.8); } }
+@keyframes menu-in { from { opacity: 0; transform: scale(.9); } }
+.hero-menu { transform-origin: bottom right; }
+.prof-menu { transform-origin: top left; }

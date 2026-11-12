@@ -304,19 +304,25 @@
       </div>
       </div>
     </div>
-    <!-- Corsair iCUE LINK hub (link.c): haku drives its fans, pump and LEDs while this is on; shown once the hub is there -->
+    <!-- Corsair iCUE LINK hub (link.c), one card, shown once the hub is there: what haku reads from it (hub, fans, pump,
+         PSU; the switch in the head), and under that the switch that puts its fans, pump and LEDs under haku -->
     <div class="card hidden" id="lk-card">
       <div class="card-head">
-        <div><h3>iCUE LINK <span class="beta" data-i18n="fans.beta" data-i18n-title="lk.beta.t">beta</span></h3><p class="muted" id="lk-status" role="status"></p></div>
+        <div><h3>iCUE LINK <span class="beta" data-i18n="fans.beta" data-i18n-title="lk.beta.t">beta</span></h3><p class="muted" id="link-status" role="status"></p></div>
+        <label class="switch pc-only"><input type="checkbox" id="link-on"><span></span></label>
+      </div>
+      <div class="found" id="link-list"></div>
+      <div class="set-row">
+        <div><b data-i18n="lk.ctl">Drive the iCUE LINK hub</b><p class="muted" id="lk-status" role="status"></p></div>
         <label class="switch pc-only"><input type="checkbox" id="lk-ctl" data-i18n-aria="lk.ctl"><span></span></label>
       </div>
-      <p class="note" data-i18n="lk.note"></p>
+      <details class="trouble"><summary data-i18n="fans.how">How the control works</summary><p class="hint" data-i18n="link.note"></p><p class="hint" data-i18n="lk.note"></p></details>
     </div>
     <!-- Lian Li wireless fans through their USB dongles (lianli.c): shown once the receiver is there -->
     <div class="card hidden" id="ll-card">
       <div class="card-head"><div><h3>Lian Li Wireless <span class="beta" data-i18n="fans.beta" data-i18n-title="ll.beta.t">beta</span></h3><p class="muted" id="ll-status" role="status"></p></div></div>
-      <p class="note" data-i18n="ll.note"></p>
       <div class="found" id="ll-list"></div>
+      <details class="trouble"><summary data-i18n="fans.how">How the control works</summary><p class="hint" data-i18n="ll.note"></p></details>
     </div>
   </section>
 
@@ -345,7 +351,7 @@
       <p class="muted" id="cat-nores-t"></p>
       <div class="btn-row"><button class="btn small" type="button" id="cat-reset"><span data-i18n="cat.reset">Reset the filters</span></button></div>
     </div>
-    <!-- this PC's lighting hardware and the read-only iCUE LINK hub: under the PC filter and All -->
+    <!-- this PC's lighting hardware and the programs that may hold it: under the PC filter and All -->
     <div class="pc-grid" id="pc-tools">
       <!-- what lighting hardware this PC has, and which way haku lights each: under the cards that set the lights -->
       <div class="card lead hw-card">
@@ -360,14 +366,11 @@
         <!-- once haku lights something here the rest folds away; what needs a step stays in the list above -->
         <details class="trouble hidden" id="hw-more"><summary></summary><div class="found hw-list" id="hw-rest"></div></details>
       </div>
-      <!-- Corsair iCUE LINK hub and the PSU on it, read only (link.c): shown once the hub is there -->
-      <div class="card pc-more hidden" id="link-card">
-        <div class="card-head">
-          <div><h3>iCUE LINK <span class="beta" data-i18n="fans.beta" data-i18n-title="link.beta.t">beta</span></h3><p class="muted" id="link-status" role="status"></p></div>
-          <label class="switch pc-only"><input type="checkbox" id="link-on"><span></span></label>
-        </div>
-        <p class="note" data-i18n="link.note"></p>
-        <div class="found" id="link-list"></div>
+      <!-- other lighting programs holding controllers (conflicts.c): close one now or each time it starts, rather than remove it -->
+      <div class="card pc-more pc-only hidden" id="cf-card">
+        <div class="card-head"><div><h3 data-i18n="cf.title">Programs in the way</h3><p class="muted" id="cf-status" role="status"></p></div></div>
+        <div class="found" id="cf-list"></div>
+        <details class="trouble"><summary data-i18n="cf.how">What to do with them</summary><p class="hint" data-i18n="cf.note"></p></details>
       </div>
     </div>
     <!-- not shown in place: the cards a tile or the Add button opens in the sheet -->
@@ -622,6 +625,14 @@
       <div class="set-col">
       <div class="card" id="help-tools">
         <h3 data-i18n="help.diag.title">Diagnostics</h3>
+        <div class="set-row pc-only diag-row">
+          <div><b data-i18n="report">Report a problem</b><p class="muted" id="diag-note"></p></div>
+          <button class="btn small" id="report-open"><span data-i18n="report.open">Report…</span></button>
+        </div>
+        <!-- the check (app.js checkRows): from what haku already knows, nothing scanned, sent or fixed by itself -->
+        <div class="set-row pc-only"><div><b data-i18n="dchk.title">Check for problems</b><p class="muted" data-i18n="dchk.text"></p></div>
+          <button class="btn small ghost" type="button" id="dchk-run"><span data-i18n="dchk.run">Check</span></button></div>
+        <div class="found pc-only hidden" id="dchk-list" role="status"></div>
         <div class="set-row pc-only" id="help-diag">
           <div><b data-i18n="help.diag">Diagnostics file</b><p class="muted" data-i18n="help.diag.text"></p><p class="muted" id="help-diag-st" role="status"></p></div>
           <div class="bk-btns"><button class="btn small ghost" type="button" id="help-diag-save"><span data-i18n="help.diag.save">Save the file</span></button>
@@ -630,21 +641,7 @@
         <div class="set-row"><div><b data-i18n="f.log">Log</b><p class="muted" data-i18n="help.log.text"></p></div>
           <button class="btn small ghost" type="button" data-open="log"><span data-i18n="home.open">Open</span></button></div>
         <!-- what the core measures (main.c perf, devices.c ns / nf): only while haku runs, nothing logged -->
-        <div class="set-row pc-only" id="help-perf"><div><b data-i18n="perf.title">Frames and sending</b><p class="muted" data-i18n="perf.text"></p><ul class="perf-list" id="perf-list"></ul></div></div>
-        <!-- the check (app.js checkRows): from what haku already knows, nothing scanned, sent or fixed by itself -->
-        <div class="set-row pc-only"><div><b data-i18n="dchk.title">Check for problems</b><p class="muted" data-i18n="dchk.text"></p></div>
-          <button class="btn small ghost" type="button" id="dchk-run"><span data-i18n="dchk.run">Check</span></button></div>
-        <div class="found pc-only hidden" id="dchk-list" role="status"></div>
-        <div class="set-row pc-only diag-row">
-          <div><b data-i18n="report">Report a problem</b><p class="muted" id="diag-note"></p></div>
-          <button class="btn small" id="report-open"><span data-i18n="report.open">Report…</span></button>
-        </div>
-      </div>
-      <!-- other lighting programs holding controllers (conflicts.c): close one now or each time it starts, rather than remove it -->
-      <div class="card pc-only hidden" id="cf-card">
-        <div class="card-head"><div><h3 data-i18n="cf.title">Programs in the way</h3><p class="muted" id="cf-status" role="status"></p></div></div>
-        <p class="note" data-i18n="cf.note"></p>
-        <div class="found" id="cf-list"></div>
+        <details class="trouble pc-only" id="help-perf"><summary data-i18n="perf.title">Frames and sending</summary><p class="hint" data-i18n="perf.text"></p><ul class="perf-list" id="perf-list"></ul></details>
       </div>
       </div>
     </div>
@@ -668,15 +665,6 @@
           <div><b data-i18n="hotspot">Windows hotspot</b><p class="muted" id="hotspot-status"></p></div>
           <label class="switch"><input type="checkbox" id="hotspot-auto"><span></span></label>
         </div>
-        <div class="field">
-          <div class="lbl"><span data-i18n="onexit">On PC shutdown, sleep or exit</span></div>
-          <div class="seg" id="on-exit"><button data-v="off" data-i18n="exit.off">Lights off</button><button data-v="keep" data-i18n="exit.keep">Keep as is</button><button data-v="restore" data-i18n="exit.restore">Nanoleaf scene</button></div>
-          <p class="hint" id="on-exit-note"></p>
-        </div>
-        <div class="field">
-          <div class="lbl"><span data-i18n="fps">Frames per second</span><b id="fps-val">30</b></div>
-          <input type="range" class="range" id="fps" min="10" max="60" step="5" value="30">
-        </div>
         <button class="btn danger mt" id="quit" data-i18n="quit">Quit haku control</button>
       </div>
       <div class="card" data-cat="look">
@@ -693,6 +681,18 @@
           <div class="lbl"><span data-i18n="motion">Animations</span></div>
           <div class="seg" id="ui-motion"><button data-v="sys" data-i18n="motion.sys">As in Windows</button><button data-v="1" data-i18n="motion.on">On</button><button data-v="0" data-i18n="motion.off">Off</button></div>
           <p class="muted" data-i18n="motion.note"></p>
+        </div>
+      </div>
+      <div class="card" data-cat="control">
+        <h3 data-i18n="set.light">Lights</h3>
+        <div class="field">
+          <div class="lbl"><span data-i18n="onexit">On PC shutdown, sleep or exit</span></div>
+          <div class="seg" id="on-exit"><button data-v="off" data-i18n="exit.off">Lights off</button><button data-v="keep" data-i18n="exit.keep">Keep as is</button><button data-v="restore" data-i18n="exit.restore">Nanoleaf scene</button></div>
+          <p class="hint" id="on-exit-note"></p>
+        </div>
+        <div class="field">
+          <div class="lbl"><span data-i18n="fps">Frames per second</span><b id="fps-val">30</b></div>
+          <input type="range" class="range" id="fps" min="10" max="60" step="5" value="30">
         </div>
       </div>
       <div class="card" data-cat="control">
@@ -757,7 +757,6 @@
         <h3 data-i18n="files">Files</h3>
         <div class="btn-row">
           <button class="btn ghost" data-open="ini" data-i18n="f.ini">Settings file</button>
-          <button class="btn ghost" data-open="log" data-i18n="f.log">Log</button>
           <button class="btn ghost" data-open="folder" data-i18n="f.folder">App folder</button>
         </div>
         <div class="set-row pc-only bk-row">

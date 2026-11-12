@@ -331,15 +331,18 @@
     await fresh();
     const K = S.link;
     S.link = { st: 'off', found: 0 }; updateLink();
-    ok($('#link-card').classList.contains('hidden'), 'shown with no hub');
+    ok($('#lk-card').classList.contains('hidden'), 'shown with no hub');
+    ok(!$('#link-card') && $('#lk-card').closest('#tab-fans') && $('#lk-card').contains($('#link-on')) && $('#lk-card').contains($('#lk-ctl')), 'the readings and the control are not one card on Cooling');
     S.link = K; updateLink();
-    ok(!$('#link-card').classList.contains('hidden') && !$('#link-on').checked && !$('#link-list').children.length, 'read before it was switched on');
+    ok(!$('#lk-card').classList.contains('hidden') && !$('#link-on').checked && !$('#link-list').children.length, 'read before it was switched on');
     $('#link-on').click(); await wait(60);
     ok(cv('link', 'on', '') === '1', 'the switch did not reach the settings');
     const rows = [...$('#link-list').children].map(r => r.textContent.replace(/\s+/g, ' '));
     ok(rows.length === 5 && rows[0].includes('25.6'), 'hub + 4 devices: ' + rows.length);
     ok(rows.some(r => r.includes('HX1000i') && r.includes(t('link.w', 157)) && r.includes('12.03 V 10.25 A')), 'the PSU row: ' + rows.join(' | '));
     ok(rows.some(r => r.includes('TITAN 360 AIO') && r.includes('35.2')), 'the AIO row');
+    S.link = { st: 'nohub', found: 0 }; updateLink(); updateLk();
+    ok(!$('#lk-card').classList.contains('hidden'), 'switched on, the hub gone: the card with the switch went too');
     S.link = Object.assign({}, K, { st: 'app', app: 'iCUE.exe' }); updateLink();
     ok($('#link-status').textContent === t('link.st.app', 'iCUE.exe') && !$('#link-list').children.length, 'no warning or stale rows while iCUE runs');
     setCfg('link', 'on', '0'); S.link = K; updateLink();
@@ -1820,18 +1823,20 @@
   });
 
   test('each page comes back where it was left this session; a jump to a card wins; nothing is stored', async () => {
-    await fresh(); const m = $('main'), max = () => m.scrollHeight - m.clientHeight;
-    showTab('help'); ok(max() > 200, 'Help too short to scroll here: ' + max());
+    await fresh(); const m = $('main'), max = () => m.scrollHeight - m.clientHeight;   // Cooling is the long page
+    showTab('fans'); ok(max() > 200, 'Cooling too short to scroll here: ' + max());
     m.scrollTop = 150; showTab('settings'); ok(m.scrollTop === 0, 'a page never seen does not start at the top: ' + m.scrollTop);
-    m.scrollTop = 40; showTab('help'); ok(m.scrollTop === 150, 'Help not back where it was: ' + m.scrollTop);
+    m.scrollTop = 40; showTab('fans'); ok(m.scrollTop === 150, 'Cooling not back where it was: ' + m.scrollTop);
     showTab('settings'); ok(m.scrollTop === Math.min(40, max()), 'Settings not back where it was: ' + m.scrollTop);
-    showTab('help'); showTab('help'); ok(m.scrollTop === 150, 'the same page again moved: ' + m.scrollTop);
-    showTab('settings'); tabScroll.help = 1e6; showTab('help'); ok(m.scrollTop === max(), 'not clamped to the page: ' + m.scrollTop);
+    showTab('fans'); showTab('fans'); ok(m.scrollTop === 150, 'the same page again moved: ' + m.scrollTop);
+    showTab('settings'); tabScroll.fans = 1e6; showTab('fans'); ok(m.scrollTop === max(), 'not clamped to the page: ' + m.scrollTop);
     // the Programs in the way jump scrolls to its card after the page is shown
-    m.scrollTop = 0; showTab('home'); const c = $('#cf-card'), hid = c.classList.contains('hidden'); c.classList.remove('hidden');
+    m.scrollTop = 0; showTab('home'); const c = $('#cf-card'), hid = c.classList.contains('hidden'), wh = CAT.where; c.classList.remove('hidden');
+    CAT.where = 'room';   // the Room filter hides this PC's cards: the jump brings them back
     go('cf');
+    ok(tab === 'devices' && CAT.where === 'pc' && c.closest('#pc-tools') && !$('#pc-tools').classList.contains('hidden'), 'the jump did not open Devices on this PC: ' + tab + ' / ' + CAT.where);
     await until(() => { const r = c.getBoundingClientRect(), mr = m.getBoundingClientRect(); return r.bottom > mr.top && r.top < mr.bottom; }, 'the jump reaching its card');
-    c.classList.toggle('hidden', hid);
+    c.classList.toggle('hidden', hid); CAT.where = wh; saveCat(); buildCatalog();
     ok(!Object.keys(localStorage).some(k => /scroll/i.test(k)), 'a scroll place was stored');
     showTab('home');
   });
@@ -2331,7 +2336,7 @@
   test('the nav: six pages, a new brand adds none; its one mark sits on the open page; tiles move only with motion on', async () => {
     await fresh();
     const pages = () => $$('#nav button[data-tab]').map(b => b.dataset.tab).join(), w = motionWas();
-    const moving = () => document.getAnimations().some(a => a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('#cat-grid'));
+    const moving = () => document.getAnimations().some(a => a.effect && a.effect.target && a.effect.target !== $('#cat-grid') && $('#cat-grid').contains(a.effect.target));
     ok(pages() === PAGES.join(), 'nav: ' + pages());
     STATE.ext.devs.push({ id: 77, kind: 'lifx', title: 'LIFX', name: 'Desk LIFX', host: '192.168.1.77', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1 });
     try {
@@ -2349,6 +2354,35 @@
     } finally { motionBack(w); STATE.ext.devs.pop(); emit(STATE); await wait(80); }
   });
 
+  test('motion: pages, settings cards, dialogs, the sheet and pressed buttons move with a direction, and not at all with animations off', async () => {
+    await fresh();
+    const w = motionWas(), an = q => getComputedStyle($(q)).animationName, from = k => $('main').style.getPropertyValue(k);
+    const ptr = (el, k) => el.dispatchEvent(new PointerEvent(k, { bubbles: true })), b = $('#nav [data-tab="home"]');
+    const look = () => [an('#tab-settings .card:not(.cat-off)'), an('#pdlg-form'), an('#sheet .sheet')].join();
+    try {
+      shown(true); motion('1'); showTab('home');
+      ok(an('#tab-home > .card') === 'tab-in', 'a page block does not come in: ' + an('#tab-home > .card'));
+      showTab('fans'); ok(from('--inx') === '0' && from('--iny') === '1', 'a page further down does not come from below: ' + from('--inx') + ' ' + from('--iny'));
+      showTab('home'); ok(from('--iny') === '-1', 'a page further up does not come from above: ' + from('--iny'));
+      showTab('settings'); setCat('app'); setCat('control');
+      const cards = $$('#tab-settings [data-cat="control"]');
+      ok(from('--inx') === '1' && from('--iny') === '0', 'the next category does not come from the right: ' + from('--inx') + ' ' + from('--iny'));
+      ok(cards.length > 1 && cards.every((c, i) => c.style.getPropertyValue('--mi') === String(i) && getComputedStyle(c).animationName === 'tab-in'), 'its cards do not come in one after another');
+      setCat('app'); ok(from('--inx') === '-1', 'the category before does not come from the left: ' + from('--inx'));
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 40, clientY: 50, detail: 1 }));
+      ok($('#pdlg-form').style.getPropertyValue('--px') === '40px' && $('#pdlg-form').style.getPropertyValue('--py') === '50px', 'a dialog does not know where the click was');
+      $('#pdlg').classList.remove('hidden'); openSheet({ k: 'fx' }, 0, 0);
+      ok(an('#pdlg-form') === 'dlg-in' && an('#sheet .sheet') !== 'none', 'a dialog or the sheet opens still: ' + look());
+      ptr(b, 'pointerdown'); ok(b.getAnimations().length === 1 && parseFloat(b.getAnimations()[0].effect.getKeyframes()[1].scale) < 1 && b.getAnimations()[0].effect.getTiming().fill === 'forwards', 'a pressed button does not sink and stay down');
+      ptr(b, 'pointerup'); ok(b.getAnimations().length === 1 && b.getAnimations()[0].effect.getTiming().fill !== 'forwards', 'a released button does not spring back');
+      b.getAnimations().forEach(a => a.cancel());
+      motion('0'); openSheet({ k: 'fx' }, 0, 0);
+      ok(look() === 'none,none,none', 'something still comes in with animations off: ' + look());
+      showTab('home'); ok(an('#tab-home > .card') === 'none', 'a page block moves with animations off');
+      ptr(b, 'pointerdown'); ptr(b, 'pointerup'); ok(!b.getAnimations().length, 'a button springs with animations off');
+    } finally { $('#pdlg').classList.add('hidden'); closeSheet(); setCat('app'); motionBack(w); }
+  });
+
   test('settings: one category at a time, picked by its tab and kept', async () => {
     await fresh(); showTab('settings');
     for (const v of ['app', 'look', 'control', 'integr', 'data', 'about']) {
@@ -2357,6 +2391,10 @@
       ok(on.length && on.every(c => c.dataset.cat === v) && $(`#set-cats [data-v="${v}"]`).getAttribute('aria-selected') === 'true' && localStorage.getItem('setcat') === v, 'category ' + v);
     }
     setCat('nosuch'); ok($('#set-cats [data-v="app"]').classList.contains('on'), 'an unknown category');
+    // what the lights do sits with the hotkeys; the log opens from Help only
+    const cat = q => $(q).closest('[data-cat]').dataset.cat;
+    ok(cat('#on-exit') === 'control' && cat('#fps') === 'control' && cat('#hotkeys') === 'control' && cat('#quit') === 'app', 'the light settings are not under Control');
+    ok(!$('#tab-settings [data-open="log"]') && $('#help-tools [data-open="log"]'), 'the log button: one, in Help');
   });
 
   test('home: Alt+arrows swap a tile with its neighbour, the focus stays on it; an end does not wrap', async () => {
