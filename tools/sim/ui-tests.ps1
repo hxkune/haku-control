@@ -57,7 +57,7 @@ try {
     $ws = $null; $state = $null
     try {
       $dev = $null
-      for ($i = 0; $i -lt 150 -and -not $dev; $i++) { Start-Sleep -Milliseconds 200; if (Test-Path $portFile) { $dev = (Get-Content $portFile)[0] } }
+      for ($i = 0; $i -lt 150 -and -not $dev; $i++) { Start-Sleep -Milliseconds 200; if (Test-Path $portFile) { try { $dev = @(Get-Content $portFile)[0] } catch {} } }   # still being written: the next round reads it
       if (-not $dev) { throw 'the browser did not open its DevTools port: ' + (@(Get-Content $errFile -ErrorAction SilentlyContinue | Where-Object { $_ -match ':ERROR:' }) -join ' | ') }
       $target = $null
       for ($i = 0; $i -lt 50 -and -not $target; $i++) {

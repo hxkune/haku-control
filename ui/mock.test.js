@@ -2001,10 +2001,25 @@
     const gone = fr => !fr.contentDocument.documentElement.classList.contains('intro') && !fr.contentDocument.getElementById('intro');
     // the moment before it starts is short (the mock's first state comes 30 ms after hello): a frame that got past it is opened again
     const before = fr => { const ov = fr.contentDocument.getElementById('intro'); return ov && !ov.classList.contains('run') && fr.contentDocument.documentElement.classList.contains('intro'); };
+    // The page gives the intro up 3 s after its head (index.html), and a 2-core CI runner takes 5-10 s to load the frame:
+    // such a frame says nothing about the intro, however often it is opened. In a frame that took over a second the
+    // intro is armed again as index.html does it, the page now loaded; a frame that came fast must show it by itself
+    const SLOW = 1000;
+    const again = async fr => {
+      const d = fr.contentDocument, w = fr.contentWindow;
+      await until(() => d.readyState === 'complete' && w.performance.now() > 3200, 'the intro frame, loaded and past the 3 s fallback of the page', 15000);
+      w.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape' }));   // the first one, if it still waits or plays
+      await until(() => !d.querySelector('#intro.run'), 'the first intro to end');
+      if (d.getElementById('intro')) d.getElementById('intro').remove();   // left by the fallback when intro.js came after it
+      d.documentElement.classList.remove('intro-out');
+      d.body.prepend(Object.assign(d.createElement('div'), { className: 'intro-ov', id: 'intro' }));
+      d.documentElement.classList.add('intro');
+      await new Promise((res, rej) => { const sc = d.createElement('script'); sc.src = 'intro.js'; sc.onload = res; sc.onerror = () => rej(new Error('intro.js did not load again')); d.body.appendChild(sc); });
+    };
     let fr = await open();
     try {
-      for (let n = 1; n < 5 && !before(fr); n++) { saw(fr); fr.remove(); fr = await open(); }
-      if (!before(fr)) saw(fr);
+      for (let n = 1; n < 5 && !before(fr) && fr.ms < SLOW; n++) { saw(fr); fr.remove(); fr = await open(); }
+      if (!before(fr)) { saw(fr); if (fr.ms >= SLOW) await again(fr); }
       ok(before(fr), 'the intro had already started or was gone, 5 times: ' + seen.join(', '));
       fr.contentWindow.dispatchEvent(new fr.contentWindow.KeyboardEvent('keydown', { key: 'Escape' }));
       ok(gone(fr), 'a key before it loaded did not open the page');
@@ -2017,11 +2032,13 @@
         for (i = 0; i++ < 60 && !run(fr) && !gone(fr);) await wait(50);
         if (run(fr)) break;
         saw(fr);
+        if (fr.ms >= SLOW) { await again(fr); for (i = 0; i++ < 60 && !run(fr) && !gone(fr);) await wait(50); break; }
       }
       ok(run(fr), 'the intro did not start, 5 times: ' + seen.join(', '));
       Object.defineProperty(fr.contentDocument, 'hidden', { value: true, configurable: true }); fr.contentDocument.dispatchEvent(new Event('visibilitychange'));
       ok(gone(fr) && !fr.contentDocument.documentElement.classList.contains('intro-out'), 'the background did not end it, or ended it with the coming in');
       fr.remove(); fr = await open();
+      if (fr.ms >= SLOW && !run(fr)) await again(fr);   // the fallback's open page is not the intro ending
       i = 0; while (i++ < 140 && !gone(fr)) await wait(50);   // the preview's page is hidden: its frames hardly come, the worst slow case
       ok(gone(fr), 'still on after 7 s');
     } finally { fr.remove(); }
