@@ -3748,13 +3748,13 @@ let devSig = '';
 const kindTitle = k => (S.ext.kinds.find(x => x.kind === k) || { title: k }).title;
 // how far each kind was checked, as README.md's device table says (hw: the one model it ran on); a kind with no fact there gets no line
 const CHECKED = { openrgb: 'sim', razer: 'sim', steelseries: 'sim', logitech: 'sim', wled: 'sim', hue: 'sim', govee: 'sim', goveecloud: 'sim', lifx: 'sim',
-  yeelight: 'sim', wiz: 'sim', elgato: 'sim', wooting: 'hw:Wooting 60HE v2', nanoleaf: 'hw:Nanoleaf Blocks', tryx: 'none', corsairlcd: 'none', nlusb: 'none', divoom: 'none', tuya: 'none' };
+  yeelight: 'sim', wiz: 'sim', elgato: 'sim', wooting: 'hw:Wooting 60HE v2', nanoleaf: 'hw:Nanoleaf Blocks', tryx: 'none', corsairlcd: 'none', icuelink: 'none', nlusb: 'none', divoom: 'none', tuya: 'none' };
 const checkedText = k => { const c = CHECKED[k]; return !c ? '' : c.startsWith('hw:') ? t('chk.hw', c.slice(3)) : t('chk.' + c); };
 // the PC's own devices (not the lights on the network): they can be given back to their own lighting
 // TRYX PANORAMA's built-in themes, in the order the cooler numbers them (drv_tryx.c); 0: as TRYX KANALI left it
 const TRYX_THEMES = ['', 'Cooling delivery', 'Migration', 'Quantum time capsule', 'Exo-Ecologies', 'Racing', 'Shuttle', 'Gift of TRYX',
   'Sweet Cool Acrylic', 'Catch Me If You Can', 'The Battle of Ice and Fire', 'Oasis', 'Cyber Bunker', 'Edge Of Dream', 'Thermal Energy Prohibited'];
-const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli', 'corsairlcd'].includes(d.kind);
+const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli', 'corsairlcd', 'icuelink'].includes(d.kind);
 // a screen, not a light: its card has the screen's settings only (TRYX PANORAMA, a Corsair LCD cap)
 const isScreen = d => d.kind === 'tryx' || d.kind === 'corsairlcd';
 // the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max}]
@@ -3846,7 +3846,7 @@ function buildDevices() {
     // TRYX: a screen card only (theme, own picture); its fans light from the motherboard's ARGB header, not from here
     const scr = isScreen(d);
     el.innerHTML = `<div class="card-head">
-        <div><h3>${esc(d.name)}${d.kind === 'corsairlcd' ? ` <span class="beta" title="${t('cl.beta.t')}">${t('fans.beta')}</span>` : ''}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p>${checkedText(d.kind) ? `<p class="dev-info dev-chk">${checkedText(d.kind)}</p>` : ''}</div>
+        <div><h3>${esc(d.name)}${d.kind === 'corsairlcd' || d.kind === 'icuelink' ? ` <span class="beta" title="${t(d.kind === 'icuelink' ? 'lk.beta.t' : 'cl.beta.t')}">${t('fans.beta')}</span>` : ''}</h3><p class="muted" id="dev-st-${d.id}"></p><p class="dev-info">${esc(kindTitle(d.kind))} · ${esc(d.host)}${d.sub >= 0 && d.kind === 'openrgb' ? ' · #' + d.sub % 1000 : ''}</p>${checkedText(d.kind) ? `<p class="dev-info dev-chk">${checkedText(d.kind)}</p>` : ''}</div>
         <label class="switch"><input type="checkbox" class="dev-on" ${d.enabled ? 'checked' : ''}><span></span></label>
       </div>
       ${scr ? '' : `<canvas class="live" id="dev-live-${d.id}" data-h="${d.per_led ? 70 : 90}"></canvas>
@@ -4651,9 +4651,9 @@ const linkKind = ty => ty === 11 ? 'psu' : [7, 17].includes(ty) ? 'aio' : [1, 2,
 const linkName = d => d.type === 11 ? ['HX1000i', 'HX1200i', 'HX1500i'][d.model] || 'HXi' :
   d.type === 17 ? 'TITAN ' + ({ 0: 240, 4: 240, 1: 280, 2: 360, 5: 360, 3: 420 }[d.model] || '') + ' AIO' : LINK_TYPES[d.type] || t('link.k.dev') + ' ' + d.type;
 function updateLink() {
-  const K = S.link || {}, on = cv('link', 'on', '0') === '1';
+  const K = S.link || {}, ctl = cv('link', 'ctl', '0') === '1', on = ctl || cv('link', 'on', '0') === '1';   // control reads the hub too
   $('#link-card').classList.toggle('hidden', !K.found && !on);
-  $('#link-on').checked = on; $('#link-on').setAttribute('aria-label', t('link.on'));
+  $('#link-on').checked = on; $('#link-on').disabled = ctl; $('#link-on').setAttribute('aria-label', t('link.on'));
   $('#link-status').textContent = !on ? t('link.st.off') : K.st === 'ok' ? t('link.st.ok', K.fw, Math.round((K.age || 0) / 1000)) :
     t('link.st.' + (K.st || 'off'), K.app || '');
   const v = K.v || [], a = K.a || [], w = v.reduce((s, x, i) => s + x * (a[i] || 0), 0);
@@ -4691,6 +4691,17 @@ $('#ll-list').addEventListener('change', e => {
   setCfg('fans', 'll_' + s.dataset.mac.replace(/:/g, ''), s.value); s.blur();
 });
 $('#link-on').addEventListener('change', e => { setCfg('link', 'on', e.target.checked ? '1' : '0'); updateLink(); });
+// ---- the iCUE LINK hub under haku ([link] ctl, link.c): its fans and pump on this page, its LEDs a light device. link.c
+// takes it up to 10 s after the switch and gives it back (hardware mode) when switched off, on close and on sleep
+function updateLk() {
+  const K = S.link || {}, ctl = cv('link', 'ctl', '0') === '1', why = ['app', 'orgb', 'err', 'dev', 'nohub'].includes(K.st);
+  $('#lk-card').classList.toggle('hidden', !K.found && !ctl);
+  $('#lk-ctl').checked = ctl;
+  $('#lk-status').textContent = !ctl ? t('lk.st.off') : why ? t('link.st.' + K.st, K.app || '') : K.refuse ? t('lk.st.refuse', K.refuse)
+    : !K.held ? t('lk.st.wait') : [t('lk.st.held'), K.hot && t('lk.st.hot'), !K.leds && t('lk.st.noleds')].filter(Boolean).join(' · ');
+  $('#lk-status').classList.toggle('bad', ctl && (why || !!K.hot));
+}
+$('#lk-ctl').addEventListener('change', e => { setCfg('link', 'ctl', e.target.checked ? '1' : '0'); updateLk(); updateLink(); });
 // ---- other lighting programs (conflicts.c). One running is a possible conflict only: a device that refused haku is
 // the confirmed one, and even then no program is named as the cause unless it runs. Per program: leave it the devices
 // ([conflicts] leave), ask it to close, end it with its services (after a warning), close it each time it starts
@@ -5531,7 +5542,7 @@ function updateChips() {
     requestAnimationFrame(sizeCanvases);
   }
   updateOrgb();
-  updateLink();
+  updateLink(); updateLk();
   updateConflicts();
   updateLL();
   updateHw();
@@ -5931,7 +5942,7 @@ $('#guide-open').addEventListener('click', () => { gdTestEnd(); GUIDE.tips = nul
 // the panel only (fans.c reads none of these): fanN_curve_<src> the curve kept for a source not in use, fanN_name, fanN_hide = 1,
 //        fanN_kind = pump, fanN_notach = 1 (no speed signal), tN_name, gN_name (the group exists while it has one), gN = '1,2'
 //        cN_name, cN, cN_k = gpu | t: curves saved by name (only their points are ever used)
-const FAN_Q = 4, FAN_GROUPS = 4, FAN_HIST = 5 * 60000;
+const FAN_Q = 4, FAN_LK = 11, FAN_GROUPS = 4, FAN_HIST = 5 * 60000;
 // the chart and the default curve follow the source: a GPU runs far hotter than the loop's water (fans.c has the same defaults)
 const FAN_SCALE = { cpu: { lo: 20, hi: 100, def: '40:30,60:45,75:75,90:100' }, gpu: { lo: 20, hi: 100, def: '30:30,50:45,70:75,85:100' }, t: { lo: 15, hi: 55, def: '25:30,30:40,35:70,40:100' } };
 // open: { i } a fan, { g } a group, { g, i } a fan of a group; draft: the curve being edited, sent only by Apply
@@ -5961,11 +5972,12 @@ const fanVis = (pts, sc) => [[sc.lo, fanAt(pts, sc.lo)], ...pts.filter(p => p[0]
 const fanOut = (pts, x, lo) => Math.max(lo, Math.min(100, fanAt(pts, x)));
 const fanTemp = s => { const F = S.fans || {}; return s === 'cpu' ? F.cpu ?? null : s === 'gpu' ? F.gpu ?? S.gpu_temp ?? null : (F.t || [])[+s.slice(1) - 1] ?? null; };
 const fanDeg = v => v.toLocaleString(LANG, { maximumFractionDigits: 1 }) + '°C';
-const fanMin = i => Math.min(100, Math.max(20, +cv('fans', fanKey(i, 'min'), '') || 20));
+const fanMin = i => Math.min(100, Math.max(fanCh(i).lk && fanCh(i).pump ? 50 : 20, +cv('fans', fanKey(i, 'min'), '') || 20));   // fans.c: a LINK pump never under 50
 const fanDown = i => Math.min(100, Math.max(1, +cv('fans', fanKey(i, 'down'), '') || 3));
 const clamp20 = v => Math.min(100, Math.max(20, v));
 const fanAll = () => ((S.fans || {}).f || []).flatMap((f, i) => f ? [i] : []);   // the channels there are
-const fanName = i => cv('fans', fanKey(i, 'name'), '') || `${t(cv('fans', fanKey(i, 'kind'), '') === 'pump' ? 'fans.kind.pump' : i >= FAN_Q ? 'fans.bch' : 'fans.ch')} ${i >= FAN_Q ? i - FAN_Q + 1 : i + 1}`;
+const fanName = i => cv('fans', fanKey(i, 'name'), '') || (i >= FAN_LK ? `${t(fanPump(i) ? 'fans.lpump' : 'fans.lch')} ${i - FAN_LK + 1}`
+  : `${t(fanPump(i) ? 'fans.kind.pump' : i >= FAN_Q ? 'fans.bch' : 'fans.ch')} ${i >= FAN_Q ? i - FAN_Q + 1 : i + 1}`);
 const fanHidden = i => cv('fans', fanKey(i, 'hide'), '') === '1';
 const fanGroups = () => Array.from({ length: FAN_GROUPS }, (_, k) => k + 1).filter(n => cv('fans', `g${n}_name`, ''))
   .map(n => ({ n, name: cv('fans', `g${n}_name`, ''), m: cv('fans', `g${n}`, '').split(',').map(x => +x - 1).filter(i => fanAll().includes(i) && !fanHidden(i)) }));
@@ -5974,8 +5986,12 @@ const fanTargets = () => { const o = FAN.open; if (!o) return []; if (o.i != nul
 const fanSetAll = (k, v, soon) => soon ? fanTargets().forEach(i => setCfgSoon('fans', fanKey(i, k), v)) : setFans(fanTargets().map(i => [fanKey(i, k), v]));
 const fanSrcName = s => s === 'cpu' ? t('fans.cpu') : s === 'gpu' ? t('fans.gpu') : cv('fans', s + '_name', '') || t('fans.t', s.slice(1));
 const fanMode = i => { const m = cv('fans', fanKey(i), '');
-  return m === 'fix' ? `${t('fans.fix')} · ${cv('fans', fanKey(i, 'pct'), '50')}%` : m === 'curve' ? `${t('fans.curve')} · ${fanSrcName(fanSrc(i))}` : t(i >= FAN_Q ? 'fans.asis.b' : 'fans.asis'); };
+  return m === 'fix' ? `${t('fans.fix')} · ${cv('fans', fanKey(i, 'pct'), '50')}%` : m === 'curve' ? `${t('fans.curve')} · ${fanSrcName(fanSrc(i))}` : t(fanAsis(i)); };
 const fanCh = i => ((S.fans || {}).f || [])[i] || {};
+// “as is”: the QUADRO's own setting, the board's BIOS curve, or haku's default on the LINK hub (fans 50%, pumps 100%)
+const fanAsis = i => i >= FAN_LK ? 'fans.asis.lk' : i >= FAN_Q ? 'fans.asis.b' : 'fans.asis';
+// a channel the QUADRO drives (its readings can be old; the board's and the LINK hub's are read on their own)
+const fanQd = f => !f.b && !f.lk;
 // what a fan looks like on its card (fans/fan<N>_look, picked by hand: a header only reports rpm): an outline in the
 // page's ink, the parts its lighting sits on brighter. Corsair iCUE LINK and Lian Li wireless groups get theirs on their own
 const FAN_LOOKS = ['', 'ring', 'hub', 'qx', 'sl', 'inf'];
@@ -6011,7 +6027,7 @@ function fanIcon(look, pump, on) {
   return `<svg class="fanic" viewBox="-24 -24 48 48" aria-hidden="true">${body}${lit && `<g class="fi-glow">${lit}</g><g class="fi-lit">${lit}</g>`}</svg>`;
 }
 const fanLook = i => cv('fans', fanKey(i, 'look'), '');
-const fanPump = i => cv('fans', fanKey(i, 'kind'), '') === 'pump';
+const fanPump = i => !!fanCh(i).pump || cv('fans', fanKey(i, 'kind'), '') === 'pump';   // the LINK hub says which is its pump
 // a tile's: the fan's, or what every fan of the group shares (plain when they differ)
 const fanTileIcon = m => !m.length ? '' : fanIcon(new Set(m.map(fanLook)).size === 1 ? fanLook(m[0]) : '', m.every(fanPump));
 // a tile's fans turning (lit and spinning on its card)
@@ -6028,7 +6044,7 @@ function fanWidgets() {
 // the fan turning with its rpm, and rpm · % under it (a group: its first fan's); a problem on any of its fans says so instead
 const FAN_STALE = 5000;   // as fans.c STALE_MS: older QUADRO readings are not current
 // the QUADRO's readings are not now: the link is down, or its last report is older than fans.c trusts (the board reads on its own)
-const fanOld = i => { const F = S.fans || {}; return !fanCh(i).b && (F.link === 0 || (F.age || 0) > FAN_STALE); };
+const fanOld = i => { const F = S.fans || {}; return fanQd(fanCh(i)) && (F.link === 0 || (F.age || 0) > FAN_STALE); };
 // a Home tile's status from all its fans, the worst first: [short text for the tile, full text for a screen reader,
 // only a warning (no rpm read while driven, as the fan's own line says), its rank in FAN_TILE] or null
 const FAN_TILE = ['fans.tile.nolink', 'fans.tile.old', 'fans.tile.em', 'fans.tile.err', 'fans.tile.norpm'];
@@ -6087,6 +6103,8 @@ const fanValid = o => !!o && (o.g ? fanGroups().some(g => g.n === o.g && (o.i ==
 function fanState(i) {
   const F = S.fans || {}, f = fanCh(i), m = cv('fans', fanKey(i), ''), why = f.err ? ' · ' + t('fans.err.' + f.err) : '';
   if (fanOld(i)) return [t(F.link === 0 ? 'fans.st.stale' : 'fans.st.old'), 'bad'];
+  // the LINK hub: link.c sends what fans.c works out every 2 s, an emergency too; the hub does not answer what it took, so nothing says confirmed
+  if (f.lk) return f.em ? [t('fans.em.' + f.em) + '. ' + t('fans.lk.em', f.out), 'bad'] : m && f.want === -2 ? [t('fans.st.wait'), 'warn'] : [t(m ? 'fans.lk.sent' : 'fans.lk.def'), ''];
   // an emergency: why it was needed, then the speed asked and whether the QUADRO took it
   if (f.em) { const ep = f.want >= 0 ? f.want : Math.max(fanMin(i), Math.min(100, +cv('fans', fanKey(i, 'fail'), '') || 100));
     return [t('fans.em.' + f.em) + '. ' + t(f.ok === -1 ? 'fans.em.fail' : !f.own || f.want == null || f.want < 0 ? 'fans.em.wait' : f.ok === 0 ? 'fans.em.unconf' : 'fans.em.ok', ep) + why, 'bad']; }
@@ -6183,7 +6201,7 @@ function drawFanCurve() {
     if (s) { c.strokeStyle = `rgb(${THEME.ink})`; c.lineWidth = 1.5; c.beginPath(); c.arc(X - off * 6, Y, 10, 0, 6.283); c.stroke(); } });
   // where each fan on this source is now: the temperature and the speed the QUADRO reports
   const T = fanTemp(D.src);
-  if (T != null) tg.forEach(j => { const f = fanCh(j); if (f.pct == null || fanSrc(j) !== D.src || ((S.fans || {}).link === 0 && !f.b)) return;
+  if (T != null) tg.forEach(j => { const f = fanCh(j); if (f.pct == null || fanSrc(j) !== D.src || ((S.fans || {}).link === 0 && fanQd(f))) return;
     c.strokeStyle = `rgb(${THEME.ink})`; c.setLineDash([3, 3]); c.lineWidth = 1; c.beginPath(); c.moveTo(g.px(T) + .5, g.py(20)); c.lineTo(g.px(T) + .5, g.py(100)); c.stroke(); c.setLineDash([]);
     c.lineWidth = 2; c.beginPath(); c.arc(g.px(T), g.py(clamp20(f.pct)), 7, 0, 6.283); c.stroke(); });
   fanPoint(pts);
@@ -6246,13 +6264,13 @@ function fanSample(F) {
   if (F === FAN.last) return; FAN.last = F;
   const now = Date.now();
   (F.f || []).forEach((f, i) => { if (!f) return;
-    const lost = F.link === 0 && !f.b;
+    const lost = F.link === 0 && fanQd(f);
     FAN.zero[i] = !lost && f.own && f.pct >= 20 && !f.rpm ? (FAN.zero[i] || 0) + 1 : 0;
     const h = FAN.hist[i] = FAN.hist[i] || [];
     while (h.length && now - h[0].at > FAN_HIST) h.shift();
     const l = h[h.length - 1];
     if (lost) { if (!l || !l.lost) h.push({ at: now, lost: 1 }); return; }
-    if ((!f.b && (F.age || 0) > 5000) || (l && !l.lost && now - l.at < 2000)) return;
+    if ((fanQd(f) && (F.age || 0) > 5000) || (l && !l.lost && now - l.at < 2000)) return;
     const src = fanSrc(i);
     h.push({ at: now, src, t: src === 'gpu' && (F.gage || 0) > 5000 ? null : fanTemp(src), r: f.rpm == null || f.rpm < 0 ? null : f.rpm, p: f.pct == null || f.pct < 0 ? null : Math.round(f.pct),
       w: f.own && f.want >= 0 ? f.want : null, em: f.em || '' });
@@ -6309,7 +6327,7 @@ function fanSheet() {
   $('#fs-live').innerHTML = !tg.length ? `<div class="fan-row">${esc(t('fans.empty'))}</div>` : g && !mem
     ? tg.map(j => `<button type="button" class="fan-row fan-mem" data-gm="${j}">${fanRow(j, true)}</button>`).join('')
     : `<div class="fan-row">${fanRow(i, false)}</div>`;
-  $('#fs-live').classList.toggle('stale', F.link === 0 && tg.some(j => !fanCh(j).b)); $('#fs-live').classList.toggle('g', !!g && !mem);
+  $('#fs-live').classList.toggle('stale', F.link === 0 && tg.some(j => fanQd(fanCh(j)))); $('#fs-live').classList.toggle('g', !!g && !mem);
   const now = tg.map(j => { const s = fanNow(j); return s && g && !mem ? fanName(j) + ': ' + s : s; }).filter(Boolean);
   $('#fs-now').textContent = now.join('\n'); $('#fs-now').classList.toggle('hidden', !now.length);
   const nm = $('#fs-name');
@@ -6359,10 +6377,11 @@ function fanSheet() {
   $('#fs-diff').classList.toggle('hidden', !diff.length);
   $('#fs-diff').textContent = diff.length ? t('fans.diff', diff.map(k => t('fans.diff.' + k)).join(', ')) : '';
   $$('#fs-mode button').forEach(b => { b.classList.toggle('on', b.dataset.v === mode); b.setAttribute('aria-pressed', b.dataset.v === mode); });
-  fanI18n('#fs-mode [data-v=""]', i >= FAN_Q ? 'fans.asis.b' : 'fans.asis'); fanI18n('#fs-del-note', i >= FAN_Q ? 'fans.remove.note.b' : 'fans.remove.note');
+  fanI18n('#fs-mode [data-v=""]', fanAsis(i)); fanI18n('#fs-del-note', i >= FAN_LK ? 'fans.remove.note.lk' : i >= FAN_Q ? 'fans.remove.note.b' : 'fans.remove.note');
   $('#fs-fix').classList.toggle('hidden', mode !== 'fix');
   $('#fs-curve').classList.toggle('hidden', mode !== 'curve');
-  const pct = cv('fans', fanKey(i, 'pct'), '50'); setRange($('#fs-pct'), pct); $('#fs-pct-val').textContent = diff.includes('pct') ? '—' : pct + '%';
+  const lo = tg.some(j => fanCh(j).lk && fanCh(j).pump) ? 50 : 20, pct = Math.max(lo, +cv('fans', fanKey(i, 'pct'), '50') || 50);   // fans.c: a LINK pump never under 50
+  $('#fs-pct').min = lo; setRange($('#fs-pct'), pct); $('#fs-pct-val').textContent = diff.includes('pct') ? '—' : pct + '%';
   const src = D.src, srcs = ['gpu', ...(F.cpuok ? ['cpu'] : []), ...(F.t || []).map((v, k) => v == null ? '' : 't' + (k + 1)).filter(Boolean)];
   const list = srcs.includes(src) ? srcs : [...srcs, src], box = $('#fs-src'), sig = list.map(fanSrcName).join() + list.join() + LANG;
   if (box.dataset.sig !== sig) { box.dataset.sig = sig; box.innerHTML = list.map(s => `<button type="button" data-v="${esc(s)}">${esc(fanSrcName(s))}<span data-tv></span></button>`).join(''); }
@@ -6379,23 +6398,24 @@ function fanSheet() {
 const fanI18n = (sel, k) => { const el = $(sel); el.dataset.i18n = k; el.textContent = t(k); };
 function updateFans() {
   const F = S.fans || {};
-  $('#fans-none').classList.toggle('hidden', !!F.on || llOn());   // nothing to cool with yet
+  $('#fans-none').classList.toggle('hidden', !!F.on || llOn());   // nothing under haku yet: an iCUE LINK hub not driven shows its card below
   $('#tab-fans .fans-top').classList.toggle('hidden', !F.on);   // a Lian Li receiver alone: its card is the page
   if (!F.on) { $('#fans-status').textContent = t('fans.off'); $('#fans-sensors').textContent = ''; $('#fan-panel').innerHTML = ''; FAN.sig = ''; $('#fan-removed').classList.add('hidden'); $('#fans-back-msg').textContent = ''; $('#fan-main').classList.add('hidden'); if (SHEET.kind === 'fan') closeSheet(); return; }
   $('#fan-main').classList.remove('hidden');
   fanSample(F);
   const age = Math.round((F.age || 0) / 1000);
   // the link down: the page stays, with the last readings marked old
-  $('#fans-h').textContent = [F.q ? 'QUADRO' : '', F.chip || ''].filter(Boolean).join(' · ');
-  const qb = F.q ? '' : '.b';
+  const lk = (F.f || []).some(f => f && f.lk);
+  $('#fans-h').textContent = [F.q ? 'QUADRO' : '', F.chip || '', lk ? 'iCUE LINK' : ''].filter(Boolean).join(' · ');
+  const qb = F.q ? '' : !F.chip && lk ? '.lk' : '.b';
   fanI18n('#fans-back', 'fans.back.all' + qb); fanI18n('#fans-note', 'fans.note' + qb);
   $('#fans-status').textContent = F.link === 0 ? t('fans.nolink', age) : F.paused ? t('fans.paused' + qb) : t('fans.on') + (age > 3 ? ' · ' + t('fans.age', age) : '');
   $('#fans-status').classList.toggle('bad', F.link === 0);
-  $('#fan-panel').classList.toggle('stale', (F.link === 0 || (F.age || 0) > FAN_STALE) && !F.chip);   // the board's tiles still read
+  $('#fan-panel').classList.toggle('stale', (F.link === 0 || (F.age || 0) > FAN_STALE) && !F.chip && !lk);   // the board's tiles still read
   const ts = (F.t || []).map((v, k) => v == null ? '' : `${fanSrcName('t' + (k + 1))}: ${fanDeg(v)}`).filter(Boolean);
   $('#fans-sensors').textContent = !F.q ? '' : (ts.length ? t('fans.sensors', ts.join(', ')) : t('fans.nosensors')) + (F.flow > 0 ? ' · ' + t('fans.flow', F.flow) : '');
-  $('#fans-dev-t').textContent = [F.q ? 'QUADRO · ' + t('fans.dev.t', F.serial, F.fw) : '', F.chip ? t('fans.dev.b', F.chip) : ''].filter(Boolean).join(' · ');
-  const own = (F.f || []).filter(f => f && f.own).length;
+  $('#fans-dev-t').textContent = [F.q ? 'QUADRO · ' + t('fans.dev.t', F.serial, F.fw) : '', F.chip ? t('fans.dev.b', F.chip) : '', lk ? t('fans.dev.lk', (S.link || {}).fw || '?') : ''].filter(Boolean).join(' · ');
+  const own = (F.f || []).filter(f => f && f.own && !f.lk).length;   // the LINK hub is never given back by this button: it keeps haku's default
   // a control loop that stalled (fans.c wd_check): stays said until it runs again; one that could not give back is worse
   const wd = F.wd || [], wk = wd.indexOf(3) >= 0 ? 3 : wd.indexOf(2) >= 0 ? 2 : wd.indexOf(1) >= 0 ? 1 : 0;
   const wdn = [0, 1].filter(k => wd[k] === wk).map(k => k ? t('fans.wd.board') : 'QUADRO').join(', ');

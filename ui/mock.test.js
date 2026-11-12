@@ -593,6 +593,31 @@
     await fanReset();
   });
 
+  test('fans: iCUE LINK control is off until switched on; then its fan and pump are haku’s, a pump never under 50; off gives the hub back', async () => {
+    await fresh(); await fanReset();
+    const st = () => $('#lk-status').textContent, row = i => $(`#fan-panel [data-live-f="${i}"]`);
+    ok(!$('#lk-card').classList.contains('hidden') && !$('#lk-ctl').checked && st() === t('lk.st.off') && !row(11), 'before: ' + st());
+    $('#lk-ctl').click(); await wait(60);
+    ok(cv('link', 'ctl', '') === '1' && $('#link-on').disabled && st() === t('lk.st.wait'), 'taking: ' + st());
+    await wait(400); FAN.sig = ''; updateFans();
+    ok(st().startsWith(t('lk.st.held')) && st().includes(t('lk.st.noleds')), 'held, no lights with the LCD cap: ' + st());
+    ok(fanName(11) === t('fans.lch') + ' 1' && fanName(30) === t('fans.lpump') + ' 20' && fanMin(30) === 50 && fanMin(11) === 20, 'names or floors: ' + fanName(11) + ' / ' + fanName(30));
+    ok(row(11) && row(30) && row(11).textContent.includes(t('fans.lk.def')), 'the LINK tiles: ' + (row(11) || {}).textContent);
+    await fanSheetOf(30);
+    ok($('#fs-mode [data-v=""]').textContent === t('fans.asis.lk') && $('#fs-del-note').textContent === t('fans.remove.note.lk'), 'the sheet speaks of the hub');
+    setCfg('fans', 'fan31_pct', '30'); $('#fs-mode [data-v="fix"]').click(); await fanEmit();
+    ok(+$('#fs-pct').min === 50 && +$('#fs-pct').value === 50, 'the pump slider goes under 50: ' + $('#fs-pct').min + ' ' + $('#fs-pct').value);
+    ok(row(30).textContent.includes(t('fans.lk.sent')), 'a set pump: ' + row(30).textContent);
+    // hot coolant: what was sent (100), never the QUADRO's “confirmed”
+    Object.assign(STATE.fans.f[30], { em: 'coolant', want: 50, out: 100 }); await fanEmit();
+    ok(JSON.stringify(fanState(30)) === JSON.stringify([t('fans.em.coolant') + '. ' + t('fans.lk.em', 100), 'bad']), 'hot coolant on the hub: ' + fanState(30));
+    STATE.fans.f[30].em = '';
+    closeSheet();
+    $('#lk-ctl').click(); await wait(400); FAN.sig = ''; updateFans();
+    ok(cv('link', 'ctl', '') === '0' && !$('#link-on').disabled && st() === t('lk.st.off') && !row(11) && STATE.fans.f.length === 4, 'given back: ' + st());
+    await fanReset();
+  });
+
   test('fans: a curve that does not read is flagged; typed point values stay between the neighbours and 20..100', async () => {
     await fresh(); await fanReset();
     setCfg('fans', 'fan1', 'curve'); setCfg('fans', 'fan1_curve', '50:40,30:60'); await fanEmit(); await fanSheetOf(0);

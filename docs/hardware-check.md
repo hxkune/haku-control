@@ -90,7 +90,7 @@ Note each device's LED count, how it is laid out and the haku version.
 
 The self-tests run the QUADRO, the board chip, Lian Li and iCUE LINK against simulated devices. They do not prove how a real device takes a write, or what it does once haku is gone.
 Each part loses its beta badge only after this check passes on real hardware. Note the device, its firmware and the haku version.
-Send back `haku-control.log` (Settings → Help and diagnostics → the log), plus `haku-control.prev.log` after a crash. The lines that matter start with `fans:`, `sio:` and `lianli:`.
+Send back `haku-control.log` (Settings → Help and diagnostics → the log), plus `haku-control.prev.log` after a crash. The lines that matter start with `fans:`, `sio:`, `lianli:` and `link:`.
 
 ### Aqua Computer QUADRO
 
@@ -133,9 +133,20 @@ Send back `haku-control.log` (Settings → Help and diagnostics → the log), pl
 
 ### Corsair iCUE LINK
 
-Read only: haku shows the hub's fans and temperatures and sends nothing to them.
+Readings (control off, the default):
 - Compare the rpm and the coolant temperature with iCUE, both open in turn.
 - With iCUE running, the page says iCUE holds the hub, and haku waits.
+
+Control (Cooling → iCUE LINK → the switch). Close iCUE and OpenLinkHub first; keep HWiNFO or the page open on the coolant temperature.
+1. **Taken.** Switch it on: within 10 s the card says "haku drives the hub" and the log has `link: control of the hub taken (software mode)`. Fans go to 50%, the pump to 100%. A chain with an LCD cap or more than 512 LEDs says its lights are not driven.
+2. **OpenRGB.** With OpenRGB installed, `%APPDATA%\OpenRGB\OpenRGB.json` has `"Corsair iCUE Link System Hub": false` while this is on, and `true` again once it is off or haku is closed (it goes back to `false` when haku starts with control on).
+3. **Speeds.** One fan fixed at 30%, then 80%; another on a GPU curve: the rpm follows. Set the pump to 30%: it stays at 50% (the slider stops there).
+4. **Coolant.** Under load, if the coolant passes 57 °C: every fan and pump goes to 100% and the card says so, until every pump reads under 52 °C. Do not heat the loop on purpose for this.
+5. **Lights.** Add the hub as a light device and pick an effect: each fan's ring and the pump cap follow it, in channel order.
+6. **Given back.** Switch it off, close haku from the tray, and sleep and wake: each time the hub goes back to its own control (iCUE's saved setting) within a few seconds, and the log says `link: the hub has its own control back`.
+7. **End task.** End haku in Task Manager: write down what the fans and pump do (their last speed, or the hub's own control after its timeout). Start haku and switch control off: the hub runs on its own.
+8. **USB unplugged** while it is held: the card waits, and the hub runs on its own; plugged back, haku takes it again.
+Send a diagnostics file (Settings → Help and diagnostics; it has the hub's device list and firmware), the log, and what the hub did at each step.
 
 ### Corsair LCD screen (iCUE LINK LCD, ELITE LCD, XC7 ELITE LCD)
 

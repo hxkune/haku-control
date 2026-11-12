@@ -11,6 +11,8 @@
 //        fanN_down = how many % a curve may slow per 2 s (1..100, 3 by default); it speeds up and goes to emergency at once
 // The board's Super I/O fan controls (sio.c) are channels 5..11 (fan5..fan11), on a thread of their own with the same
 // rules: the mode and duty found first are kept in fans-state.ini [board-<chip>] until they are back.
+// The iCUE LINK hub's fans and pumps (link.c) are channels 12..35 (fan12..fan35, by the hub's channel 1..24): link.c
+// holds the hub and asks fans_link() every 2 s; nothing is kept on disk (the hub runs its own control again once let go).
 #include "common.h"
 #include <setupapi.h>
 #include <hidsdi.h>
@@ -21,14 +23,17 @@
 
 #define FANS 4
 #define BF 7                // the board's fan controls at most (sio.c), channels FANS+1..FANS+BF
-#define NCH (FANS + BF)
+#define LK 24               // the iCUE LINK hub's channels (link.c), channels FANS+BF+1.. by the hub's channel number
+#define LINK0 (FANS + BF)
+#define NCH (FANS + BF + LK)
+#define PUMP_MIN 50       // a LINK pump never runs slower (link.c holds to it as well)
 #define MIN_PCT 20        // haku's floor for every channel: a channel may be set higher (fanN_min), never lower
 #define STALE_MS 5000     // a temperature older than this is not used
 #define GRACE_MS 5000     // after the GPU is first asked for, before its absence counts
 #define DOWN_PCT 3        // fanN_down: a curve slows by at most this many % per control round (2 s); it speeds up at once
 static const int st_fan[FANS] = { 0x70, 0x7D, 0x8A, 0x97 }, ctl_fan[FANS] = { 0x36, 0x8B, 0xE0, 0x135 };
-enum { EM_NONE, EM_NOSENSOR, EM_STALE, EM_CURVE };
-static const char *const em_name[] = { "", "nosensor", "stale", "curve" };
+enum { EM_NONE, EM_NOSENSOR, EM_STALE, EM_CURVE, EM_COOLANT };
+static const char *const em_name[] = { "", "nosensor", "stale", "curve", "coolant" };
 // why the last write of a channel did not land, for the page
 enum { ER_NONE, ER_NOLINK, ER_READ, ER_CRC, ER_SAVE, ER_WRITE, ER_BACK, ER_KEPT };
 static const char *const er_name[] = { "", "nolink", "read", "crc", "save", "write", "back", "kept" };
@@ -63,6 +68,7 @@ static int bn, btaken[BF], borig[BF][2], bchk[BF], bsent[BF] = { -1, -1, -1, -1,
 static wchar_t bsec[24];
 static HANDLE bth;
 static struct { int n, rpm[BF], pct[BF]; char chip[16]; } bd;   // cs: the board's readings
+static struct { int n, on[LK], pump[LK], rpm[LK], sent[LK]; } lk;   // cs: the LINK hub's channels while link.c holds it; n: highest + 1
 static volatile LONG need_gpu, gpu_c = -1000, gpu_at, need_since;   // gpu_c: whole degrees, fed by the render loop
 #define WD_MS 15000   // a control thread whose loop has not come round for this long has stalled: its channels go back
 static volatile LONG beat[2];   // 0 the QUADRO's thread, 1 the board's: when its loop last came round (0: not running)
@@ -444,6 +450,31 @@ static void board_round(void) {
     LeaveCriticalSection(&io);
 }
 
+// link.c, every 2 s while it holds the iCUE LINK hub: what each fan and pump on it runs at, in percent. want[] comes
+// in with link.c's own speed (fan 50, pump 100), which stands for "as is": in software mode the hub has none of its own.
+// A pump never under PUMP_MIN; hot (a pump's coolant over 57 C): all at 100. n = 0: the hub is given back.
+void fans_link(int n, const int *chn, const int *pump, const int *rpm, int hot, int *want) {
+    tgt_t t[NCH]; if (n) targets(t);
+    int on[LK] = { 0 };
+    EnterCriticalSection(&cs);
+    lk.n = 0;
+    for (int i = 0; i < n; i++) {
+        if (chn[i] < 1 || chn[i] > LK) continue;
+        int c = chn[i] - 1, f = LINK0 + c, lo = (pump[i] ? PUMP_MIN : MIN_PCT) * 100, w;
+        if (t[f].want == -2) w = lk.sent[c] > 0 ? lk.sent[c] : want[i] * 100;   // the GPU's reading still loading
+        else if (t[f].want < 0) w = want[i] * 100;
+        else w = eased(f, &t[f], lk.on[c] ? lk.sent[c] : -1);
+        w = hot ? 10000 : w < lo ? lo : w > 10000 ? 10000 : w;
+        want[i] = w / 100; on[c] = 1; lk.sent[c] = w; lk.pump[c] = pump[i] != 0; lk.rpm[c] = rpm[i] < 0 ? -1 : rpm[i];
+        ch[f].want = t[f].want < 0 ? t[f].want : t[f].want < lo ? lo : t[f].want; ch[f].out = w; ch[f].ok = 1; ch[f].own = 1; ch[f].er = ER_NONE;
+        ch[f].em = hot ? EM_COOLANT : t[f].em;
+        if (c + 1 > lk.n) lk.n = c + 1;
+    }
+    for (int c = 0; c < LK; c++) if (!on[c]) { memset(&ch[LINK0 + c], 0, sizeof(ch[0])); lk.sent[c] = 0; }
+    memcpy(lk.on, on, sizeof(on));
+    LeaveCriticalSection(&cs);
+}
+
 static unsigned __stdcall board_thread(void *arg) {
     (void)arg;
     char chip[16] = ""; int n = sio_open(chip, sizeof(chip));
@@ -630,7 +661,7 @@ int fans_trouble(void) {
     if (!th) return 0;
     EnterCriticalSection(&cs);
     int r = st.on && !paused && (!st.link || GetTickCount() - st.seen > STALE_MS) ? 1 : 0;
-    for (int f = 0; !r && f < FANS + bd.n; f++) if (ch[f].em) r = 2;
+    for (int f = 0; !r && f < NCH; f++) if (ch[f].em && (f < FANS + bd.n || (f >= LINK0 && lk.on[f - LINK0]))) r = 2;
     LeaveCriticalSection(&cs);
     return r;
 }
@@ -639,9 +670,11 @@ int fans_json(char *out, int cap) {
     if (!th) return jcat(out, cap, 0, "{\"on\":0}");
     DWORD now = GetTickCount(), at = (DWORD)gpu_at; LONG g = gpu_c; int cpuok = cpu_can(); float cpu = cpu_last();
     EnterCriticalSection(&cs);
-    // f[i] is channel i+1: the QUADRO's four (null without one), then the board's (b:1)
-    int n = jcat(out, cap, 0, "{\"on\":%d", st.on || bd.n);
-    if (st.on || bd.n) {
+    // f[i] is channel i+1: the QUADRO's four (null without one), then the board's (b:1), then from index 11 the iCUE
+    // LINK hub's by its channel (lk:1, null where none)
+    int any = st.on || bd.n || lk.n, last = lk.n ? LINK0 + lk.n : FANS + bd.n;
+    int n = jcat(out, cap, 0, "{\"on\":%d", any);
+    if (any) {
         n = jcat(out, cap, n, ",\"q\":%d,\"paused\":%d,\"rfail\":%d,\"wd\":[%d,%d]", st.on, paused, rfail + brfail, wd_out[0], wd_out[1]);
         if (bd.n) n = jcat(out, cap, n, ",\"chip\":\"%s\"", bd.chip);
         if (st.on) {
@@ -658,10 +691,11 @@ int fans_json(char *out, int cap) {
         else n = jcat(out, cap, n, ",\"cpu\":%.0f", cpu);
         if (g > -1000 && at) n = jcat(out, cap, n, ",\"gpu\":%ld,\"gage\":%lu,\"f\":[", g, now - at);
         else n = jcat(out, cap, n, ",\"gpu\":null,\"f\":[");
-        for (int f = 0; f < FANS + bd.n; f++) {
+        for (int f = 0; f < last; f++) {
             const char *c = f ? "," : "";
-            if (f < FANS && !st.on) { n = jcat(out, cap, n, "%snull", c); continue; }
-            if (f < FANS) n = jcat(out, cap, n, "%s{\"rpm\":%d,\"pct\":%.1f,\"v\":%.2f,\"w\":%.2f", c, st.f[f].rpm, st.f[f].duty / 100.0, st.f[f].cv / 100.0, st.f[f].cw / 100.0);
+            if ((f < FANS && !st.on) || (f >= FANS + bd.n && (f < LINK0 || !lk.on[f - LINK0]))) { n = jcat(out, cap, n, "%snull", c); continue; }
+            if (f >= LINK0) n = jcat(out, cap, n, "%s{\"lk\":1,\"pump\":%d,\"rpm\":%d,\"pct\":%d", c, lk.pump[f - LINK0], lk.rpm[f - LINK0], lk.sent[f - LINK0] / 100);
+            else if (f < FANS) n = jcat(out, cap, n, "%s{\"rpm\":%d,\"pct\":%.1f,\"v\":%.2f,\"w\":%.2f", c, st.f[f].rpm, st.f[f].duty / 100.0, st.f[f].cv / 100.0, st.f[f].cw / 100.0);
             else if (bd.pct[f - FANS] < 0) n = jcat(out, cap, n, "%s{\"b\":1,\"rpm\":-1,\"pct\":null", c);
             else n = jcat(out, cap, n, "%s{\"b\":1,\"rpm\":%d,\"pct\":%d", c, bd.rpm[f - FANS], bd.pct[f - FANS]);
             n = jcat(out, cap, n, ",\"own\":%d,\"want\":%d,\"out\":%d,\"ok\":%d,\"em\":\"%s\",\"err\":\"%s\"}",
@@ -691,7 +725,7 @@ static int sim_set(const BYTE *r, int n) {
     if (set_drop >= 0) { memcpy(dev + ctl_fan[set_drop], keep, 3); sim_crc(); }
     return 1;
 }
-static const char *K[16][2]; static int nk;   // the [fans] settings
+static const char *K[32][2]; static int nk;   // the [fans] settings
 static void set(const char *k, const char *v) { for (int i = 0; i < nk; i++) if (!strcmp(K[i][0], k)) { K[i][1] = v; return; } K[nk][0] = k; K[nk++][1] = v; }
 void logf_(const char *fmt, ...) { (void)fmt; }
 const char *cfg_get(const char *s, const char *k, const char *d) { (void)s; for (int i = 0; i < nk; i++) if (!strcmp(K[i][0], k)) return K[i][1] && *K[i][1] ? K[i][1] : d; return d; }   // empty is unset, as in config.c
@@ -928,6 +962,25 @@ int main(void) {
     assert(strstr(js, "\"q\":1") && strstr(js, "\"chip\":\"TEST\"") && strstr(js, "{\"b\":1,\"rpm\":900"));
     st.on = 0; fans_json(js, sizeof(js)); th = NULL;
     assert(strstr(js, "\"on\":1,\"q\":0") && strstr(js, "\"f\":[null,null,null,null,{\"b\":1") && !strstr(js, "\"link\""));
+    // the iCUE LINK hub (link.c asks): channel 1 a fan at fan12, 3 a pump at fan14; "as is" keeps link.c's own speed
+    {
+        int chn[2] = { 1, 3 }, pump[2] = { 0, 1 }, rpm[2] = { 900, INT_MIN }, w[2] = { 50, 100 };
+        fans_link(2, chn, pump, rpm, 0, w); assert(w[0] == 50 && w[1] == 100 && ch[LINK0].own && ch[LINK0 + 2].out == 10000);
+        set("fan12", "fix"); set("fan12_pct", "35"); set("fan14", "fix"); set("fan14_pct", "30");
+        w[0] = 50; w[1] = 100; fans_link(2, chn, pump, rpm, 0, w);
+        assert(w[0] == 35 && w[1] == PUMP_MIN && ch[LINK0 + 2].want == 5000);   // a pump never under 50
+        set("fan12", "curve"); set("fan12_src", "t1"); set("fan12_curve", "20:20,40:100"); st.link = 1; st.seen = GetTickCount(); st.temp[0] = 4000;
+        fans_link(2, chn, pump, rpm, 0, w); assert(w[0] == 100);
+        st.temp[0] = 2000; fans_link(2, chn, pump, rpm, 0, w); assert(w[0] == 97);   // a curve eases down as on the QUADRO
+        th = (HANDLE)1; bd.n = 0; fans_link(2, chn, pump, rpm, 1, w); assert(w[0] == 100 && w[1] == 100 && ch[LINK0].em == EM_COOLANT && fans_trouble() == 2);
+        fans_json(js, sizeof(js));
+        assert(strstr(js, "\"on\":1") && strstr(js, "{\"lk\":1,\"pump\":0,\"rpm\":900,\"pct\":100") && strstr(js, "{\"lk\":1,\"pump\":1,\"rpm\":-1,")
+               && strstr(js, "\"em\":\"coolant\"") && strstr(js, "null,{\"lk\":1,\"pump\":1"));
+        fans_link(1, chn, pump, rpm, 0, w);   // the pump is gone from the chain: its channel leaves the page
+        assert(!ch[LINK0 + 2].own && lk.n == 1 && !lk.on[2]);
+        fans_link(0, NULL, NULL, NULL, 0, NULL); assert(!lk.n && !ch[LINK0].own && fans_trouble() == 0);
+        fans_json(js, sizeof(js)); th = NULL; assert(strstr(js, "{\"on\":0}"));
+    }
     DeleteFileW(ini);
     puts("fans: ok");
     return 0;

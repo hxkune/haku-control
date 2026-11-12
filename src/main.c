@@ -1733,6 +1733,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         // then the board, and room lights get their exit action while the network is still up
         if (wp) {
             running = 0; SetEvent(ram_event); WaitForSingleObject(th_render, 2000); WaitForSingleObject(th_ram, 2000);
+            link_suspend(1);   // the hub back before the fans' stop, which may take seconds of the few there are
             int fl = fans_stop(); ll_stop(); int ln = link_stop();
             if (fl || ln) logf_("session end: cooling given back not confirmed (fans %d, link %d)", fl, ln);
             KillTimer(h, SAVE_TIMER); if (!cfg_save_if_dirty()) logf_("session end: the settings could not be written");
@@ -1795,15 +1796,15 @@ static HICON make_icon(void) {
                              GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
 }
 
-// a crash: the fans get their own settings back before Windows ends the process. End task, a stack overflow and a
+// a crash: the fans and the iCUE LINK hub get their own settings back before Windows ends the process. End task, a stack overflow and a
 // fail-fast end it without this; fans-state.ini gives them back at the next start then.
 static LONG WINAPI on_crash(EXCEPTION_POINTERS *e) {
     if (InterlockedExchange(&crashing, 1)) return EXCEPTION_CONTINUE_SEARCH;
     logf_("crash: exception %08lX at %p (exe at %p)", e->ExceptionRecord->ExceptionCode, e->ExceptionRecord->ExceptionAddress, (void *)GetModuleHandleW(NULL));
-    fans_crash();
+    fans_crash(); link_crash();
     return EXCEPTION_CONTINUE_SEARCH;
 }
-static void on_abort(int sig) { (void)sig; if (!InterlockedExchange(&crashing, 1)) { logf_("crash: abort"); fans_crash(); } }
+static void on_abort(int sig) { (void)sig; if (!InterlockedExchange(&crashing, 1)) { logf_("crash: abort"); fans_crash(); link_crash(); } }
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     (void)prev; (void)cmd; (void)show;

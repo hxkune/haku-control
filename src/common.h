@@ -71,11 +71,13 @@ const wchar_t *cfg_path(void);
 static inline void cfg_clean_name(char *s) {
     for (; *s; s++) if (*s == ';' || *s == '[' || *s == ']' || *s == '=' || (unsigned char)*s < 0x20) *s = ' ';
 }
-// settings only this PC's own window may change: they name a program haku starts or where its updates come from.
-// The phone page (ui_web.cpp) and a backup made elsewhere (backup.c) leave them alone.
+// settings only this PC's own window may change: they name a program haku starts or where its updates come from,
+// or what haku changed in another program's file here (link.c orgb_det). The phone page (ui_web.cpp) and a backup
+// made elsewhere (backup.c) leave them alone.
 static inline int cfg_pc_only(const char *sec, const char *key) {
     return (!strcmp(sec, "openrgb") && !strcmp(key, "path")) || (!strcmp(sec, "mood") && !strcmp(key, "ollama_path")) ||
-           (!strcmp(sec, "general") && !strcmp(key, "update_repo")) || (!strcmp(sec, "ui") && !strcmp(key, "devtools"));
+           (!strcmp(sec, "general") && !strcmp(key, "update_repo")) || (!strcmp(sec, "ui") && !strcmp(key, "devtools")) ||
+           (!strcmp(sec, "link") && !strcmp(key, "orgb_det"));
 }
 int         cfg_json(char *out, int cap);   // whole config as {"section":{"key":"value"}}
 void        cfg_remove_section(const char *section);
@@ -274,6 +276,8 @@ int  fans_need_gpu(void);
 float fans_water(void);                 // the first connected temperature sensor, NAN when none
 int  fans_json(char *out, int cap);
 int  fans_trouble(void);                  // 1 the QUADRO not heard from, 2 a channel on its emergency speed, 0 neither
+// link.c while it holds the iCUE LINK hub: the % for each fan/pump channel (want comes in with link.c's default); n 0: let go
+void fans_link(int n, const int *chn, const int *pump, const int *rpm, int hot, int *want);
 // ---- lianli.c: Lian Li wireless fans through their USB dongle, read only (own thread)
 void ll_start(void);
 void ll_stop(void);
@@ -287,10 +291,11 @@ int  sio_read(int *rpm, int *pct);       // rpm -1 when it does not read; 0 when
 int  sio_get(int i, int *mode, int *cmd);
 int  sio_put(int i, int mode, int cmd);  // mode 0 is manual at cmd 0..255; HAKU_DEV: refused
 
-// ---- link.c: Corsair iCUE LINK hub and the PSU on it, read only (own thread, [link] on=1)
+// ---- link.c: Corsair iCUE LINK hub and the PSU on it (own thread, [link] on=1); fans, pumps and LEDs with [link] ctl=1
 void link_start(void);
-int  link_stop(void);                    // hardware mode back if a visit left the hub in software mode; 0 back, 1 not, -1 not confirmed
+int  link_stop(void);                    // the hub's hardware mode back; 0 back, 1 not, -1 not confirmed
 void link_suspend(int on);
+void link_crash(void);                   // a crash: hardware mode back if the hub is held, nothing taken after
 int  link_json(char *out, int cap);
 
 // ---- main.c: application state shared with the settings window

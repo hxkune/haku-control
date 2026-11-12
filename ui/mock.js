@@ -69,8 +69,15 @@ window.chrome = { webview: {
       setTimeout(() => { STATE.cf.busy = ''; if (o.cmd === 'cf_close' && x.stay) x.fail = 1; else x.run = 0, x.fail = 0; emit(STATE); }, 600); }
     if (o.cmd === 'tryx_media') { Object.assign(C['dev.' + o.id] = C['dev.' + o.id] || {}, { media: 'C:\\Pictures\\cat.gif', theme: '-1' }); setTimeout(() => emit(STATE), 60); }
     // fans.c, roughly: a mode takes the channel and the QUADRO confirms it; '' gives it back (fans_set: all its keys are in first)
-    const fanMode = (k, m) => { const f = /^fan\d+$/.test(k) && STATE.fans.f[+k.slice(3) - 1]; if (!f) return; const w = m === 'fix' ? +(C.fans[k + '_pct'] || 50) : m ? 45 : -1;
-      Object.assign(f, { own: m ? 1 : 0, want: w, out: w, ok: 1, err: '' }); if (m) f.pct = w; };
+    // an iCUE LINK channel (lk) stays haku's: '' is its default (fan 50, pump 100) and a pump never goes under 50
+    const fanMode = (k, m) => { const f = /^fan\d+$/.test(k) && STATE.fans.f[+k.slice(3) - 1]; if (!f) return; let w = m === 'fix' ? +(C.fans[k + '_pct'] || 50) : m ? 45 : -1;
+      if (w >= 0 && f.lk && f.pump) w = Math.max(50, w); const out = w < 0 && f.lk ? (f.pump ? 100 : 50) : w;
+      Object.assign(f, { own: m || f.lk ? 1 : 0, want: w, out, ok: 1, err: '' }); if (m || f.lk) f.pct = out; };
+    // link.c + fans_link: [link] ctl=1 takes the hub a moment later; its fan (channel 1) and pump (20) show from index 11
+    if (o.cmd === 'set' && o.s === 'link' && o.k === 'ctl') setTimeout(() => { const K = STATE.link, on = o.v === '1', f = STATE.fans.f; K.ctl = K.held = +on; f.length = 4;
+      if (on) { for (let i = 4; i < 31; i++) f[i] = null; f[11] = { lk: 1, pump: 0, rpm: 311, pct: 50, own: 1, want: -1, out: 50, ok: 1, em: '', err: '' };
+        f[30] = { lk: 1, pump: 1, rpm: 2277, pct: 100, own: 1, want: -1, out: 100, ok: 1, em: '', err: '' }; }
+      emit(STATE); }, 300);
     if (o.cmd === 'set' && o.s === 'fans') fanMode(o.k, o.v);
     if (o.cmd === 'fans_set') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); fanMode(l.slice(0, e), l.slice(e + 1)); });
     if (o.cmd === 'effect') STATE.effect = G.effect = o.id;
@@ -89,7 +96,7 @@ window.chrome = { webview: {
     if (o.cmd === 'get') setTimeout(() => emit(STATE), 30);
     if (o.cmd === 'diag') setTimeout(() => { STATE.diag = { busy: 0, ok: 1, file: 'haku-diagnostics-20261022-1200.txt', report: { busy: 0, ok: -1, id: '', err: '' } }; emit(STATE); }, 300);
     if (o.cmd === 'report') setTimeout(() => { STATE.diag = { busy: 0, ok: -1, file: '', report: { busy: 0, ok: o.text.includes('fail') ? 0 : 1, id: '3fa2c9d01e', err: o.text.includes('fail') ? 'offline' : '' } }; emit(STATE); }, 900);
-    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli', 'corsairlcd'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
+    if (o.cmd === 'pc_own') { STATE.pc_own = STATE.msi_own = STATE.ram_own = +o.v; STATE.ext.devs.forEach(d => { if (['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli', 'corsairlcd', 'icuelink'].includes(d.kind)) d.own = +o.v; }); setTimeout(() => emit(STATE), 60); }
     if (o.cmd === 'dev_retry') setTimeout(() => emit(STATE), 60);   // the devices not connected try again (here: they all answer)
     if (o.cmd === 'save_retry') { if (!window.mockSaveFail) STATE.unsaved = 0; setTimeout(() => emit(STATE), 60); }   // window.mockSaveFail = 1: the disk still refuses
     if (o.cmd === 'dev_check') { STATE.netchk = { id: +o.id, busy: 1, res: '' }; emit(STATE); setTimeout(() => { STATE.netchk = { id: +o.id, busy: 0, res: o.id % 2 ? 'silent' : 'answers', ms: 0 }; emit(STATE); }, 1500); }
@@ -162,7 +169,7 @@ const STATE = {
     hotkeys: { next: 'Ctrl+Alt+Right', prev: 'Ctrl+Alt+Left', off: 'Ctrl+Alt+Down', brighter: 'Ctrl+Alt+PageUp', dimmer: 'Ctrl+Alt+PageDown' } },
 };
 // link.c: the iCUE LINK hub of a real report (psuprobe, 2026-10-17), shortened
-STATE.link = { st: 'ok', found: 1, app: '', fw: '3.10.636', hw: 0, age: 4000, hub_t: 25.6, v: [3.31, 5.05, 12.03], a: [1.75, 5.5, 10.25],
+STATE.link = { st: 'ok', found: 1, app: '', fw: '3.10.636', hw: 0, age: 4000, ctl: 0, held: 0, refuse: 0, hot: 0, leds: 0, hub_t: 25.6, v: [3.31, 5.05, 12.03], a: [1.75, 5.5, 10.25],
   dev: [{ ch: 1, type: 15, model: 0, rpm: 311, t: null }, { ch: 17, type: 6, model: 0, rpm: null, t: null }, { ch: 20, type: 17, model: 2, rpm: 2277, t: 35.2 }, { ch: 25, type: 11, model: 0, rpm: 457, t: 40.5 }] };
 const pal = [[0,200,255],[122,60,255],[255,45,149]];
 const pc = p => { p = (p % 1 + 1) % 1 * 3; const i = Math.floor(p), f = p - i, a = pal[i % 3], b = pal[(i + 1) % 3]; return a.map((v, k) => Math.round(v + (b[k] - v) * f)); };
