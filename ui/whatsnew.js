@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.67',
+    en: ['Tidier pages: “Programs in the way” is now on Devices, light behaviour on exit and the frame rate are under Settings → Control, and Help starts with “Report a problem”. Long explanations are folded.',
+         'New motion: buttons spring under a press, pages come in from the side you went to, dialogs grow from the click. “Animations off” still switches all of it off.',
+         'Experimental, off by default: haku can drive a Corsair iCUE LINK System Hub (fans, pump and LEDs). The switch is on Cooling; it has not been checked on a real hub yet.'],
+    ru: ['Страницы стали аккуратнее: «Мешающие программы» теперь в «Устройствах», поведение света при выходе и частота кадров — в «Настройки → Управление», а «Помощь» начинается с «Сообщить о проблеме». Длинные пояснения свёрнуты.',
+         'Новые анимации: кнопки пружинят под нажатием, страницы въезжают с той стороны, куда вы перешли, диалоги вырастают из точки клика. «Анимации выключены» по-прежнему отключает всё это.',
+         'Экспериментально, по умолчанию выключено: haku может управлять хабом Corsair iCUE LINK (вентиляторы, помпа и подсветка). Переключатель — на странице «Охлаждение»; на настоящем хабе это ещё не проверено.'],
+    fr: ['Des pages mieux rangées : « Programmes qui gênent » est maintenant dans Appareils, le comportement des lumières à la fermeture et la fréquence d’images sont dans Réglages → Contrôle, et l’Aide commence par « Signaler un problème ». Les longues explications sont repliées.',
+         'Nouvelles animations : les boutons font ressort sous l’appui, les pages arrivent du côté où vous êtes allé, les dialogues grandissent depuis le clic. « Animations désactivées » coupe toujours tout cela.',
+         'Expérimental, désactivé par défaut : haku peut piloter un hub Corsair iCUE LINK (ventilateurs, pompe et LED). L’interrupteur est sur la page Refroidissement ; cela n’a pas encore été vérifié sur un vrai hub.'] },
   { v: '0.4.66',
     en: ['Corsair screen builder: the window no longer freezes while an animation is prepared, and Cancel stops it.',
          'Setup: /extract with a relative folder unpacks into the folder it was started from.'],
