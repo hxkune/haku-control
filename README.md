@@ -20,8 +20,9 @@ device runs its own effect.
 - **Behaves like a light switch:** switching a device off in the app really turns it off. When the PC shuts down or sleeps,
   the room lights go dark (or keep / restore their own state, as you choose).
 - **Local first:** no account and no telemetry. Devices are controlled over USB, SMBus and your LAN. The internet is
-  used for the update check, a Pro key's check with the store, and only when you use them: Govee's cloud, the AiDot
-  and Tuya sign-ins, Divoom's device service, community presets and *Report a problem*. The full list is in the
+  used for the update check, a Pro key's check with the store, a new installation's invite check, and only when you
+  use them: Govee's cloud, the AiDot and Tuya sign-ins, Divoom's device service, community presets, *Invite friends*
+  and *Report a problem*. The full list is in the
   [privacy policy](#privacy-policy).
 - English, Russian and French UI; dark, grey and light themes.
 
@@ -266,6 +267,12 @@ purposes:
   each start and every 12 hours: the key, this installation's id and the name "haku control" are sent, nothing else.
   The trial start and the latest date seen are kept on the PC (settings and registry) and sent nowhere. Gift keys
   are checked on the PC.
+- **Invite friends** (the installer's build): the download page opened by an invite link tells hakune.blog the
+  invite code; the site keeps a salted hash of the visitor's internet address for 48 hours, not the address. An
+  installation first started less than 48 hours ago asks hakune.blog with the update check, until it answers, whether
+  such a click waits for its address, sending nothing else; only when one does, it sends a hash of the Windows
+  installation's id, so one PC counts once. *Get my invite link* sends the same hash, and from then on each update
+  check reads your points and discount code with it. Without the link, an older installation sends nothing.
 - **Razer, SteelSeries, Logitech:** it talks to Razer Synapse, SteelSeries GG or Logitech G HUB on your PC, only
   for the devices you added; it sends them colours.
 - **Sign-ins you start:** AiDot or Tuya receive the sign-in data you enter, once, to hand out your lights' local

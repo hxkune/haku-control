@@ -1139,6 +1139,8 @@ static int status_body(char *out, int cap) {
     n += ext_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"pro\":");
     n += pro_json(out + n, cap - n);
+    n = jcat(out, cap, n, ",\"ref\":");
+    n += pro_ref_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"prof\":");
     n += prof_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"cfg_full\":%d", cfg_dropped());   // changes refused since start: the settings file was full

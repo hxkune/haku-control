@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.71',
+    en: ['New: Invite friends, under Settings → About & Pro. Get your link and send it to friends: each one who downloads haku control by it, installs it and starts it within 48 hours gives you a point. 5, 10 or 15 friends make a 5, 10 or 15 % code for your first Pro payment; it comes to Notifications.',
+         'The dot that marks the current page in the side bar is smaller, glows and leaves a short trail on its way. The count on Notifications is tidier.',
+         'Fixed: the cards under Settings → Integrations no longer leave a gap beside the tall one.'],
+    ru: ['Новое: «Пригласите друзей» в «Настройки → О программе и Pro». Получите свою ссылку и отправьте её друзьям: каждый, кто скачает по ней haku control, установит и запустит в течение 48 часов, даёт вам балл. 5, 10 или 15 друзей — код на 5, 10 или 15 % для первой оплаты Pro; он придёт в «Уведомления».',
+         'Точка, отмечающая текущую страницу в боковой панели, стала меньше, светится и оставляет за собой короткий след. Счётчик на «Уведомлениях» стал аккуратнее.',
+         'Исправлено: карточки в «Настройки → Интеграции» больше не оставляют пустое место рядом с высокой.'],
+    fr: ['Nouveau : Invitez des amis, dans Réglages → À propos et Pro. Obtenez votre lien et envoyez-le à vos amis : chacun de ceux qui téléchargent haku control par ce lien, l’installent et le lancent dans les 48 heures vous donne un point. 5, 10 ou 15 amis font un code de 5, 10 ou 15 % pour votre premier paiement Pro ; il arrive dans Notifications.',
+         'Le point qui marque la page actuelle dans la barre latérale est plus petit, brille et laisse une courte traînée en chemin. Le compteur sur Notifications est plus soigné.',
+         'Corrigé : les cartes de Réglages → Intégrations ne laissent plus de vide à côté de la plus haute.'] },
   { v: '0.4.70',
     en: ['New: a Notifications button in the side bar, above Help. It keeps the developer’s answer to your report, a new version and news about Pro, with a count of what you have not looked at yet.',
          'An answer to a report closed with Escape or a click outside is no longer lost: it waits under Notifications until you press “Got it” or answer.',

@@ -797,6 +797,24 @@
           <button class="btn small danger hidden" id="pro-remove"><span data-i18n="pro.remove">Remove key</span></button>
         </div>
       </div>
+      <div class="card pc-only hidden" id="ref-card" data-cat="about">
+        <div class="card-head"><h3 data-i18n="ref.title">Invite friends</h3><span class="pro-badge hidden" id="ref-n"></span></div>
+        <p class="muted" data-i18n="ref.what"></p>
+        <div class="pro-form hidden" id="ref-link-row">
+          <input type="text" id="ref-link" readonly spellcheck="false" data-i18n-aria="ref.link">
+          <button class="btn small ghost" type="button" id="ref-link-copy" data-i18n="share.copy">Copy</button>
+        </div>
+        <p class="pro-state hidden" id="ref-state"></p>
+        <div class="pro-form hidden" id="ref-code-row">
+          <input type="text" id="ref-code" readonly spellcheck="false" data-i18n-aria="ref.code">
+          <button class="btn small ghost" type="button" id="ref-code-copy" data-i18n="share.copy">Copy</button>
+          <button class="btn small primary" type="button" id="ref-use" data-i18n="ref.use">Use it</button>
+        </div>
+        <p class="pro-err hidden" id="ref-err"></p>
+        <div class="btn-row" id="ref-join-row">
+          <button class="btn small primary" type="button" id="ref-join"><span data-i18n="ref.join">Get my invite link</span></button>
+        </div>
+      </div>
     </div>
   </section>
 </main>

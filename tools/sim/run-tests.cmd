@@ -48,6 +48,8 @@ rem the tray icon's clicks: which goes to the panel, the window, nothing (the sh
 call :one tray     tools\sim\tray_test.c
 rem the folder for files run with admin rights, and a program started without them
 call :one safetmp  tools\sim\safetmp_test.c advapi32.lib
+rem "Invite friends" (the paid build only) against a scripted site: nothing leaves the PC
+if exist pro\referral.c call :one referral /DREF_TEST pro\referral.c src\netutil.c ws2_32.lib winhttp.lib bcrypt.lib wintrust.lib crypt32.lib advapi32.lib
 
 echo === orgb (against the fake OpenRGB server)
 del /q "%T%\orgb_test.exe" 2>nul

@@ -365,6 +365,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "backup_save") { backup_save(wnd); post_status(); }
     else if (cmd == "backup_load") { backup_load(wnd); post_state(); }
     else if (cmd == "pro_key") { pro_set_key(field(js, "key").c_str()); post_status(); }
+    else if (cmd == "ref_join") { pro_ref_join(); post_status(); }   // "Get my invite link": this window only, not the phone
     else if (cmd == "diag") { diag_save(); post_status(); }
     else if (cmd == "save_retry") { cfg_save_if_dirty(); post_status(); }   // Home's "Save again" after a failed write
     else if (cmd == "report_seen") diag_fixed_seen(field(js, "id").c_str());

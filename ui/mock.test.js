@@ -1840,6 +1840,49 @@
     STATE.pro = pro; delete STATE.diag; emit(STATE); await wait(80); showTab('home');
   });
 
+  test('Invite friends: the link from the site, the friends who came, the code they earned and its notice under the bell', async () => {
+    await fresh();
+    const ref = STATE.ref, pro = STATE.pro, upd = STATE.update, shut = id => $(id).classList.contains('hidden'), st = () => $('#ref-state').textContent;
+    STATE.update = { ...upd, latest: '' }; setCfg('general', 'notes_seen', ''); showTab('settings'); setCat('about');
+    STATE.ref = null; emit(STATE); await wait(80);
+    ok(shut('#ref-card'), 'the card shows in a build without invitations');
+    STATE.ref = { ...ref }; emit(STATE); await wait(80);
+    ok(!shut('#ref-card') && !shut('#ref-join-row') && shut('#ref-link-row') && shut('#ref-state') && shut('#ref-code-row') && shut('#ref-n') && shut('#ref-err'), 'before a link more than its button shows');
+    // the site refuses: said under the button, which works again
+    window.mockRefFail = 'busy'; sent.length = 0; $('#ref-join').click(); await wait(40);
+    ok(sent.filter(m => m.cmd === 'ref_join').length === 1 && $('#ref-join').disabled && $('#ref-join').textContent.trim() === t('ref.busy'), 'the link not asked for, or the button stays live: ' + JSON.stringify(sent));
+    await wait(420);
+    ok(!$('#ref-join').disabled && !shut('#ref-err') && $('#ref-err').textContent === t('ref.err.busy') && shut('#ref-link-row'), 'a refusal not told: ' + $('#ref-err').textContent);
+    window.mockRefFail = 'net'; $('#ref-join').click(); await wait(460);
+    ok($('#ref-err').textContent === t('ref.err.net'), 'no answer not told: ' + $('#ref-err').textContent);
+    window.mockRefFail = ''; $('#ref-join').click(); await wait(460);
+    ok($('#ref-link').value === 'https://hakune.blog/haku-control.html?ref=RV24MGS7' && !shut('#ref-link-row') && shut('#ref-join-row') && shut('#ref-err'), 'the link: ' + $('#ref-link').value);
+    ok(st() === t('ref.next', 0, 5, 5) && $('#ref-n').textContent === t('ref.n', 0) && !shut('#ref-n'), 'no friends yet: ' + st());
+    // Copy: the link goes to the clipboard (the browser's own is not touched by the test), the button says so
+    let copied = ''; navigator.clipboard.writeText = async s => { copied = s; };
+    $('#ref-link-copy').click(); await wait(60); delete navigator.clipboard.writeText;
+    ok(copied === $('#ref-link').value && $('#ref-link-copy').textContent === '✓', 'Copy: ' + copied + ' / ' + $('#ref-link-copy').textContent);
+    // seven friends: 5 % earned, the next step is ten; the code is not made yet and nothing waits under the bell
+    STATE.ref = { ...STATE.ref, points: 7, pct: 5 }; emit(STATE); await wait(80);
+    ok(st() === t('ref.next', 7, 3, 10) + ' ' + t('ref.wait', 5) && shut('#ref-code-row') && $('#notes-n').textContent === '', 'seven friends: ' + st() + ' / ' + $('#notes-n').textContent);
+    STATE.ref = { ...STATE.ref, discount: 'HAKU5ABCDEFGHJK' }; emit(STATE); await wait(80);
+    ok(st() === t('ref.next', 7, 3, 10) + ' ' + t('ref.have', 5) && !shut('#ref-code-row') && $('#ref-code').value === 'HAKU5ABCDEFGHJK' && !shut('#ref-use'), 'the code: ' + st() + ' / ' + $('#ref-code').value);
+    sent.length = 0; $('#ref-use').click();
+    ok(sent.some(m => m.cmd === 'open' && m.what === 'pro'), 'Use it does not open the shop: ' + JSON.stringify(sent));
+    // its notice: counted once, leads back to the card
+    ok($('#notes-n').textContent === '1', 'the code not counted under the bell: ' + $('#notes-n').textContent);
+    showTab('home'); $('#notes-btn').click(); await wait(40);
+    ok($$('#notes-list h4').map(h => h.textContent).join('|') === t('ref.note', 5) && $('#notes-list p').textContent === t('ref.note.p', 'HAKU5ABCDEFGHJK'), 'the notice: ' + $('#notes-list').textContent);
+    ok(cv('general', 'notes_seen', '') === 'ref-HAKU5ABCDEFGHJK', 'looked at, not kept: ' + cv('general', 'notes_seen', ''));
+    $('#notes-list [data-n="0"]').click(); await wait(140);
+    ok(shut('#notes') && $('#nav button[data-tab="settings"]').classList.contains('active') && $('#ref-card').offsetParent, 'Show did not go to the card');
+    // a running subscription has nowhere to take the code; fifteen and more friends: the last step
+    STATE.pro = { ...pro, on: 1, state: 'key', kind: 'sub' }; STATE.ref = { ...STATE.ref, points: 20, pct: 15, discount: 'HAKU15ABCDEFGHJK' }; emit(STATE); await wait(80);
+    ok(shut('#ref-use') && st() === t('ref.max', 20) + ' ' + t('ref.have', 15) && $('#ref-n').textContent === t('ref.n', 15), 'fifteen friends with a subscription: ' + st() + ' / ' + $('#ref-n').textContent);
+    STATE.ref = ref; STATE.pro = pro; STATE.update = upd; setCfg('general', 'notes_seen', ''); emit(STATE); await wait(80);
+    $('main').scrollTop = 0; showTab('home');   // Settings is left at its top, as the tests after this one found it before
+  });
+
   test("help: the tray's Help opens the Help card, sends nothing", async () => {
     await fresh(); showTab('home'); sent.length = 0;
     emit({ type: 'go', to: 'help' }); await wait(80);
@@ -2412,6 +2455,10 @@
       // at rest the mark is a dot at the middle of the open page: both its ends are there
       const at = $('#nav [data-tab="devices"]'), mid = at.offsetTop + at.offsetHeight / 2, ends = ['--nl', '--nt'].map(v => parseFloat(getComputedStyle($('#nav')).getPropertyValue(v)));
       ok(ends.every(v => Math.abs(v - mid) < .01), 'the dot not at the middle of devices: ' + ends + ' vs ' + mid);
+      // the dot breathes only with motion on
+      const pulse = () => $('#nav').getAnimations().some(a => a.animationName === 'nav-pulse');
+      ok(!pulse(), 'the dot pulses with motion off');
+      motion('1'); ok(pulse(), 'the dot does not pulse with motion on'); motion('0');
       // neither spring gives the nav a scroll bar: a released button a little past its size, the mark past the last page
       const n = $('#nav'), last = $('#nav [data-tab="settings"]'), box = () => [n.clientWidth, n.clientHeight, n.scrollHeight].join(), was = box();
       last.style.scale = 1.02; n.style.setProperty('--ny', n.scrollHeight + 'px');

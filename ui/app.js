@@ -5129,6 +5129,34 @@ $('#pro-form').addEventListener('submit', e => {
   send({ cmd: 'pro_key', key: k }); $('#pro-key').value = '';
   S.pro.busy = 1; updatePro();
 });
+// ---- "Invite friends" (the paid build): the person's link, the friends who came by it, the code they earned
+function refGo() { showTab('settings'); setCat('about'); setTimeout(() => $('#ref-card').scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }
+function updateRef() {
+  const R = S.ref, put = (sel, v) => { const e = $(sel); if (e.value !== v) e.value = v; };   // a selection in the field stays
+  $('#ref-card').classList.toggle('hidden', !R);
+  if (!R) return;
+  const next = R.points < 5 ? 5 : R.points < 10 ? 10 : 15;
+  $('#ref-n').textContent = t('ref.n', Math.min(R.points, 15)); $('#ref-n').classList.toggle('hidden', !R.code);
+  $('#ref-n').classList.toggle('on', R.points >= 5);
+  put('#ref-link', R.code ? 'https://hakune.blog/haku-control.html?ref=' + R.code : '');
+  $('#ref-link-row').classList.toggle('hidden', !R.code);
+  $('#ref-join-row').classList.toggle('hidden', !!R.code);
+  $('#ref-join').disabled = !!R.busy; $('#ref-join span').textContent = t(R.busy ? 'ref.busy' : 'ref.join');
+  $('#ref-state').textContent = !R.code ? '' : (R.points >= 15 ? t('ref.max', R.points) : t('ref.next', R.points, next - R.points, next))
+    + (R.discount ? ' ' + t('ref.have', R.pct) : R.pct ? ' ' + t('ref.wait', R.pct) : '');
+  $('#ref-state').classList.toggle('hidden', !R.code);
+  put('#ref-code', R.discount || ''); $('#ref-code-row').classList.toggle('hidden', !R.discount);
+  // the code is for a new subscription: with one running, the shop has nowhere to take it
+  $('#ref-use').classList.toggle('hidden', !!(S.pro && S.pro.state === 'key' && S.pro.kind === 'sub'));
+  const err = $('#ref-err'); err.textContent = R.err ? t('ref.err.' + (R.err === 'busy' ? 'busy' : 'net')) : ''; err.classList.toggle('hidden', !R.err);
+}
+$('#ref-join').addEventListener('click', () => { send({ cmd: 'ref_join' }); S.ref.busy = 1; S.ref.err = ''; updateRef(); });
+$('#ref-use').addEventListener('click', () => send({ cmd: 'open', what: 'pro' }));
+[['#ref-link-copy', '#ref-link'], ['#ref-code-copy', '#ref-code']].forEach(([btn, inp]) => $(btn).addEventListener('click', async e => {
+  const b = e.currentTarget;
+  let ok = false; try { await navigator.clipboard.writeText($(inp).value); ok = true; } catch (x) { $(inp).select(); }
+  b.textContent = ok ? '✓' : t('share.copyhand'); setTimeout(() => { b.textContent = t('share.copy'); }, 1500);
+}));
 $('#pro-remove').addEventListener('click', () => {
   const b = $('#pro-remove');
   if (!b.classList.contains('confirm')) { b.classList.add('confirm'); b.querySelector('span').textContent = t('preset.delete.sure'); return; }
@@ -5281,10 +5309,10 @@ $('#fixed-answer').addEventListener('click', () => {
   if (rid && !$('#report-text').value) $('#report-text').value = 'Re #' + rid + ': ';
 });
 // ---- the bell in the side bar: what waits for the user, made from the state each time (an answer to a report, a new
-// version, Pro running out or off). Kept is only which of them were looked at ([general] notes_seen), for its count.
+// version, Pro running out or off, a discount friends earned). Kept is only which of them were looked at ([general] notes_seen), for its count.
 let NOTES = [], notesSig = null;
 function notesList() {
-  const L = [], F = (S.diag || {}).fixed || {}, U = S.update || {}, P = S.pro;
+  const L = [], F = (S.diag || {}).fixed || {}, U = S.update || {}, P = S.pro, R = S.ref;
   const pro = [[t('pro.buy'), () => send({ cmd: 'open', what: 'pro' })], [t('pro.lock.key'), proGoKey]];
   if (F.id) L.push({ id: 'r' + F.id, h: t(F.rid ? 'fixed.r.title' : 'fixed.title'), p: F.text || '', acts: [[t('notes.read'), () => fixedCheck(true)]] });
   if (U.repo && U.latest) L.push({ id: 'u' + U.latest, h: t('notes.upd', U.latest), p: t('upd.avail', U.latest), acts: [[t(U.can ? 'upd.install' : 'upd.page', U.latest), () => {
@@ -5293,6 +5321,7 @@ function notesList() {
   }]] });
   if (P && P.state === 'trial' && P.days <= 3) L.push({ id: P.days <= 1 ? 'pt1' : 'pt', h: P.days <= 1 ? t('pro.trial.last') : t('pro.trial', P.days), p: t('notes.trial'), acts: pro });
   if (P && P.state === 'free') L.push({ id: 'pf' + (P.until || ''), h: t(P.key ? 'notes.pro.key' : 'notes.pro.trial'), p: t('pro.off'), acts: pro });
+  if (R && R.discount) L.push({ id: 'ref-' + R.discount, h: t('ref.note', R.pct), p: t('ref.note.p', R.discount), acts: [[t('ref.note.see'), refGo]] });
   return L;
 }
 function updateNotes() {
@@ -6750,7 +6779,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); } else updateFxState();
   if (bulbsChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck(); updateNotes();
+  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); updateRef(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck(); updateNotes();
   if (nanoLayoutChanged) drawAll();
   cmpWake();
 }

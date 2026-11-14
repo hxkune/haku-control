@@ -10,6 +10,9 @@ int  pro_active(void) { return 1; }
 void pro_set_key(const char *key) { (void)key; }
 void pro_buy(void) {}
 int  pro_json(char *out, int cap) { return jcat(out, cap, 0, "null"); }
+void pro_ref_poll(void) {}
+void pro_ref_join(void) {}
+int  pro_ref_json(char *out, int cap) { return jcat(out, cap, 0, "null"); }
 
 // Nanoleaf over the network
 int  nano_start(void) { return 0; }
