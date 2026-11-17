@@ -32,7 +32,7 @@ haku control is free for the PC: the PC's own lighting, USB devices, Razer / Ste
 apps, and every effect. This repository is that part, open source under the GPL-3.0.
 
 **haku Pro** adds the lights on Wi-Fi and the network (Nanoleaf, Hue, WLED, Govee, LIFX, Yeelight, WiZ, Elgato,
-Divoom, Tuya, AiDot) and phone control: $2 a month or $10 a year, with 14 days to try it in the app (no card, no
+Divoom, Tuya, AiDot) and phone control: $1.99 a month, $8.94 for six months, $14.99 a year or $49.99 once, with 14 days to try it in the app (no card, no
 account). The installer from the [releases](https://github.com/hxkune/haku-control/releases/latest) is the full app:
 without a key it runs as the free one once the trial is over, and the room lights simply pause. See
 [hakune.blog/haku-control.html#pro](https://hakune.blog/haku-control.html#pro). The Pro code lives in a private

@@ -5090,11 +5090,15 @@ function updatePro() {
   const badge = $('#pro-badge');
   badge.textContent = t('pro.badge.' + P.state); badge.classList.toggle('on', !!P.on);
   let st = P.state === 'trial' ? (P.days <= 1 ? t('pro.trial.last') : t('pro.trial', P.days))
-    : P.state === 'key' ? t(P.kind === 'gift' ? 'pro.on.gift' : 'pro.on.sub') + (P.until ? ' ' + t('pro.until', P.until) : '')
+    : P.state === 'key' ? t(P.kind === 'gift' ? 'pro.on.gift' : P.life ? 'pro.on.life' : 'pro.on.sub') + (P.until ? ' ' + t('pro.until', P.until) : '')
     : t('pro.off');
   if (P.kind === 'sub' && P.checked) st += ' · ' + t('pro.checked', P.checked);
   if (P.stale) st += ' · ' + t('pro.stale');
   $('#pro-state').textContent = st;
+  // the plans by their price per month, and what the longer ones save against single months
+  $('#pro-plans').classList.toggle('hidden', P.state === 'key');
+  $('#pro-plans').innerHTML = [['m', 0], ['h', 25], ['y', 37], ['l', 0]].map(([k, save]) =>
+    `<li><b>${t('pro.plan.' + k)}</b><span>${t('pro.plan.' + k + '.p')}</span>${save ? `<span class="pro-badge on">${t('pro.save', save)}</span>` : ''}</li>`).join('');
   const inp = $('#pro-key');
   inp.placeholder = P.key ? t('pro.key.have', P.key) : t('pro.key.ph');
   inp.disabled = !!P.busy;
@@ -5102,7 +5106,7 @@ function updatePro() {
   $('#pro-form button').disabled = !!P.busy;
   $('#pro-remove').classList.toggle('hidden', !P.key);
   $('#pro-buy').classList.toggle('hidden', P.state === 'key' && P.kind === 'gift');
-  $('#pro-buy span').textContent = t(P.state === 'key' && P.kind === 'sub' ? 'pro.manage' : 'pro.buy');
+  $('#pro-buy span').textContent = t(P.state === 'key' && P.kind === 'sub' ? (P.life ? 'pro.orders' : 'pro.manage') : 'pro.buy');
   const err = $('#pro-err'); err.textContent = P.err || ''; err.classList.toggle('hidden', !P.err);
   // a notice on top of the catalogue while it has lights that need Pro (the room's), and on the phone card
   const room = nanoOn() || S.bulbs.length > 0 || S.ext.devs.some(d => !pcDev(d));

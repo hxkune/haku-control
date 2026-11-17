@@ -627,12 +627,15 @@ body.no-net #accounts, body.no-net #phone-card { display: none !important; }
 .pro-badge { font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line2); color: var(--muted); }
 .pro-badge.on { border-color: var(--strong); color: var(--strong); }
 .pro-state { margin-top: 8px; font-size: 13.5px; }
+.pro-plans { list-style: none; margin: 14px 0 0; padding: 0; font-size: 13px; }
+.pro-plans li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); }
+.pro-plans b { min-width: 90px; font-weight: 600; }
 .pro-form { display: flex; gap: 8px; margin-top: 14px; }
 .pro-form input { flex: 1; min-width: 0; font-family: var(--mono, monospace); font-size: 12px; }
 .pro-err { color: var(--strong); font-size: 12px; margin-top: 8px; }
 .pro-lock { margin-bottom: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border-color: var(--strong); }
 .pro-lock > div { flex: 1; min-width: 220px; }
-.pro-lock .btn-row { margin-top: 0; }
+.pro-lock .btn-row { margin-top: 0; flex: 0 1 auto; }   /* as wide as its buttons: "Enter a key" stays beside "Get Pro" */
 .set-col > .card { margin-bottom: 20px; }
 #set-grid { row-gap: 20px; }
 #phone-card { grid-row: span 2; }   /* the tall one: the card after it goes under its short neighbour, not under a gap */
@@ -1052,6 +1055,7 @@ body.calm .fx:not(.comm) small { transition: none; }
 .sheet-x:hover { color: var(--strong); }
 .sheet-body { overflow-y: auto; padding: 4px 0; }
 .sheet-body > .card { border: 0; background: none; clip-path: none; animation: none; }
+.sheet-body > .card.lead { background-image: none; }   /* else its corner lines, no longer told not to repeat, tile into a hatch */
 .sheet-body > .card + .card { border-top: 1px solid var(--line); }
 .sheet-body > .card::after { display: none; }
 .sheet.wide .sheet-body { display: grid; grid-template-columns: 1fr 330px; }

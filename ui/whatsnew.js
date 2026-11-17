@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.72',
+    en: ['New: haku Pro for good. Besides the subscription there is now a single payment of $49.99: the key does not expire. Six months for $8.94 are new too. Settings > haku Pro lists the plans by their price per month: $1.99 for one month, $1.49 with six months (save 25%), $1.25 with a year (save 37%).',
+         'Fixed: the window a device opens from Devices (Nanoleaf panels, a bulb and others) no longer has stripes behind its text, so it is easy to read.'],
+    ru: ['Новое: haku Pro навсегда. Кроме подписки теперь есть разовый платёж 49,99 $: ключ не истекает. Появились и 6 месяцев за 8,94 $. В «Настройки > haku Pro» планы показаны по цене за месяц: 1,99 $ за один месяц, 1,49 $ при шести месяцах (экономия 25 %), 1,25 $ при годе (экономия 37 %).',
+         'Исправлено: в окне устройства, которое открывается из «Устройств» (панели Nanoleaf, лампа и другие), за текстом больше нет полос, и его легко читать.'],
+    fr: ['Nouveau : haku Pro pour de bon. En plus de l’abonnement, il y a maintenant un paiement unique de 49,99 $ : la clé n’expire pas. Six mois pour 8,94 $ sont nouveaux aussi. Réglages > haku Pro liste les formules par leur prix au mois : 1,99 $ pour un mois, 1,49 $ avec six mois (économie de 25 %), 1,25 $ avec un an (économie de 37 %).',
+         'Corrigé : la fenêtre qu’un appareil ouvre depuis Appareils (panneaux Nanoleaf, une ampoule et d’autres) n’a plus de rayures derrière son texte, qui se lit facilement.'] },
   { v: '0.4.71',
     en: ['New: Invite friends, under Settings → About & Pro. Get your link and send it to friends: each one who downloads haku control by it, installs it and starts it within 48 hours gives you a point. 5, 10 or 15 friends make a 5, 10 or 15 % code for your first Pro payment; it comes to Notifications.',
          'The dot that marks the current page in the side bar is smaller, glows and leaves a short trail on its way. The count on Notifications is tidier.',

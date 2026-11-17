@@ -1879,7 +1879,16 @@
     // a running subscription has nowhere to take the code; fifteen and more friends: the last step
     STATE.pro = { ...pro, on: 1, state: 'key', kind: 'sub' }; STATE.ref = { ...STATE.ref, points: 20, pct: 15, discount: 'HAKU15ABCDEFGHJK' }; emit(STATE); await wait(80);
     ok(shut('#ref-use') && st() === t('ref.max', 20) + ' ' + t('ref.have', 15) && $('#ref-n').textContent === t('ref.n', 15), 'fifteen friends with a subscription: ' + st() + ' / ' + $('#ref-n').textContent);
+    // a key paid once is not called a subscription
+    const ps = () => $('#pro-state').textContent + ' / ' + $('#pro-buy span').textContent;
+    ok(ps().startsWith(t('pro.on.sub')) && ps().endsWith(' / ' + t('pro.manage')), 'a subscription key reads: ' + ps());
+    ok(shut('#pro-plans'), 'the plans are offered to someone who has paid');
+    STATE.pro = { ...STATE.pro, life: 1 }; emit(STATE); await wait(80);
+    ok(ps().startsWith(t('pro.on.life')) && ps().endsWith(' / ' + t('pro.orders')), 'a key paid once reads: ' + ps());
     STATE.ref = ref; STATE.pro = pro; STATE.update = upd; setCfg('general', 'notes_seen', ''); emit(STATE); await wait(80);
+    // without a paid key: four plans by their price per month, the two longer ones say what they save
+    const plans = $$('#pro-plans li').map(li => li.textContent);
+    ok(!shut('#pro-plans') && plans.length === 4 && plans[1].endsWith(t('pro.save', 25)) && plans[2].endsWith(t('pro.save', 37)) && !/%/.test(plans[0] + plans[3]), 'the plans: ' + plans.join(' | '));
     $('main').scrollTop = 0; showTab('home');   // Settings is left at its top, as the tests after this one found it before
   });
 
@@ -2414,6 +2423,13 @@
     ok(!$('#sheet').classList.contains('hidden') && SHEET.kind === 'ram' && $('#sheet-body #ram-card'), 'the tile did not open its card');
     emit(STATE); await wait(80);
     closeSheet(); await wait(20);
+    // a card in the sheet is flat: no picture behind its text (a lead card's corner lines tiled into a hatch there)
+    for (const h of [{ k: 'nano' }, { k: 'bulb', i: 0 }]) {
+      openSheet(h, 0, 0);
+      const bad = $$('#sheet-body > .card').filter(c => getComputedStyle(c).backgroundImage !== 'none');
+      ok($('#sheet-body > .card.lead') && !bad.length, 'a picture behind a card of the ' + h.k + ' sheet: ' + bad.map(c => c.className));
+      closeSheet();
+    }
     ok(document.activeElement === $('.cat-tile[data-key="ram"] .cat-open'), 'focus not back on the tile: ' + (document.activeElement || {}).className);
     ok($('#ram-card').closest('#dev-store'), 'the card did not go back to its place');
   });
