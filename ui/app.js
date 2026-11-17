@@ -5095,10 +5095,10 @@ function updatePro() {
   if (P.kind === 'sub' && P.checked) st += ' · ' + t('pro.checked', P.checked);
   if (P.stale) st += ' · ' + t('pro.stale');
   $('#pro-state').textContent = st;
-  // the plans by their price per month, and what the longer ones save against single months
-  $('#pro-plans').classList.toggle('hidden', P.state === 'key');
+  // the plans by their price per month, and what the longer ones save against single months; each opens its own checkout
+  $('#pro-plans').classList.toggle('hidden', P.state === 'key' && !!P.life);
   $('#pro-plans').innerHTML = [['m', 0], ['h', 25], ['y', 37], ['l', 0]].map(([k, save]) =>
-    `<li><b>${t('pro.plan.' + k)}</b><span>${t('pro.plan.' + k + '.p')}</span>${save ? `<span class="pro-badge on">${t('pro.save', save)}</span>` : ''}</li>`).join('');
+    `<li><b>${t('pro.plan.' + k)}</b><span>${t('pro.plan.' + k + '.p')}</span>${save ? `<span class="pro-badge on">${t('pro.save', save)}</span>` : ''}<button class="btn small" data-plan="${k}"><span>${t('pro.plan.get')}</span></button></li>`).join('');
   const inp = $('#pro-key');
   inp.placeholder = P.key ? t('pro.key.have', P.key) : t('pro.key.ph');
   inp.disabled = !!P.busy;
@@ -5126,6 +5126,7 @@ function updatePro() {
 function proGoKey() { showTab('settings'); setCat('about'); setTimeout(() => { $('#pro-card').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('#pro-key').focus(); }, 60); }
 $('#pro-chip').addEventListener('click', proGoKey);
 $('#pro-buy').addEventListener('click', () => send({ cmd: 'open', what: 'pro' }));
+$('#pro-plans').addEventListener('click', e => { const b = e.target.closest('[data-plan]'); if (b) send({ cmd: 'open', what: 'pro-' + b.dataset.plan }); });
 $('#pro-form').addEventListener('submit', e => {
   e.preventDefault();
   const k = $('#pro-key').value.trim();

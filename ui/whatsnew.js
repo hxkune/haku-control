@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.73',
+    en: ['New: each plan under Settings > haku Pro has its own Get button. It opens the checkout with that plan already picked: one month, six months, a year or lifetime. With a gift key or a subscription the plans are there too, to move to a longer one or to lifetime.'],
+    ru: ['Новое: у каждого плана в «Настройки > haku Pro» своя кнопка «Купить». Она открывает оплату, где этот план уже выбран: месяц, шесть месяцев, год или навсегда. С подарочным ключом или подпиской планы тоже видны, чтобы перейти на более длинный или навсегда.'],
+    fr: ['Nouveau : chaque formule de Réglages > haku Pro a son propre bouton Acheter. Il ouvre le paiement avec cette formule déjà choisie : un mois, six mois, un an ou à vie. Avec une clé offerte ou un abonnement, les formules sont là aussi, pour passer à une plus longue ou à vie.'] },
   { v: '0.4.72',
     en: ['New: haku Pro for good. Besides the subscription there is now a single payment of $49.99: the key does not expire. Six months for $8.94 are new too. Settings > haku Pro lists the plans by their price per month: $1.99 for one month, $1.49 with six months (save 25%), $1.25 with a year (save 37%).',
          'Fixed: the window a device opens from Devices (Nanoleaf panels, a bulb and others) no longer has stripes behind its text, so it is easy to read.'],

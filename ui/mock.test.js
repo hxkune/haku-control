@@ -1882,13 +1882,17 @@
     // a key paid once is not called a subscription
     const ps = () => $('#pro-state').textContent + ' / ' + $('#pro-buy span').textContent;
     ok(ps().startsWith(t('pro.on.sub')) && ps().endsWith(' / ' + t('pro.manage')), 'a subscription key reads: ' + ps());
-    ok(shut('#pro-plans'), 'the plans are offered to someone who has paid');
+    ok(!shut('#pro-plans'), 'a subscriber is not offered a longer plan or lifetime');
     STATE.pro = { ...STATE.pro, life: 1 }; emit(STATE); await wait(80);
     ok(ps().startsWith(t('pro.on.life')) && ps().endsWith(' / ' + t('pro.orders')), 'a key paid once reads: ' + ps());
+    ok(shut('#pro-plans'), 'the plans are offered to a key that never runs out');
     STATE.ref = ref; STATE.pro = pro; STATE.update = upd; setCfg('general', 'notes_seen', ''); emit(STATE); await wait(80);
     // without a paid key: four plans by their price per month, the two longer ones say what they save
     const plans = $$('#pro-plans li').map(li => li.textContent);
-    ok(!shut('#pro-plans') && plans.length === 4 && plans[1].endsWith(t('pro.save', 25)) && plans[2].endsWith(t('pro.save', 37)) && !/%/.test(plans[0] + plans[3]), 'the plans: ' + plans.join(' | '));
+    ok(!shut('#pro-plans') && plans.length === 4 && plans[1].includes(t('pro.save', 25)) && plans[2].includes(t('pro.save', 37)) && !/%/.test(plans[0] + plans[3]), 'the plans: ' + plans.join(' | '));
+    // each plan's button opens its own checkout
+    sent.length = 0; $$('#pro-plans [data-plan]').forEach(b => b.click());
+    ok(sent.filter(m => m.cmd === 'open').map(m => m.what).join() === 'pro-m,pro-h,pro-y,pro-l', 'the plan buttons: ' + JSON.stringify(sent));
     $('main').scrollTop = 0; showTab('home');   // Settings is left at its top, as the tests after this one found it before
   });
 

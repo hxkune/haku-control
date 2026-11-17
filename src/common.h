@@ -365,7 +365,7 @@ void  app_reopen_devices(void);         // the PC's own controllers are opened a
 void  pro_start(void);
 int   pro_active(void);
 void  pro_set_key(const char *key);   // from the window ("" removes the key); checked in the background
-void  pro_buy(void);                  // the store's page in the browser
+void  pro_buy(const char *plan);      // the store's page in the browser; plan "m"/"h"/"y"/"l" opens that one's checkout
 int   pro_json(char *out, int cap);
 // "Invite friends" (pro/referral.c): a link to the download page; friends who install from it earn a discount
 void  pro_ref_poll(void);             // with every update check (update.c): a fresh install's click, the points

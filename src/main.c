@@ -1410,7 +1410,8 @@ void app_open(const char *what) {
     else if (!strcmp(what, "release")) update_open_page();
     else if (!strcmp(what, "openrgb")) ShellExecuteW(NULL, L"open", L"https://openrgb.org", NULL, NULL, SW_SHOWNORMAL);
     else if (!strcmp(what, "pawnio")) pawnio_setup();
-    else if (!strcmp(what, "pro")) pro_buy();
+    else if (!strcmp(what, "pro")) pro_buy("");
+    else if (!strncmp(what, "pro-", 4)) pro_buy(what + 4);   // one plan's checkout: "m", "h", "y", "l"
     else if (!strcmp(what, "diag")) diag_open();
     else if (!strcmp(what, "apps")) ShellExecuteW(NULL, L"open", L"ms-settings:appsfeatures", NULL, NULL, SW_SHOWNORMAL);   // Installed apps
 }
