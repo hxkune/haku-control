@@ -3294,7 +3294,8 @@
       $('#cdlg-apply').click(); await wait(150);
       ok(cv('custom', 't1', '') === tr()[0] && sent.filter(o => o.cmd === 'comp_apply').length === 1 && $('#cdlg-st').classList.contains('ok'), 'applied with Pro: ' + cv('custom', 't1', ''));
       // scenes and groups, saved at once and whole; the focus comes back to the row
-      $('#cdlg-scenes-box').open = true;
+      $('#cdlg-scenes-box').open = true;   // opens in .2 s: a button is pressed once shown, as by a person (else its focus does nothing)
+      await until(() => $('#cdlg-scenes').checkVisibility(), 'the scenes shown');
       const press = s => { const b = B(s); b.focus(); b.click(); };   // a real click focuses the button first
       $('#cdlg-sc-name').value = 'Calm'; press('[data-sa="sadd"]'); ok(B('[data-sa="sadd"]').disabled, 'busy while the core writes'); await done('scene saved');
       const sv = sent.filter(o => o.cmd === 'scene_save');
