@@ -1235,7 +1235,7 @@ function renderProfiles() {
   $('#prof-btn').classList.toggle('none', !cur);
   $('#prof-btn').classList.toggle('busy', !!PROF.go); $('#prof-btn').setAttribute('aria-busy', !!PROF.go);   // asked, not yet on
   // why the one in use came on, and the pause of the switching by programs and by the clock
-  const why = cur && S.prof_why ? t('prof.why.' + S.prof_why) : '', paused = cv('general', 'auto_pause', '') === '1', auto = profAuto(P);
+  const why = cur && S.prof_why ? t('prof.why.' + S.prof_why, S.rules && S.rules.by ? cv('rule.' + S.rules.by, 'name', '') : '') : '', paused = cv('general', 'auto_pause', '') === '1', auto = profAuto(P) || ruleHas();
   $('#prof-btn').title = why;
   $('#prof-paused').classList.toggle('hidden', !(paused && auto));
   $('#prof-state').innerHTML = (why ? `<span class="prof-why">${esc(why)}</span>` : '') + (auto ? `<span class="grow"></span>${paused ? `<em class="prof-auto">${t('prof.paused.s')}</em>` : ''}
@@ -1727,23 +1727,35 @@ function knobParse(s, layers) {
   return { L, p: m[2], lo, hi, label: cmpLabel(m[5]) };
 }
 const knobStr = (K, layers) => [layers.indexOf(K.L) + 1, K.p, cmpNum(K.lo), cmpNum(K.hi), K.label].join(' ').trim();
-const cmpWords = (L, K) => [L.map(fxc.line), K.map(x => knobStr(x, L))];
+// a keyframe track (t1..t8, effects.c track_parse): a setting of one layer taken from keys over dur seconds, rep 0 loop,
+// -1 bounce, N times; keys [t, v, ease l|h|s]. src: the words after the layer number as they were read, written back
+// as they are while untouched (without Pro the core takes only tracks it already holds, word for word)
+function trackParse(s, layers) {
+  const T = fxc.track(s, layers.map((x, i) => x ? i : -1)); if (!T) return null;
+  return { L: layers[T.layer], p: T.p, dur: T.dur, rep: T.rep, keys: T.kt.map((t, i) => [t, T.kv[i], T.ke[i]]), src: String(s).trim().replace(/^\S+\s+/, '') };
+}
+const trackStr = (T, layers, off = 0) => (layers.indexOf(T.L) + 1 + off) + ' ' + (T.src || [fxc.LPD[T.p][0], cmpNum(T.dur), T.rep < 0 ? 'bounce' : T.rep || 'loop',
+  ...T.keys.map(([t, v, e]) => cmpNum(t) + ':' + cmpNum(v) + (e === 'l' ? '' : ':' + e))].join(' '));
+const cmpWords = (L, K, T = []) => [L.map(fxc.line), K.map(x => knobStr(x, L)), T.map(x => trackStr(x, L))];
 function cmpTut(id) {
   const T = CMP_TUT[id], L = T.l.map(fxc.parse);
-  return { L, K: T.k.map(s => knobParse(s.replace(/cmp\.k\.\w+$/, x => t(x)), L)).filter(Boolean) };
+  return { L, K: T.k.map(s => knobParse(s.replace(/cmp\.k\.\w+$/, x => t(x)), L)).filter(Boolean), T: [] };
 }
 // [custom] as the core reads it (nothing made: the reactor, with its knobs); get(k) is one saved key
 function cmpLoad(get) {
   const raw = [], L = [];
   for (let i = 1; i <= fxc.MAX; i++) { const v = get('l' + i), x = v ? fxc.parse(v) : null; raw.push(x); if (x) L.push(x); }
-  return L.length ? { L, K: [1, 2, 3].map(i => knobParse(get('k' + i), raw)).filter(Boolean) } : cmpTut('reactor');
+  if (!L.length) return cmpTut('reactor');
+  const T = []; for (let i = 1; i <= fxc.MAX; i++) { const x = trackParse(get('t' + i), raw); if (x) T.push(x); }
+  return { L, K: [1, 2, 3].map(i => knobParse(get('k' + i), raw)).filter(Boolean), T };
 }
 const cmpNow = () => cmpLoad(k => cv('custom', k, ''));
-// the lines and knobs to [custom], only the keys that change
-function cmpWrite(lines, knobs, soon) {
+// the lines, knobs and tracks to [custom], only the keys that change (a track's layer number may move with the lines)
+function cmpWrite([lines, knobs, tracks], soon) {
   const set = soon ? setCfgSoon : setCfg, put = (k, v) => { if (cv('custom', k, '') !== v) set('custom', k, v); };
   for (let i = 0; i < fxc.MAX; i++) put('l' + (i + 1), lines[i] || '');
   for (let i = 0; i < 3; i++) put('k' + (i + 1), knobs[i] || '');
+  for (let i = 0; i < fxc.MAX; i++) put('t' + (i + 1), tracks[i] || '');
 }
 const cmpHex = L => L.col === -2 ? rgb2hex(...L.rgb) : (p => p[Math.max(0, L.col) % p.length])(effPal('custom'));
 
@@ -1753,7 +1765,9 @@ function cmpSide(box) {
   const html = c.K.map((K, i) => K.p === 'c'
     ? `<div class="set-row"><b>${esc(K.label || t('cmp.colour'))}</b><button type="button" class="sw" data-kn="${i}" aria-label="${esc(K.label || t('cmp.colour'))}"></button></div>`
     : `<div class="field"><div class="lbl"><span>${esc(K.label || t('cmp.p.' + K.p))}</span><b data-kn="${i}"></b></div><input type="range" class="range" data-kn="${i}" min="0" max="100" step="1" aria-label="${esc(K.label || t('cmp.p.' + K.p))}"></div>`).join('') +
-    (c.K.length ? '' : `<p class="note">${t('cmp.knob.none')}</p>`) + `<button class="btn small" type="button" id="cmp-open">${t('cmp.open')}</button>`;
+    (c.K.length ? '' : `<p class="note">${t('cmp.knob.none')}</p>`) +
+    (cv('custom', 'sc', '') === '1' && cmpStore('cscene.').some(s => s.L.length) ? `<p class="note">${t('cmp.sc.side')}</p>` : '') +   // the engine plays the scenes instead
+    `<button class="btn small" type="button" id="cmp-open">${t('cmp.open')}</button>`;
   if (box.dataset.html !== LANG + 'custom' + html) {
     box.dataset.html = LANG + 'custom' + html; box.innerHTML = html;
     box.querySelector('#cmp-open').addEventListener('click', cmpOpen);
@@ -1779,7 +1793,7 @@ function cmpKnobSet(i, v) {
     K.L.p[j] = Math.min(d[3], Math.max(d[2], +(K.lo + (K.hi - K.lo) * v / 100).toFixed(2)));
     const b = $(`#fx-params b[data-kn="${i}"]`); if (b) b.textContent = cmpNum(K.L.p[j]);
   }
-  cmpWrite(...cmpWords(c.L, c.K), true);   // all of it: with nothing saved yet the reactor is written whole
+  cmpWrite(cmpWords(c.L, c.K, c.T), true);   // all of it: with nothing saved yet the reactor is written whole
 }
 
 // the editor window. cur: the draft's words; base: what [custom] holds (dirty when they differ); live: [custom] as
@@ -1789,19 +1803,25 @@ function cmpKnobSet(i, v) {
 // kept in Drafts, 2: Drafts were full)
 // g: the gesture now (bumped on each press, release, cancel, key press, leaving the window), ag: the one of the last
 // undo step; t, play, rate, pt: the preview's own clock (never saved); solo: the layer the preview shows alone
-const CMP = { L: [], K: [], sel: 0, cur: '', hist: [], fut: [], ctl: '', g: 0, ag: -1, open: {}, raf: 0, last: 0, t: 0, play: 1, rate: 1, pt: 0, solo: null,
+const CMP = { L: [], K: [], T: [], sel: 0, cur: '', hist: [], fut: [], ctl: '', g: 0, ag: -1, open: {}, raf: 0, last: 0, t: 0, play: 1, rate: 1, pt: 0, solo: null,
   base: '', live: '', prof: '', tok: 0, st: '', why: '', req: '', sent: '', timer: 0, away: 0, moved: 0, from: null, keep: null, rec: 0, rt: 0, recCur: '' };
 let cmpReq = 0;
-const cmpSnap = () => JSON.stringify(cmpWords(CMP.L, CMP.K));
-const cmpLiveSnap = () => (c => JSON.stringify(cmpWords(c.L, c.K)))(cmpNow());
+const cmpSnap = () => JSON.stringify(cmpWords(CMP.L, CMP.K, CMP.T));
+const cmpLiveSnap = () => (c => JSON.stringify(cmpWords(c.L, c.K, c.T)))(cmpNow());
 const cmpDirty = () => CMP.cur !== CMP.base;
-// [lines, knobs] as all 11 "key=value" lines (an empty one clears that key), for comp_apply and a preset's fxkv
-const cmpKv = ([l, k]) => Array.from({ length: fxc.MAX }, (_, i) => 'l' + (i + 1) + '=' + (l[i] || '')).concat([0, 1, 2].map(i => 'k' + (i + 1) + '=' + (k[i] || ''))).join('\n');
+// [lines, knobs, tracks] as all 19 "key=value" lines (an empty one clears that key), for comp_apply (with sc: 20) and a
+// preset's fxkv
+const cmpKv = ([l, k, tr = []], sc) => Array.from({ length: fxc.MAX }, (_, i) => 'l' + (i + 1) + '=' + (l[i] || '')).concat([0, 1, 2].map(i => 'k' + (i + 1) + '=' + (k[i] || '')),
+  Array.from({ length: fxc.MAX }, (_, i) => 't' + (i + 1) + '=' + (tr[i] || '')), sc == null ? [] : ['sc=' + sc]).join('\n');
 const cmpShown = () => !$('#cdlg').classList.contains('hidden') || !!CMP.away;
+// the editor's layers, knobs and tracks from a snapshot's words
+function cmpFrom(snap) {
+  const [l, k, tr = []] = JSON.parse(snap), L = l.map(fxc.parse);
+  return { L, K: k.map(s => knobParse(s, L)).filter(Boolean), T: tr.map(s => trackParse(s, L)).filter(Boolean) };
+}
 function cmpSet(snap) {   // the editor shows these words
-  const [l, k] = JSON.parse(snap);
   const si = CMP.L.indexOf(CMP.solo);   // the preview's solo stays on the same place in the list
-  CMP.L = l.map(fxc.parse); CMP.K = k.map(s => knobParse(s, CMP.L)).filter(Boolean); CMP.sel = Math.max(0, Math.min(CMP.sel, CMP.L.length - 1));
+  Object.assign(CMP, cmpFrom(snap)); CMP.sel = Math.max(0, Math.min(CMP.sel, CMP.L.length - 1));
   CMP.solo = CMP.L[si] || null; CMP.cur = snap;
 }
 // c: a composition to start from (a draft), else what [custom] holds
@@ -1813,7 +1833,7 @@ function cmpOpen(c) {
     keep: null, rec: cv('crecover', 'at', '') ? 1 : 0, recCur: '',
     t: stillMotion() ? 3 : 0, play: stillMotion() ? 0 : 1, pt: 0 });   // reduced motion: a still frame until Play
   if (!(c && c.L)) CMP.from = document.activeElement;
-  cmpSet(c && c.L ? JSON.stringify(cmpWords(c.L, c.K)) : live);
+  cmpSet(c && c.L ? JSON.stringify(cmpWords(c.L, c.K, c.T)) : live);
   cmpTutOpts();
   $('#cdlg-ask').classList.add('hidden');
   cmpBig(0);
@@ -1891,7 +1911,7 @@ function cmpApply() {
   const req = String(++cmpReq), tok = CMP.tok;
   Object.assign(CMP, { st: 'sent', why: '', req, sent: CMP.cur });
   flushSets();   // the panel's knobs still on their way go first
-  send({ cmd: 'comp_apply', p: CMP.prof, req, kv: cmpKv(JSON.parse(CMP.cur)) });
+  send({ cmd: 'comp_apply', p: CMP.prof, req, kv: cmpKv(JSON.parse(CMP.cur), cv('custom', 'sc', '')) });   // sc as it is: the scenes are set apart
   clearTimeout(CMP.timer);
   CMP.timer = setTimeout(() => { if (CMP.tok === tok) cmpDone({ req, err: 'noreply' }); }, 4000);
   cmpTools();
@@ -1906,8 +1926,7 @@ function cmpDone(m) {
 }
 function cmpRevert() {
   if (!cmpDirty()) return;
-  const [l, k] = JSON.parse(CMP.base);   // one step of undo, like any other change
-  CMP.L = l.map(fxc.parse); CMP.K = k.map(s => knobParse(s, CMP.L)).filter(Boolean); CMP.sel = Math.min(CMP.sel, CMP.L.length - 1);
+  Object.assign(CMP, cmpFrom(CMP.base)); CMP.sel = Math.min(CMP.sel, CMP.L.length - 1);   // one step of undo, like any other change
   cmpChanged(''); cmpRender();
 }
 // a state came while the editor is up: [custom] changed (a preset, the phone, the panel) or another profile came on
@@ -1923,7 +1942,7 @@ function cmpState(switched) {
     if (!CMP.away) cmpRender();
     return;
   }
-  if (live === CMP.live) return;
+  if (live === CMP.live) { if (!CMP.away && cmpStk() !== CMP.stk) cmpRender(); return; }   // Pro came or went, the scenes or groups changed
   const dirty = cmpDirty();
   CMP.live = CMP.base = live;
   if (!dirty) cmpSet(live);
@@ -1951,7 +1970,7 @@ function draftDone(m) {
   const w = DRAFT_W[m.req]; if (!w) return;
   delete DRAFT_W[m.req]; clearTimeout(w.timer); w.done(m.err || '', +m.n || 0);
 }
-// the editor's work as a draft's 14 lines: name, at, prof (the profile it was for; drafts belong to none), l1..l8, k1..k3
+// the editor's work as a draft's 22 lines: name, at, prof (the profile it was for; drafts belong to none), l1..l8, k1..k3, t1..t8
 function cmpDraftKv() {
   const when = new Date().toLocaleString(LANG, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   return ['name=' + cmpLabel(t('cmp.draft.name', when)), 'at=' + Date.now(), 'prof=' + CMP.prof, cmpKv(JSON.parse(CMP.cur))].join('\n');
@@ -1988,10 +2007,10 @@ function cmpRecWrite() {
   });
 }
 const cmpDraft = n => cmpLoad(k => cv('cdraft.' + n, k, ''));
-const draftKeys = () => ['name', 'at', 'prof'].concat(Array.from({ length: fxc.MAX }, (_, i) => 'l' + (i + 1)), ['k1', 'k2', 'k3']);
+const draftKeys = () => ['name', 'at', 'prof'].concat(Array.from({ length: fxc.MAX }, (_, i) => 'l' + (i + 1)), ['k1', 'k2', 'k3'], Array.from({ length: fxc.MAX }, (_, i) => 't' + (i + 1)));
 const draftPut = (n, k, v) => { setCfgLocal('cdraft.' + n, k, v); send({ cmd: 'set', s: 'cdraft.' + n, k, v }); };   // no p: a draft is no profile's
-// a draft's lines as a constructor's [lines, knobs] (kept in order: the knobs point at layers by place)
-const draftComp = n => [Array.from({ length: fxc.MAX }, (_, i) => cv('cdraft.' + n, 'l' + (i + 1), '')).filter(Boolean), [1, 2, 3].map(i => cv('cdraft.' + n, 'k' + i, '')).filter(Boolean)];
+// a draft's lines as a constructor's [lines, knobs, tracks] (kept in order: knobs and tracks point at layers by place)
+const draftComp = n => (c => [c.L.map(fxc.line), c.K.map(x => knobStr(x, c.L)), c.T.map(x => trackStr(x, c.L))])(cmpDraft(n));
 function draftSub(d) {
   const p = cv('cdraft.' + d.n, 'prof', ''), pn = p && cv('profile.' + p, 'name', '');
   const when = d.at ? new Date(d.at).toLocaleString(LANG, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
@@ -2034,7 +2053,9 @@ $('#ddlg-del').addEventListener('click', () => {   // asked twice; nothing else 
 $('#ddlg-cancel').addEventListener('click', draftClose);
 $('#ddlg').addEventListener('pointerdown', e => { if (e.target.id === 'ddlg') draftClose(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#ddlg').classList.contains('hidden')) draftClose(); });
-function cmpRender() { cmpList(); cmpEdit(); cmpKnobs(); cmpTools(); cmpPlayUi(); cmpWake(); }
+function cmpRender() { CMP.stk = cmpStk(); cmpList(); cmpEdit(); cmpKnobs(); cmpScenes(); cmpTools(); cmpPlayUi(); cmpWake(); }
+// what besides [custom] changes the editor: the Pro lock, the stored scenes and groups
+const cmpStk = () => JSON.stringify([proLocked(), Object.keys(S.cfg).filter(s => /^c(scene|group)\.\d+$/.test(s)).map(s => [s, S.cfg[s]])]);
 function cmpList() {
   const n = CMP.L.length, off = L => L.p[CMP_LP.hide] >= 0.5;
   $('#cdlg-list').innerHTML = CMP.L.map((L, i) => `<li class="${i === CMP.sel ? 'on' : ''}${off(L) ? ' off' : ''}" data-i="${i}">` +
@@ -2052,7 +2073,7 @@ $('#cdlg-list').addEventListener('click', e => {
   if (a === 'solo') { CMP.solo = CMP.solo === L[i] ? null : L[i]; cmpRender(); return; }   // the preview only: no undo step, never saved
   if (a === 'dup') { if (L.length >= fxc.MAX) return; L.splice(i + 1, 0, fxc.parse(fxc.line(L[i]))); CMP.sel = i + 1; }
   else if (a === 'eye') L[i].p[CMP_LP.hide] = L[i].p[CMP_LP.hide] >= 0.5 ? 0 : 1;
-  else if (a === 'del') { if (L.length < 2) return; const [x] = L.splice(i, 1); CMP.K = CMP.K.filter(K => K.L !== x); if (CMP.solo === x) CMP.solo = null; if (CMP.sel > i) CMP.sel--; CMP.sel = Math.min(CMP.sel, L.length - 1); }
+  else if (a === 'del') { if (L.length < 2) return; const [x] = L.splice(i, 1); CMP.K = CMP.K.filter(K => K.L !== x); CMP.T = CMP.T.filter(T => T.L !== x); if (CMP.solo === x) CMP.solo = null; if (CMP.sel > i) CMP.sel--; CMP.sel = Math.min(CMP.sel, L.length - 1); }
   else {
     const j = a === 'up' ? i - 1 : i + 1; if (j < 0 || j >= L.length) return;
     [L[i], L[j]] = [L[j], L[i]]; CMP.sel = CMP.sel === i ? j : CMP.sel === j ? i : CMP.sel;
@@ -2083,7 +2104,8 @@ function cmpEdit() {
     rng('o') + CMP_P[shape].map(rng).join('') + (shape === 'ring' ? chk('fade') : '') +
     `<details class="fx-adv" data-d="anim"${open('anim', L.ap >= 0)}><summary>${t('cmp.anim')}</summary>${field(t('cmp.anim.what'), sel('ap', mods(L.ap), L.ap, t('cmp.anim.what')))}${deadNote(L.ap)}${L.ap >= 0 ? rng('aa') + rng('at') : ''}</details>` +
     `<details class="fx-adv" data-d="snd"${open('snd', L.mp >= 0)}><summary>${t('cmp.snd')}</summary>${field(t('cmp.snd.what'), sel('mp', mods(L.mp), L.mp, t('cmp.snd.what')))}${deadNote(L.mp)}` +
-    (L.mp >= 0 ? field(t('cmp.ms'), sel('ms', [[0, t('cmp.ms.level')], [1, t('cmp.ms.bass')], [2, t('cmp.ms.beat')]], L.ms, t('cmp.ms'))) + rng('ma') : '') + `<p class="note">${t('cmp.snd.note')}</p></details>`;
+    (L.mp >= 0 ? field(t('cmp.ms'), sel('ms', [[0, t('cmp.ms.level')], [1, t('cmp.ms.bass')], [2, t('cmp.ms.beat')]], L.ms, t('cmp.ms'))) + rng('ma') : '') + `<p class="note">${t('cmp.snd.note')}</p></details>` +
+    cmpKeysHtml(L, mods, open);
   box.querySelectorAll('input[type=range]').forEach(fill);
   box.querySelectorAll('details').forEach(d => d.addEventListener('toggle', () => { CMP.open[d.dataset.d] = d.open; }));
   const mv = box.querySelector('[data-a="maskview"]');
@@ -2091,6 +2113,75 @@ function cmpEdit() {
   const sw = box.querySelector('#cdlg-sw');
   if (sw) sw.addEventListener('click', () => openPicker(sw, cmpHex(L), hex => { L.rgb = hex2rgb(hex); sw.style.setProperty('--c', hex); sw.title = hex; cmpChanged('rgb' + CMP.sel, true); }));
 }
+// the chosen layer's keyframe tracks: made and changed with Pro; without it they play and can be removed
+function cmpKeysHtml(L, mods, open) {
+  const lock = proLocked(), dis = lock ? ' disabled' : '', mine = CMP.T.map((T, i) => [T, i]).filter(([T]) => T.L === L);
+  const at = j => j == null ? '' : ` data-j="${j}"`;
+  const num = (tk, v, lbl, min, max, j) => `<input type="number" class="cdlg-num" data-tk="${tk}"${at(j)} value="${cmpNum(v)}" min="${min}" max="${max}" step="any" aria-label="${esc(lbl)}" title="${esc(lbl)}"${dis}>`;
+  const sel = (tk, opts, v, lbl, j) => `<select class="select" data-tk="${tk}"${at(j)} aria-label="${esc(lbl)}"${dis}>${opts.map(([x, s]) => `<option value="${x}"${x === v ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>`;
+  const eases = ['l', 'h', 's'].map(e => [e, t('cmp.key.e.' + e)]);
+  const rows = mine.map(([T, i]) => {
+    const d = fxc.LPD[T.p], n = T.keys.length;
+    return `<div class="cdlg-track" data-k="${i}"><div class="cdlg-track-head">${sel('p', mods(T.p).slice(1), T.p, t('cmp.key.what'))}` +
+      num('dur', T.dur, t('cmp.key.dur'), 0.1, 600) +
+      sel('rep', [['loop', t('cmp.key.loop')], ['bounce', t('cmp.key.bounce')], ['n', t('cmp.key.times')]], T.rep < 0 ? 'bounce' : T.rep ? 'n' : 'loop', t('cmp.key.rep')) +
+      (T.rep > 0 ? num('n', T.rep, t('cmp.key.times'), 1, 99) : '') +
+      `<button type="button" class="btn small ghost" data-ta="tdel" title="${t('cmp.key.tdel')}" aria-label="${t('cmp.key.tdel')}">✕</button></div>` +
+      T.keys.map(([kt, kv, ke], j) => `<div class="cdlg-key"><span>${j + 1}</span>` + num('kt', kt, t('cmp.key.t'), 0, T.dur, j) + num('kv', kv, t('cmp.key.v'), d[2], d[3], j) + sel('ke', eases, ke, t('cmp.key.e'), j) +
+        `<button type="button" class="btn small ghost" data-ta="kdel" data-j="${j}" title="${t('cmp.key.kdel')}" aria-label="${t('cmp.key.kdel')}"${lock || n < 2 ? ' disabled' : ''}>✕</button></div>`).join('') +
+      `<button type="button" class="btn small ghost" data-ta="kadd"${lock || n >= fxc.CK_MAX ? ' disabled' : ''}>${t('cmp.key.kadd')}</button></div>`;
+  }).join('');
+  return `<details class="fx-adv" data-d="keys"${open('keys', mine.length)}><summary>${t('cmp.keys')}${mine.length ? ` (${mine.length})` : ''}</summary>` +
+    (lock ? `<div class="rules-lock"><div><b>${t('cmp.keys.lock')}</b><p class="muted">${t('cmp.keys.lock.text')}</p></div><div class="btn-row"><button class="btn small primary" type="button" data-ta="buy">${t('pro.buy')}</button><button class="btn small ghost" type="button" data-ta="key">${t('pro.lock.key')}</button></div></div>` : '') +
+    rows + `<button type="button" class="btn small ghost" data-ta="tadd"${lock || CMP.T.length >= fxc.MAX ? ' disabled' : ''}>${t('cmp.key.tadd')}</button><p class="note">${t('cmp.keys.note')}</p></details>`;
+}
+// the tracks drawn again after a change; the focus back on the same control (q: its selector within the track)
+function cmpKeysAgain(k, q) {
+  cmpEdit();
+  const box = $('#cdlg-edit'), tr = box.querySelector(`.cdlg-track[data-k="${k}"]`);
+  const f = (tr && q && tr.querySelector(q + ':not(:disabled)')) || box.querySelector('[data-ta="tadd"]:not(:disabled)') || box.querySelector('[data-d="keys"] summary');
+  if (f) f.focus();
+}
+$('#cdlg-edit').addEventListener('change', e => {
+  const x = e.target, k = x.closest('.cdlg-track'), f = x.dataset.tk; if (!f || !k) return;
+  const T = CMP.T[+k.dataset.k], j = +x.dataset.j, v = +x.value, q = `[data-tk="${f}"]` + (x.dataset.j ? `[data-j="${j}"]` : '');
+  if (!T || proLocked()) return;
+  const clamp = (p, y) => { const r = fxc.LPD[p]; return Math.min(r[3], Math.max(r[2], +y.toFixed(2))); };
+  if (['dur', 'n', 'kt', 'kv'].includes(f) && !(x.value !== '' && isFinite(v))) { cmpKeysAgain(k.dataset.k, q); return; }   // not a number: back as it was
+  if (f === 'p') { T.p = v; T.keys.forEach(K => { K[1] = clamp(v, K[1]); }); }
+  else if (f === 'dur') { T.dur = Math.min(600, Math.max(0.1, +v.toFixed(2))); T.keys.forEach(K => { K[0] = Math.min(K[0], T.dur); }); }
+  else if (f === 'rep') T.rep = x.value === 'bounce' ? -1 : x.value === 'n' ? 1 : 0;
+  else if (f === 'n') T.rep = Math.min(99, Math.max(1, Math.round(v)));
+  else if (f === 'kt') { T.keys[j][0] = Math.min(T.dur, Math.max(0, +v.toFixed(2))); T.keys.sort((a, b) => a[0] - b[0]); }   // keys in time order, as the core reads them
+  else if (f === 'kv') T.keys[j][1] = clamp(T.p, v);
+  else if (f === 'ke') T.keys[j][2] = x.value;
+  T.src = ''; cmpChanged(''); cmpKeysAgain(k.dataset.k, q);
+});
+$('#cdlg-edit').addEventListener('click', e => {
+  const b = e.target.closest('button[data-ta]'); if (!b || b.disabled) return;
+  const a = b.dataset.ta, L = CMP.L[CMP.sel], k = b.closest('.cdlg-track'), T = k ? CMP.T[+k.dataset.k] : null;
+  if (a === 'buy') { send({ cmd: 'open', what: 'pro' }); return; }
+  if (a === 'key') { cmpTryClose(); if ($('#cdlg').classList.contains('hidden')) proGoKey(); return; }   // unapplied work: asked first
+  let q = '';
+  if (a === 'tdel') { if (!T) return; CMP.T.splice(CMP.T.indexOf(T), 1); }   // free: a track gone is no new keyframe
+  else if (proLocked() || !L) return;
+  else if (a === 'tadd') {
+    if (CMP.T.length >= fxc.MAX) return;
+    const u = cmpUses(L), i = fxc.LPD.findIndex((d, x) => x < fxc.MOD && u.includes(d[0]) && !CMP.T.some(y => y.L === L && y.p === x)), p = i < 0 ? CMP_LP.o : i;
+    const r = fxc.LPD[p], v = L.p[p];   // from the value now to the far end of its range and back, so it shows at once
+    CMP.T.push({ L, p, dur: 4, rep: -1, keys: [[0, v, 'l'], [4, v - r[2] > r[3] - v ? r[2] : r[3], 'l']], src: '' });
+    CMP.open.keys = true; cmpChanged(''); cmpKeysAgain(CMP.T.length - 1, '[data-tk="p"]'); return;
+  } else if (!T) return;
+  else if (a === 'kadd') {
+    const n = T.keys.length, z = T.keys[n - 1]; if (n >= fxc.CK_MAX) return;
+    if (z[0] < T.dur) T.keys.push([T.dur, z[1], 'l']);   // at the end; the end taken: half way to the key before
+    else { const y = T.keys[n - 2] || [0, z[1]]; T.keys.splice(n - 1, 0, [+((y[0] + z[0]) / 2).toFixed(2), +((y[1] + z[1]) / 2).toFixed(2), 'l']); }
+    q = '[data-ta="kadd"]';
+  } else if (a === 'kdel') { if (T.keys.length < 2) return; T.keys.splice(+b.dataset.j, 1); q = '[data-ta="kadd"]'; }
+  else return;
+  if (T) T.src = '';
+  cmpChanged(''); cmpKeysAgain(k ? k.dataset.k : -1, q);
+});
 $('#cdlg-edit').addEventListener('input', e => {
   const r = e.target, L = CMP.L[CMP.sel]; if (r.type !== 'range' || !L) return;
   L.p[CMP_LP[r.dataset.p]] = +r.value;
@@ -2098,7 +2189,7 @@ $('#cdlg-edit').addEventListener('input', e => {
   cmpChanged('p' + CMP.sel + r.dataset.p, true);
 });
 $('#cdlg-edit').addEventListener('change', e => {
-  const x = e.target, L = CMP.L[CMP.sel]; if (!L || x.type === 'range') return;
+  const x = e.target, L = CMP.L[CMP.sel]; if (!L || x.type === 'range' || x.dataset.tk) return;   // tracks: their own handler above
   if (x.dataset.f === 'name') { L.name = fxc.NAME(x.value); x.value = L.name; cmpChanged(''); cmpList(); cmpKnobs(); return; }   // the field keeps its focus
   if (x.type === 'checkbox') L.p[CMP_LP[x.dataset.p]] = x.checked ? 1 : 0;
   else if (x.dataset.f) {
@@ -2139,16 +2230,114 @@ $('#cdlg-knobs').addEventListener('click', e => {
   else CMP.K.splice(+b.closest('[data-i]').dataset.i, 1);
   cmpChanged(''); cmpKnobs();
 });
+
+// ---- scenes ([cscene.1..8]: dur, fade, nm, l1..l8, t1..t8; played in turn while [custom] sc=1) and layer groups
+// ([cgroup.1..16]: nm, l1..l8, t1..t8). Saving and moving them take Pro; loading, inserting, playing and deleting
+// are free. The core writes each one whole and answers scene_done / group_done {req, err, n}
+const SC_KEYS = ['dur', 'fade', 'nm'].concat(Array.from({ length: 8 }, (_, i) => 'l' + (i + 1)), Array.from({ length: 8 }, (_, i) => 't' + (i + 1)));
+const SC_W = {};
+// the stored ones, as the core counts them (up to the first gap)
+function cmpStore(pre) {
+  const out = [];
+  for (let n = 1; n <= (pre === 'cscene.' ? fxc.SCENE_MAX : 16); n++) {
+    const x = S.cfg[pre + n]; if (!x || !Object.keys(x).some(k => x[k] !== '' && x[k] != null)) break;
+    const g = k => cv(pre + n, k, ''), L = [], T = [];
+    for (let i = 1; i <= fxc.MAX; i++) L.push(g('l' + i) ? fxc.parse(g('l' + i)) : null);
+    for (let i = 1; i <= fxc.MAX; i++) { const tr = g('t' + i) && trackParse(g('t' + i), L); if (tr) T.push(tr); }
+    out.push({ n, nm: g('nm'), dur: +g('dur') || 10, fade: g('fade') === '' ? 1 : +g('fade'), L: L.filter(Boolean), T, get: g });
+  }
+  return out;
+}
+// the draft's layers and tracks as a scene's or group's lines (with dur, fade, nm)
+const cmpScKv = (o, L = CMP.L, T = CMP.T) => cmpKv([L.map(fxc.line), [], T.map(x => trackStr(x, L))]).split('\n').filter(s => s[0] !== 'k')
+  .concat(['nm=' + (o.nm || '')], o.dur == null ? [] : ['dur=' + cmpNum(o.dur), 'fade=' + cmpNum(o.fade)]).join('\n');
+// back: the control the focus returns to once answered ([attr, n]; n becomes the one answered, as after a move)
+function scSend(cmd, o, back) {
+  const req = String(++cmpReq);
+  SC_W[req] = setTimeout(() => scDone({ req, err: 'noreply' }), 4000);
+  CMP.scBack = back; send(Object.assign({ cmd, req }, o)); CMP.scNote = ''; cmpScenes();
+}
+function scDone(m) {
+  if (!(m.req in SC_W)) return;
+  clearTimeout(SC_W[m.req]); delete SC_W[m.req];
+  CMP.scNote = m.err ? t('cmp.sc.err.' + m.err) : '';
+  if (!$('#cdlg').classList.contains('hidden')) {
+    const box = $('#cdlg-scenes-box'), a = document.activeElement, mine = a === document.body || box.contains(a);
+    cmpScenes();
+    const [q, n0, fb = 'data-sa="sload"'] = CMP.scBack || [], n = +m.n || n0, at = s => s && box.querySelector(s + ':not(:disabled)');
+    const f = mine && (at(q && `[${q}][data-n="${n}"]`) || at(`[${fb}][data-n="${n}"]`) || box.querySelector('summary'));
+    if (f) f.focus();
+  }
+  renderEffectSide();
+}
+function cmpScenes() {
+  const lock = proLocked(), busy = Object.keys(SC_W).length > 0, sc = cmpStore('cscene.'), gr = cmpStore('cgroup.');
+  const dis = c => c || busy ? ' disabled' : '', pro = c => dis(lock || c);
+  const btn = (a, n, txt, off, title) => `<button type="button" class="btn small ghost" data-sa="${a}" data-n="${n}"${title ? ` title="${esc(title)}" aria-label="${esc(title)}"` : ''}${off}>${txt}</button>`;
+  const num = (f, n, v, lbl, min, max) => `<input type="number" class="cdlg-num" data-sf="${f}" data-n="${n}" value="${cmpNum(v)}" min="${min}" max="${max}" step="any" title="${esc(lbl)}" aria-label="${esc(lbl)}"${pro(false)}>`;
+  const name = s => s.nm || t('cmp.sc.n', s.n), gname = g => g.nm || t('cmp.gr.n', g.n);
+  const fits = g => CMP.L.length + g.L.length <= fxc.MAX && CMP.T.length + g.T.length <= fxc.MAX;
+  $('#cdlg-scenes').innerHTML =
+    (lock ? `<div class="rules-lock"><div><b>${t('cmp.sc.lock')}</b><p class="muted">${t('cmp.sc.lock.text')}</p></div><div class="btn-row"><button class="btn small primary" type="button" data-sa="buy">${t('pro.buy')}</button><button class="btn small ghost" type="button" data-sa="key">${t('pro.lock.key')}</button></div></div>` : '') +
+    `<div class="set-row"><b>${t('cmp.sc.on')}</b><label class="switch"><input type="checkbox" data-sa="on" aria-label="${t('cmp.sc.on')}"${cv('custom', 'sc', '') === '1' ? ' checked' : ''}${dis(false)}><span></span></label></div>` +
+    `<ol class="cdlg-store">${sc.map((s, i) => `<li><span class="grow">${esc(name(s))} <small class="muted">${t('cmp.sc.layers', s.L.length)}</small></span>` +
+      num('dur', s.n, s.dur, t('cmp.sc.dur'), 1, 600) + num('fade', s.n, s.fade, t('cmp.sc.fade'), 0, 30) +
+      btn('sload', s.n, t('cmp.sc.load'), dis(false)) + btn('sput', s.n, t('cmp.sc.put'), pro(!CMP.L.length), t('cmp.sc.put.t')) +
+      btn('sup', s.n, '▲', pro(!i), t('cmp.up')) + btn('sdown', s.n, '▼', pro(i === sc.length - 1), t('cmp.down')) + btn('sdel', s.n, '✕', dis(false), t('cmp.sc.del')) + '</li>').join('')}</ol>` +
+    (sc.length ? '' : `<p class="note">${t('cmp.sc.none')}</p>`) +
+    `<div class="btn-row"><input type="text" id="cdlg-sc-name" maxlength="24" spellcheck="false" placeholder="${esc(t('cmp.sc.name'))}" aria-label="${esc(t('cmp.sc.name'))}"${pro(false)}>` +
+    btn('sadd', 0, t('cmp.sc.add'), pro(sc.length >= fxc.SCENE_MAX || !CMP.L.length)) + btn('gadd', 0, t('cmp.gr.add'), pro(gr.length >= 16 || !CMP.L.length)) + '</div>' +
+    `<b class="cdlg-sub">${t('cmp.gr')}</b><ol class="cdlg-store">${gr.map(g => `<li><span class="grow">${esc(gname(g))} <small class="muted">${t('cmp.sc.layers', g.L.length)}</small></span>` +
+      btn('gins', g.n, t('cmp.gr.ins'), dis(!fits(g)), fits(g) ? '' : t('cmp.gr.nofit')) + btn('gdel', g.n, '✕', dis(false), t('cmp.gr.del')) + '</li>').join('')}</ol>` +
+    (gr.length ? '' : `<p class="note">${t('cmp.gr.none')}</p>`) +
+    `<p class="note">${t('cmp.sc.note')}</p><p class="cdlg-st bad" role="status" aria-live="polite">${esc(CMP.scNote || '')}</p>`;
+}
+$('#cdlg-scenes').addEventListener('change', e => {
+  const x = e.target;
+  if (x.dataset.sa === 'on') { setCfg('custom', 'sc', x.checked ? '1' : ''); renderEffectSide(); return; }   // free: playing what is saved
+  const f = x.dataset.sf; if (!f || proLocked()) return;
+  const s = cmpStore('cscene.').find(y => y.n === +x.dataset.n), v = +x.value; if (!s) return;
+  if (x.value === '' || !isFinite(v)) { cmpScenes(); return; }
+  const dur = f === 'dur' ? Math.min(600, Math.max(1, v)) : s.dur, fade = Math.min(30, dur, Math.max(0, f === 'fade' ? v : s.fade));
+  scSend('scene_save', { n: s.n, kv: SC_KEYS.map(k => k + '=' + (k === 'dur' ? cmpNum(dur) : k === 'fade' ? cmpNum(fade) : s.get(k))).join('\n') }, [`data-sf="${f}"`, s.n]);   // the scene whole, its timing changed
+});
+$('#cdlg-scenes').addEventListener('click', e => {
+  const b = e.target.closest('button[data-sa]'); if (!b || b.disabled) return;
+  const a = b.dataset.sa, n = +b.dataset.n;
+  if (a === 'buy') { send({ cmd: 'open', what: 'pro' }); return; }
+  if (a === 'key') { cmpTryClose(); if ($('#cdlg').classList.contains('hidden')) proGoKey(); return; }
+  const back = [`data-sa="${a}"`, n, a[0] === 'g' ? 'data-sa="gdel"' : undefined];
+  if (a === 'sdel') { scSend('scene_delete', { n }, back); return; }
+  if (a === 'gdel') { scSend('group_delete', { n }, back); return; }
+  if (a === 'sload' || a === 'gins') {   // into the draft, one step of undo; the tracks keep their words, so they apply without Pro
+    const x = cmpStore(a === 'sload' ? 'cscene.' : 'cgroup.').find(y => y.n === n); if (!x) return;
+    if (a === 'sload') {
+      const ks = CMP.K.map(K => knobStr(K, CMP.L));   // the panel's knobs stay on the same layer numbers
+      CMP.L = x.L; CMP.T = x.T; CMP.K = ks.map(s => knobParse(s, CMP.L)).filter(Boolean); CMP.sel = 0; CMP.solo = null;
+    } else {
+      if (CMP.L.length + x.L.length > fxc.MAX || CMP.T.length + x.T.length > fxc.MAX) return;
+      CMP.sel = CMP.L.length; CMP.L = CMP.L.concat(x.L); CMP.T = CMP.T.concat(x.T);
+    }
+    cmpChanged(''); CMP.note = t(a === 'sload' ? 'cmp.sc.loaded' : 'cmp.gr.inserted'); cmpRender(); return;
+  }
+  if (proLocked()) return;
+  const nm = fxc.NAME($('#cdlg-sc-name').value);
+  if (a === 'sadd') scSend('scene_save', { n: 0, kv: cmpScKv({ nm, dur: 10, fade: 1 }) }, back);
+  else if (a === 'gadd') scSend('group_save', { n: 0, kv: cmpScKv({ nm }) }, back);
+  else if (a === 'sput') { const s = cmpStore('cscene.').find(y => y.n === n); if (s) scSend('scene_save', { n, kv: cmpScKv({ nm: nm || s.nm, dur: s.dur, fade: s.fade }) }, back); }
+  else if (a === 'sup' || a === 'sdown') scSend('scene_move', { n, d: a === 'sup' ? -1 : 1 }, back);
+});
 // the layer shown alone, if it is still in the list
 const cmpSolo = () => CMP.solo && CMP.L.includes(CMP.solo) ? CMP.solo : null;
 // what the preview draws: all layers, or the solo one with the others hidden (a mask: as black and white, over white)
 // shortcut: a soloed mask moves one place down, so a noise or spark mask gets another seed than in the composition
 // Before (CMP.ab): the applied composition, whole, in the same picture, time and colours; only drawn, nothing sent
+// Returns [layers, their tracks' words] (the tracks numbered by the layers shown)
 function cmpShow() {
-  if (CMP.ab) return JSON.parse(CMP.base)[0].map(fxc.parse).filter(Boolean);
-  const so = cmpSolo(); if (!so) return CMP.L;
+  if (CMP.ab) { const [l, , tr = []] = JSON.parse(CMP.base); return [l.map(fxc.parse), tr]; }
+  const so = cmpSolo(), m = so && so.blend === 4 ? 1 : 0, tr = CMP.T.map(T => trackStr(T, CMP.L, m)); if (!so) return [CMP.L, tr];
   const L = CMP.L.map(x => { const c = fxc.parse(fxc.line(x)); c.p[CMP_LP.hide] = x === so ? 0 : 1; return c; });
-  return so.blend === 4 ? [fxc.parse('s:fill c:#ffffff')].concat(L) : L;
+  return [m ? [fxc.parse('s:fill c:#ffffff')].concat(L) : L, tr];
 }
 // the picture (2D, as on a fan or a panel) and the strip (as on a line of LEDs): one clock for both, at the effect's
 // speed and colours; it runs only while the window shows (hidden or behind other windows: no frames). The clock runs
@@ -2170,12 +2359,13 @@ function cmpWake() { if (!CMP.raf && !$('#cdlg').classList.contains('hidden')) C
 addEventListener('resize', cmpWake);
 // still: on a pause the picture is drawn again only when what it shows changed (the frame is a function of these)
 function cmpDraw(still) {
-  const pal = effPal('custom').map(hex2rgb), show = cmpShow(), lines = show.map(fxc.line), tt = CMP.t;
-  const v = $('#cdlg-view'), s = $('#cdlg-strip'), sig = [lines.join('|'), pal.join(), tt, v.width, v.height, s.width, s.height].join(';');
+  const pal = effPal('custom').map(hex2rgb), [show, tw] = cmpShow(), lines = show.map(fxc.line), tt = CMP.t;
+  const v = $('#cdlg-view'), s = $('#cdlg-strip'), sig = [lines.join('|'), tw.join('|'), pal.join(), tt, v.width, v.height, s.width, s.height].join(';');
   if (still && !CMP.play && CMP.sig === sig) return;
   CMP.sig = sig; CMP.draws = (CMP.draws || 0) + 1;
-  v.getContext('2d').putImageData(new ImageData(fxc.frame(show, pal, v.width, v.height, tt), v.width, v.height), 0, 0);
-  if (s.width) drawStrip(s, fxPreview('custom', pal, tt, 40, k => lines[+k.slice(1) - 1] || ''));
+  const pos = show.map((_, i) => i), tr = tw.map(x => fxc.track(x, pos)).filter(Boolean);
+  v.getContext('2d').putImageData(new ImageData(fxc.frame(show, pal, v.width, v.height, tt, tr, tt), v.width, v.height), 0, 0);
+  if (s.width) drawStrip(s, fxPreview('custom', pal, tt, 40, k => ((k[0] === 'l' ? lines : k[0] === 't' ? tw : [])[+k.slice(1) - 1] || '')));
   const r = $('#cdlg-t'), w = Math.floor(tt / 60) * 60;
   if (+r.min !== w) { r.min = w; r.max = w + 60; }
   if (+r.value !== +tt.toFixed(1)) { r.value = tt.toFixed(1); fill(r); }
@@ -2210,7 +2400,7 @@ $('#cdlg-add').addEventListener('click', () => {
 $('#cdlg-tut').addEventListener('change', e => {
   const id = e.target.value; e.target.value = '';
   const d = /^d(\d+)$/.exec(id), c = d ? cmpDraft(+d[1]) : CMP_TUT[id] ? cmpTut(id) : null; if (!c) return;
-  CMP.L = c.L; CMP.K = c.K; CMP.sel = 0; cmpChanged(''); cmpRender();   // into the draft, one step of undo; applied only with Apply
+  CMP.L = c.L; CMP.K = c.K; CMP.T = c.T; CMP.sel = 0; cmpChanged(''); cmpRender();   // into the draft, one step of undo; applied only with Apply
 });
 $('#cdlg-undo').addEventListener('click', () => cmpUndo(false));
 $('#cdlg-redo').addEventListener('click', () => cmpUndo(true));
@@ -2236,7 +2426,7 @@ $('#cdlg-ask-export').addEventListener('click', () => { cmpAskBack(); $('#cdlg-e
 $('#cdlg-moved-retry').addEventListener('click', cmpMovedSave);
 $('#cdlg-rec-open').addEventListener('click', () => {   // into the editor as one step of undo; applied only with Apply
   const c = cmpLoad(k => cv('crecover', k, '')); CMP.rec = 0;
-  CMP.L = c.L; CMP.K = c.K; CMP.sel = 0; cmpChanged(''); cmpRender(); $('#cdlg-tut').focus();
+  CMP.L = c.L; CMP.K = c.K; CMP.T = c.T; CMP.sel = 0; cmpChanged(''); cmpRender(); $('#cdlg-tut').focus();
 });
 $('#cdlg-rec-drop').addEventListener('click', () => {
   CMP.rec = 0; CMP.recCur = ''; draftSend('r', '', () => {}); cmpTools(); cmpRecSoon(); $('#cdlg-tut').focus();
@@ -3376,6 +3566,7 @@ function sheetCards(h) {
   if (h.k === 'add') return [[$('#add-store')], 'devices'];
   if (h.k === 'fx') return [[$('.fx-side')], 'effects'];
   if (h.k === 'prof') return [[$('#prof-panel')], 'home'];
+  if (h.k === 'rules') return [[$('#rules-panel')], 'home'];
   if (h.k === 'fan') return [[$('#fan-set')], 'fans'];
   return [[], ''];
 }
@@ -3395,9 +3586,9 @@ function openSheet(h, cx, cy) {
   sheetGroup();
   const wrap = $('#sheet'), sh = wrap.querySelector('.sheet');
   $('#sheet-page').classList.add('hidden');   // every device's settings live in its sheet now, there is no page to go to
-  if (h.k === 'fx' || h.k === 'prof' || h.k === 'fan') sh.setAttribute('aria-labelledby', { fx: 'fx-name', prof: 'prof-panel-h', fan: 'fs-title' }[h.k]); else sh.removeAttribute('aria-labelledby');
+  if (h.k === 'fx' || h.k === 'prof' || h.k === 'fan' || h.k === 'rules') sh.setAttribute('aria-labelledby', { fx: 'fx-name', prof: 'prof-panel-h', fan: 'fs-title', rules: 'rules-h' }[h.k]); else sh.removeAttribute('aria-labelledby');
   sh.style.removeProperty('--dx'); sh.style.removeProperty('--dy');
-  sh.classList.toggle('wide', (h.k === 'nano' && nanoOn()) || h.k === 'add');
+  sh.classList.toggle('wide', (h.k === 'nano' && nanoOn()) || h.k === 'add' || h.k === 'rules');
   wrap.classList.remove('hidden');
   const r = sh.getBoundingClientRect();   // grow out of the device that was clicked
   sh.style.transformOrigin = `${cx - r.left}px ${cy - r.top}px`;
@@ -3406,12 +3597,14 @@ function openSheet(h, cx, cy) {
 }
 function closeSheet() {
   if (!SHEET.kind) return;
-  const prof = SHEET.kind === 'prof';
+  const prof = SHEET.kind === 'prof', rules = SHEET.kind === 'rules';
   if (prof) { profRenameDone(); PROF.edit = 0; PROF.sure = false; }
+  if (rules) { RULES.edit = null; RULES.sure = 0; RULES.err = ''; }
   for (const [el, ph] of SHEET.moved) { if (ph.isConnected) ph.replaceWith(el); else el.remove(); }
   SHEET.moved = []; SHEET.kind = null;
   $('#sheet').classList.add('hidden');
   if (prof) renderProfiles();
+  if (rules) renderRules(true);
   requestAnimationFrame(sizeCanvases); frameNeed();
   const b = SHEET.back; SHEET.back = null;   // the catalogue may have been drawn again meanwhile: its tile by key
   const el = b && (b.el && b.el.isConnected && b.el !== document.body ? b.el : b.key && $(`.cat-tile[data-key="${b.key}"] .cat-open`));
@@ -3910,6 +4103,9 @@ function buildDevices() {
           <p class="hint">${t('tx.note')}</p>` : ''}
         ${d.kind === 'corsairlcd' ? `<div class="pc-only" style="display:flex;gap:10px;align-items:center;margin:4px 0;flex-wrap:wrap"><button class="btn small ghost dev-media" type="button"><span>${t('tx.pick')}</span></button><button class="btn small ghost dev-build" type="button"><span>${t('tx.build')}</span></button><span class="muted dev-media-name">${esc(cv(sec, 'media', '').split(/[\\/]/).pop())}</span></div>
           <label class="check"><input type="checkbox" class="dev-follow" ${cv(sec, 'screen_follow', '1') !== '0' ? 'checked' : ''}><span></span><em>${t('tx.follow')}</em></label>
+          ${S.pro ? `<div class="lcd-live pc-only"><label class="num"><span>${t('lcd.live')} <span class="beta" title="${t('lcd.beta.t')}">${t('fans.beta')}</span></span><select class="select dev-live" data-sec="${sec}"${proLocked() ? ' disabled' : ''}>${lcdOpts(sec)}</select></label>
+            <button class="btn small ghost dev-lcd" type="button"><span>${t('lcd.layouts')}</span></button></div>
+          <p class="hint">${t('lcd.live.note')}</p>` : ''}
           <p class="hint">${t('cl.note')}</p>` : ''}
         ${d.kind === 'openrgb' && pathPairs(d).length ? `<label class="num"><span>${t('path.title')}</span><select class="select dev-path"><option value="">${t('path.none')}</option>${pathPairs(d).map(n =>
           ['direct', 'orgb', 'own'].map(v => `<option value="${v}:${n.id}"${pathCur(d) === v + ':' + n.id ? ' selected' : ''}>${esc(t('path.' + v, n.name))}</option>`).join('')).join('')}</select></label>
@@ -3982,6 +4178,8 @@ function buildDevices() {
     });
     el.querySelector('.dev-media')?.addEventListener('click', e => pick(e.currentTarget));
     el.querySelector('.dev-build')?.addEventListener('click', e => txbOpen(d, e.currentTarget));
+    el.querySelector('.dev-live')?.addEventListener('change', e => setCfg(sec, 'live', e.target.value));
+    el.querySelector('.dev-lcd')?.addEventListener('click', e => lcdOpen(e.currentTarget));
     el.querySelector('.dev-screen')?.addEventListener('change', e => {
       setCfg(sec, 'screen', e.target.value);
       el.querySelector('.dev-dial-box').classList.toggle('hidden', e.target.value !== 'dial');
@@ -4172,7 +4370,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   const typing = e.target.closest('input:not([type=range]):not([type=checkbox]), textarea, select, [contenteditable]');
   // (the group window has its own Cancel for what was changed in it)
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec') && $('#gdlg').classList.contains('hidden') && $('#cdlg').classList.contains('hidden')) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec') && $('#gdlg').classList.contains('hidden') && $('#cdlg').classList.contains('hidden') && $('#lcded').classList.contains('hidden')) { e.preventDefault(); undo(); }
 });
 // ---- calibration guide: red and blue on the device's two ends (its LED count; a board's ARGB connectors one by one,
 // as they cannot tell it), then which way effects run, then everything white so its white can be matched to the
@@ -6770,8 +6968,692 @@ fcv.addEventListener('keydown', e => {
 });
 ['focus', 'blur'].forEach(n => fcv.addEventListener(n, drawFanCurve));
 
+// ---- scenarios (haku Pro, pro/rules.c): [rule.N], the order is the priority. A profile and the brightness switched by
+// what the PC is doing. The core checks and keeps them (rule_save / rule_on / rule_move / rule_delete; setCfg on them is
+// dropped) and says which hold in the status (rules: {on, win, by, list}); the open build has none ("none": 1).
+const RULE_MAX = 16, RULE_C = 6, RULE_A = 8;
+const RULES = { edit: null, req: 0, wait: 0, waitT: 0, err: '', sure: 0, sig: '', focus: null, after: null };
+const ruleSec = n => 'rule.' + n;
+function rulesHere() { return !!(S.rules && !S.rules.none); }
+function ruleHas() { return rulesHere() && Array.from({ length: 16 }, (_, i) => cv('rule.' + (i + 1), 'name', '')).some(Boolean); }   // (called by renderProfiles, maybe before this runs)
+const ruleInt = (v, lo, hi) => /^\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi;
+const ruleClean = s => String(s || '').replace(/[;#\[\]=\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim();
+// "game, Steam.exe" -> ["game.exe", "Steam.exe"]: the core compares whole exe names
+const ruleApps = s => profApps(ruleClean(s)).map(a => /\.[a-z0-9]{1,4}$/i.test(a) ? a : a + '.exe');
+function ruleItem(v) {
+  const m = v.trim().match(/^(\S+)\s*(.*)$/) || ['', '', ''], w = m[1].toLowerCase(), r = m[2].trim(), n = r.split(/\s+/);
+  if (w === 'run' || w === 'fg') return { t: w, apps: r };
+  if (w === 'time') { const x = r.match(/^(\d{1,2}):(\d\d)\s+(\d{1,2}):(\d\d)\s*([1-7]*)$/); if (x) return { t: w, from: x[1].padStart(2, '0') + ':' + x[2], to: x[3].padStart(2, '0') + ':' + x[4], days: x[5] }; }
+  if (w === 'idle') return { t: w, min: n[0] };
+  if (w === 'lock') return { t: w, on: r === '1' };
+  if (w === 'full') return { t: w };
+  if (w === 'profile') return { t: w, id: +n[0] || 0 };
+  if (w === 'bright') return { t: w, pct: n[0] };
+  if (w === 'fade') return { t: w, pct: n[0], sec: n[1] };
+  if (w === 'wait') return { t: w, sec: n[0] };
+  return { t: '?' };
+}
+const ruleStr = i => i.t === 'run' || i.t === 'fg' ? `${i.t} ${ruleApps(i.apps).join(', ')}` : i.t === 'time' ? `time ${i.from} ${i.to}${i.days ? ' ' + i.days : ''}`
+  : i.t === 'idle' ? `idle ${+i.min}` : i.t === 'lock' ? `lock ${i.on ? 1 : 0}` : i.t === 'full' ? 'full' : i.t === 'profile' ? `profile ${i.id}`
+  : i.t === 'bright' ? `bright ${+i.pct}` : i.t === 'fade' ? `fade ${+i.pct} ${+i.sec}` : `wait ${+i.sec}`;
+function ruleParse(n) {
+  const g = k => cv(ruleSec(n), k, '');
+  const r = { n, name: g('name'), on: g('on') !== '0', any: g('mode').toLowerCase() === 'any', restore: g('restore') === '1', c: [], a: [] };
+  for (let k = 1; k <= RULE_C; k++) if (g('c' + k)) r.c.push(ruleItem(g('c' + k)));
+  for (let k = 1; k <= RULE_A; k++) if (g('a' + k)) r.a.push(ruleItem(g('a' + k)));
+  return r;
+}
+const rulesAll = () => Array.from({ length: RULE_MAX }, (_, i) => i + 1).filter(n => cv(ruleSec(n), 'name', '')).map(ruleParse);
+// in words, for the list
+const ruleDays = d => d && d.length < 7 ? ' ' + t('rules.c.days', [...d].map(x => dayName(x).slice(0, 2)).join(' ')) : '';
+function ruleCondText(c) {
+  const apps = () => profApps(c.apps).map(a => a.replace(/\.exe$/i, '')).join(', ');
+  if (c.t === 'run' || c.t === 'fg') return t('rules.c.' + c.t + '.t', apps());
+  if (c.t === 'time') return t('rules.c.time.t', c.from, c.to) + ruleDays(c.days);
+  if (c.t === 'idle') return t('rules.c.idle.t', +c.min);
+  if (c.t === 'lock') return t(c.on ? 'rules.c.lock.t' : 'rules.c.unlock.t');
+  if (c.t === 'full') return t('rules.c.full.t');
+  return t('rules.bad.item');
+}
+function ruleStepText(a) {
+  if (a.t === 'profile') { const p = profiles().find(q => q.id === a.id); return p ? t('rules.a.profile.t', p.name) : t('rules.a.gone'); }
+  if (a.t === 'bright') return t('rules.a.bright.t', +a.pct);
+  if (a.t === 'fade') return t('rules.a.fade.t', +a.pct, +a.sec);
+  if (a.t === 'wait') return t('rules.a.wait.t', +a.sec);
+  return t('rules.bad.item');
+}
+// why it is on or not: [text, class]
+function ruleWhy(r) {
+  const R = S.rules, s = (R.list || [])[r.n - 1] || { cv: [] };
+  if (!R.on) return [t(proLocked() ? 'rules.st.pro' : 'rules.st.paused'), 'off'];
+  if (!r.on) return [t('rules.st.off'), 'off'];
+  if (s.bad) return [t('rules.st.bad'), 'warn'];
+  if (s.err) return [t('rules.st.err'), 'warn'];
+  if (R.win === r.n) return [t('rules.st.win') + (R.by === r.n ? ' ' + t('rules.st.by') : ''), 'on'];
+  if (s.act && s.yield) return [t('rules.st.yield'), ''];
+  if (s.act) return [t('rules.st.above'), ''];
+  if (r.any) return [t('rules.st.none'), ''];
+  return [t('rules.st.wait', r.c.filter((c, k) => !s.cv[k]).map(ruleCondText).join(', ')), ''];
+}
+// the list (drawn again only when something in it changed, keeping the focus) or the editor
+function renderRules(force) {
+  const here = rulesHere();
+  $('#rules-open').classList.toggle('hidden', !here);
+  if (!here) { if (SHEET.kind === 'rules') closeSheet(); return; }
+  if (RULES.edit || (!force && SHEET.kind !== 'rules')) return;   // closed: drawn when opened   // the editor is drawn by its own actions, the status does not touch what is typed
+  const L = rulesAll(), lock = proLocked(), dis = lock ? ' disabled' : '';
+  const sig = JSON.stringify([L, S.rules, lock, profiles().map(p => [p.id, p.name]), LANG, RULES.err, RULES.sure, RULES.wait]);
+  if (!force && sig === RULES.sig) return;
+  RULES.sig = sig;
+  const el = $('#rules-panel'), a = document.activeElement, keep = RULES.focus || (el.contains(a) && a.dataset.act ? [a.dataset.act, a.dataset.n] : null);
+  RULES.focus = null;
+  const join = r => r.c.map(ruleCondText).join(t(r.any ? 'rules.or' : 'rules.and'));
+  el.innerHTML = `<h3 id="rules-h">${t('rules.title')}</h3><p class="hint rules-note">${t('rules.note')}</p>
+    ${lock ? `<div class="rules-lock"><div><b>${t('rules.lock')}</b><p class="muted">${t('rules.lock.text')}</p></div><div class="btn-row"><button class="btn small primary" type="button" data-act="buy">${t('pro.buy')}</button><button class="btn small ghost" type="button" data-act="key">${t('pro.lock.key')}</button></div></div>` : ''}
+    ${S.rules.on || lock || !L.length ? '' : `<p class="hint warn">${t('rules.paused')}</p>`}
+    <div class="rules-list">${L.map((r, i) => { const [why, cls] = ruleWhy(r), nm = esc(r.name); return `
+      <div class="rule${r.on ? '' : ' off'}${cls === 'on' ? ' win' : ''}" data-n="${r.n}">
+        <div class="rule-head">
+          <label class="check"><input type="checkbox" data-act="on" data-n="${r.n}"${r.on ? ' checked' : ''}${lock && !r.on ? ' disabled' : ''}><span></span><em><b>${nm}</b></em></label>
+          <span class="grow"></span>
+          <button class="btn small" type="button" data-act="edit" data-n="${r.n}" aria-label="${t('rules.edit')}: ${nm}"${dis}><span>${t('rules.edit')}</span></button>
+          <button class="btn small rule-mv" type="button" data-act="up" data-n="${r.n}" title="${t('rules.up')}" aria-label="${t('rules.up')}: ${nm}"${lock || !i ? ' disabled' : ''}>↑</button>
+          <button class="btn small rule-mv" type="button" data-act="down" data-n="${r.n}" title="${t('rules.down')}" aria-label="${t('rules.down')}: ${nm}"${lock || i === L.length - 1 ? ' disabled' : ''}>↓</button>
+          <button class="btn small danger" type="button" data-act="del" data-n="${r.n}" aria-label="${t(RULES.sure === r.n ? 'rules.del.sure' : 'rules.del')}: ${nm}"><span>${t(RULES.sure === r.n ? 'rules.del.sure' : 'rules.del')}</span></button>
+        </div>
+        <p class="rule-txt"><span>${t('rules.when')}</span> ${esc(join(r))}</p>
+        <p class="rule-txt"><span>${t('rules.then')}</span> ${esc(r.a.map(ruleStepText).join(' → '))}${r.restore ? esc(' · ' + t('rules.restore.t')) : ''}</p>
+        <p class="rule-st ${cls}">${esc(why)}</p>
+      </div>`; }).join('') || `<p class="hint">${t('rules.empty')}</p>`}</div>
+    ${RULES.err ? `<p class="hint warn" role="alert">${esc(RULES.err)}</p>` : ''}
+    <div class="rules-new">
+      <button class="btn small primary" type="button" data-act="new"${lock || L.length >= RULE_MAX ? ' disabled' : ''}><span>+ ${t('rules.new')}</span></button>
+      <span class="muted">${t('rules.ex')}</span>
+      ${['game', 'away', 'work'].map(x => `<button class="btn small ghost" type="button" data-act="ex" data-n="${x}"${lock || L.length >= RULE_MAX ? ' disabled' : ''}><span>${t('rules.ex.' + x)}</span></button>`).join('')}
+    </div>
+    ${L.length >= RULE_MAX ? `<p class="hint">${t('rules.full', RULE_MAX)}</p>` : ''}`;
+  // a move button that went off at the top or the bottom passes the focus to the other one
+  const at = a => $(`#rules-panel [data-act="${a}"][data-n="${keep[1]}"]:not(:disabled)`);
+  const f = keep && (at(keep[0]) || (keep[0] === 'up' || keep[0] === 'down') && at(keep[0] === 'up' ? 'down' : 'up') || $('#rules-panel [data-act="new"]'));
+  if (f && !f.disabled) f.focus({ preventScroll: true });
+}
+// ---- the editor: what is typed is read back into RULES.edit before anything is drawn again
+const RULE_CT = ['run', 'fg', 'time', 'idle', 'lock', 'full'], RULE_AT = ['profile', 'bright', 'fade', 'wait'];
+const ruleDef = k => ({ t: k, ...{ run: { apps: '' }, fg: { apps: '' }, time: { from: '18:00', to: '23:00', days: '' }, idle: { min: 10 }, lock: { on: true }, full: {},
+  profile: { id: (profiles()[0] || { id: 0 }).id }, bright: { pct: 100 }, fade: { pct: 50, sec: 3 }, wait: { sec: 5 } }[k] });
+function ruleEdRead() {
+  const E = RULES.edit, ed = $('#rules-panel .rule-ed'); if (!E || !ed) return;
+  E.name = $('.re-name', ed).value; E.restore = $('.re-restore', ed).checked;
+  const mode = $('.re-mode', ed); if (mode) E.any = mode.value === 'any';
+  $$('.re-c', ed).forEach((row, k) => {
+    const c = E.c[k], f = s => ($(s, row) || {}).value ?? '';
+    if (c.t === 'run' || c.t === 'fg') c.apps = f('.re-apps');
+    else if (c.t === 'time') { c.from = f('.re-from'); c.to = f('.re-to'); }
+    else if (c.t === 'idle') c.min = f('.re-min');
+    else if (c.t === 'lock') c.on = f('.re-lock') === '1';
+  });
+  $$('.re-a', ed).forEach((row, k) => {
+    const a = E.a[k], f = s => ($(s, row) || {}).value ?? '';
+    if (a.t === 'profile') a.id = +f('.re-prof') || 0;
+    else if (a.t === 'bright') a.pct = f('.re-pct');
+    else if (a.t === 'fade') { a.pct = f('.re-pct'); a.sec = f('.re-sec'); }
+    else if (a.t === 'wait') a.sec = f('.re-sec');
+  });
+}
+function renderRuleEd(focusSel) {
+  const E = RULES.edit, el = $('#rules-panel'); if (!E) return;
+  const P = profiles(), opt = (v, cur, txt) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${esc(txt)}</option>`;
+  const n = (cls, v, lo, hi, lbl) => `<input type="number" class="${cls}" min="${lo}" max="${hi}" step="1" value="${esc(v)}" aria-label="${lbl}">`;
+  const cond = (c, k) => {
+    const lbl = t('rules.c.n', k + 1);
+    let f = '';
+    if (c.t === 'run' || c.t === 'fg') f = `<input type="text" class="re-apps" spellcheck="false" maxlength="240" value="${esc(c.apps)}" placeholder="game.exe, steam.exe" aria-label="${t('rules.c.apps')}">`;
+    else if (c.t === 'time') f = `<input type="time" class="re-from" value="${esc(c.from)}" aria-label="${t('rules.c.from')}"><span>–</span><input type="time" class="re-to" value="${esc(c.to)}" aria-label="${t('rules.c.to')}">`;
+    else if (c.t === 'idle') f = n('re-min', c.min, 1, 1440, t('rules.c.min')) + `<span>${t('rules.min')}</span>`;
+    else if (c.t === 'lock') f = `<select class="select re-lock" aria-label="${t('rules.c.lock')}">${opt(1, c.on ? 1 : 0, t('rules.c.lock.1'))}${opt(0, c.on ? 1 : 0, t('rules.c.lock.0'))}</select>`;
+    const days = c.t !== 'time' ? '' : `<div class="prof-days" role="group" aria-label="${t('prof.days')}">${[1, 2, 3, 4, 5, 6, 7].map(d => `<button class="prof-day" type="button" data-act="day" data-n="${k}" data-d="${d}" aria-pressed="${!c.days || c.days.includes(d)}">${esc(dayName(d))}</button>`).join('')}</div>`;
+    return `<div class="re-row re-c"><select class="select re-ct" data-n="${k}" aria-label="${lbl}">${RULE_CT.map(x => opt(x, c.t, t('rules.c.' + x))).join('')}</select>${f && `<span class="re-v">${f}</span>`}
+      <button class="x" type="button" data-act="c-del" data-n="${k}" title="${t('rules.remove')}" aria-label="${t('rules.remove')}: ${lbl}">×</button>${days}</div>`;
+  };
+  const step = (a, k) => {
+    const lbl = t('rules.a.n', k + 1), gone = !P.some(p => p.id === a.id);
+    let f = '';
+    if (a.t === 'profile') f = `<select class="select re-prof" aria-label="${t('rules.a.prof')}">${gone ? opt(0, 0, t(P.length ? 'rules.a.pick' : 'rules.a.noprof')) : ''}${P.map(p => opt(p.id, a.id, p.name)).join('')}</select>`;
+    else if (a.t === 'bright') f = n('re-pct', a.pct, 5, 100, t('rules.a.pct')) + '<span>%</span>';
+    else if (a.t === 'fade') f = n('re-pct', a.pct, 5, 100, t('rules.a.pct')) + `<span>%, ${t('rules.a.over')}</span>` + n('re-sec', a.sec, 1, 3600, t('rules.a.sec')) + `<span>${t('rules.s')}</span>`;
+    else if (a.t === 'wait') f = n('re-sec', a.sec, 1, 3600, t('rules.a.sec')) + `<span>${t('rules.s')}</span>`;
+    return `<div class="re-row re-a"><select class="select re-at" data-n="${k}" aria-label="${lbl}">${RULE_AT.map(x => opt(x, a.t, t('rules.a.' + x))).join('')}</select>${f && `<span class="re-v">${f}</span>`}
+      <button class="x" type="button" data-act="a-del" data-n="${k}" title="${t('rules.remove')}" aria-label="${t('rules.remove')}: ${lbl}">×</button></div>`;
+  };
+  el.innerHTML = `<h3 id="rules-h">${t(E.n ? 'rules.ed.edit' : 'rules.ed.new')}</h3>
+    <div class="rule-ed">
+      <label class="re-fld"><span>${t('rules.name')}</span><input type="text" class="re-name" maxlength="64" spellcheck="false" value="${esc(E.name)}"></label>
+      <fieldset><legend>${t('rules.when')}</legend>
+        ${E.c.length > 1 ? `<select class="select re-mode" aria-label="${t('rules.mode')}">${opt('all', E.any ? 'any' : 'all', t('rules.mode.all'))}${opt('any', E.any ? 'any' : 'all', t('rules.mode.any'))}</select>` : ''}
+        ${E.c.map(cond).join('')}
+        <button class="btn small ghost" type="button" data-act="c-add"${E.c.length >= RULE_C ? ' disabled' : ''}><span>+ ${t('rules.c.add')}</span></button>
+        <small class="hint">${t('rules.c.note')}</small>
+      </fieldset>
+      <fieldset><legend>${t('rules.then')}</legend>
+        ${E.a.map(step).join('')}
+        <button class="btn small ghost" type="button" data-act="a-add"${E.a.length >= RULE_A ? ' disabled' : ''}><span>+ ${t('rules.a.add')}</span></button>
+      </fieldset>
+      <label class="check"><input type="checkbox" class="re-restore"${E.restore ? ' checked' : ''}><span></span><em>${t('rules.restore')}</em></label>
+      <p class="hint warn re-err" role="alert">${esc(RULES.err)}</p>
+      <div class="btns">
+        <button class="btn small" type="button" data-act="cancel"><span>${t('cancel')}</span></button>
+        <span class="grow"></span>
+        <button class="btn primary small" type="button" data-act="save"${RULES.wait ? ' disabled aria-busy="true"' : ''}><span>${t('rules.save')}</span></button>
+      </div>
+    </div>`;
+  const f = focusSel && $('#rules-panel ' + focusSel);
+  if (f) f.focus();
+}
+function ruleEdit(r) {
+  RULES.edit = r ? JSON.parse(JSON.stringify(r)) : { n: 0, name: '', on: true, any: false, restore: true, c: [ruleDef('run')], a: [ruleDef('profile')] };
+  RULES.edit.c = RULES.edit.c.filter(x => x.t !== '?'); RULES.edit.a = RULES.edit.a.filter(x => x.t !== '?');
+  RULES.err = ''; RULES.sure = 0;
+  renderRuleEd('.re-name');
+}
+function ruleEdClose() { RULES.edit = null; RULES.err = ''; renderRules(true); }
+// the examples only fill the editor: nothing is kept before Save
+function ruleExample(x) {
+  const P = profiles(), like = re => (P.find(p => re.test(p.name)) || P[0] || null);
+  const prof = p => p ? [{ t: 'profile', id: p.id }] : [{ t: 'bright', pct: 100 }];
+  const ex = {
+    game: { name: t('rules.ex.game'), any: false, c: [{ t: 'full' }, { t: 'time', from: '18:00', to: '02:00', days: '' }], a: [...prof(like(/gam|игр|jeu/i)), { t: 'fade', pct: 100, sec: 2 }] },
+    away: { name: t('rules.ex.away'), any: true, c: [{ t: 'idle', min: 10 }, { t: 'lock', on: true }], a: [{ t: 'fade', pct: 10, sec: 5 }] },
+    work: { name: t('rules.ex.work'), any: false, c: [{ t: 'time', from: '09:00', to: '18:00', days: '12345' }], a: [...prof(like(/work|раб|trav/i)), { t: 'bright', pct: 60 }] },
+  }[x];
+  ruleEdit({ n: 0, on: true, restore: true, ...ex });
+}
+// checked here so the field says what is wrong; the core checks again (the page is not trusted with the format)
+function ruleEdSave() {
+  ruleEdRead();
+  const E = RULES.edit, ed = $('#rules-panel .rule-ed');
+  $$('input, select', ed).forEach(i => i.setCustomValidity(''));
+  let bad = null;
+  const no = (el, key) => { if (!bad && el) { el.setCustomValidity(t(key)); bad = el; } };
+  if (!ruleClean(E.name)) no($('.re-name', ed), 'rules.v.name');
+  const C = $$('.re-c', ed), A = $$('.re-a', ed);
+  E.c.forEach((c, k) => {
+    const row = C[k];
+    if (c.t === 'run' || c.t === 'fg') { const L = ruleApps(c.apps); if (!L.length || L.length > 8 || L.some(a => /[\\/:*?"<>|]/.test(a)) || ruleStr(c).length > 250) no($('.re-apps', row), 'rules.v.apps'); }
+    if (c.t === 'time' && !(/^\d\d:\d\d$/.test(c.from) && /^\d\d:\d\d$/.test(c.to) && c.from !== c.to)) no($('.re-to', row), 'rules.v.time');
+    if (c.t === 'idle' && !ruleInt(c.min, 1, 1440)) no($('.re-min', row), 'rules.v.idle');
+  });
+  E.a.forEach((a, k) => {
+    const row = A[k];
+    if (a.t === 'profile' && !profiles().some(p => p.id === a.id)) no($('.re-prof', row), 'rules.v.prof');
+    if ((a.t === 'bright' || a.t === 'fade') && !ruleInt(a.pct, 5, 100)) no($('.re-pct', row), 'rules.v.pct');
+    if ((a.t === 'fade' || a.t === 'wait') && !ruleInt(a.sec, 1, 3600)) no($('.re-sec', row), 'rules.v.sec');
+  });
+  if (!bad && !E.c.length) no($('[data-act="c-add"]', ed), 'rules.v.nocond');
+  if (!bad && !E.a.length) no($('[data-act="a-add"]', ed), 'rules.v.nostep');
+  if (bad) { $('.re-err', ed).textContent = bad.validationMessage || ''; bad.focus(); return; }
+  const kv = [`name=${ruleClean(E.name).slice(0, 64)}`, `on=${E.on ? 1 : 0}`, `mode=${E.any && E.c.length > 1 ? 'any' : 'all'}`, `restore=${E.restore ? 1 : 0}`,
+    ...E.c.map((c, k) => `c${k + 1}=${ruleStr(c)}`), ...E.a.map((a, k) => `a${k + 1}=${ruleStr(a)}`)];
+  ruleSend({ cmd: 'rule_save', n: String(E.n || 0), kv: kv.join('\n') });
+  renderRuleEd();
+}
+// one change at a time; no answer in 5 s counts as "not saved"
+function ruleSend(o) {
+  if (RULES.wait) return;
+  RULES.wait = ++RULES.req; RULES.err = '';
+  clearTimeout(RULES.waitT); RULES.waitT = setTimeout(() => rulesDone({ req: String(RULES.wait), err: 'save', n: 0 }), 5000);
+  send({ ...o, req: String(RULES.wait) });
+}
+function rulesDone(m) {
+  if (!RULES.wait || String(m.req) !== String(RULES.wait)) return;
+  RULES.wait = 0; clearTimeout(RULES.waitT);
+  RULES.err = m.err ? t('rules.err.' + m.err) : '';
+  if (!m.err && RULES.after) RULES.focus = RULES.after;   // the moved rule keeps the focus in its new place
+  RULES.after = null;
+  if (RULES.edit) {
+    if (!m.err) { RULES.focus = ['edit', String(m.n)]; ruleEdClose(); }
+    else renderRuleEd('[data-act="save"]');
+    return;
+  }
+  renderRules(true);
+}
+$('#rules-panel').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b || b.disabled || b.tagName === 'INPUT') return;
+  const act = b.dataset.act, n = b.dataset.n;
+  if (act === 'buy') { send({ cmd: 'open', what: 'pro' }); return; }
+  if (act === 'key') { closeSheet(); proGoKey(); return; }
+  if (RULES.edit) {
+    ruleEdRead();
+    const E = RULES.edit;
+    if (act === 'cancel') { RULES.focus = E.n ? ['edit', String(E.n)] : ['new', undefined]; ruleEdClose(); return; }
+    if (act === 'save') { ruleEdSave(); return; }
+    if (act === 'c-add') { E.c.push(ruleDef('run')); renderRuleEd(`.re-ct[data-n="${E.c.length - 1}"]`); return; }
+    if (act === 'a-add') { E.a.push(ruleDef('bright')); renderRuleEd(`.re-at[data-n="${E.a.length - 1}"]`); return; }
+    if (act === 'c-del') { E.c.splice(+n, 1); renderRuleEd(E.c.length ? `.re-ct[data-n="${Math.min(+n, E.c.length - 1)}"]` : '[data-act="c-add"]'); return; }
+    if (act === 'a-del') { E.a.splice(+n, 1); renderRuleEd(E.a.length ? `.re-at[data-n="${Math.min(+n, E.a.length - 1)}"]` : '[data-act="a-add"]'); return; }
+    if (act === 'day') {   // at least one day; all seven are written as none (every day)
+      const c = E.c[+n], was = c.days || '1234567', on = [...'1234567'].filter(d => was.includes(d) !== (d === b.dataset.d));
+      if (!on.length) return;
+      c.days = on.length === 7 ? '' : on.join(''); renderRuleEd(`.prof-day[data-n="${n}"][data-d="${b.dataset.d}"]`);
+    }
+    return;
+  }
+  if (act === 'new') { ruleEdit(null); return; }
+  if (act === 'ex') { ruleExample(n); return; }
+  const r = rulesAll().find(x => x.n === +n); if (!r) return;
+  if (act === 'edit') { ruleEdit(r); return; }
+  if (RULES.wait) return;   // one change at a time: the next waits for the core's answer
+  if (act === 'up' || act === 'down') { RULES.sure = 0; RULES.after = [act, String(r.n + (act === 'up' ? -1 : 1))]; ruleSend({ cmd: 'rule_move', n, d: act === 'up' ? '-1' : '1' }); renderRules(true); return; }
+  if (act === 'del') {
+    if (RULES.sure !== r.n) { RULES.sure = r.n; renderRules(true); return; }
+    RULES.sure = 0; RULES.focus = ['new', undefined]; ruleSend({ cmd: 'rule_delete', n }); renderRules(true);
+  }
+});
+$('#rules-panel').addEventListener('change', e => {
+  const s = e.target;
+  if (s.dataset.act === 'on') { ruleSend({ cmd: 'rule_on', n: s.dataset.n, on: s.checked ? '1' : '0' }); renderRules(true); return; }
+  if (!RULES.edit || !s.matches('.re-ct, .re-at')) return;
+  ruleEdRead();
+  const k = +s.dataset.n, L = s.matches('.re-ct') ? RULES.edit.c : RULES.edit.a;
+  L[k] = ruleDef(s.value);
+  renderRuleEd(`.${s.matches('.re-ct') ? 're-ct' : 're-at'}[data-n="${k}"]`);
+});
+$('#rules-panel').addEventListener('input', e => { if (e.target.setCustomValidity) e.target.setCustomValidity(''); });
+$('#rules-panel').addEventListener('keydown', e => {
+  if (e.key === 'Escape' && RULES.edit && !e.target.matches('select')) { e.stopPropagation(); RULES.focus = RULES.edit.n ? ['edit', String(RULES.edit.n)] : ['new', undefined]; ruleEdClose(); return; }   // back to the list, not out of the window
+  if (e.key === 'Enter' && RULES.edit && e.target.matches('input[type=text], input[type=number], input[type=time]')) { e.preventDefault(); ruleEdSave(); }
+});
+$('#rules-open').addEventListener('click', e => {
+  const r = e.currentTarget.getBoundingClientRect();
+  profMenu(false); $('#prof-btn').focus();
+  openSheet({ k: 'rules' }, r.left + r.width / 2, r.top);
+  RULES.edit = null; RULES.err = ''; RULES.sure = 0; renderRules(true);
+  queueMicrotask(() => { const f = $('#rules-panel [data-act="new"]:not(:disabled)') || $('#rules-panel button:not(:disabled)'); if (f) f.focus(); });
+});
+
+// ---- live LCD layouts (haku Pro, experimental): [lcd.N] in the core's format (pro\lcdlive.cpp checks it again and
+// draws it); a round 480 px screen whose pages are shown in turn. The preview draws as the core does; it asks the core
+// for the values only while the editor is open (lcd_watch, which stops by itself)
+const LCD_MAX = 6, LCD_W = 24, LCD_P = 4, LCD_PX = 480, LCD_HN = 120;
+const LCD_SRC = ['time', 'date', 'cpu_t', 'gpu_t', 'cpu_l', 'gpu_l', 'mem', 'fan', 'music'], LCD_KIND = ['text', 'bar', 'ring', 'graph'];
+const lcdTemp = s => s === 'cpu_t' || s === 'gpu_t', lcdTextOnly = s => s === 'time' || s === 'date' || s === 'music';
+const LCD_RE = /^(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([0-9a-f]{6})\s+(\d+)\s+([cf-])(?:\s+(.*))?$/i;
+// [src, kind, x, y, w, h, colour, size, unit]
+const LCD_TPL = {
+  blank: [],
+  minimal: [['time', 'text', 90, 160, 300, 110, 'ffffff', 100, '-'], ['date', 'text', 110, 280, 260, 44, '9aa4b2', 30, '-']],
+  monitoring: [['cpu_t', 'ring', 70, 80, 160, 160, 'ff8a3d', 32, 'c'], ['gpu_t', 'ring', 250, 80, 160, 160, '4fc3f7', 32, 'c'],
+    ['cpu_l', 'bar', 90, 262, 300, 22, 'ff8a3d', 16, '-'], ['gpu_l', 'bar', 90, 296, 300, 22, '4fc3f7', 16, '-'],
+    ['cpu_t', 'graph', 110, 330, 260, 60, 'ff8a3d', 16, 'c'], ['mem', 'text', 150, 394, 180, 30, '9aa4b2', 22, '-']],
+  music: [['time', 'text', 120, 110, 240, 80, 'ffffff', 64, '-'], ['music', 'text', 70, 210, 340, 60, 'ffffff', 28, '-'], ['date', 'text', 120, 290, 240, 40, '9aa4b2', 26, '-']],
+};
+const LCD = { ed: null, from: null, undo: [], redo: [], last: '', orig: '', leave: 0, sel: -1, page: 1, snap: 1, req: 0, wait: 0, waitT: 0, err: '', sure: 0, watchT: 0, hist: {}, histAt: 0, raf: 0, drag: null, sig: '' };
+const lcdClamp = (v, a, b) => Math.min(b, Math.max(a, Math.round(+v || 0)));
+const lcdList = () => { const L = []; for (let n = 1; n <= LCD_MAX; n++) { const c = S.cfg['lcd.' + n]; if (c && c.name) L.push({ n, name: c.name, pages: +c.pages || 1, newer: !!c.v && c.v !== '1' }); } return L; };
+const lcdOpts = sec => { const cur = +cv(sec, 'live', 0), L = lcdList();
+  return `<option value="0">${t('lcd.live.none')}</option>` + L.map(l => `<option value="${l.n}"${cur === l.n ? ' selected' : ''}>${esc(l.name)}</option>`).join(''); };
+function lcdParse(s, pages) {
+  const m = LCD_RE.exec(String(s).trim());
+  if (!m || !LCD_SRC.includes(m[2]) || !LCD_KIND.includes(m[3])) return null;
+  return { page: Math.min(pages, Math.max(1, +m[1])), src: m[2], kind: m[3], x: +m[4], y: +m[5], w: +m[6], h: +m[7], color: '#' + m[8].toLowerCase(), size: +m[9], unit: m[10], rest: m[11] || '' };
+}
+const lcdStr = w => `${w.page} ${w.src} ${w.kind} ${w.x} ${w.y} ${w.w} ${w.h} ${w.color.slice(1).toUpperCase()} ${w.size} ${w.unit}${w.rest ? ' ' + w.rest : ''}`;
+function lcdLoad(n, tpl) {
+  const c = n ? S.cfg['lcd.' + n] || {} : {}, pages = lcdClamp(c.pages || 1, 1, LCD_P);
+  const E = { n, name: c.name || '', pages, t: [], bg: [], w: [] };
+  for (let p = 1; p <= LCD_P; p++) {
+    E.t.push(lcdClamp(c['t' + p] || 10, 2, 600));
+    E.bg.push('#' + (/^[0-9a-f]{6}$/i.test(c['bg' + p] || '') ? c['bg' + p] : '000000').toLowerCase());
+  }
+  for (let k = 1; k <= LCD_W; k++) { const w = c['w' + k] && lcdParse(c['w' + k], pages); if (w) E.w.push(w); }
+  if (!n) E.w = (LCD_TPL[tpl] || []).map(([src, kind, x, y, w, h, col, size, unit]) => ({ page: 1, src, kind, x, y, w, h, color: '#' + col, size, unit, rest: '' }));
+  return E;
+}
+
+// the values as the core shows them: {txt, share (0..1), ok}
+function lcdVal(w) {
+  const L = S.lcd || {}, d = new Date(), loc = LANG === 'ru' ? 'ru-RU' : LANG === 'fr' ? 'fr-FR' : 'en-US', p2 = x => String(x).padStart(2, '0');
+  if (w.src === 'time') return { txt: p2(d.getHours()) + ':' + p2(d.getMinutes()), ok: true };
+  if (w.src === 'date') return { txt: d.toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short' }), ok: true };
+  if (w.src === 'music') return !(L.music > 0) ? { txt: t('lcd.nodata'), ok: false } : !L.title ? { txt: t('lcd.nothing'), ok: true } : { txt: L.artist ? L.artist + ' — ' + L.title : L.title, ok: true };
+  const v = L[w.src];
+  if (v == null || !isFinite(v)) return { txt: t('lcd.nodata'), ok: false };
+  if (lcdTemp(w.src)) return { txt: w.unit === 'f' ? Math.round(v * 9 / 5 + 32) + '°F' : Math.round(v) + (w.unit === 'c' ? '°C' : '°'), share: v / 100, ok: true };
+  if (w.src === 'fan') return { txt: Math.round(v) + ' rpm', share: v / 3000, ok: true };
+  return { txt: Math.round(v) + '%', share: v / 100, ok: true };
+}
+function lcdText(g, w, txt) {
+  g.save(); g.beginPath(); g.rect(w.x, w.y, w.w, w.h); g.clip();
+  g.fillStyle = w.color; g.font = `${w.size}px "Segoe UI", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  if (g.measureText(txt).width > w.w) { while (txt.length > 1 && g.measureText(txt + '…').width > w.w) txt = txt.slice(0, -1); txt += '…'; }
+  g.fillText(txt, w.x + w.w / 2, w.y + w.h / 2); g.restore();
+}
+function lcdWidget(g, w) {
+  const v = lcdVal(w), share = Math.min(1, Math.max(0, v.share || 0)), track = w.color + '3c', X = w.x, Y = w.y, W = w.w, H = w.h;
+  if (w.kind === 'text' || lcdTextOnly(w.src)) return lcdText(g, w, v.txt);
+  if (w.kind === 'bar') {
+    g.fillStyle = track; g.fillRect(X, Y, W, H);
+    if (!v.ok) return lcdText(g, w, v.txt);
+    g.fillStyle = w.color;
+    if (W >= H) g.fillRect(X, Y, W * share, H); else g.fillRect(X, Y + H * (1 - share), W, H * share);
+    return;
+  }
+  if (w.kind === 'ring') {
+    const side = Math.min(W, H), pw = Math.max(4, side / 10), r = (side - pw) / 2, cx = X + W / 2, cy = Y + H / 2, a0 = Math.PI * .75;
+    g.save(); g.lineWidth = pw; g.lineCap = 'round';
+    g.strokeStyle = track; g.beginPath(); g.arc(cx, cy, r, a0, a0 + Math.PI * 1.5); g.stroke();
+    if (v.ok && share > 0) { g.strokeStyle = w.color; g.beginPath(); g.arc(cx, cy, r, a0, a0 + Math.PI * 1.5 * share); g.stroke(); }
+    g.restore();
+    return lcdText(g, w, v.txt);
+  }
+  // graph: the last two minutes, the oldest on the left
+  g.save(); g.strokeStyle = track; g.lineWidth = 2; g.beginPath(); g.moveTo(X, Y + H - 1); g.lineTo(X + W, Y + H - 1); g.stroke();
+  const hs = LCD.hist[w.src] || [], hn = hs.length, lo = lcdTemp(w.src) ? 20 : 0;
+  const hi = w.src === 'fan' ? Math.max(1000, ...hs.filter(isFinite)) : 100, pts = [];
+  hs.forEach((x, i) => { if (isFinite(x)) pts.push([X + W * (LCD_HN - hn + i) / (LCD_HN - 1), Y + (H - 2) * (1 - Math.min(1, Math.max(0, (x - lo) / (hi - lo))))]); });
+  if (pts.length >= 2) {
+    g.strokeStyle = w.color; g.lineWidth = 3; g.lineJoin = g.lineCap = 'round'; g.beginPath();
+    pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); g.restore();
+  } else { g.restore(); lcdText(g, w, v.txt); }
+}
+// drawn once per change or new values (no loop), not while the window is hidden
+const lcdKick = () => { if (LCD.ed && !LCD.raf) LCD.raf = requestAnimationFrame(lcdFrame); };
+function lcdFrame() {
+  LCD.raf = 0;
+  const c = $('#lcded .lcd-stage'), E = LCD.ed;
+  if (!c || !E || document.body.classList.contains('idle')) return;
+  const g = c.getContext('2d'), P = LCD.page, s = E.w[LCD.sel];
+  g.fillStyle = E.bg[P - 1]; g.fillRect(0, 0, LCD_PX, LCD_PX);
+  E.w.forEach(w => { if (w.page === P) lcdWidget(g, w); });
+  if (s && s.page === P) {
+    g.save(); g.lineWidth = 1.5; g.setLineDash([6, 4]);
+    g.strokeStyle = '#000'; g.strokeRect(s.x + .5, s.y + .5, s.w - 1, s.h - 1);
+    g.strokeStyle = '#fff'; g.lineDashOffset = 5; g.strokeRect(s.x + .5, s.y + .5, s.w - 1, s.h - 1);
+    g.setLineDash([]); g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.fillRect(s.x + s.w - 10, s.y + s.h - 10, 10, 10); g.strokeRect(s.x + s.w - 10, s.y + s.h - 10, 10, 10);
+    g.restore();
+  }
+  g.fillStyle = 'rgba(0,0,0,.72)'; g.beginPath(); g.rect(0, 0, LCD_PX, LCD_PX); g.arc(240, 240, 240, 0, Math.PI * 2); g.fill('evenodd');   // the screen is round
+}
+
+// what had the focus, found again after a redraw
+const lcdFocusKey = a => !a || !$('#lcded-body').contains(a) ? '' : a.dataset.k ? `[data-k="${a.dataset.k}"]`
+  : a.dataset.act ? `[data-act="${a.dataset.act}"]${a.dataset.n ? `[data-n="${a.dataset.n}"]` : ''}` : a.classList.contains('lcd-stage') ? '.lcd-stage' : '';
+const lcdFocus = (sel, alt) => { const b = $('#lcded-body'), f = (sel && b.querySelector(sel + ':not(:disabled)')) || (alt && b.querySelector(alt)); if (f) f.focus(); };
+function lcdRender(force) {
+  const body = $('#lcded-body');
+  if (LCD.ed) return lcdRenderEd(force);
+  const L = lcdList(), lock = proLocked(), full = L.length >= LCD_MAX;
+  const sig = JSON.stringify([L, lock, LANG, LCD.err, LCD.sure, LCD.wait]);
+  if (!force && sig === LCD.sig) return;
+  LCD.sig = sig;
+  const keep = lcdFocusKey(document.activeElement);
+  body.innerHTML = `<p class="hint rules-note">${t('lcd.note')}</p>
+    ${lock ? `<div class="rules-lock"><div><b>${t('lcd.lock')}</b><p class="muted">${t('lcd.lock.text')}</p></div><div class="btn-row"><button class="btn small primary" type="button" data-act="buy">${t('pro.buy')}</button><button class="btn small ghost" type="button" data-act="key">${t('pro.lock.key')}</button></div></div>` : ''}
+    <div class="rules-list">${L.map(l => { const nm = esc(l.name), sure = LCD.sure === l.n; return `
+      <div class="rule"><div class="rule-head"><b>${nm}</b><span class="grow"></span><span class="muted">${t('lcd.pages.n', l.pages)}</span>
+        <button class="btn small" type="button" data-act="edit" data-n="${l.n}" aria-label="${t('rules.edit')}: ${nm}"${lock || l.newer ? ' disabled' : ''}${l.newer ? ` title="${t('lcd.newer')}"` : ''}><span>${t('rules.edit')}</span></button>
+        <button class="btn small danger" type="button" data-act="del" data-n="${l.n}" aria-label="${t(sure ? 'rules.del.sure' : 'rules.del')}: ${nm}"${LCD.wait ? ' disabled' : ''}><span>${t(sure ? 'rules.del.sure' : 'rules.del')}</span></button>
+      </div>${l.newer ? `<p class="rule-st warn">${t('lcd.newer')}</p>` : ''}</div>`; }).join('') || `<p class="hint">${t('lcd.empty')}</p>`}</div>
+    ${LCD.err ? `<p class="hint warn" role="alert">${esc(LCD.err)}</p>` : ''}
+    <div class="rules-new">
+      <select class="select" data-k="tpl" aria-label="${t('lcd.tpl')}"${lock || full ? ' disabled' : ''}>${['minimal', 'monitoring', 'music', 'blank'].map(x => `<option value="${x}">${t('lcd.tpl.' + x)}</option>`).join('')}</select>
+      <button class="btn small primary" type="button" data-act="new"${lock || full ? ' disabled' : ''}><span>+ ${t('lcd.new')}</span></button>
+    </div>
+    ${full ? `<p class="hint">${t('lcd.full', LCD_MAX)}</p>` : ''}`;
+  lcdFocus(keep, '[data-act="new"]:not(:disabled), button:not(:disabled)');
+}
+function lcdRenderEd(force) {
+  const body = $('#lcded-body'), E = LCD.ed;
+  let c = body.querySelector('.lcd-stage');
+  if (!c || force) {   // the canvas stays across redraws (a drag holds the pointer on it)
+    body.innerHTML = `<div class="rule-ed"><div class="lcd-top"></div><div class="lcd-ed"><canvas class="lcd-stage" width="${LCD_PX}" height="${LCD_PX}" tabindex="0"></canvas><div class="lcd-side"></div></div><div class="lcd-foot"></div></div>`;
+    c = body.querySelector('.lcd-stage');
+  }
+  c.setAttribute('aria-label', t('lcd.stage'));
+  const keep = lcdFocusKey(document.activeElement);
+  const opt = (v, cur, txt) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${txt}</option>`;
+  const num = (k, v, a, b, lbl) => `<label class="re-fld"><span>${lbl}</span><input type="number" data-k="${k}" min="${a}" max="${b}" value="${v}"></label>`;
+  const rng = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+  const P = LCD.page;
+  body.querySelector('.lcd-top').innerHTML = `
+    <label class="re-fld name"><span>${t('lcd.name')}</span><input type="text" data-k="name" maxlength="64" spellcheck="false" value="${esc(E.name)}"></label>
+    <label class="re-fld"><span>${t('lcd.pages')}</span><select class="select" data-k="pages">${rng(1, LCD_P).map(n => opt(n, E.pages, n)).join('')}</select></label>
+    ${E.pages > 1 ? `<label class="re-fld"><span>${t('lcd.page')}</span><select class="select" data-k="page">${rng(1, E.pages).map(n => opt(n, P, n)).join('')}</select></label>
+    ${num('t', E.t[P - 1], 2, 600, t('lcd.secs'))}` : ''}
+    <label class="re-fld"><span>${t('lcd.bg')}</span><input type="color" data-k="bg" value="${E.bg[P - 1]}"></label>`;
+  const here = E.w.map((w, i) => [w, i]).filter(([w]) => w.page === P), s = E.w[LCD.sel];
+  const name = w => t('lcd.src.' + w.src) + (lcdTextOnly(w.src) ? '' : ' · ' + t('lcd.kind.' + w.kind));
+  body.querySelector('.lcd-side').innerHTML = `
+    <b>${t('lcd.widgets')}</b>
+    <div class="lcd-ws">${here.map(([w, i]) => `<button class="btn small" type="button" data-act="sel" data-n="${i}" aria-pressed="${i === LCD.sel}">${esc(name(w))}</button>`).reverse().join('') || `<p class="hint">${t('lcd.nowidgets')}</p>`}</div>
+    <div class="lcd-row">
+      <button class="btn small ghost" type="button" data-act="add"${E.w.length >= LCD_W ? ' disabled' : ''}><span>+ ${t('lcd.add')}</span></button>
+      <button class="btn small ghost" type="button" data-act="undo"${LCD.undo.length ? '' : ' disabled'}><span>${t('undo')}</span></button>
+      <button class="btn small ghost" type="button" data-act="redo"${LCD.redo.length ? '' : ' disabled'}><span>${t('lcd.redo')}</span></button>
+      <label class="check"><input type="checkbox" data-k="snap"${LCD.snap ? ' checked' : ''}><span></span><em>${t('lcd.snap')}</em></label>
+    </div>
+    ${s ? `<div class="lcd-row">
+      <button class="btn small" type="button" data-act="back"><span>${t('lcd.back')}</span></button>
+      <button class="btn small" type="button" data-act="fwd"><span>${t('lcd.fwd')}</span></button>
+      <button class="btn small" type="button" data-act="dup"${E.w.length >= LCD_W ? ' disabled' : ''}><span>${t('lcd.dup')}</span></button>
+      <button class="btn small danger" type="button" data-act="wdel"><span>${t('rules.del')}</span></button>
+    </div>
+    <div class="lcd-props">
+      <label class="re-fld wide"><span>${t('lcd.src')}</span><select class="select" data-k="src">${LCD_SRC.map(x => opt(x, s.src, t('lcd.src.' + x))).join('')}</select></label>
+      ${lcdTextOnly(s.src) ? '' : `<label class="re-fld"><span>${t('lcd.kind')}</span><select class="select" data-k="kind">${LCD_KIND.map(x => opt(x, s.kind, t('lcd.kind.' + x))).join('')}</select></label>`}
+      ${lcdTemp(s.src) ? `<label class="re-fld"><span>${t('lcd.unit')}</span><select class="select" data-k="unit">${opt('c', s.unit, '°C')}${opt('f', s.unit, '°F')}${opt('-', s.unit, '°')}</select></label>` : ''}
+      ${E.pages > 1 ? `<label class="re-fld"><span>${t('lcd.page')}</span><select class="select" data-k="wpage">${rng(1, E.pages).map(n => opt(n, s.page, n)).join('')}</select></label>` : ''}
+      <label class="re-fld"><span>${t('lcd.color')}</span><input type="color" data-k="color" value="${s.color}"></label>
+      ${num('size', s.size, 8, 200, t('lcd.size'))}
+      ${num('x', s.x, 0, 479, t('lcd.x'))}${num('y', s.y, 0, 479, t('lcd.y'))}${num('w', s.w, 8, 480, t('lcd.w'))}${num('h', s.h, 8, 480, t('lcd.h'))}
+    </div>
+    ${s.src === 'music' ? `<p class="hint">${t('lcd.music.note')}</p>` : ''}` : ''}`;
+  body.querySelector('.lcd-foot').innerHTML = `
+    <p class="hint">${t('lcd.save.note')}</p>
+    <p class="hint warn re-err" role="alert">${esc(LCD.err)}</p>
+    <div class="btns">
+      <button class="btn small" type="button" data-act="cancel"><span>${t('cancel')}</span></button>
+      <span class="grow"></span>
+      <button class="btn primary small" type="button" data-act="save"${LCD.wait ? ' disabled aria-busy="true"' : ''}><span>${t('rules.save')}</span></button>
+    </div>`;
+  lcdFocus(keep);
+  lcdKick();
+}
+function lcdCommit() {
+  const j = JSON.stringify(LCD.ed);
+  if (j === LCD.last) return;
+  LCD.undo.push(LCD.last); if (LCD.undo.length > 50) LCD.undo.shift();
+  LCD.redo = []; LCD.last = j; LCD.leave = 0;
+}
+function lcdStep(from, to) {
+  if (!from.length) return;
+  to.push(LCD.last); LCD.last = from.pop(); LCD.ed = JSON.parse(LCD.last); LCD.leave = 0;
+  if (LCD.sel >= LCD.ed.w.length) LCD.sel = -1;
+  LCD.page = Math.min(LCD.page, LCD.ed.pages);
+  lcdRenderEd();
+}
+function lcdEdit(n, tpl) {
+  LCD.ed = lcdLoad(n, tpl); LCD.last = LCD.orig = JSON.stringify(LCD.ed);
+  LCD.undo = []; LCD.redo = []; LCD.sel = -1; LCD.page = 1; LCD.err = ''; LCD.sure = 0; LCD.leave = 0; LCD.hist = {};
+  lcdRenderEd(true);
+  send({ cmd: 'lcd_watch' });
+  clearInterval(LCD.watchT);
+  LCD.watchT = setInterval(() => { if (!document.body.classList.contains('idle')) send({ cmd: 'lcd_watch' }); lcdKick(); }, 3000);   // the clock moves on too
+  lcdFocus('[data-k="name"]');
+}
+// back to the list (or closed); changes not saved go only on a second ask
+function lcdEdClose(close) {
+  if (LCD.last !== LCD.orig && !LCD.leave) { LCD.leave = 1; LCD.err = t('lcd.discard'); lcdRenderEd(); return false; }
+  const n = LCD.ed?.n;
+  clearInterval(LCD.watchT); cancelAnimationFrame(LCD.raf); LCD.raf = 0; LCD.drag = null;
+  LCD.ed = null; LCD.err = ''; LCD.hist = {};
+  if (close) return true;
+  lcdRender(true);
+  if (n) lcdFocus(`[data-act="edit"][data-n="${n}"]`);
+  return true;
+}
+function lcdOpen(from) {
+  LCD.from = from; LCD.ed = null; LCD.err = ''; LCD.sure = 0;
+  $('#lcded').classList.remove('hidden');
+  lcdRender(true);
+}
+function lcdClose() {
+  if (LCD.ed && !lcdEdClose(true)) return;
+  $('#lcded').classList.add('hidden');
+  if (LCD.from?.isConnected) LCD.from.focus();
+}
+function lcdSend(o) {
+  if (LCD.wait) return;
+  LCD.wait = ++LCD.req; LCD.err = '';
+  clearTimeout(LCD.waitT); LCD.waitT = setTimeout(() => lcdDone({ req: String(LCD.wait), err: 'save', n: 0 }), 5000);
+  send({ ...o, req: String(LCD.wait) });
+}
+function lcdDone(m) {
+  if (!LCD.wait || String(m.req) !== String(LCD.wait)) return;
+  LCD.wait = 0; clearTimeout(LCD.waitT);
+  LCD.err = m.err ? t('lcd.err.' + m.err) : '';
+  if (LCD.ed && !m.err) { LCD.orig = LCD.last; lcdEdClose(); lcdFocus(`[data-act="edit"][data-n="${m.n}"]`); return; }
+  if (LCD.ed) { lcdRenderEd(); lcdFocus('[data-act="save"]'); return; }
+  lcdRender(true);
+}
+function lcdSave() {
+  const E = LCD.ed, name = ruleClean(E.name).slice(0, 64).trim();
+  if (!name) { LCD.err = t('lcd.v.name'); lcdRenderEd(); lcdFocus('[data-k="name"]'); return; }
+  const kv = [`name=${name}`, 'v=1', `pages=${E.pages}`];
+  for (let p = 0; p < E.pages; p++) kv.push(`t${p + 1}=${E.t[p]}`, `bg${p + 1}=${E.bg[p].slice(1).toUpperCase()}`);
+  E.w.forEach((w, i) => kv.push(`w${i + 1}=${lcdStr(w)}`));
+  lcdSend({ cmd: 'lcd_save', n: String(E.n || 0), kv: kv.join('\n') });
+  lcdRenderEd();
+}
+// a widget kept inside the screen's square, on a grid of 10 with Snap on
+function lcdFit(w) {
+  w.w = lcdClamp(w.w, 8, LCD_PX); w.h = lcdClamp(w.h, 8, LCD_PX);
+  w.x = lcdClamp(w.x, 0, Math.min(479, LCD_PX - w.w)); w.y = lcdClamp(w.y, 0, Math.min(479, LCD_PX - w.h));
+  w.size = lcdClamp(w.size, 8, 200);
+}
+const lcdSnap = v => LCD.snap ? Math.round(v / 10) * 10 : Math.round(v);
+function lcdShowXY(w) { ['x', 'y', 'w', 'h'].forEach(k => { const i = $(`#lcded-body [data-k="${k}"]`); if (i && i !== document.activeElement) i.value = w[k]; }); }
+
+$('#lcded-body').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+  const act = b.dataset.act, n = +b.dataset.n, E = LCD.ed;
+  if (act === 'buy') { send({ cmd: 'open', what: 'pro' }); return; }
+  if (act === 'key') { lcdClose(); proGoKey(); return; }
+  if (act === 'new') { lcdEdit(0, $('#lcded-body [data-k="tpl"]').value); return; }
+  if (act === 'edit') { lcdEdit(n); return; }
+  if (act === 'del') {
+    if (LCD.sure !== n) { LCD.sure = n; LCD.err = ''; lcdRender(); return; }
+    LCD.sure = 0; lcdSend({ cmd: 'lcd_delete', n: String(n) }); lcdRender(); return;
+  }
+  if (!E) return;
+  if (act === 'cancel') { lcdEdClose(); return; }
+  if (act === 'save') { lcdSave(); return; }
+  if (act === 'undo') { lcdStep(LCD.undo, LCD.redo); return; }
+  if (act === 'redo') { lcdStep(LCD.redo, LCD.undo); return; }
+  if (act === 'sel') { LCD.sel = n; lcdRenderEd(); return; }
+  const s = E.w[LCD.sel];
+  if (act === 'add') { E.w.push({ page: LCD.page, src: 'cpu_t', kind: 'text', x: 180, y: 200, w: 120, h: 80, color: '#ffffff', size: 40, unit: 'c', rest: '' }); LCD.sel = E.w.length - 1; }
+  else if (!s) return;
+  else if (act === 'dup') { const d = { ...s, x: s.x + 10, y: s.y + 10 }; lcdFit(d); E.w.splice(LCD.sel + 1, 0, d); LCD.sel++; }
+  else if (act === 'wdel') { E.w.splice(LCD.sel, 1); LCD.sel = -1; }
+  else if (act === 'fwd' || act === 'back') {   // drawn later is on top: swapped with the next one on the same page
+    const d = act === 'fwd' ? 1 : -1;
+    let j = LCD.sel + d; while (j >= 0 && j < E.w.length && E.w[j].page !== s.page) j += d;
+    if (j < 0 || j >= E.w.length) return;
+    [E.w[LCD.sel], E.w[j]] = [E.w[j], E.w[LCD.sel]]; LCD.sel = j;
+  }
+  lcdCommit(); lcdRenderEd();
+  if (act === 'wdel') lcdFocus('.lcd-stage');
+});
+// typing redraws the preview; a finished change (change event) is one step of Undo
+function lcdField(e, done) {
+  const el = e.target, k = el.dataset.k, E = LCD.ed;
+  if (!k || !E || k === 'tpl') return;
+  const v = el.value, s = E.w[LCD.sel], P = LCD.page;
+  if (k === 'snap') { if (done) LCD.snap = el.checked ? 1 : 0; return; }
+  if (k === 'name') { E.name = v; if (done) lcdCommit(); return; }
+  if (k === 'page') { if (done) { LCD.page = +v; LCD.sel = -1; lcdRenderEd(); } return; }
+  if (!done && el.type === 'number' && (v === '' || !el.checkValidity())) return;   // half typed: the change event settles it
+  if (k === 'pages') { E.pages = +v; E.w.forEach(w => { w.page = Math.min(w.page, E.pages); }); LCD.page = Math.min(LCD.page, E.pages); }
+  else if (k === 't') E.t[P - 1] = lcdClamp(v, 2, 600);
+  else if (k === 'bg') E.bg[P - 1] = v.toLowerCase();
+  else if (!s) return;
+  else if (k === 'src') { const old = s.src; s.src = v; if (lcdTextOnly(v)) s.kind = 'text'; s.unit = !lcdTemp(v) ? '-' : lcdTemp(old) ? s.unit : 'c'; }
+  else if (k === 'kind' || k === 'unit') s[k] = v;
+  else if (k === 'wpage') { s.page = +v; LCD.page = s.page; }
+  else if (k === 'color') s.color = v.toLowerCase();
+  else if (['size', 'x', 'y', 'w', 'h'].includes(k)) { s[k] = +v; lcdFit(s); }
+  if (!done) { lcdKick(); return; }
+  lcdCommit(); lcdRenderEd();
+}
+$('#lcded-body').addEventListener('input', e => lcdField(e, false));
+$('#lcded-body').addEventListener('change', e => lcdField(e, true));
+// on the preview: a widget is picked and moved, or resized by its corner; the keys do the same
+const lcdAt = e => { const r = e.target.getBoundingClientRect(); return [(e.clientX - r.left) * LCD_PX / r.width, (e.clientY - r.top) * LCD_PX / r.height]; };
+$('#lcded-body').addEventListener('pointerdown', e => {
+  if (!e.target.classList.contains('lcd-stage') || !LCD.ed || e.button) return;
+  const [x, y] = lcdAt(e), E = LCD.ed;
+  let i = E.w.length - 1;
+  while (i >= 0 && !(E.w[i].page === LCD.page && x >= E.w[i].x && x < E.w[i].x + E.w[i].w && y >= E.w[i].y && y < E.w[i].y + E.w[i].h)) i--;
+  e.target.focus();
+  if (i !== LCD.sel) { LCD.sel = i; lcdRenderEd(); }
+  if (i < 0) return;
+  const w = E.w[i];
+  LCD.drag = { x, y, resize: x >= w.x + w.w - 16 && y >= w.y + w.h - 16, b: { ...w } };
+  e.target.setPointerCapture(e.pointerId);
+});
+$('#lcded-body').addEventListener('pointermove', e => {
+  const D = LCD.drag, s = LCD.ed?.w[LCD.sel]; if (!D || !s) return;
+  const [x, y] = lcdAt(e);
+  if (D.resize) { s.w = lcdSnap(D.b.w + x - D.x); s.h = lcdSnap(D.b.h + y - D.y); }
+  else { s.x = lcdSnap(D.b.x + x - D.x); s.y = lcdSnap(D.b.y + y - D.y); }
+  lcdFit(s); lcdShowXY(s); lcdKick();
+});
+['pointerup', 'pointercancel'].forEach(ev => $('#lcded-body').addEventListener(ev, () => { if (LCD.drag) { LCD.drag = null; lcdCommit(); lcdRenderEd(); } }));
+$('#lcded').addEventListener('keydown', e => {
+  if (!LCD.ed) return;
+  const typing = e.target.closest('input:not([type=checkbox]), textarea, select');
+  if ((e.ctrlKey || e.metaKey) && !typing && ['z', 'y'].includes(e.key.toLowerCase())) {   // the editor's own Undo, not the window's
+    e.preventDefault(); e.stopPropagation();
+    if (e.key.toLowerCase() === 'y' || e.shiftKey) lcdStep(LCD.redo, LCD.undo); else lcdStep(LCD.undo, LCD.redo);
+    return;
+  }
+  if (!e.target.classList.contains('lcd-stage')) return;
+  const s = LCD.ed.w[LCD.sel]; if (!s) return;
+  const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key], st = LCD.snap ? 10 : 1;
+  if (d) {
+    e.preventDefault();
+    if (e.shiftKey) { s.w += d[0] * st; s.h += d[1] * st; } else { s.x += d[0] * st; s.y += d[1] * st; }
+    lcdFit(s); lcdCommit(); lcdRenderEd();
+  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+    e.preventDefault(); LCD.ed.w.splice(LCD.sel, 1); LCD.sel = -1; lcdCommit(); lcdRenderEd();
+  }
+});
+$('#lcded-x').addEventListener('click', lcdClose);
+$('#lcded').addEventListener('pointerdown', e => { if (e.target.id === 'lcded') lcdClose(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || $('#lcded').classList.contains('hidden') || !pk.classList.contains('hidden')) return;
+  e.preventDefault();
+  if (LCD.ed) lcdEdClose(); else lcdClose();
+});
+// each status: the values' history for the graphs, the preview, the list when the layouts changed
+function lcdStatus() {
+  const sig = JSON.stringify([lcdList(), proLocked(), LANG]);   // the screens' choice follows the layouts saved or deleted
+  if (sig !== LCD.osig) {
+    LCD.osig = sig;
+    $$('.dev-live').forEach(x => { if (x !== document.activeElement) { x.innerHTML = lcdOpts(x.dataset.sec); x.disabled = proLocked(); } });
+  }
+  if ($('#lcded').classList.contains('hidden')) return;
+  if (!S.pro) { LCD.leave = 1; lcdClose(); return; }
+  const L = S.lcd, now = Date.now();
+  if (L && now - LCD.histAt >= 950) {
+    LCD.histAt = now;
+    ['cpu_t', 'gpu_t', 'cpu_l', 'gpu_l', 'mem', 'fan'].forEach(k => { const h = LCD.hist[k] = LCD.hist[k] || []; h.push(L[k] == null ? NaN : +L[k]); if (h.length > LCD_HN) h.shift(); });
+  }
+  if (LCD.ed) lcdKick(); else lcdRender();
+}
+
 function applyStatus(m) {
-  const names = a => JSON.stringify((a || []).map(b => b.name));   // the cloud names can come after the first state
+  const names =a => JSON.stringify((a || []).map(b => b.name));   // the cloud names can come after the first state
   const bulbsChanged = names(m.bulbs) !== names(S.bulbs);
   const nanoSig = N => JSON.stringify(((N || {}).ctls || []).map(c => [c.slot, c.panels]));
   const nanoLayoutChanged = nanoSig(m.nano) !== nanoSig(S.nano);
@@ -6784,8 +7666,9 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); } else updateFxState();
   if (bulbsChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); updateRef(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck(); updateNotes();
+  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); updateRef(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck(); updateNotes(); renderRules(); lcdStatus();
   if (nanoLayoutChanged) drawAll();
+  if (cmpShown() && !CMP.away && cmpStk() !== CMP.stk) cmpRender();   // Pro came or went with the constructor open
   cmpWake();
 }
 
@@ -6798,6 +7681,9 @@ if (wv) wv.addEventListener('message', e => {
   else if (m.type === 'tryx_built') { if (TXB?.wait?.req === m.req) TXB.wait.done(m); }
   else if (m.type === 'comp_done') cmpDone(m);
   else if (m.type === 'draft_done') draftDone(m);
+  else if (m.type === 'scene_done' || m.type === 'group_done') scDone(m);
+  else if (m.type === 'rule_done') rulesDone(m);
+  else if (m.type === 'lcd_done') lcdDone(m);
   else if (m.type === 'state') {
     const prof = cv('general', 'profile', '');
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;

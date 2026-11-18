@@ -111,6 +111,9 @@ typedef struct {
     int took;                      // the thread ran: the screen was haku's, so it is given back
     int heard;                     // the screen's answers logged so far
     cl_pack *volatile next;        // a new pack for the thread, which owns the one it shows
+    void *volatile lnext;          // a live layout for the thread (it owns the one it draws); LIVE_OFF: none any more
+    int live_k, live_on; unsigned live_sig;   // [dev.N] live and its layout's lcd_sig as last seen; live_on: one handed
+    DWORD live_at;                 // when they were last read (once a second, not every frame of the lights)
     int busy;                      // a program in the way was seen: the screen is theirs, nothing is given back
     DWORD checked;
     char key[MAX_PATH * 3 + 16];   // [dev.N] media|media_at last loaded
@@ -170,6 +173,19 @@ static int show(cl_t *u, const cl_pack *p, int f, int stoppable) {
 
 static void free_pack(cl_pack *p) { if (p) { free(p->buf); free(p); } }
 
+#define LIVE_OFF ((void *)1)
+static void hand_live(cl_t *u, void *l) {   // to the thread; one it had not taken yet is let go of
+    void *old = InterlockedExchangePointer((PVOID volatile *)&u->lnext, l);
+    if (old && old != LIVE_OFF) lcd_free(old);
+}
+// a live layout's page now, as a pack the thread shows; NULL: nothing drawn
+static cl_pack *live_pack(lcd_layout *l) {
+    cl_pack *p = calloc(1, sizeof(cl_pack));
+    if (p && (p->n = (DWORD)lcd_draw(l, &p->buf)) && (p->nfr = cl_parse(p->buf, p->n, p->fr))) return p;
+    free_pack(p);
+    return NULL;
+}
+
 // What the screen sends back after a frame (it has 512-byte input reports): the first answers go to the log, as the
 // only sign of how it took the picture (report 711704f653: frames went, the picture did not change)
 static void hear(cl_t *u) {
@@ -187,7 +203,9 @@ static void hear(cl_t *u) {
     u->heard++;
 }
 
-// The thread that has the screen while there is a pack: all writes go from here, one frame at a time.
+// The thread that has the screen while there is a pack or a live layout: all writes go from here, one frame at a time.
+// A live layout (Pro, pro/lcdlive.cpp) is drawn here once a second (not while dark: its black frame stays) and shown
+// as a still; a pack handed meanwhile is dropped (cl_send hands it again once the layout ends).
 // An animation keeps its own clock (due, monotonic), so the time a frame takes to go counts towards its delay.
 // Behind: the next one goes at once and the clock starts again from now, so frames never go in a burst to catch up
 // (while the link is slower than the animation, it plays slower). A still (or dark) goes again CL_STILL after the
@@ -196,14 +214,28 @@ static void hear(cl_t *u) {
 // every cl_br_retry_ms at most, and logged once until it goes.
 static DWORD WINAPI stream(void *arg) {
     cl_t *u = arg;
-    cl_pack *p = NULL; int f = 1, sent_br = -1, br_fails = 0;
-    ULONGLONG due = 0, br_at = 0;
+    cl_pack *p = NULL; int f = 1, sent_br = -1, br_fails = 0, draw_fails = 0;
+    ULONGLONG due = 0, br_at = 0, drawn = 0;
+    lcd_layout *lay = NULL;
     if (MODELS[u->m].rot && !feature(u, 0x0c, 0x00)) logf_("corsairlcd: the rotation was not set (error %lu)", GetLastError());
     while (!u->stop) {
+        // next before lnext: cl_send hands a layout's end before the pack that follows it
         cl_pack *nx = InterlockedExchangePointer((PVOID volatile *)&u->next, NULL);
-        if (nx) { free_pack(p); p = nx; f = 1; due = 0; }
+        void *ln = InterlockedExchangePointer((PVOID volatile *)&u->lnext, NULL);
+        if (ln) {   // a new layout replaces what was shown; none any more: its last page stays until a pack comes
+            lcd_free(lay); lay = ln == LIVE_OFF ? NULL : ln; drawn = 0;
+            if (lay) { free_pack(p); p = NULL; }
+        }
+        if (nx && lay) free_pack(nx);
+        else if (nx) { free_pack(p); p = nx; f = 1; due = 0; }
         int br = u->dark ? 0 : u->br;
         ULONGLONG now = GetTickCount64();
+        if (lay && (!p || !u->dark) && (!drawn || now - drawn >= 1000)) {
+            cl_pack *lp = live_pack(lay);
+            drawn = now;
+            if (lp) { free_pack(p); p = lp; f = 1; due = 0; draw_fails = 0; }
+            else if (!draw_fails++) logf_("corsairlcd: the live layout was not drawn");
+        }
         if (MODELS[u->m].br && br != sent_br && p && now >= br_at) {
             if (feature(u, 0x0b, (unsigned char)br)) {
                 if (br_fails) logf_("corsairlcd: the backlight went after %d refusal(s)", br_fails);
@@ -231,7 +263,7 @@ static DWORD WINAPI stream(void *arg) {
         WaitForSingleObject(u->wake, wait);
     }
     if (u->end_dark && p && !u->err) show(u, p, 0, 0);
-    free_pack(p);
+    free_pack(p); lcd_free(lay);
     return 0;
 }
 
@@ -288,6 +320,9 @@ static int list_ifs(cl_if *v, int max) {
 }
 
 static void cl_close(ext_dev *d);
+static void start_thread(cl_t *u);
+static void stop_thread(cl_t *u);
+static void own_display(cl_t *u, int dark);
 
 static int cl_open(ext_dev *d) {
     char app[64];
@@ -345,20 +380,45 @@ static int cl_send(ext_dev *d, const rgbf *c, int n) {
     int follow = cfg_geti(sec, "screen_follow", 1), on = _stricmp(cfg_get("general", "effect", ""), "off") != 0;
     LONG dark = follow && !on, br = follow ? (LONG)(app_brightness_now() * 100 + 0.5f) : 100;
     if (dark != u->dark || br != u->br) { u->dark = dark; u->br = br; SetEvent(u->wake); }
+    // [dev.N] live: a layout shown instead of the media, opened again when the setting, the layout or Pro changes
+    // (lcd_sig is 0 without Pro or without the layout); ended: back to the media, or to the screen's own display
+    int lk = u->live_k; unsigned ls = u->live_sig;
+    if (now - u->live_at >= 1000) { u->live_at = now; lk = cfg_geti(sec, "live", 0); ls = lk > 0 ? lcd_sig(lk) : 0; }
+    if (lk != u->live_k || ls != u->live_sig) {
+        u->live_k = lk; u->live_sig = ls;
+        lcd_layout *l = ls ? lcd_open(lk) : NULL;
+        if (l) {
+            if (!u->live_on) logf_("corsairlcd: showing live layout %d (experimental)", lk);
+            u->live_on = 1; hand_live(u, l); start_thread(u);
+        } else if (u->live_on) {
+            u->live_on = 0; hand_live(u, LIVE_OFF);
+            logf_("corsairlcd: the live layout ended (%s)", lk <= 0 ? "none chosen" : ls ? "it cannot be read" : "no layout or no Pro");
+            if (cfg_get(sec, "media", "")[0]) u->key[0] = 0;   // loaded again just below
+            else { stop_thread(u); if (u->took && !u->busy) own_display(u, 0); }
+        }
+    }
     snprintf(key, sizeof(key), "%s|%s", cfg_get(sec, "media", ""), cfg_get(sec, "media_at", ""));
-    if (strcmp(key, u->key)) {
+    if (!u->live_on && strcmp(key, u->key)) {
         strcpy_s(u->key, sizeof(u->key), key);
         cl_pack *p = key[0] != '|' ? load(cfg_get(sec, "media", "")) : NULL;
         if (key[0] != '|' && !p) logf_("corsairlcd: %s is not a screen builder's pack", cfg_get(sec, "media", ""));
         if (p) {
             logf_("corsairlcd: showing %d frame(s), %lu bytes", p->nfr - 1, p->n);
             free_pack(InterlockedExchangePointer((PVOID volatile *)&u->next, p));
-            if (!u->th && !(u->th = CreateThread(NULL, 0, stream, u, 0, NULL))) logf_("corsairlcd: no thread");
-            u->took |= u->th != NULL;
-            SetEvent(u->wake);
+            start_thread(u);
         }
     }
     return 1;
+}
+
+// a thread stopped before (a live layout ended) starts again with its stop and quit cleared
+static void start_thread(cl_t *u) {
+    if (!u->th) {
+        u->stop = 0; ResetEvent(u->quit);
+        if (!(u->th = CreateThread(NULL, 0, stream, u, 0, NULL))) logf_("corsairlcd: no thread");
+        u->took |= u->th != NULL;
+    }
+    SetEvent(u->wake);
 }
 
 static void stop_thread(cl_t *u) {
@@ -372,12 +432,15 @@ static void stop_thread(cl_t *u) {
 
 // To its own display (OpenLinkHub's Stop), or dark: the backlight off, or on the XC7 (no backlight) the black frame
 // the thread left on it. Only a screen haku showed something on, and not while a program in the way has it.
-static void give_back(cl_t *u, int dark) {
-    if (!u->took || u->busy) return;
-    u->busy = 1;   // once
+static void own_display(cl_t *u, int dark) {
     if (dark && !MODELS[u->m].br) return;
     feature(u, 0x1e, 0x01); feature(u, 0x1d, 0x00);
     if (MODELS[u->m].br) feature(u, 0x0b, dark ? 0 : MODELS[u->m].fam ? 0x64 : 0x40);   // the backlight OpenLinkHub leaves it at
+}
+static void give_back(cl_t *u, int dark) {
+    if (!u->took || u->busy) return;
+    u->busy = 1;   // once
+    own_display(u, dark);
 }
 
 static void cl_leave(ext_dev *d, int how) {
@@ -395,7 +458,7 @@ static void cl_close(ext_dev *d) {
     if (!u) return;
     stop_thread(u);
     if (!u->wpend) give_back(u, 0);   // lost (send returned 0) or closed without leave: its own display again
-    free_pack(u->next); u->next = NULL;
+    free_pack(u->next); u->next = NULL; hand_live(u, NULL);
     if (u->hf && u->hf != INVALID_HANDLE_VALUE && u->hf != u->h) CloseHandle(u->hf);
     if (u->h && u->h != INVALID_HANDLE_VALUE) { CancelIo(u->h); CloseHandle(u->h); }
     d->priv = NULL;
@@ -443,6 +506,22 @@ static BOOLEAN __stdcall fake_set(HANDLE h, PVOID b, ULONG n) {
     return !fk_fail;
 }
 void logf_(const char *fmt, ...) { (void)fmt; }
+// fake live layouts: each draw is a pack of the black frame and one frame marked base + the draws so far
+struct lcd_layout { int base; };
+static volatile LONG fk_draws, fk_freed;
+int lcd_draw(lcd_layout *l, unsigned char **out) {
+    int mark = l->base + (int)(InterlockedIncrement(&fk_draws) & 15);
+    unsigned char *b = calloc(1, 8 + 2 * 26);
+    memcpy(b, "HKLCD1\0\0", 8);
+    for (int i = 0; i < 2; i++) {
+        unsigned char *o = b + 8 + 26 * i;
+        o[0] = 20; o[4] = 1000 & 255; o[5] = 1000 >> 8;
+        o[6] = 0xFF; o[7] = 0xD8; o[8] = 0xFF; o[9] = (unsigned char)(i ? mark : 0xB0);
+    }
+    *out = b;
+    return 8 + 2 * 26;
+}
+void lcd_free(lcd_layout *l) { if (l) InterlockedIncrement(&fk_freed); }
 
 // The fake transport: WriteFile and CancelIoEx as a HID driver does them. A write pends on its own thread, which
 // completes it the way the kernel does (InternalHigh, then Internal, then the event), fk_delay ms later or, once
@@ -607,6 +686,25 @@ static void io_tests(void) {
     U.br = 70; Sleep(150); fk_fail = 0; Sleep(400); assert(fk_br_v == 70); halt();
     // a reconnect is a new thread: it sends the backlight again even if it is the same
     fresh(); U.br = 70; run(mk(1, 1, d100)); Sleep(200); halt(); assert(fk_br_v == 70 && fk_br_n == 1);
+
+    // §13 a live layout: drawn once a second, shown as a still; a pack handed meanwhile is dropped; dark: its black
+    // frame and no drawing; ended: the pack that follows shows, the layout is let go of
+    static lcd_layout L = { 0x40 };
+    int seen = 0, last = -1;
+    fresh(); fk_draws = 0; fk_freed = 0; U.lnext = &L; run(NULL); Sleep(2300);
+    for (int i = 0; i < lg_n; i++) { assert(lg[i].mark > 0x40 && lg[i].mark < 0x50); if (lg[i].mark != last) { seen++; last = lg[i].mark; } }
+    printf("corsairlcd: live layout, 2.3 s: %ld draw(s), %d page(s) shown, %ld frames\n", fk_draws, seen, lg_n);
+    assert(fk_draws >= 2 && fk_draws <= 4 && seen == fk_draws && lg_n >= 15);
+    n = lg_n; U.next = mk(0x21, 2, d100); SetEvent(U.wake); Sleep(300);
+    for (int i = n; i < lg_n; i++) assert(lg[i].mark > 0x40 && lg[i].mark < 0x50);
+    U.dark = 1; SetEvent(U.wake); Sleep(100); w0 = fk_draws; n = lg_n; Sleep(1500);
+    for (int i = n; i < lg_n; i++) assert(lg[i].mark == 0xB0);
+    assert(lg_n - n >= 10 && fk_draws == w0 && !fk_freed);
+    U.lnext = LIVE_OFF; U.next = mk(0x21, 2, d100); U.dark = 0; SetEvent(U.wake); Sleep(400); halt();
+    assert(lg[lg_n - 1].mark == 0x21 || lg[lg_n - 1].mark == 0x22);
+    assert(fk_freed == 1 && fk_draws == w0);
+    // stopped while a layout is shown: let go of
+    fresh(); fk_freed = 0; U.lnext = &L; run(NULL); Sleep(300); halt(); assert(fk_freed == 1);
 }
 
 int main(void) {

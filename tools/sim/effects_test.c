@@ -15,7 +15,7 @@
 #include <string.h>
 
 // the engine as just started: effects_reset() alone keeps the clocks running (it is called on every settings change)
-static void fresh(void) { effects_reset(); memset(fx_t, 0, sizeof(fx_t)); was_temp = was_audio = 0; }
+static void fresh(void) { effects_reset(); memset(fx_t, 0, sizeof(fx_t)); was_temp = was_audio = 0; comp_t0 = 0; comp_sig = 0; }
 
 static int fails;
 #define CHECK(c, what) do { if (!(c)) { printf("FAIL %s\n", what); fails++; } else printf("ok   %s\n", what); } while (0)
@@ -161,8 +161,15 @@ static void pictures(const char *dir) {
 
 // ---- "dump <file>": colours of a 28-LED strip for a set of effects, settings and moments, as JSON, for
 // tools/sim/preview_check.js to compare with the window's previews (ui/fxpreview.js)
+#define DUMP_W 25
+// a dump key "cscene.1/dur" is [cscene.1] dur
+static void dump_set(const char *id, const char *key, const char *val) {
+    const char *sl = strchr(key, '/'); char sec[32];
+    if (!sl) { cfg_set(id, key, val); return; }
+    snprintf(sec, sizeof(sec), "%.*s", (int)(sl - key), key); cfg_set(sec, sl + 1, val);
+}
 static void dump(const char *file) {
-    static const char *cases[][19] = {   // effect, then key/value pairs
+    static const char *cases[][DUMP_W] = {   // effect, then key/value pairs
         { "flow" }, { "caustic" }, { "comet" }, { "lava" }, { "rainbow" }, { "ocean" }, { "plasma" }, { "ripple" }, { "pump" },
         { "wave" }, { "wave", "dir", "left", "size", "3" }, { "wave", "dir", "out" }, { "wave", "dir", "in", "size", "1" },
         { "breathe" }, { "breathe", "depth", "0" }, { "breathe", "single", "1", "wave", "60" }, { "breathe", "wave", "30", "depth", "20" },
@@ -194,6 +201,19 @@ static void dump(const char *file) {
         { "custom", "l1", "s:fill c:p0 mp:o ma:100 ms:level", "l2", "s:ring c:p1 dur:1 per:2 w:20 mp:w ma:-80 ms:beat b:add",
           "l3", "s:noise c:p sz:120 v:20 mp:sz ma:400 ms:bass b:screen", "l4", "s:spark c:p n:10 mp:v ma:-400 ms:level b:add", "l5", "s:dots n:9 mp:sf ma:60 ms:beat b:mask hide:1" },
         { "custom", "l1", "s:grad c:p v:15 ap:a aa:90 at:4 mp:sz ma:200 ms:bass", "l2", "s:dots n:6 w:30 mp:w ma:100 ms:level inv:1 b:mask" },
+        // keyframes: every ease, a loop, a bounce, a count that then holds, one over a moving and a sound-led setting
+        { "custom", "l1", "s:grad c:p v:20", "l2", "s:ring c:p1 dur:1.5 per:2.5 b:add", "l3", "s:wave c:p2 ap:o aa:30 at:3 mp:sz ma:100 ms:bass b:screen",
+          "t1", "1 v 4 loop 0:-50 2:80:s 3:120:h 4:0", "t2", "2 sz 3 bounce 0:20 1.5:400 3:50", "t3", "2 o 10 2 0:100 5:0", "t4", "3 o 2.5 loop 0:20 2.5:90",
+          "t5", "3 sz 7 bounce 0:50 7:300:s" },
+        // tracks that are dropped or cut: a missing layer line, too short, a setting that does not move, keys out of order,
+        // out of range and not numbers; scenes switched on with none that has a layer
+        { "custom", "l1", "s:wave c:p", "l3", "s:dots n:5 w:40 b:mask", "t1", "2 o 5 loop 0:0 1:100", "t2", "3 w 0.05 loop 0:5",
+          "t3", "1 hide 5 loop 0:1", "t4", "3 w 600000 7 x:1 5:abc 3:50 1:10 9:90:z 1e3:40:h", "t5", "1 sz 2 99999 -5:999 1:1",
+          "sc", "1", "cscene.2/dur", "5" },
+        // scenes: one left out (no layers), a duration and a fade past their limits, crossfades into the next and around
+        { "custom", "l1", "s:fill c:#ff0000", "sc", "1", "cscene.1/l1", "s:grad c:p v:30", "cscene.1/dur", "2", "cscene.1/fade", "2",
+          "cscene.2/l1", "s:wave c:p1", "cscene.2/t1", "1 v 3 loop 0:-100 3:100", "cscene.2/dur", "5", "cscene.2/fade", "40",
+          "cscene.4/l1", "s:noise c:p2 sz:150", "cscene.4/l2", "s:spark c:p n:20 b:add", "cscene.4/dur", "0.5" },
     };
     static const double T[] = { 0.37, 7.3, 41.9, 123.45, 0, 600.25 };   // the constructor also at its start and much later
     static const float SND[][3] = { { 0.2f, 0.7f, 0 }, { 0.9f, 0.1f, 0.05f }, { 0, 1, 1.5f }, { 1, 0.5f, 9 }, { 0.5f, 0.5f, 0.3f }, { 0.05f, 0.95f, 0.7f } };   // level, bass, beat age
@@ -204,11 +224,11 @@ static void dump(const char *file) {
         const char *id = cases[c][0]; int fx = effect_index(id);
         for (int k = 0; k < (fx == FX_CUSTOM ? 6 : 4); k++) {
             reset_cfg(); strip(28);
-            for (int j = 1; j < 19 && cases[c][j]; j += 2) cfg_set(id, cases[c][j], cases[c][j + 1]);
+            for (int j = 1; j < DUMP_W && cases[c][j]; j += 2) dump_set(id, cases[c][j], cases[c][j + 1]);
             fresh(); effects_render(fx, &sc, &sn, 0, out);
             fx_t[fx] = T[k];
             fprintf(f, "%s{\"id\":\"%s\",\"p\":{", first ? "" : ",\n", id); first = 0;
-            for (int j = 1; j < 19 && cases[c][j]; j += 2) fprintf(f, "%s\"%s\":\"%s\"", j > 1 ? "," : "", cases[c][j], cases[c][j + 1]);
+            for (int j = 1; j < DUMP_W && cases[c][j]; j += 2) fprintf(f, "%s\"%s\":\"%s\"", j > 1 ? "," : "", cases[c][j], cases[c][j + 1]);
             fputc('}', f);
             if (fx == FX_CUSTOM && used_audio) {   // the sound as the analysis left it, set by hand: the same numbers go to the preview
                 level_smooth = SND[k][0]; bass_smooth = SND[k][1]; beat_age = SND[k][2]; audio_in = 1;
@@ -551,6 +571,70 @@ int main(int argc, char **argv) {
         snprintf(what, sizeof(what), "a layer led by the sound: capture off without one (%d), on with it (%d), brighter when loud (%.2f -> %.2f), streamed not baked (%d)", quiet, effects_need_audio(), low, high, baked);
         CHECK(!quiet && effects_need_audio() && high > low + 0.3f && baked == 0, what);
         sensors_ok(); reset_cfg();
+
+        // keyframes: a track names its layer by line, its setting, its keys clamped; linear, smooth and hold between keys
+        {
+            int pos[COMP_MAX] = { 0, -1, 1, 2, -1, -1, -1, -1 }; ctrack T;
+            int a = track_parse("3 sz 4 loop 0:10 2:100:s 3:9999:h 4:50", pos, &T);
+            float v1 = track_at(&T, 1), v2 = track_at(&T, 2.25), v3 = track_at(&T, 3.5), v4 = track_at(&T, 4), v5 = track_at(&T, 5);
+            snprintf(what, sizeof(what), "keyframes: linear %.2f, smooth %.2f, hold %.2f, the loop starts over (%.2f, %.2f), before its start the first key", v1, v2, v3, v4, v5);
+            CHECK(a && T.layer == 1 && T.p == LP_SZ && T.dur == 4 && T.rep == 0 && T.nk == 4 && T.kv[2] == 400 && fabsf(v1 - 55) < 0.01f &&
+                  fabsf(v2 - 146.875f) < 0.01f && v3 == 400 && v4 == 10 && fabsf(v5 - 55) < 0.01f && track_at(&T, -3) == 10, what);
+            ctrack C3, B; track_parse("1 o 2 3 0:0 2:100", pos, &C3); track_parse("1 x 2 bounce 0:0 2:100", pos, &B);
+            snprintf(what, sizeof(what), "three times then the last key (%.1f %.1f %.1f); a bounce runs back (%.1f %.1f %.1f)",
+                     track_at(&C3, 1), track_at(&C3, 5), track_at(&C3, 6.5), track_at(&B, 0.5), track_at(&B, 2.5), track_at(&B, 4.5));
+            CHECK(fabsf(track_at(&C3, 1) - 50) < 0.01f && fabsf(track_at(&C3, 5) - 50) < 0.01f && track_at(&C3, 6.5) == 100 &&
+                  fabsf(track_at(&B, 0.5) - 25) < 0.01f && fabsf(track_at(&B, 2.5) - 75) < 0.01f && fabsf(track_at(&B, 4.5) - 25) < 0.01f, what);
+            const char *junk[] = { "9 o 1 loop 0:1", "2 o 1 loop 0:1", "1 hide 1 loop 0:1", "1 o 0.01 loop 0:1", "1 o 1", "1 o 1 loop",
+                                   "1 o 1 loop x:1 1:abc 2:3:q 1:5:hh 1:nan inf:1", "", "o 1 loop 0:1", "1 nope 1 loop 0:1" };
+            int dropped = 0;
+            for (int i = 0; i < (int)(sizeof(junk) / sizeof(junk[0])); i++) { ctrack J; dropped += !track_parse(junk[i], pos, &J); }
+            ctrack O; int ko = track_parse("1 o 10 loop 5:1 3:2 6:3 0:4 7:5 8:6 9:7 -1:0 10:8 10:9 10:10 11:11 1e9:5", pos, &O);
+            snprintf(what, sizeof(what), "bad tracks dropped (%d of 10); keys out of order skipped, past the end cut, at most 8 (%d, first at %.0f, last %.0f)", dropped, O.nk, O.kt[0], O.kv[O.nk - 1]);
+            CHECK(dropped == 10 && ko && O.nk == 8 && O.kt[0] == 5 && O.kt[7] == 10 && O.kv[7] == 10, what);
+            static char lng[2000]; memset(lng, ' ', sizeof(lng) - 1); memcpy(lng, "1 o 5 loop 0:10", 15); memcpy(lng + 1990, "4:90", 4);
+            CHECK(track_parse(lng, pos, &O) && O.nk == 1, "a 2000-character track: read up to a config line, nothing overrun");
+        }
+        // a track plays from when the composition last changed; the same settings saved again go on; past its count it holds
+        {
+            strip(4); reset_cfg();
+            cfg_set("custom", "l1", "s:fill c:#ffffff"); cfg_set("custom", "t1", "1 o 4 1 0:0 4:100"); fresh();
+            effects_render(fx, &sc, &sn, 0, out);
+            fx_t[fx] = 2; float a = led_color(fx, &sc.leds[0], fx_t, NULL, 0).r;
+            fx_t[fx] = 6; float b = led_color(fx, &sc.leds[0], fx_t, NULL, 0).r;
+            cfg_set("custom", "t1", "1 o 4 1 0:0 4:50"); effects_reset(); effects_render(fx, &sc, &sn, 0, out);   // as a settings change does
+            float c = led_color(fx, &sc.leds[0], fx_t, NULL, 0).r;
+            fx_t[fx] = 8; float d = led_color(fx, &sc.leds[0], fx_t, NULL, 0).r;
+            effects_reset(); effects_render(fx, &sc, &sn, 0, out);
+            float e = led_color(fx, &sc.leds[0], fx_t, NULL, 0).r;
+            fx_t[fx] = 16384 - 0.01; effects_render(fx, &sc, &sn, 0.02, out);   // the clock wraps: the track's time goes on
+            float w = led_color(fx, &sc.leds[0], fx_t, NULL, 0).r;
+            snprintf(what, sizeof(what), "a track's time: %.2f at 2 s, %.2f held after it; changed: starts over (%.2f, %.2f 2 s on), saved again: goes on (%.2f), past the clock's wrap (%.2f)", a, b, c, d, e, w);
+            CHECK(fabsf(a - 0.5f) < 0.01f && fabsf(b - 1) < 0.01f && c < 0.01f && fabsf(d - 0.25f) < 0.01f && fabsf(e - 0.25f) < 0.01f && fabsf(w - 0.5f) < 0.01f, what);
+        }
+        // scenes: in turn for their durations, a fade crossing into the next, around to the first; a Nanoleaf bakes one round
+        {
+            strip(4); reset_cfg();
+            cfg_set("custom", "l1", "s:fill c:#ffffff"); cfg_set("custom", "sc", "1");
+            cfg_set("cscene.1", "l1", "s:fill c:#ff0000"); cfg_set("cscene.1", "dur", "4"); cfg_set("cscene.1", "fade", "0");
+            cfg_set("cscene.3", "l1", "s:fill c:#0000ff"); cfg_set("cscene.3", "dur", "2"); cfg_set("cscene.3", "fade", "1");
+            cfg_set("cscene.2", "dur", "3");   // no layer: left out
+            fresh(); effects_render(fx, &sc, &sn, 0, out);
+            double at[] = { 1, 3.5, 4.5, 5.5, 7, 15.5 }; rgbf q[6];
+            for (int i = 0; i < 6; i++) { fx_t[fx] = at[i]; q[i] = led_color(fx, &sc.leds[0], fx_t, NULL, 0); }
+            snprintf(what, sizeof(what), "two scenes of 4 and 2 s: red, crossing (%.2f/%.2f), blue, back to red without a fade (%.2f/%.2f), round again (%.2f)",
+                     q[1].r, q[1].b, q[4].r, q[4].b, q[5].r);
+            CHECK(nscn == 2 && comp_total == 6 && q[0].r == 1 && q[0].b == 0 && fabsf(q[1].r - 0.5f) < 0.01f && fabsf(q[1].b - 0.5f) < 0.01f &&
+                  q[2].b == 1 && q[3].b == 1 && q[4].r == 1 && q[4].b == 0 && fabsf(q[5].r - 0.5f) < 0.01f, what);
+            for (int i = 0; i < sc.count; i++) { sc.leds[i].dev = DEV_NANO; sc.leds[i].zone = ZONE_NANO0; }
+            static rgbf fr[240 * 4]; float st = 0;
+            int nf = effects_bake(fx, &sc, DEV_NANO, ZONE_NANO0, 240, 4, fr, &st);
+            snprintf(what, sizeof(what), "scenes baked for a Nanoleaf: one round of 6 s (%d frames of %.1f s)", nf, st);
+            CHECK(nf > 1 && fabsf(nf * st - 6.0f / fx_speed[fx]) < 0.31f, what);
+            cfg_set("custom", "sc", "0"); effects_reset(); effects_render(fx, &sc, &sn, 0, out);
+            CHECK(nscn == 0 && out[0].r == 1 && out[0].g == 1, "scenes off: [custom] shows (the scenes are kept)");
+            reset_cfg();
+        }
     }
 
     // ---- bubbles stay within their list however long they run
@@ -601,6 +685,46 @@ int main(int argc, char **argv) {
         }
         snprintf(what, sizeof(what), "the slowest effect at 2048 LEDs takes %.2f ms a frame (under 8 ms, a quarter of a 30 fps frame)", worst[2] / 1000);
         CHECK(worst[2] < 8000, what);
+
+        // the constructor's Pro parts against its layers alone: 8 layers; with 8 keyframe tracks; 8 scenes of those,
+        // each 1 s and all of it a crossfade (two scenes drawn every frame, the worst case)
+        static const char *L8[] = { "s:fill c:#000a30", "s:grad c:p v:20 a:30 ap:a aa:90 at:5", "s:wave c:p0 sz:200 v:-15 b:screen", "s:noise c:p sz:80 v:8 o:40",
+            "s:ring c:#ffffff dur:0.6 per:0.9 w:8 sf:80 b:add", "s:dots n:12 w:35 sf:40 b:mask", "s:spark c:p n:6 life:1.2 tail:12 v:35 w:6 b:add", "s:wave c:p2 b:mul o:50" };
+        static const char *T8[] = { "1 o 4 loop 0:20 2:80:s 4:20", "2 v 3 bounce 0:-50 3:50", "3 sz 5 loop 0:100 2.5:300:h 5:100", "4 o 2 loop 0:0 1:60 2:0",
+            "5 w 6 loop 0:4 3:16 6:4", "6 o 2.5 loop 0:100 1:30:s 2.5:100", "7 v 4 loop 0:10 2:60 4:10", "8 o 3 bounce 0:20 3:70" };
+        printf("     the constructor, microseconds a frame (strip of 60 / 300 LEDs / 64x32 panel):\n");
+        double cw[3] = { 0 };
+        for (int m = 0; m < 3; m++) {
+            static const char *names[] = { "8 layers", "+ 8 tracks", "8 scenes, fading" };
+            printf("     %-17s", names[m]);
+            for (int s = 0; s < 3; s++) {
+                reset_cfg(); sensors_ok();
+                if (s == 2) panel(64, 32); else strip(sizes[s]);
+                char k[24], sec[24];
+                for (int i = 0; i < 8; i++) {
+                    if (m < 2) { snprintf(k, sizeof(k), "l%d", i + 1); cfg_set("custom", k, L8[i]); }
+                    if (m == 1) { snprintf(k, sizeof(k), "t%d", i + 1); cfg_set("custom", k, T8[i]); }
+                    if (m == 2) for (int j = 0; j < 8; j++) {
+                        snprintf(sec, sizeof(sec), "cscene.%d", i + 1);
+                        snprintf(k, sizeof(k), "l%d", j + 1); cfg_set(sec, k, L8[(i + j) % 8]);
+                        snprintf(k, sizeof(k), "t%d", j + 1); cfg_set(sec, k, T8[(i + j) % 8]);
+                        cfg_set(sec, "dur", "1"); cfg_set(sec, "fade", "1");
+                    }
+                }
+                if (m == 2) { cfg_set("custom", "l1", "s:fill c:#000000"); cfg_set("custom", "sc", "1"); }
+                fresh(); effects_render(FX_CUSTOM, &sc, &sn, 1 / 30.0, out);
+                LARGE_INTEGER a, b; QueryPerformanceCounter(&a);
+                int n = s == 2 ? 100 : 400;
+                for (int f = 0; f < n; f++) effects_render(FX_CUSTOM, &sc, &sn, 1 / 30.0, out);
+                QueryPerformanceCounter(&b);
+                double us = (double)(b.QuadPart - a.QuadPart) * 1e6 / fq.QuadPart / n;
+                cw[s] = fmax(cw[s], us);
+                printf(" %8.1f", us);
+            }
+            printf("\n");
+        }
+        snprintf(what, sizeof(what), "the constructor's worst case at 2048 LEDs (8 scenes of 8 layers and 8 tracks, crossfading) takes %.2f ms a frame (under 8 ms)", cw[2] / 1000);
+        CHECK(cw[2] < 8000, what);
     }
 
     if (argc > 1) pictures(argv[1]);

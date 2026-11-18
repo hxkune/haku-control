@@ -32,26 +32,138 @@ window.chrome = { webview: {
     // ui_web.cpp other_profile: a profile's setting sent for a profile no longer in use is dropped, the page gets the state
     const profSec = s => s === 'custom' || s === 'general' || STATE.effects.some(e => e.id === s);
     if (o.cmd === 'set' && o.p && o.p !== (G.profile || '') && profSec(o.s)) { setTimeout(() => emit(STATE), 30); return; }
+    // main.c track_stored / comp_tracks_ok: without Pro a keyframe track is written only if its words (after the layer
+    // number) are already stored in [custom], a scene or a group
+    const body = v => String(v || '').trim().replace(/^\S+\s*/, '');
+    const tracksOk = kv => STATE.pro.on || kv.every(([k, v]) => !/^t[1-8]$/i.test(k) || !body(v) ||
+      ['custom'].concat([1, 2, 3, 4, 5, 6, 7, 8].map(n => 'cscene.' + n), Array.from({ length: 16 }, (_, i) => 'cgroup.' + (i + 1)))
+        .some(s => [1, 2, 3, 4, 5, 6, 7, 8].some(i => C[s] && C[s]['t' + i] != null && body(C[s]['t' + i]) === body(v))));
+    // ui_web.cpp set: scenarios, LCD layouts, scenes and groups only through their own commands; a new track in [custom]: Pro
+    if (o.cmd === 'set' && (/^(rule|lcd|cscene|cgroup)\./i.test(o.s) || o.s === 'custom' && !tracksOk([[o.k, o.v]]))) { setTimeout(() => emit(STATE), 30); return; }
     if (o.cmd === 'set') (C[o.s] = C[o.s] || {})[o.k] = o.v;
     // config.c full (window.mockCfgFull = 1): what adds lines is refused whole and counted in cfg_full (comp_apply, draft_save,
     // preset_save and preset_copy here); the page is told by the reply's err 'cap' or by the count
     const full = window.mockCfgFull && ['comp_apply', 'draft_save', 'preset_save', 'preset_copy'].includes(o.cmd);
     if (full) { STATE.cfg_full++; if (o.cmd.startsWith('preset')) { setTimeout(() => emit(STATE), 30); return; } }
-    // main.c app_comp_apply: the 11 lines into [custom] at once; window.mockCompFail = 'bad' | 'save' | 'silent'
-    if (o.cmd === 'comp_apply') { const no = window.mockCompFail, err = full ? 'cap' : no === 'bad' ? 'bad' : o.p && o.p !== (G.profile || '') ? 'prof' : no === 'save' ? 'save' : '';
+    // main.c app_comp_apply: the 20 lines (l1..8, k1..3, t1..8, sc) into [custom] at once; window.mockCompFail = 'bad' | 'save' | 'silent'
+    if (o.cmd === 'comp_apply') { const no = window.mockCompFail, kv = String(o.kv).split('\n').map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]);
+      const keys = Array.from({ length: 8 }, (_, i) => 'l' + (i + 1)).concat(['k1', 'k2', 'k3'], Array.from({ length: 8 }, (_, i) => 't' + (i + 1)), ['sc']);
+      const shape = kv.length === 20 && kv.every((x, i) => x[0] === keys[i]);
+      const err = !shape || no === 'bad' ? 'bad' : o.p && o.p !== (G.profile || '') ? 'prof' : !tracksOk(kv) ? 'pro' : full ? 'cap' : no === 'save' ? 'save' : '';
       if (no !== 'silent') { if (!err || err === 'save') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); (C.custom = C.custom || {})[l.slice(0, e)] = l.slice(e + 1); });
         setTimeout(() => { emit(STATE); emit({ type: 'comp_done', req: o.req, err }); }, 40); } }
-    // ui_web.cpp draft_save: the 14 lines in order into the first free [cdraft.N] or, slot r, [crecover] (no lines: cleared);
+    // ui_web.cpp draft_save: the 22 lines in order into the first free [cdraft.N] or, slot r, [crecover] (no lines: cleared);
     // window.mockDraftFail = 'save' | 'silent'; a slot not taken back when not written
-    if (o.cmd === 'draft_save') { const no = window.mockDraftFail, K = ['name', 'at', 'prof', 'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'k1', 'k2', 'k3'];
+    if (o.cmd === 'draft_save') { const no = window.mockDraftFail, K = ['name', 'at', 'prof', 'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'k1', 'k2', 'k3', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'];
       const L = o.kv ? o.kv.split('\n').map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]) : [];
-      let err = (o.slot === '' || o.slot === 'r') && (L.length === 14 ? L.every((x, i) => x[0] === K[i]) && L[1][1] : !L.length && o.slot === 'r') ? '' : 'bad', n = 0, sec = 'crecover';
+      let err = (o.slot === '' || o.slot === 'r') && (L.length === K.length ? L.every((x, i) => x[0] === K[i]) && L[1][1] : !L.length && o.slot === 'r') ? '' : 'bad', n = 0, sec = 'crecover';
       if (!err && o.slot === '') { n = 1; while (n <= 16 && (C['cdraft.' + n] || {}).at) n++; sec = 'cdraft.' + n; if (n > 16) err = 'full'; }
       if (!err && full) err = 'cap';
       if (!err && no === 'save') err = 'save';
       if (no === 'silent') return;
       if (err) n = 0; else { delete C[sec]; if (L.length) C[sec] = Object.fromEntries(L); }
       setTimeout(() => { emit(STATE); emit({ type: 'draft_done', req: o.req, err, n }); }, 40); }
+    // pro/rules.c: rule_save / rule_on / rule_delete / rule_move on [rule.1..16], the number is the order; checked as the core does
+    // (Pro for saving, moving and switching on; switching off and deleting work without it); window.mockRuleFail = 'bad' | 'save' | 'silent'
+    if (/^rule_(save|on|delete|move)$/.test(o.cmd)) {
+      const RK = ['name', 'on', 'mode', 'restore', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'];
+      const sec = i => 'rule.' + i, has = i => !!(C[sec(i)] || {}).name, no = window.mockRuleFail, pro = STATE.pro.on;
+      let last = 0; for (let i = 1; i <= 16; i++) if (has(i)) last = i;
+      const n = +o.n || 0, num = (v, a, b) => /^\d+$/.test(v) && +v >= a && +v <= b, hm = v => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+      const cond = v => { const w = v.trim().split(/\s+/);
+        if (w[0] === 'run' || w[0] === 'fg') { const a = w.slice(1).join(' ').split(',').map(x => x.trim()).filter(Boolean); return a.length >= 1 && a.length <= 8; }
+        if (w[0] === 'time') return w.length <= 4 && hm(w[1]) && hm(w[2]) && (!w[3] || /^[1-7]{1,7}$/.test(w[3]));
+        if (w[0] === 'idle') return w.length === 2 && num(w[1], 1, 1440);
+        if (w[0] === 'lock') return w.length === 2 && /^[01]$/.test(w[1]);
+        return w[0] === 'full' && w.length === 1; };
+      const step = v => { const w = v.trim().split(/\s+/);
+        return w[0] === 'profile' ? w.length === 2 && num(w[1], 0, 16) : w[0] === 'bright' ? w.length === 2 && num(w[1], 5, 100)
+          : w[0] === 'fade' ? w.length === 3 && num(w[1], 5, 100) && num(w[2], 1, 3600) : w[0] === 'wait' && w.length === 2 && num(w[1], 1, 3600); };
+      let err = '', at = 0;
+      if (o.cmd === 'rule_save') {
+        const L = (o.kv || '').split('\n').filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]), v = {};
+        L.forEach(([k, x]) => { if (!RK.includes(k)) err = 'bad'; v[k] = x; });
+        const cs = RK.slice(4, 10).map(k => v[k] || '').filter(Boolean), as = RK.slice(10).map(k => v[k] || '').filter(Boolean);
+        if (!pro) err = 'pro';
+        else if (err || !(v.name || '').trim() || v.name.length > 64 || !cs.length || !as.length || !cs.every(cond) || !as.every(step)) err = 'bad';
+        else { at = n || last + 1; if (at > 16) err = 'full'; else if (at > last + 1) at = last + 1; }
+        if (!err && no === 'save') err = 'save';
+        if (!err) C[sec(at)] = Object.fromEntries(RK.map(k => [k, k === 'on' ? (v.on === '0' ? '0' : '1') : k === 'mode' ? (v.mode === 'any' ? 'any' : 'all')
+          : k === 'restore' ? (v.restore === '1' ? '1' : '0') : k[0] === 'c' ? cs[+k[1] - 1] || '' : k[0] === 'a' ? as[+k[1] - 1] || '' : v.name.trim()]));
+      } else if (o.cmd === 'rule_on') {
+        if (!has(n)) err = 'bad'; else if (o.on === '1' && !pro) err = 'pro'; else if (no === 'save') err = 'save'; else { C[sec(n)].on = o.on === '1' ? '1' : '0'; at = n; }
+      } else if (o.cmd === 'rule_delete') {
+        if (n < 1 || n > last) err = 'bad'; else if (no === 'save') err = 'save';
+        else { for (let i = n; i < last; i++) C[sec(i)] = C[sec(i + 1)]; delete C[sec(last)]; at = n; }
+      } else {
+        const m = n + (+o.d < 0 ? -1 : 1);
+        if (!pro) err = 'pro'; else if (!has(n) || !has(m)) err = 'bad'; else if (no === 'save') err = 'save';
+        else { [C[sec(n)], C[sec(m)]] = [C[sec(m)], C[sec(n)]]; at = m; }
+      }
+      if (no === 'silent') return;
+      STATE.rules.on = pro && G.auto_pause !== '1' ? 1 : 0;
+      setTimeout(() => { emit(STATE); emit({ type: 'rule_done', req: o.req, err, n: err ? 0 : at }); }, 40);
+    }
+    // main.c comp_store_*: scene_save / group_save (Pro, at least one layer), scene_delete / group_delete (free, later ones move up),
+    // scene_move (Pro) on [cscene.1..8] / [cgroup.1..16]; window.mockSceneFail = 'save' | 'silent'
+    if (/^(scene|group)_(save|delete|move)$/.test(o.cmd) && o.cmd !== 'group_move') {
+      const scene = o.cmd[0] === 's', pre = scene ? 'cscene.' : 'cgroup.', max = scene ? 8 : 16, no = window.mockSceneFail, pro = STATE.pro.on;
+      const sec = i => pre + i, has = i => Object.keys(C[sec(i)] || {}).length > 0, n = +o.n || 0;
+      let cnt = 0; while (cnt < max && has(cnt + 1)) cnt++;
+      const KK = ['dur', 'fade', 'nm', ...Array.from({ length: 8 }, (_, i) => 'l' + (i + 1)), ...Array.from({ length: 8 }, (_, i) => 't' + (i + 1))].slice(scene ? 0 : 2);
+      let err = '', at = 0;
+      if (/_save$/.test(o.cmd)) {
+        const L = (o.kv || '').split('\n').filter(Boolean).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]);
+        if (L.length > 19 || n < 0 || n > cnt || L.some(([k]) => !KK.includes(k.toLowerCase())) || !L.some(([k, v]) => k[0].toLowerCase() === 'l' && v)) err = 'bad';
+        else if (!pro) err = 'pro';
+        else { at = n || cnt + 1; if (at > max) err = 'full'; }
+        if (!err) { const keep = Object.entries(C[sec(at)] || {}).filter(([k]) => !KK.includes(k.toLowerCase()));   // a newer version's keys
+          C[sec(at)] = Object.fromEntries(keep.concat(L.filter(([, v]) => v))); }
+      } else if (/_delete$/.test(o.cmd)) {
+        if (n < 1 || n > cnt) err = 'bad'; else { for (let i = n; i < cnt; i++) C[sec(i)] = C[sec(i + 1)]; delete C[sec(cnt)]; at = n; }
+      } else {
+        const m = n + (+o.d < 0 ? -1 : 1);
+        if (n < 1 || n > cnt || m < 1 || m > cnt) err = 'bad'; else if (!pro) err = 'pro'; else { [C[sec(n)], C[sec(m)]] = [C[sec(m)], C[sec(n)]]; at = m; }
+      }
+      if (no === 'silent') return;
+      if (!err && no === 'save') err = 'save';   // in memory, not on disk yet
+      setTimeout(() => { emit(STATE); emit({ type: (scene ? 'scene' : 'group') + '_done', req: o.req, err, n: err ? 0 : at }); }, 40);
+    }
+    // pro/lcdlive.cpp: lcd_save (Pro) / lcd_delete on [lcd.1..6], checked as the core does; window.mockLcdFail = 'bad' | 'save' | 'silent'
+    // lcd_watch: the values the core sends while the editor is open (S.lcd); window.mockLcd replaces them
+    if (o.cmd === 'lcd_watch') { STATE.lcd = window.mockLcd || { cpu_t: 54.5, gpu_t: 61, cpu_l: 23, gpu_l: 41, mem: 47, fan: 1180, music: 1, title: 'Weightless', artist: 'Marconi Union' }; setTimeout(() => emit(STATE), 30); }
+    if (o.cmd === 'lcd_save' || o.cmd === 'lcd_delete') {
+      const LK = ['name', 'v', 'pages', 't1', 't2', 't3', 't4', 'bg1', 'bg2', 'bg3', 'bg4', ...Array.from({ length: 24 }, (_, i) => 'w' + (i + 1))];
+      const sec = i => 'lcd.' + i, no = window.mockLcdFail, n = +o.n || 0, hex = x => /^[0-9a-f]{6}$/i.test(x), num = (x, a, b) => /^\d{1,6}$/.test(x) && +x >= a && +x <= b;
+      let last = 0; for (let i = 1; i <= 6; i++) if ((C[sec(i)] || {}).name) last = i;
+      let err = '', at = 0;
+      if (o.cmd === 'lcd_save') {
+        const v = {};
+        (o.kv || '').split('\n').filter(Boolean).forEach(l => { const k = l.slice(0, l.indexOf('=')), x = l.slice(l.indexOf('=') + 1); if (!LK.includes(k) || x.length >= 256) err = 'bad'; v[k] = x; });
+        const name = (v.name || '').trim(), pages = v.pages ? +v.pages : 1;
+        const wid = s => { const m = /^\s*(\d+) (\S+) (\S+) (\d+) (\d+) (\d+) (\d+) (\S+) (\d+) (\S)(?: (.*))?$/.exec(s); if (!m) return false;
+          const [, p, src, kind, x, y, w, h, col, size, unit] = m;
+          return +p >= 1 && +p <= pages && ['time', 'date', 'cpu_t', 'gpu_t', 'cpu_l', 'gpu_l', 'mem', 'fan', 'music'].includes(src) && ['text', 'bar', 'ring', 'graph'].includes(kind)
+            && (!['time', 'date', 'music'].includes(src) || kind === 'text') && +x < 480 && +y < 480 && +w >= 8 && +w <= 480 && +h >= 8 && +h <= 480 && +size >= 8 && +size <= 200
+            && hex(col) && (unit === '-' || 'cf'.includes(unit) && (src === 'cpu_t' || src === 'gpu_t')); };
+        const ws = LK.slice(11).map(k => v[k] || '').filter(Boolean);
+        if (!STATE.pro.on) err = 'pro';
+        else if (err || !name || name.length > 64 || v.v && v.v !== '1' || v.pages && !num(v.pages, 1, 4) || !ws.every(wid)
+          || [1, 2, 3, 4].some(p => p <= pages && (v['t' + p] && !num(v['t' + p], 2, 600) || v['bg' + p] && !hex(v['bg' + p])))) err = 'bad';
+        else { at = n || last + 1; if (at > 6) err = 'full'; else if (at > last + 1) at = last + 1; }
+        if (!err && no === 'save') err = 'save';
+        // unknown keys of a later version stay (the core writes only its own)
+        if (!err) C[sec(at)] = Object.assign({}, C[sec(at)], Object.fromEntries(LK.map(k => [k, k === 'name' ? name : k === 'v' ? '1' : k === 'pages' ? String(pages)
+          : /^t\d$/.test(k) ? (+k[1] <= pages ? v[k] || '10' : '') : /^bg\d$/.test(k) ? (+k[2] <= pages ? (v[k] || '000000').toUpperCase() : '') : ws[+k.slice(1) - 1] || ''])));
+      } else if (n < 1 || n > last) err = 'bad';
+      else if (no === 'save') err = 'save';
+      else {
+        for (let i = n; i < last; i++) C[sec(i)] = C[sec(i + 1)]; delete C[sec(last)]; at = n;
+        Object.keys(C).filter(s => /^dev\.\d+$/.test(s)).forEach(s => { const k = +C[s].live || 0; if (k === n) C[s].live = '0'; else if (k > n) C[s].live = String(k - 1); });
+      }
+      if (no === 'silent') return;
+      setTimeout(() => { emit(STATE); emit({ type: 'lcd_done', req: o.req, err, n: err ? 0 : at }); }, 40);
+    }
     // devices.c load_config: an OpenRGB device's same=N pairs it with dev N, path= says which of the two lights it; the other lets go
     const pairUp = () => { const D = STATE.ext.devs; D.forEach(d => { if (d.held) d.online = 1; d.same = d.held = 0; });
       D.filter(d => d.kind === 'openrgb').forEach(m => { const c = C['dev.' + m.id] || {}, n = D.find(x => x.id === +c.same && x.kind !== 'openrgb' && !x.same); if (!n) return;
@@ -129,7 +241,7 @@ const STATE = {
     { cat: 'gpu', maker: 'ASUS', name: 'NVIDIA GeForce RTX 4070', id: '10DE:2786' }, { cat: 'usb', maker: 'Corsair', name: 'K70 RGB PRO', id: '1B1C:1BB3' },
     { cat: 'usb', maker: 'Wooting', name: 'Wooting 60HE v2', id: '31E3:1342' }, { cat: 'usb', maker: 'Lian Li', name: 'LianLi-Strimer Plus-1.5', id: '0CF2:A200' }] },
   orgb: { state: 2, exe: 1, auto: 1, ours: 1, setup: 0, pct: 0, err: '', ctls: [{ i: 0, type: 5, kind: 'keyboard', leds: 104, name: 'Keyboard' }, { i: 1, type: 3, kind: 'cooler', leds: 16, name: 'Fan hub' },
-    { i: 2, type: 2, kind: 'graphics card', leds: 8, name: 'ASUS TUF RTX 4070' }, { i: 6, type: 1, kind: 'memory', leds: 8, name: 'ENE DRAM' }, { i: 7, type: 2, kind: 'graphics card', leds: 3, name: 'MSI RTX 3060 Ventus' }] }, autostart: 1, ollama: { exe: 0, model: 0, ours: 0, on_demand: 0, startup: 0, stage: 5, pct: 42, err: '' }, effect: 'flow', brightness: 85, msi: 1, sticks: 2, ram_src: [0, 0], gpu_temp: 41, hotspot: 1, fx_audio: -2, fx_temp: -2, fans: { on: 1, q: 1, link: 1, age: 400, paused: 0, rfail: 0, wd: [0, 0], gpu: 41, gage: 600, serial: '04976-37680', fw: 1024, flow: 0, t: [31.4, null, null, null], log: [], f: [{ rpm: 1180, pct: 52, v: 12, w: 1.4, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 1210, pct: 52, v: 12, w: 1.5, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }] }, ll: { st: 'ok', err: 0, rep: 3, g: [{ mac: '7c:9c:06:f5:17:e1', own: 1, ch: 8, type: 0, n: 3, rpm: [1650, 1664, 1820], pct: [79, 79, 79] }, { mac: '3a:10:c4:22:9e:05', own: 0, ch: 8, type: 0, n: 2, rpm: [980, 1004], pct: [40, 40] }] }, cf: { busy: '', a: [{ id: 'armoury', name: 'ASUS Armoury Crate / Aura', w: 'board', cool: 1, run: 1, inst: 1, bad: 0, fail: 0 }, { id: 'icue', name: 'Corsair iCUE', w: 'corsair', cool: 1, run: 0, inst: 1, bad: 0, fail: 0 }, { id: 'asrock', name: 'ASRock Polychrome RGB', w: 'board', cool: 0, run: 1, inst: 1, bad: 0, fail: 0, stay: 1 }] }, mqtt: { state: 'connected', err: '', topic: 'haku/desk-pc' }, pro: { on: 1, state: 'trial', kind: '', days: 12, until: '', checked: '', stale: 0, key: '', who: '', err: '', busy: 0, life: 0 }, ref: { code: '', points: 0, pct: 0, discount: '', busy: 0, err: '' }, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/', can: 1, inst: 0, pct: 0, err: '' },
+    { i: 2, type: 2, kind: 'graphics card', leds: 8, name: 'ASUS TUF RTX 4070' }, { i: 6, type: 1, kind: 'memory', leds: 8, name: 'ENE DRAM' }, { i: 7, type: 2, kind: 'graphics card', leds: 3, name: 'MSI RTX 3060 Ventus' }] }, autostart: 1, ollama: { exe: 0, model: 0, ours: 0, on_demand: 0, startup: 0, stage: 5, pct: 42, err: '' }, effect: 'flow', brightness: 85, msi: 1, sticks: 2, ram_src: [0, 0], gpu_temp: 41, hotspot: 1, fx_audio: -2, fx_temp: -2, fans: { on: 1, q: 1, link: 1, age: 400, paused: 0, rfail: 0, wd: [0, 0], gpu: 41, gage: 600, serial: '04976-37680', fw: 1024, flow: 0, t: [31.4, null, null, null], log: [], f: [{ rpm: 1180, pct: 52, v: 12, w: 1.4, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 1210, pct: 52, v: 12, w: 1.5, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }, { rpm: 0, pct: 0, v: 0, w: 0, own: 0, want: -1, out: -1, ok: 1, em: '', err: '' }] }, ll: { st: 'ok', err: 0, rep: 3, g: [{ mac: '7c:9c:06:f5:17:e1', own: 1, ch: 8, type: 0, n: 3, rpm: [1650, 1664, 1820], pct: [79, 79, 79] }, { mac: '3a:10:c4:22:9e:05', own: 0, ch: 8, type: 0, n: 2, rpm: [980, 1004], pct: [40, 40] }] }, cf: { busy: '', a: [{ id: 'armoury', name: 'ASUS Armoury Crate / Aura', w: 'board', cool: 1, run: 1, inst: 1, bad: 0, fail: 0 }, { id: 'icue', name: 'Corsair iCUE', w: 'corsair', cool: 1, run: 0, inst: 1, bad: 0, fail: 0 }, { id: 'asrock', name: 'ASRock Polychrome RGB', w: 'board', cool: 0, run: 1, inst: 1, bad: 0, fail: 0, stay: 1 }] }, mqtt: { state: 'connected', err: '', topic: 'haku/desk-pc' }, pro: { on: 1, state: 'trial', kind: '', days: 12, until: '', checked: '', stale: 0, key: '', who: '', err: '', busy: 0, life: 0 }, rules: { on: 1, win: 0, by: 0, list: Array.from({ length: 16 }, () => ({ act: 0, yield: 0, err: 0, bad: 0, cv: [0, 0, 0, 0, 0, 0] })) }, ref: { code: '', points: 0, pct: 0, discount: '', busy: 0, err: '' }, remote: { enabled: 1, on: 1, port: 8723, pin: '481205', paired: 1, urls: ['http://172.20.10.4:8723', 'http://192.168.137.1:8723'] }, accounts: { aidot: { state: 0, msg: '', found: 0, countries: [['FR','France'],['DE','Germany'],['RU','Russia'],['US','United States']] } }, update: { version: '0.2.0', repo: 1, latest: '0.3.0', url: 'https://github.com/', can: 1, inst: 0, pct: 0, err: '' },
   effects: [['flow','Течение'],['caustic','Каустика'],['bubbles','Пузырьки'],['comet','Комета'],['lava','Лава'],['breathe','Дыхание'],['rainbow','Радуга'],['wave','Цветная волна'],['fire','Огонь'],['ocean','Океан'],['twinkle','Созвездие'],['meteor','Метеорный дождь'],['plasma','Плазма'],['aurora','Северное сияние'],['ripple','Капли'],['matrix','Матрица'],['candle','Свеча'],['pendulum','Маятник'],['interference','Интерференция'],['steps','Ступени'],['screen','Экран'],['temperature','Температура'],['pump','Поток по насосу'],['audio','Звук'],['static','Статичный цвет'],['custom','Конструктор'],['off','Выключить']].map(([id,title])=>({id,title})),
   bulbs: [{name:'Desk lamp',online:1,ip:'192.168.1.50'},{name:'Ceiling',online:1,ip:'192.168.1.51'},{name:'Bedside',online:0,ip:''}],
   // #multi: a second controller (Shapes hexagons) and a Secretlab MAGRGB strip next to the Blocks

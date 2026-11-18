@@ -9,10 +9,13 @@ typedef int (*pfn_nvml_init)(void);
 typedef int (*pfn_nvml_handle)(unsigned int, void **);
 typedef int (*pfn_nvml_temp)(void *, int, unsigned int *);
 typedef int (*pfn_nvml_shutdown)(void);
+typedef struct { unsigned int gpu, memory; } nvml_util;
+typedef int (*pfn_nvml_util)(void *, nvml_util *);
 
 static HMODULE           nvml;
 static pfn_nvml_temp     nvml_temp;
 static pfn_nvml_shutdown nvml_shutdown;
+static pfn_nvml_util     nvml_util_;   // optional: the GPU load, NVML only
 static void             *gpu;
 static DWORD             last_poll, last_need, nvml_failed_at, last_audio_need;
 static int               audio_on;
@@ -21,7 +24,7 @@ static sensors_t         cache = { NAN, NAN, NAN, NAN, NAN };
 static void nvml_unload(void) {
     if (gpu && nvml_shutdown) nvml_shutdown();
     if (nvml) FreeLibrary(nvml);
-    nvml = NULL; gpu = NULL; nvml_temp = NULL;
+    nvml = NULL; gpu = NULL; nvml_temp = NULL; nvml_util_ = NULL;
 }
 
 static int nvml_load(void) {
@@ -36,6 +39,7 @@ static int nvml_load(void) {
     pfn_nvml_handle handle = (pfn_nvml_handle)GetProcAddress(nvml, "nvmlDeviceGetHandleByIndex_v2");
     nvml_temp     = (pfn_nvml_temp)GetProcAddress(nvml, "nvmlDeviceGetTemperature");
     nvml_shutdown = (pfn_nvml_shutdown)GetProcAddress(nvml, "nvmlShutdown");
+    nvml_util_    = (pfn_nvml_util)GetProcAddress(nvml, "nvmlDeviceGetUtilizationRates");
     if (!init || !handle || !nvml_temp || init() != 0 || handle(0, &gpu) != 0) {
         logf_("sensors: NVML init failed");
         nvml_unload();
@@ -78,8 +82,38 @@ static float kmt_temp(void) {
 
 void sensors_init(void) {}
 
+static volatile LONG sys_want;   // GetTickCount of the last sensors_sys_want, 0 never
+static SRWLOCK sys_lock = SRWLOCK_INIT;
+static sys_t sys = { NAN, NAN, NAN, NAN, NAN, NAN };
+void sensors_sys_want(void) { InterlockedExchange(&sys_want, (LONG)(GetTickCount() | 1)); }
+void sensors_sys(sys_t *out) { AcquireSRWLockShared(&sys_lock); *out = sys; ReleaseSRWLockShared(&sys_lock); }
+static ULONGLONG ft(FILETIME f) { return (ULONGLONG)f.dwHighDateTime << 32 | f.dwLowDateTime; }
+
+// once a second while wanted: the CPU load since the last time, memory in use, the GPU's load and temperature, the
+// CPU temperature only as something else follows it (cpu_last: a read of its own could clash with board software)
+static void sys_poll(int want) {
+    static ULONGLONG idle0, all0; static int had;
+    sys_t v = { NAN, NAN, NAN, NAN, NAN, NAN };
+    if (want) {
+        FILETIME i, k, u; MEMORYSTATUSEX m = { sizeof(m) }; nvml_util g;
+        if (GetSystemTimes(&i, &k, &u)) {   // kernel time includes idle
+            ULONGLONG idle = ft(i), all = ft(k) + ft(u);
+            if (had && all > all0) v.cpu_l = 100.0f * (1.0f - (float)(idle - idle0) / (float)(all - all0));
+            idle0 = idle; all0 = all; had = 1;
+        }
+        if (GlobalMemoryStatusEx(&m)) v.mem = (float)m.dwMemoryLoad;
+        if (gpu && nvml_util_ && nvml_util_(gpu, &g) == 0) v.gpu_l = (float)g.gpu;
+        v.cpu_t = cpu_last(); v.gpu_t = cache.gpu_temp;
+        int r = fans_rpm(); if (r >= 0) v.fan = (float)r;
+    } else had = 0;
+    AcquireSRWLockExclusive(&sys_lock); sys = v; ReleaseSRWLockExclusive(&sys_lock);
+}
+
 void sensors_poll(sensors_t *s, int need_gpu, int need_audio) {
-    DWORD now = GetTickCount();
+    DWORD now = GetTickCount(), w = (DWORD)sys_want;
+    int want_sys = w && (LONG)(now - w) <= 5000;   // signed: a stamp is tick|1, up to 1 ms ahead
+    static int had_sys;
+    need_gpu |= want_sys;
     if (need_audio) {
         last_audio_need = now;
         if (!audio_on) { audio_start(); audio_on = 1; }
@@ -100,6 +134,8 @@ void sensors_poll(sensors_t *s, int need_gpu, int need_audio) {
         unsigned int t;
         cache.gpu_temp = gpu ? (nvml_temp(gpu, 0, &t) == 0 ? (float)t : NAN) : last_need && now - last_need <= 30000 ? kmt_temp() : NAN;
         cache.gpu_at = now;
+        if (want_sys || had_sys) sys_poll(want_sys);
+        had_sys = want_sys;
     }
     *s = cache;
 }

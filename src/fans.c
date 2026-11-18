@@ -656,6 +656,18 @@ float fans_water(void) {
     return t;
 }
 
+// for a live LCD layout: the fastest fan that reads (fresh QUADRO channels, the board's, the LINK hub's but its pump), -1 none
+int fans_rpm(void) {
+    if (!th) return -1;
+    int r = -1;
+    EnterCriticalSection(&cs);
+    if (st.on && st.link && GetTickCount() - st.seen <= STALE_MS) for (int f = 0; f < FANS; f++) if (st.f[f].rpm > r) r = st.f[f].rpm;
+    for (int b = 0; b < bd.n; b++) if (bd.rpm[b] > r) r = bd.rpm[b];
+    for (int c = 0; c < lk.n; c++) if (lk.on[c] && !lk.pump[c] && lk.rpm[c] > r) r = lk.rpm[c];
+    LeaveCriticalSection(&cs);
+    return r;
+}
+
 // for the tray tip: 1 the QUADRO is not heard from (as the panel shows it), 2 a channel runs its emergency speed, else 0
 int fans_trouble(void) {
     if (!th) return 0;

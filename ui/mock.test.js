@@ -159,6 +159,64 @@
     setCfg('profile.1', 'apps', ''); closeSheet();
   });
 
+  test('scenarios: an example saved from the profiles, told in words, moved with the focus, deleted in two steps; without Pro locked but switchable off', async () => {
+    await fresh();
+    const P = () => $('#rules-panel'), names = () => [1, 2, 3].map(i => cv('rule.' + i, 'name', '')), pro0 = { ...STATE.pro };
+    try {
+      ok(!$('#rules-open').classList.contains('hidden'), 'no Scenarios button by the profiles');
+      $('#rules-open').click(); await until(() => SHEET.kind === 'rules' && P().offsetParent, 'the scenarios window');
+      ok(document.activeElement === $('[data-act="new"]', P()), 'the focus is not on New');
+      // the three examples, each saved as it comes: the editor closes and the focus lands on its Edit
+      for (const [i, x] of [[1, 'game'], [2, 'away'], [3, 'work']]) {
+        $(`[data-act="ex"][data-n="${x}"]`, P()).click(); ok(RULES.edit && $('.re-name', P()).value === t('rules.ex.' + x), 'the example ' + x + ' not in the editor');
+        sent.length = 0; $('[data-act="save"]', P()).click();
+        await until(() => !RULES.edit && cv('rule.' + i, 'name', '') === t('rules.ex.' + x), 'the example ' + x + ' saved');
+        const o = sent.find(m => m.cmd === 'rule_save');
+        ok(o && o.n === '0' && /^name=.+\n/.test(o.kv) && !/\bcmd|exec\b/.test(o.kv), 'sent ' + JSON.stringify(o));
+        ok(document.activeElement.dataset.act === 'edit' && document.activeElement.dataset.n === String(i), 'the focus after saving: ' + document.activeElement.outerHTML.slice(0, 80));
+      }
+      // what a rule says: plain words, the profile by its name, no section, key or format of the file
+      const txt = $('.rule[data-n="1"]', P()).innerText;
+      ok(txt.includes(t('rules.ex.game')) && txt.includes('«' + profiles()[0].name + '»'), 'the row: ' + txt);
+      ok(!/rule\.\d|\b[ac][1-8]\b|profile \d|\bfade \d|\bidle \d|[{}"]/.test(P().innerText), 'jargon in the window: ' + P().innerText);
+      // moved up twice: the order is the priority, the focus follows it and falls to Down at the top
+      $('[data-act="up"][data-n="3"]', P()).click(); await until(() => names()[1] === t('rules.ex.work'), 'moved up');
+      ok(document.activeElement.dataset.act === 'up' && document.activeElement.dataset.n === '2', 'the focus after a move');
+      $('[data-act="up"][data-n="2"]', P()).click(); await until(() => names()[0] === t('rules.ex.work'), 'moved to the top');
+      ok(document.activeElement.dataset.act === 'down' && document.activeElement.dataset.n === '1', 'the focus at the top');
+      // which one switched the profile, and why one holds or waits
+      Object.assign(STATE.rules, { win: 1, by: 1 }); STATE.rules.list[0] = { act: 1, yield: 0, err: 0, bad: 0, cv: [1, 1, 0, 0, 0, 0] };
+      STATE.prof_why = 4; emit(STATE); await wait(60); emit(STATE); await wait(60);
+      ok($('.rule[data-n="1"]', P()).classList.contains('win') && $('.rule[data-n="1"] .rule-st', P()).textContent.trim(), 'the one in charge not marked');
+      ok($('#prof-state').textContent.includes(t('prof.why.4', t('rules.ex.work'))), 'the switcher does not name the scenario: ' + $('#prof-state').textContent);
+      STATE.rules.list[0] = { act: 0, yield: 0, err: 0, bad: 0, cv: [0, 0, 0, 0, 0, 0] }; Object.assign(STATE.rules, { win: 0, by: 0 }); STATE.prof_why = 0;
+      // a failed save keeps the editor and says why; Escape goes back to the list
+      window.mockRuleFail = 'save'; $('[data-act="edit"][data-n="2"]', P()).click(); $('[data-act="save"]', P()).click();
+      await until(() => $('.re-err', P()) && $('.re-err', P()).textContent === t('rules.err.save'), 'the error in the editor');
+      window.mockRuleFail = ''; key($('.re-name', P()), 'Escape'); await wait(20);
+      ok(!RULES.edit && SHEET.kind === 'rules' && document.activeElement.dataset.act === 'edit', 'Escape did not go back to the list');
+      // without Pro: editing, moving and new ones locked, switching off still works, back on refused
+      Object.assign(STATE.pro, { on: 0, state: 'off' }); emit(STATE); await wait(60);
+      ok($('.rules-lock', P()) && $('[data-act="new"]', P()).disabled && $('[data-act="edit"]', P()).disabled && $('[data-act="up"][data-n="2"]', P()).disabled, 'not locked without Pro');
+      $('[data-act="on"][data-n="1"]', P()).click(); await until(() => cv('rule.1', 'on', '') === '0', 'switched off without Pro');
+      ok($('[data-act="on"][data-n="1"]', P()).disabled, 'can be switched back on without Pro');
+      Object.assign(STATE.pro, pro0); emit(STATE); await wait(60);
+      ok(!$('.rules-lock', P()) && !$('[data-act="on"][data-n="1"]', P()).disabled, 'still locked with Pro back');
+      // deleted in two steps, the rest move up; all three gone
+      $('[data-act="del"][data-n="1"]', P()).click(); ok(RULES.sure === 1 && cv('rule.1', 'name', '') === t('rules.ex.work'), 'deleted at the first click');
+      $('[data-act="del"][data-n="1"]', P()).click(); await until(() => names()[0] === t('rules.ex.game') && !cv('rule.3', 'name', ''), 'deleted');
+      for (let i = 0; i < 2; i++) { $('[data-act="del"][data-n="1"]', P()).click(); $('[data-act="del"][data-n="1"]', P()).click(); await until(() => names()[0] !== (i ? t('rules.ex.away') : t('rules.ex.game')), 'deleted ' + i); }
+      ok(!cv('rule.1', 'name', '') && $('.rules-list', P()).textContent.includes(t('rules.empty')), 'not all gone');
+      // the open build has no scenarios: no button, the window closes
+      const R0 = STATE.rules; STATE.rules = { none: 1 }; emit(STATE); await wait(60); STATE.rules = R0;
+      ok($('#rules-open').classList.contains('hidden') && SHEET.kind !== 'rules', 'scenarios offered by the open build');
+    } finally {
+      window.mockRuleFail = ''; Object.assign(STATE.pro, pro0); STATE.prof_why = 0;
+      for (let i = 1; i <= 16; i++) delete STATE.cfg['rule.' + i];
+      emit(STATE); if (SHEET.kind === 'rules') closeSheet(); await wait(60);
+    }
+  });
+
   test('the old pages land on the new ones: a brand or the PC tab opens the catalogue filtered; the AI offer waits for a try or a download', async () => {
     await fresh();
     for (const [p, want] of [['nano', { brand: 'Nanoleaf' }], ['bulbs', { brand: 'AiDot' }], ['pc', { where: 'pc' }], ['brand-divoom', { brand: 'Divoom' }]]) {
@@ -1310,6 +1368,69 @@
       const first = await clPixel(f[1].jpg, 240, 240), last = await clPixel(f[15].jpg, 240, 240);
       ok(first[0] > 160 && last[2] > 160, `the animation: first ${first}, last ${last}`);
     } finally { if (TXB) txbClose(); STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; await fanEmit(); }
+  });
+
+  test('Corsair LCD live layouts (Pro): a template edited, undone, saved in the core format, picked for the screen, deleted in two steps; locked without Pro', async () => {
+    await fresh();
+    const pro0 = { ...STATE.pro }, D = () => $('#lcded'), B = s => $('#lcded-body ' + s), lines = () => (sent.find(o => o.cmd === 'lcd_save') || {}).kv || '';
+    const field = (k, v) => { const i = B(`[data-k="${k}"]`); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new Event('change', { bubbles: true })); };
+    STATE.ext.devs.push(clDev('Corsair iCUE LINK LCD · screen · USB')); STATE.cfg['dev.15'] = { kind: 'corsairlcd' }; await fanEmit();
+    const card = () => $('#dev-st-15').closest('.card'), pick = () => card().querySelector('.dev-live');
+    try {
+      ok(pick() && [...pick().options].map(o => o.value).join() === '0' && card().querySelector('.dev-lcd') && card().textContent.includes(t('fans.beta')), 'the card: no layout choice, Layouts button or beta mark');
+      card().querySelector('.dev-lcd').click(); await until(() => !D().classList.contains('hidden') && B('[data-act="new"]'), 'the layouts window');
+      ok(B('.rules-list').textContent.includes(t('lcd.empty')) && document.activeElement === B('[data-act="new"]'), 'empty list or the focus not on New');
+      // a template: its widgets, a 480 px stage, the values asked for while it is open
+      field('tpl', 'monitoring'); B('[data-act="new"]').click();
+      await until(() => LCD.ed && S.lcd && S.lcd.cpu_t > 0, 'the editor with the values');
+      ok(LCD.ed.w.length === 6 && B('.lcd-stage').width === 480 && B('.lcd-stage').height === 480 && sent.some(o => o.cmd === 'lcd_watch'), 'the template or the stage: ' + LCD.ed.w.length);
+      // add, undo, redo; Ctrl+Z on the stage is the editor's own
+      B('[data-act="add"]').click(); ok(LCD.ed.w.length === 7 && LCD.sel === 6, 'not added');
+      B('[data-act="undo"]').click(); ok(LCD.ed.w.length === 6, 'not undone');
+      B('[data-act="redo"]').click(); ok(LCD.ed.w.length === 7, 'not redone');
+      B('.lcd-stage').focus(); key(B('.lcd-stage'), 'z', true); ok(LCD.ed.w.length === 6 && UNDO.length === 0, 'Ctrl+Z on the stage');
+      // picked, moved by the keys on the grid of 10, duplicated, sent to the back; a missing value shows "no data"
+      B('[data-act="sel"][data-n="0"]').click(); B('.lcd-stage').focus();
+      const x0 = LCD.ed.w[0].x; key(B('.lcd-stage'), 'ArrowRight'); ok(LCD.ed.w[0].x === x0 + 10, 'the arrow on the grid: ' + LCD.ed.w[0].x);
+      B('[data-act="dup"]').click(); ok(LCD.ed.w.length === 7 && LCD.sel === 1 && LCD.ed.w[1].src === 'cpu_t', 'not duplicated');
+      ok(lcdVal({ src: 'gpu_t', unit: 'c' }).txt === '61°C' && lcdVal({ src: 'cpu_t', unit: 'f' }).txt === '130°F', 'the units: ' + lcdVal({ src: 'cpu_t', unit: 'f' }).txt);
+      const L0 = S.lcd; S.lcd = { ...L0, gpu_t: null, music: 0 };
+      ok(lcdVal({ src: 'gpu_t', unit: 'c' }).txt === t('lcd.nodata') && lcdVal({ src: 'music', unit: '-' }).txt === t('lcd.nodata'), 'a missing value not said');
+      S.lcd = L0;
+      // Escape with changes asks first; a failed save keeps the editor and says why
+      key(B('.lcd-stage'), 'Escape'); ok(LCD.ed && B('.re-err').textContent === t('lcd.discard'), 'Escape threw the changes away');
+      field('name', '<b>Mon</b>'); window.mockLcdFail = 'save'; sent.length = 0; B('[data-act="save"]').click();
+      await until(() => LCD.ed && !LCD.wait && B('.re-err').textContent === t('lcd.err.save'), 'the error in the editor');
+      window.mockLcdFail = '';
+      // saved: the core's lines, the name kept as text, the editor back to the list on its Edit
+      sent.length = 0; B('[data-act="save"]').click();
+      await until(() => !LCD.ed && cv('lcd.1', 'name', '') === '<b>Mon</b>', 'saved');
+      const kv = lines().split('\n');
+      ok(kv[0] === 'name=<b>Mon</b>' && kv.includes('v=1') && kv.includes('pages=1') && kv.includes('bg1=000000') && kv.filter(l => /^w\d+=/.test(l)).length === 7
+        && kv.every(l => !/^w/.test(l) || /^w\d+=1 (cpu_t|gpu_t|cpu_l|gpu_l|mem) (text|bar|ring|graph) \d+ \d+ \d+ \d+ [0-9A-F]{6} \d+ [cf-]$/.test(l)), 'sent: ' + lines());
+      ok(document.activeElement.dataset.act === 'edit' && document.activeElement.dataset.n === '1' && !B('.rule b').innerHTML.includes('<b>'), 'the focus or the name as markup');
+      // the screen's choice offers it and saves it with the device
+      await until(() => [...pick().options].some(o => o.value === '1'), 'the layout offered on the card');
+      pick().value = '1'; pick().dispatchEvent(new Event('change', { bubbles: true })); ok(sets('dev.15', 'live').some(o => o.v === '1'), 'the choice not saved');
+      // without Pro: no new ones, no editing, the choice locked, deleting still possible
+      Object.assign(STATE.pro, { on: 0, state: 'off' }); emit(STATE); await wait(60);
+      ok(B('.rules-lock') && B('[data-act="new"]').disabled && B('[data-act="edit"]').disabled && !B('[data-act="del"]').disabled && pick().disabled, 'not locked without Pro');
+      Object.assign(STATE.pro, pro0); emit(STATE); await wait(60);
+      ok(!B('.rules-lock') && !B('[data-act="edit"]').disabled && !pick().disabled, 'still locked with Pro back');
+      // deleted in two steps; the screen showing it shows none
+      B('[data-act="del"][data-n="1"]').click(); ok(LCD.sure === 1 && cv('lcd.1', 'name', ''), 'deleted at the first click');
+      B('[data-act="del"][data-n="1"]').click(); await until(() => !cv('lcd.1', 'name', '') && cv('dev.15', 'live', '') === '0', 'deleted');
+      ok(B('.rules-list').textContent.includes(t('lcd.empty')), 'the list after deleting');
+      key(document.body, 'Escape'); ok(D().classList.contains('hidden'), 'Escape did not close the window');
+      // the core refuses what is not its format (the page is not trusted with it)
+      sent.length = 0; window.chrome.webview.postMessage(JSON.stringify({ cmd: 'lcd_save', n: '0', req: 'x1', kv: 'name=X\nw1=1 time ring 0 0 50 50 FFFFFF 20 -' }));
+      await wait(80); ok(!cv('lcd.1', 'name', ''), 'a ring of the time saved');
+    } finally {
+      window.mockLcdFail = ''; Object.assign(STATE.pro, pro0);
+      for (let i = 1; i <= 6; i++) delete STATE.cfg['lcd.' + i];
+      if (!$('#lcded').classList.contains('hidden')) { LCD.leave = 1; lcdClose(); }
+      STATE.ext.devs.pop(); delete STATE.cfg['dev.15']; delete STATE.lcd; await fanEmit();
+    }
   });
 
   test('Corsair LCD: an animation\'s pack lets the page run between frames, and Cancel stops it with nothing sent', async () => {
@@ -2716,12 +2837,12 @@
       sel('ap', fxPreview.comp.LPD.findIndex(d => d[0] === 'sz')); await wait(20); ok(/ap:sz/.test(dl()[2]) && /aa:\d/.test(dl()[2]) && $('#cdlg-edit details[data-d="anim"]').open, 'animate: ' + dl()[2]);
       sel('mp', 0); await wait(20); ok(/mp:o/.test(dl()[2]) && /ma:\d/.test(dl()[2]) && $('#cdlg-edit select[data-f="ms"]'), 'sound: ' + dl()[2]);
       ok(!cmpLines().length && !cmpSets().length, 'nothing written while editing: ' + JSON.stringify(cmpSets()));
-      // Apply: one comp_apply with all 11 lines for the profile in use; then [custom] is the draft
+      // Apply: one comp_apply with all 20 lines for the profile in use; then [custom] is the draft
       $('#cdlg-apply').click(); await wait(10);
       ok($('#cdlg-apply').disabled && $('#cdlg-st').textContent === t('cmp.st.sent'), 'applying: ' + $('#cdlg-st').textContent);
       await wait(120);
       const ca = sent.filter(o => o.cmd === 'comp_apply');
-      ok(ca.length === 1 && ca[0].p === cv('general', 'profile', '') && ca[0].kv.split('\n').length === 11 && !sent.some(o => o.cmd === 'set' && o.s === 'custom'), 'one comp_apply: ' + JSON.stringify(cmpSets()));
+      ok(ca.length === 1 && ca[0].p === cv('general', 'profile', '') && ca[0].kv.split('\n').length === 20 && !sent.some(o => o.cmd === 'set' && o.s === 'custom'), 'one comp_apply: ' + JSON.stringify(cmpSets()));
       ok(cmpLines().join('|') === dl().join('|') && cv('custom', 'k3', '') === '' && $('#cdlg-st').classList.contains('ok') && $('#cdlg-apply').disabled, 'applied: ' + cmpLines().join(' | '));
       // Esc with nothing new closes at once
       key(document.body, 'Escape'); await wait(20);
@@ -2835,7 +2956,7 @@
         ok($('#cdlg-ask-keep').disabled && $('#cdlg-ask-text').textContent === t('cmp.draft.saving'), 'saving said: ' + $('#cdlg-ask-text').textContent);
         await wait(80);
         const d0 = dsaves('');
-        ok(d0.length === 1 && d0[0].kv.split('\n').length === 14 && !sent.some(o => o.cmd === 'set' && /^cdraft/.test(o.s)), 'one draft_save, no loose sets: ' + JSON.stringify(sent.map(o => o.cmd)));
+        ok(d0.length === 1 && d0[0].kv.split('\n').length === 22 && !sent.some(o => o.cmd === 'set' && /^cdraft/.test(o.s)), 'one draft_save, no loose sets: ' + JSON.stringify(sent.map(o => o.cmd)));
         ok(!$('#cdlg').classList.contains('hidden') && !$('#cdlg-ask').classList.contains('hidden') && $('#cdlg-ask-text').textContent === t('cmp.draft.fail'), 'not written, the window stays: ' + $('#cdlg-ask-text').textContent);
         ok(!$('#cdlg-ask-keep').disabled && $('#cdlg-ask-keep').textContent === t('cmp.draft.retry') && !$('#cdlg-ask-export').classList.contains('hidden'), 'Try again and Export offered');
         ok(draftSecs().length === n0 && dl().length === 2 && /s:dots/.test(dl()[1]) && cmpLines().join('|') === live, 'no draft, the work still in the editor, nothing lit');
@@ -2968,7 +3089,7 @@
       ok($('#cdlg').classList.contains('hidden') && !$('#pdlg').classList.contains('hidden'), 'the preset window');
       $('#pdlg-form').requestSubmit(); await wait(80);
       const ps = sent.filter(o => o.cmd === 'preset_save');
-      ok(ps.length === 1 && ps[0].effect === 'custom' && ps[0].id === '0' && ps[0].fx === '' && ps[0].apply === '1' && ps[0].fxkv.split('\n').length === 11, 'save (nothing unapplied: the preset in use): ' + JSON.stringify(ps));
+      ok(ps.length === 1 && ps[0].effect === 'custom' && ps[0].id === '0' && ps[0].fx === '' && ps[0].apply === '1' && ps[0].fxkv.split('\n').length === 19, 'save (nothing unapplied: the preset in use): ' + JSON.stringify(ps));
       const P = presets().filter(p => p.effect === 'custom').pop();
       ok(P && / n:30/.test(cv('preset.' + P.id, 'fx.l3', '')), 'the preset keeps the layers');
       ok(!$('#cdlg').classList.contains('hidden') && $('#cdlg-st').textContent.includes(P.name), 'back in the constructor: ' + $('#cdlg-st').textContent);
@@ -3058,13 +3179,13 @@
       const cur = CMP.cur, h = CMP.hist.length; li()[2].querySelector('[data-a="solo"]').click(); await wait(20);
       ok(CMP.solo === CMP.L[2] && li()[2].querySelector('[data-a="solo"]').getAttribute('aria-pressed') === 'true' && CMP.cur === cur && CMP.hist.length === h, 'solo is not an edit');
       ok($('#cdlg-cap').textContent.includes(t('cmp.solo.on', 3)) && $('#cdlg-cap').textContent.includes(t('cmp.view.model')), 'said: ' + $('#cdlg-cap').textContent);
-      const shown = cmpShow(); ok(shown.length === CMP.L.length && shown.filter(L => L.p[CMP_LP.hide] < 0.5).length === 1 && shown[2].p[CMP_LP.hide] < 0.5, 'the others hidden in the preview');
+      const [shown] = cmpShow(); ok(shown.length === CMP.L.length && shown.filter(L => L.p[CMP_LP.hide] < 0.5).length === 1 && shown[2].p[CMP_LP.hide] < 0.5, 'the others hidden in the preview');
       li()[2].querySelector('[data-a="solo"]').click(); await wait(20); ok(!CMP.solo, 'solo off');
       ok(!cmpSets().length, 'nothing sent by names, duplicate or solo: ' + JSON.stringify(cmpSets()));
       // a mask in black and white
       tutPick('lights'); await wait(20); li()[1].querySelector('[data-a="pick"]').click(); await wait(20);
       $('#cdlg-edit [data-a="maskview"]').click(); await wait(20);
-      ok(CMP.solo === CMP.L[1] && cmpShow().length === 3 && $('#cdlg-cap').textContent.includes(t('cmp.mask.bw')), 'mask view: ' + $('#cdlg-cap').textContent);
+      ok(CMP.solo === CMP.L[1] && cmpShow()[0].length === 3 && $('#cdlg-cap').textContent.includes(t('cmp.mask.bw')), 'mask view: ' + $('#cdlg-cap').textContent);
       // only the settings the shape reads; one chosen before a shape change is said to do nothing
       const sel = (f, v) => { const x = $(`#cdlg-edit select[data-f="${f}"]`); x.value = v; x.dispatchEvent(new Event('change', { bubbles: true })); };
       sel('shape', fxc.SHAPES.indexOf('ring')); await wait(20);
@@ -3147,6 +3268,75 @@
     });
   });
 
+  test('constructor keyframes, scenes and layer groups: made with Pro and applied with the layers; without Pro they play, open, insert and go, new ones refused here and by the core', async () => {
+    await fresh(); showTab('effects');
+    const pro0 = { ...STATE.pro };
+    await cmpKeep(async () => { try {
+      for (let i = 1; i <= 8; i++) { setCfg('custom', 'l' + i, ''); setCfg('custom', 't' + i, ''); } for (let i = 1; i <= 3; i++) setCfg('custom', 'k' + i, '');
+      setCfg('custom', 'sc', ''); STATE.effect = S.effect = 'custom'; renderEffectSide(); flushSets();
+      $('#cmp-open').click(); await wait(80); sent.length = 0;
+      const E = s => $('#cdlg-edit ' + s), B = s => $('#cdlg-scenes ' + s), tr = () => JSON.parse(CMP.cur)[2] || [];
+      const val = (x, v) => { x.value = v; x.dispatchEvent(new Event('change', { bubbles: true })); };
+      const done = what => until(() => !Object.keys(SC_W).length, what);
+      // a track: from the value now to the far end and back over 4 s; the focus on its setting
+      E('[data-ta="tadd"]').click(); await wait(20);
+      ok(CMP.T.length === 1 && E('details[data-d="keys"]').open && $$('#cdlg-edit .cdlg-key').length === 2 && document.activeElement === E('.cdlg-track [data-tk="p"]'), 'a track with two keys, the focus on its setting');
+      ok(/^1 \w+ 4 bounce 0:\S+ 4:\S+$/.test(tr()[0]), 'its words: ' + tr()[0]);
+      const w0 = tr()[0]; val(E('[data-tk="kv"][data-j="1"]'), ''); await wait(20); ok(tr()[0] === w0, 'not a number: as it was');
+      val(E('[data-tk="dur"]'), '2'); await wait(20); ok(/^1 \w+ 2 bounce 0:\S+ 2:\S+$/.test(tr()[0]), 'shorter: the keys come in: ' + tr()[0]);
+      val(E('[data-tk="ke"][data-j="0"]'), 's'); await wait(20); ok(/ 0:[^ :]+:s /.test(tr()[0]), 'smooth: ' + tr()[0]);
+      E('[data-ta="kadd"]').click(); await wait(20); ok(CMP.T[0].keys.length === 3 && CMP.T[0].keys[1][0] === 1, 'a key half way: ' + tr()[0]);
+      val(E('[data-tk="kt"][data-j="0"]'), '1.5'); await wait(20); ok(CMP.T[0].keys.map(k => k[0]).join() === '1,1.5,2', 'keys kept in time order: ' + tr()[0]);
+      val(E('[data-tk="rep"]'), 'n'); await wait(20); val(E('[data-tk="n"]'), '3'); await wait(20); ok(/^1 \w+ 2 3 /.test(tr()[0]), 'three times: ' + tr()[0]);
+      key(document.body, 'z', true); await wait(20); ok(!/^1 \w+ 2 3 /.test(tr()[0]), 'undo: ' + tr()[0]);
+      key(document.body, 'y', true); await wait(20); ok(/^1 \w+ 2 3 /.test(tr()[0]), 'redo: ' + tr()[0]);
+      ok(!sent.some(o => o.cmd === 'set' && o.s === 'custom' || o.cmd === 'comp_apply'), 'nothing written while editing');
+      $('#cdlg-apply').click(); await wait(150);
+      ok(cv('custom', 't1', '') === tr()[0] && sent.filter(o => o.cmd === 'comp_apply').length === 1 && $('#cdlg-st').classList.contains('ok'), 'applied with Pro: ' + cv('custom', 't1', ''));
+      // scenes and groups, saved at once and whole; the focus comes back to the row
+      $('#cdlg-scenes-box').open = true;
+      const press = s => { const b = B(s); b.focus(); b.click(); };   // a real click focuses the button first
+      $('#cdlg-sc-name').value = 'Calm'; press('[data-sa="sadd"]'); ok(B('[data-sa="sadd"]').disabled, 'busy while the core writes'); await done('scene saved');
+      const sv = sent.filter(o => o.cmd === 'scene_save');
+      ok(sv.length === 1 && sv[0].n === 0 && sv[0].kv.split('\n').length === 19 && cv('cscene.1', 'nm', '') === 'Calm' && cv('cscene.1', 't1', '') === tr()[0] && cv('cscene.1', 'dur', '') === '10', 'a scene: ' + JSON.stringify(sv));
+      ok($$('#cdlg-scenes ol.cdlg-store')[0].children.length === 1 && document.activeElement === B('[data-sa="sload"][data-n="1"]'), 'listed, the focus on it');
+      E('[data-ta="tdel"]').click(); await wait(20); ok(!CMP.T.length && !E('.cdlg-track'), 'track removed');
+      $('#cdlg-sc-name').value = 'Bare'; B('[data-sa="sadd"]').click(); await done('second scene');
+      ok(cv('cscene.2', 'nm', '') === 'Bare' && !cv('cscene.2', 't1', ''), 'a second scene without tracks');
+      val(B('[data-sf="dur"][data-n="2"]'), '3'); await done('length'); val(B('[data-sf="fade"][data-n="2"]'), '9'); await done('crossfade');
+      ok(cv('cscene.2', 'dur', '') === '3' && cv('cscene.2', 'fade', '') === '3' && cv('cscene.2', 'nm', '') === 'Bare', 'the crossfade never longer than the scene: ' + cv('cscene.2', 'fade', ''));
+      press('[data-sa="sup"][data-n="2"]'); await done('moved');
+      ok(cv('cscene.1', 'nm', '') === 'Bare' && cv('cscene.2', 'nm', '') === 'Calm' && document.activeElement === B('[data-sa="sload"][data-n="1"]'), 'moved up, the focus follows');
+      $('#cdlg-sc-name').value = 'Ring'; press('[data-sa="gadd"]'); await done('group');
+      ok(cv('cgroup.1', 'nm', '') === 'Ring' && !cv('cgroup.1', 'dur', '') && document.activeElement === B('[data-sa="gdel"][data-n="1"]'), 'a group, no timing');
+      B('[data-sa="on"]').click(); await wait(80); flushSets(); await wait(80);
+      ok(cv('custom', 'sc', '') === '1' && $$('.note').some(p => p.textContent === t('cmp.sc.side')), 'scenes play, the side panel says so');
+      // Pro gone while the editor is open: locked at once, what is stored still opens, inserts, plays and goes
+      Object.assign(STATE.pro, { on: 0, state: 'off' }); emit(STATE); await wait(80);
+      ok(B('.rules-lock') && B('[data-sa="sadd"]').disabled && B('[data-sa="gadd"]').disabled && B('[data-sa="sput"][data-n="1"]').disabled && B('[data-sf="dur"][data-n="1"]').disabled && B('[data-sa="sdown"][data-n="1"]').disabled, 'saving locked without Pro');
+      ok(E('.rules-lock') && E('[data-ta="tadd"]').disabled, 'keyframes locked without Pro');
+      ok(!B('[data-sa="sload"][data-n="2"]').disabled && !B('[data-sa="gins"][data-n="1"]').disabled && !B('[data-sa="sdel"][data-n="1"]').disabled && !B('[data-sa="on"]').disabled, 'open, insert, delete and play stay free');
+      $('#cdlg-apply').click(); await wait(150);
+      ok($('#cdlg-st').classList.contains('ok') && !cv('custom', 't1', ''), 'removing a track applies without Pro: ' + $('#cdlg-st').textContent);
+      B('[data-sa="sload"][data-n="2"]').click(); await wait(20);
+      ok(CMP.T.length === 1 && tr()[0] === cv('cscene.2', 't1', ''), 'scene opened: ' + tr()[0]);
+      ok(E('[data-tk="kv"][data-j="0"]').disabled && !E('[data-ta="tdel"]').disabled, 'its keys read-only, the track removable');
+      $('#cdlg-apply').click(); await wait(150);
+      ok($('#cdlg-st').classList.contains('ok') && cv('custom', 't1', '') === cv('cscene.2', 't1', ''), 'a stored track applies without Pro: ' + $('#cdlg-st').textContent);
+      const nL = CMP.L.length, gL = cmpStore('cgroup.')[0].L.length; B('[data-sa="gins"][data-n="1"]').click(); await wait(20);
+      ok(CMP.L.length === nL + gL && CMP.sel === nL, 'group inserted at the end, its first layer chosen');
+      setCfg('custom', 't2', '1 o 3 loop 0:10 3:90'); flushSets(); await wait(100);
+      ok(!cv('custom', 't2', ''), 'a new track refused by the core without Pro');
+      scSend('scene_save', { n: 0, kv: cmpScKv({ nm: 'x', dur: 10, fade: 1 }) }); await done('refused');
+      ok(B('.cdlg-st').textContent === t('cmp.sc.err.pro') && !cv('cscene.3', 'nm', ''), 'a scene refused by the core without Pro, said');
+      B('[data-sa="gdel"][data-n="1"]').click(); await done('group deleted'); ok(!cv('cgroup.1', 'nm', ''), 'group deleted without Pro');
+      B('[data-sa="sdel"][data-n="1"]').click(); await done('scene deleted');
+      ok(cv('cscene.1', 'nm', '') === 'Calm' && !cv('cscene.2', 'nm', ''), 'deleted without Pro, the next moved up');
+      Object.assign(STATE.pro, pro0); emit(STATE); await wait(80);
+      ok(!B('.rules-lock') && !E('.rules-lock') && !E('[data-ta="tadd"]').disabled && !B('[data-sa="sadd"]').disabled, 'unlocked with Pro back');
+    } finally { Object.assign(STATE.pro, pro0); } });
+  });
+
   test('library: Built-in, My effects, Drafts; a draft opens without lighting, is renamed, kept as a preset, shared and deleted; a preset copy', async () => {
     await fresh(); showTab('effects');
     await cmpKeep(async () => {
@@ -3192,7 +3382,7 @@
       ok(!sent.length && $('#ddlg-del').textContent === t('preset.delete.sure') && !$('#ddlg').classList.contains('hidden'), 'asks first');
       $('#ddlg-del').click(); await wait(60);
       const dd = sent.filter(o => o.cmd === 'set' && o.s === 'cdraft.3');
-      ok(dd.length === 14 && dd.every(o => o.v === '' && !o.p) && !tile() && $('#ddlg').classList.contains('hidden'), 'deleted: ' + dd.length);
+      ok(dd.length === 22 && dd.every(o => o.v === '' && !o.p) && !tile() && $('#ddlg').classList.contains('hidden'), 'deleted: ' + dd.length);
       ok(!$$('#fx-grid [data-draft]').length && $('#fx-grid .comm-note') && $('#fx-grid').textContent.includes(t('draft.none')), 'no drafts said');
       // copy of a preset of one's own: preset_copy, every key kept under the new name, nothing applied
       const P = presets()[0], src = Object.assign({}, STATE.cfg['preset.' + P.id], { 'fx.x': '1', 'z.1': '#123456' });

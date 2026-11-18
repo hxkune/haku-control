@@ -128,20 +128,90 @@ var fxPreview = (function () {
     }
     return shapes === 1;
   }
-  // [custom] l1..l8 as the core loads them (none: the reactor); get(k) is the saved value
-  function load(get) {
-    const out = [];
-    for (let i = 1; i <= MAX; i++) { const v = get('l' + i); if (v) { const L = parse(v); if (L) out.push(L); } }
-    return out.length ? out : DEFAULT.map(parse);
+  // ---- keyframe tracks: effects.c track_parse / track_at. "<layer line 1..8> <setting o..tail> <seconds 0.1..600>
+  // <loop | bounce | times 1..99> t:value[:l|h|s] ..."; pos maps a layer line to its place among the layers read
+  const NUM = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?', KEY = new RegExp('^(' + NUM + '):(' + NUM + ')(?::([lhs]))?$');
+  const CK_MAX = 8, SCENE_MAX = 8;
+  function track(s, pos) {
+    const w = String(s || '').slice(0, 255).split(/[ \t]+/).filter(Boolean);
+    const ln = parseInt(w[0], 10), p = LP[w[1]], d = parseFloat(w[2]);
+    if (!(ln >= 1 && ln <= MAX) || pos[ln - 1] < 0 || !(p < MOD) || !(d >= 0.1) || w.length < 4) return null;
+    const r = parseInt(w[3], 10), T = { layer: pos[ln - 1], p, dur: F(Math.min(d, 600)), kt: [], kv: [], ke: [] };
+    T.rep = w[3] === 'bounce' ? -1 : w[3] === 'loop' || !(r >= 1) ? 0 : Math.min(r, 99);
+    for (const k of w.slice(4)) {
+      if (T.kt.length >= CK_MAX) break;
+      const m = KEY.exec(k); if (!m || !isFinite(+m[1]) || !isFinite(+m[2])) continue;
+      const t = F(+m[1] > 0 ? Math.min(+m[1], T.dur) : 0);
+      if (T.kt.length && t < T.kt[T.kt.length - 1]) continue;
+      T.kt.push(t); T.kv.push(F(lpClamp(p, F(+m[2])))); T.ke.push(m[3] || 'l');
+    }
+    return T.kt.length ? T : null;
   }
+  // a track's value lt seconds after it started (before that: its first key; after its last repeat: its last key)
+  function at(T, lt) {
+    const n = T.kt.length; let ph = lt;
+    if (lt > 0) {
+      const cyc = Math.floor(lt / T.dur);
+      if (T.rep > 0 && cyc >= T.rep) return T.kv[n - 1];
+      ph = lt - cyc * T.dur;
+      if (T.rep < 0 && cyc % 2 >= 1) ph = T.dur - ph;
+    }
+    if (ph <= T.kt[0]) return T.kv[0];
+    for (let i = 0; i + 1 < n; i++) if (ph < T.kt[i + 1]) {
+      const span = F(T.kt[i + 1] - T.kt[i]); let f = span > 0 ? F(F(ph - T.kt[i]) / span) : 1;
+      f = T.ke[i] === 'h' ? 0 : T.ke[i] === 's' ? smooth01(f) : f;
+      return T.kv[i] + (T.kv[i + 1] - T.kv[i]) * f;
+    }
+    return T.kv[n - 1];
+  }
+  // one set of layers and tracks; get(pre + 'l1') is the saved value
+  function readSet(get, pre) {
+    const layers = [], pos = [], tracks = [];
+    for (let i = 1; i <= MAX; i++) { const v = get(pre + 'l' + i), L = v ? parse(v) : null; pos.push(L ? layers.push(L) - 1 : -1); }
+    for (let i = 1; i <= MAX; i++) { const v = get(pre + 't' + i), T = v ? track(v, pos) : null; if (T) tracks.push(T); }
+    return { layers, tracks };
+  }
+  // the composition as the core loads it: [custom] (no layers: the reactor), and with sc=1 the scenes, read through
+  // get('cscene.N/key'); C.audio: some layer follows the sound
+  function load(get) {
+    const C = readSet(get, '');
+    if (!C.layers.length) { C.layers = DEFAULT.map(parse); C.tracks = []; }
+    C.scenes = []; C.total = 0;
+    const gf = (k, d) => { const v = get(k); return v == null || v === '' ? d : parseFloat(v) || 0; };   // cfg_getf: atof
+    for (let s = 1; String(get('sc') || '')[0] === '1' && s <= SCENE_MAX; s++) {
+      const S = readSet(get, 'cscene.' + s + '/');
+      S.dur = F(clamp(gf('cscene.' + s + '/dur', 10), 1, 600)); S.fade = F(clamp(gf('cscene.' + s + '/fade', 1), 0, Math.min(30, S.dur)));
+      if (S.layers.length) { C.scenes.push(S); C.total += S.dur; }   // a scene with no layer is left out
+    }
+    C.audio = (C.scenes.length ? C.scenes : [C]).some(S => S.layers.some(L => L.mp >= 0));
+    return C;
+  }
+  // effects.c comp_draw: what shows lt seconds into the composition, worked out once a frame. The last "fade" seconds of
+  // a scene cross into the next, whose tracks wait at their start.
+  function prepAt(C, flat, t, lt, snd) {
+    const S = C.scenes, n = S.length;
+    if (!n) return { a: prep(C.layers, flat, t, snd, C.tracks, lt), b: null, f: 0 };
+    let s = lt % C.total, i = 0, a0 = 0;
+    if (s < 0) s += C.total;
+    while (i + 1 < n && s >= a0 + S[i].dur) a0 += S[i++].dur;
+    const A = S[i], B = S[(i + 1) % n], ls = s - a0, fd = Math.min(B.fade, A.dur), f0 = A.dur - fd;
+    const a = prep(A.layers, flat, t, snd, A.tracks, ls);
+    return fd <= 0 || ls < f0 ? { a, b: null, f: 0 } : { a, b: prep(B.layers, flat, t, snd, B.tracks, ls - A.dur), f: F((ls - f0) / fd) };
+  }
+  const draw = (pre, pal, palc, px, py, flat) => {
+    const a = color(null, pal, palc, px, py, flat, 0, null, pre.a);
+    return pre.b ? mix(a, color(null, pal, palc, px, py, flat, 0, null, pre.b), pre.f) : a;
+  };
   const band = (d, half, soft) => 1 - smooth01((d - half * (1 - soft)) / Math.max(2 * half * soft, 0.004));
   // what a layer needs at the moment t, worked out once a frame instead of at each point (the same sums in the same
   // order, so the same picture): its settings after the movement and the sound, and its shape's constants; a hidden
   // layer is null
-  function prep(layers, flat, t, snd) {
+  // T, lt: the keyframe tracks and their time (effects.c comp_color: a track replaces its setting, then ap and mp add)
+  function prep(layers, flat, t, snd, T, lt) {
     return layers.map((L, li) => {
       if (L.p[15] >= 0.5) return null;
       const p = L.p.slice();
+      for (const k of T || []) if (k.layer === li) p[k.p] = at(k, lt);
       if (L.ap >= 0) p[L.ap] = lpClamp(L.ap, p[L.ap] + p[16] * Math.sin(6.2831853 * t / p[17]));
       if (L.mp >= 0 && snd) p[L.mp] = lpClamp(L.mp, p[L.mp] + p[18] * snd[L.ms]);
       const ar = p[3] * 0.0174533, ca = Math.cos(ar), sa = Math.sin(ar), mv = t * p[7] / 100;
@@ -211,7 +281,7 @@ var fxPreview = (function () {
     }
     return acc;
   }
-  const comp = { SHAPES, BLENDS, LPD, MOD, MAX, DEFAULT, NAME, parse, strict, line, load, prep, color };
+  const comp = { SHAPES, BLENDS, LPD, MOD, MAX, DEFAULT, NAME, CK_MAX, SCENE_MAX, parse, strict, line, track, at, load, prep, color, prepAt, draw };
 
   // the strip: DEV_EXT (6) in zone ZONE_EXT0 (18), y in the middle; it is flat
   const DEV = 6, ZONE = 18, KEY0 = DEV * 100003 + ZONE * 1009;
@@ -231,8 +301,8 @@ var fxPreview = (function () {
     const palc = p => { p = fract(p) * np; const i = Math.floor(p); return mix(pal[i % np], pal[(i + 1) % np], p - i); };
     const grad = p => { if (np === 1) return pal[0]; p = clamp(p, 0, 1) * (np - 1); const i = Math.floor(p); return i >= np - 1 ? pal[np - 1] : mix(pal[i], pal[i + 1], p - i); };
     const one = n === 1, y = 0.5, ad = id === 'audio' ? audioDemo(t) : null;
-    const cl = id === 'custom' ? comp.load(P) : null, cd = cl && cl.some(L => L.mp >= 0) ? audioDemo(t) : null;
-    const snd = cd && [cd.level, cd.bass, Math.exp(-cd.age / 0.35)], pre = cl && comp.prep(cl, true, t, snd);
+    const C = id === 'custom' ? comp.load(P) : null, cd = C && C.audio ? audioDemo(t) : null;
+    const snd = cd && [cd.level, cd.bass, Math.exp(-cd.age / 0.35)], pre = C && comp.prepAt(C, true, t, t, snd);
     for (let i = 0; i < n; i++) {
       const x = n > 1 ? i / (n - 1) : 0, path = x, fill = x, key = h32(KEY0 + i);
       let c = [0, 0, 0];
@@ -399,7 +469,7 @@ var fxPreview = (function () {
           break;
         }
         case 'static': c = pal[0]; break;
-        case 'custom': c = comp.color(cl, pal, palc, path, 0.5, true, t, snd, pre); break;
+        case 'custom': c = comp.draw(pre, pal, palc, path, 0.5, true); break;
         case 'off': break;
         default: c = [14, 15, 19];
       }
@@ -407,11 +477,12 @@ var fxPreview = (function () {
     }
     return out;
   }
-  // the editor's picture: the layers over a w x h grid of the room (not flat), RGBA, sound-led layers on the made-up sound
-  comp.frame = function (layers, pal, w, h, t) {
+  // the editor's picture: the layers over a w x h grid of the room (not flat), RGBA, sound-led layers on the made-up sound;
+  // T: their keyframe tracks at the time lt (default t)
+  comp.frame = function (layers, pal, w, h, t, T, lt) {
     const np = pal.length, palc = p => { p = fract(p) * np; const i = Math.floor(p); return mix(pal[i % np], pal[(i + 1) % np], p - i); };
     const cd = layers.some(L => L.mp >= 0) ? audioDemo(t) : null, snd = cd && [cd.level, cd.bass, Math.exp(-cd.age / 0.35)];
-    const out = new Uint8ClampedArray(w * h * 4), pre = prep(layers, false, t, snd);
+    const out = new Uint8ClampedArray(w * h * 4), pre = prep(layers, false, t, snd, T, lt === undefined ? t : lt);
     for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
       const c = color(layers, pal, palc, (i + 0.5) / w, (j + 0.5) / h, false, t, snd, pre), o = (j * w + i) * 4;
       out[o] = c[0]; out[o + 1] = c[1]; out[o + 2] = c[2]; out[o + 3] = 255;

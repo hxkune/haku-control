@@ -210,7 +210,7 @@ static float rnd(void) { rng_s = rng_s * 1664525U + 1013904223U; return (rng_s >
 // ---- the constructor ([custom]): up to 8 layers drawn bottom to top, l1..l8, each a line of key:value words, e.g.
 // "s:ring c:p0 dur:2 per:3 b:add". The window, a profile or a phone writes them: every word is checked and clamped
 // here, an unknown one is skipped, so a line can never break the effect. Nothing but these shapes runs: no code.
-// ui/fxcomp.js draws the same layers for the previews (tools/sim/preview_check.js compares the two).
+// ui/fxpreview.js draws the same layers for the previews (tools/sim/preview_check.js compares the two).
 enum { CS_FILL, CS_GRAD, CS_WAVE, CS_RING, CS_SPARK, CS_DOTS, CS_NOISE, CS_N };
 static const char *const CS_NAME[CS_N] = { "fill", "grad", "wave", "ring", "spark", "dots", "noise" };
 enum { CB_NORMAL, CB_ADD, CB_SCREEN, CB_MUL, CB_MASK, CB_N };
@@ -275,15 +275,102 @@ static int comp_parse(const char *line, clayer *L) {
     }
     return L->shape >= 0;
 }
-static void comp_load(void) {
-    ncl = comp_audio = 0;
+// Keyframe tracks (haku Pro writes them, everyone plays them): t1..t8, "<layer line 1..8> <setting> <seconds 0.1..600>
+// <loop | bounce | times 1..99> t:value[:l|h|s] ...", up to 8 keys in time order (a key before the one ahead of it is
+// skipped), the value in the setting's own units. The track replaces the layer's setting, then "ap" and "mp" add to it.
+// Its time runs from when the composition last changed (comp_t0); after its last repeat it holds the last key.
+#define CK_MAX 8
+typedef struct { int layer, p, rep, nk; float dur, kt[CK_MAX], kv[CK_MAX]; char ke[CK_MAX]; } ctrack;   // rep 0 loop, -1 bounce
+static ctrack ctr[COMP_MAX];
+static int nctr;
+// Scenes ([cscene.1..8]: nm, dur 1..600 s, fade 0..30 s into it, l1..l8, t1..t8) play in turn when [custom] sc=1.
+#define SCENE_MAX 8
+typedef struct { clayer l[COMP_MAX]; ctrack tr[COMP_MAX]; int n, nt; float dur, fade; } cscene;
+static cscene cscn[SCENE_MAX];
+static int nscn;
+static double comp_t0, comp_total;
+static unsigned comp_sig;
+static unsigned fnv(unsigned h, const char *s) { for (; *s; s++) h = (h ^ (unsigned char)*s) * 16777619u; return (h ^ 0xFF) * 16777619u; }
+
+static int track_parse(const char *line, const int *pos, ctrack *T) {
+    char b[256], *ctx = NULL, *w;
+    strncpy_s(b, sizeof(b), line, _TRUNCATE);
+    int ln = (w = strtok_s(b, " \t", &ctx)) ? atoi(w) : 0;
+    if (ln < 1 || ln > COMP_MAX || pos[ln - 1] < 0) return 0;
+    T->layer = pos[ln - 1];
+    if (!(w = strtok_s(NULL, " \t", &ctx)) || (T->p = lp_index(w)) < 0 || T->p >= LP_MOD) return 0;
+    double d = (w = strtok_s(NULL, " \t", &ctx)) ? strtod(w, NULL) : NAN;
+    if (!(d >= 0.1)) return 0;
+    T->dur = d < 600 ? (float)d : 600;
+    if (!(w = strtok_s(NULL, " \t", &ctx))) return 0;
+    T->rep = !strcmp(w, "bounce") ? -1 : !strcmp(w, "loop") ? 0 : atoi(w) < 1 ? 0 : atoi(w) > 99 ? 99 : atoi(w);
+    T->nk = 0;
+    while (T->nk < CK_MAX && (w = strtok_s(NULL, " \t", &ctx))) {
+        char *e1, *e2; double kt = strtod(w, &e1);
+        if (e1 == w || *e1 != ':' || !isfinite(kt)) continue;
+        double kv = strtod(e1 + 1, &e2);
+        if (e2 == e1 + 1 || !isfinite(kv) || (*e2 && (*e2 != ':' || !strchr("lhs", e2[1]) || !e2[1] || e2[2]))) continue;
+        float t = kt > 0 ? (kt < T->dur ? (float)kt : T->dur) : 0;
+        if (T->nk && t < T->kt[T->nk - 1]) continue;
+        T->kt[T->nk] = t; T->kv[T->nk] = lp_clamp(T->p, (float)kv); T->ke[T->nk] = *e2 ? e2[1] : 'l'; T->nk++;
+    }
+    return T->nk > 0;
+}
+// a track's value lt seconds after it started (before that: its first key)
+static float smooth01(float x);
+static float track_at(const ctrack *T, double lt) {
+    double ph = lt;
+    if (lt > 0) {
+        double cyc = floor(lt / T->dur);
+        if (T->rep > 0 && cyc >= T->rep) return T->kv[T->nk - 1];
+        ph = lt - cyc * T->dur;
+        if (T->rep < 0 && fmod(cyc, 2) >= 1) ph = T->dur - ph;
+    }
+    if (ph <= T->kt[0]) return T->kv[0];
+    for (int i = 0; i + 1 < T->nk; i++) if (ph < T->kt[i + 1]) {
+        float span = T->kt[i + 1] - T->kt[i], f = span > 0 ? (float)(ph - T->kt[i]) / span : 1;
+        f = T->ke[i] == 'h' ? 0 : T->ke[i] == 's' ? smooth01(f) : f;
+        return T->kv[i] + (T->kv[i + 1] - T->kv[i]) * f;
+    }
+    return T->kv[T->nk - 1];
+}
+// one set of layers and tracks from a section ([custom] or [cscene.N]); h: what was read, to see a change
+static void comp_read(const char *sec, clayer *L, int *n, ctrack *T, int *nt, unsigned *h) {
+    int pos[COMP_MAX];
+    *n = *nt = 0;
     for (int i = 0; i < COMP_MAX; i++) {
         char k[8]; snprintf(k, sizeof(k), "l%d", i + 1);
-        const char *v = cfg_get("custom", k, "");
-        if (v[0] && comp_parse(v, &cl[ncl])) ncl++;
+        const char *v = cfg_get(sec, k, ""); *h = fnv(*h, v);
+        pos[i] = v[0] && comp_parse(v, &L[*n]) ? (*n)++ : -1;
     }
-    if (!ncl) for (int i = 0; i < (int)(sizeof(COMP_DEFAULT) / sizeof(COMP_DEFAULT[0])); i++) ncl += comp_parse(COMP_DEFAULT[i], &cl[ncl]);
-    for (int i = 0; i < ncl; i++) if (cl[i].mp >= 0 && cl[i].p[LP_MA] != 0 && cl[i].p[LP_HIDE] < 0.5f) comp_audio = 1;
+    for (int i = 0; i < COMP_MAX; i++) {
+        char k[8]; snprintf(k, sizeof(k), "t%d", i + 1);
+        const char *v = cfg_get(sec, k, ""); *h = fnv(*h, v);
+        if (v[0] && track_parse(v, pos, &T[*nt])) (*nt)++;
+    }
+}
+static int comp_layers_audio(const clayer *L, int n) {
+    for (int i = 0; i < n; i++) if (L[i].mp >= 0 && L[i].p[LP_MA] != 0 && L[i].p[LP_HIDE] < 0.5f) return 1;
+    return 0;
+}
+static void comp_load(void) {
+    unsigned h = 2166136261u;
+    comp_read("custom", cl, &ncl, ctr, &nctr, &h);
+    if (!ncl) { nctr = 0; for (int i = 0; i < (int)(sizeof(COMP_DEFAULT) / sizeof(COMP_DEFAULT[0])); i++) ncl += comp_parse(COMP_DEFAULT[i], &cl[ncl]); }
+    nscn = 0; comp_total = 0;
+    const char *on = cfg_get("custom", "sc", ""); h = fnv(h, on);
+    for (int s = 0; on[0] == '1' && s < SCENE_MAX; s++) {
+        char sec[16]; snprintf(sec, sizeof(sec), "cscene.%d", s + 1);
+        cscene *S = &cscn[nscn];
+        comp_read(sec, S->l, &S->n, S->tr, &S->nt, &h);
+        S->dur = clampf(cfg_getf(sec, "dur", 10), 1, 600);
+        S->fade = clampf(cfg_getf(sec, "fade", 1), 0, fminf(30, S->dur));
+        h = fnv(h, cfg_get(sec, "dur", "")); h = fnv(h, cfg_get(sec, "fade", ""));
+        if (S->n) { comp_total += S->dur; nscn++; }   // a scene with no layer is left out
+    }
+    comp_audio = comp_layers_audio(cl, ncl) && !nscn;
+    for (int s = 0; s < nscn; s++) comp_audio |= comp_layers_audio(cscn[s].l, cscn[s].n);
+    if (h != comp_sig) { comp_sig = h; comp_t0 = fx_t[FX_CUSTOM]; }   // changed: the tracks and scenes start over
 }
 
 static void load_params(void) {
@@ -480,13 +567,15 @@ static float comp_shape(const clayer *L, const float *p, float px, float py, int
     }
     return 0;
 }
-static rgbf comp_color(float px, float py, int flat, float t) {
+// lt: the composition's own time (tracks), t: the effect clock (shapes)
+static rgbf comp_color(const clayer *LL, int n, const ctrack *T, int nt, float px, float py, int flat, float t, double lt) {
     rgbf acc = { 0, 0, 0 };
     float snd[3] = { level_smooth, bass_smooth, expf(-beat_age / 0.35f) * audio_in };
-    for (int i = 0; i < ncl; i++) {
-        const clayer *L = &cl[i];
+    for (int i = 0; i < n; i++) {
+        const clayer *L = &LL[i];
         if (L->p[LP_HIDE] >= 0.5f) continue;
         float p[LP_NUM]; memcpy(p, L->p, sizeof(p));
+        for (int k = 0; k < nt; k++) if (T[k].layer == i) p[T[k].p] = track_at(&T[k], lt);
         if (L->ap >= 0) p[L->ap] = lp_clamp(L->ap, p[L->ap] + p[LP_AA] * sinf(6.2831853f * t / p[LP_AT]));
         if (L->mp >= 0 && used_audio) p[L->mp] = lp_clamp(L->mp, p[L->mp] + p[LP_MA] * snd[L->ms]);
         float h, a = comp_shape(L, p, px, py, flat, t, i, &h), k = a * p[LP_O] / 100;
@@ -502,6 +591,19 @@ static rgbf comp_color(float px, float py, int flat, float t) {
         }
     }
     return acc;
+}
+// [custom], or the scenes in turn: the last "fade" seconds of a scene cross into the next, whose tracks wait at their start
+static rgbf comp_draw(float px, float py, int flat, float t, double lt) {
+    if (!nscn) return comp_color(cl, ncl, ctr, nctr, px, py, flat, t, lt);
+    double s = fmod(lt, comp_total), at = 0;
+    if (s < 0) s += comp_total;
+    int i = 0;
+    while (i + 1 < nscn && s >= at + cscn[i].dur) at += cscn[i++].dur;
+    const cscene *A = &cscn[i], *B = &cscn[(i + 1) % nscn];
+    double ls = s - at, fd = fminf(B->fade, A->dur), f0 = A->dur - fd;
+    rgbf a = comp_color(A->l, A->n, A->tr, A->nt, px, py, flat, t, ls);
+    if (fd <= 0 || ls < f0) return a;
+    return mixc(a, comp_color(B->l, B->n, B->tr, B->nt, px, py, flat, t, ls - A->dur), (float)((ls - f0) / fd));
 }
 
 // One LED's colour for the effect clocks clk[] and a bubble list: the live ones, or local ones when baking ahead.
@@ -744,7 +846,7 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
     }
     case FX_CUSTOM: {     // 2D shapes over the room; along the chain on a line or on a device of its own
         int fl = solo || scene_flat;
-        c = comp_color(fl ? path : x, fl ? 0.5f : y, fl, t);
+        c = comp_draw(fl ? path : x, fl ? 0.5f : y, fl, t, clk[e] - comp_t0 + (solo ? z * 2.37 : 0));
         break;
     }
     case FX_SCREEN:
@@ -765,6 +867,7 @@ static rgbf led_color(int fx, const led_t *l, const double *clk, const bubble *b
 
 void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, rgbf *out) {
     if (!loaded || fx != last_fx) { load_params(); if (fx != last_fx) nbub = 0; }
+    if (fx == FX_CUSTOM && last_fx != FX_CUSTOM) comp_t0 = fx_t[FX_CUSTOM];   // chosen again: its tracks start over
     last_fx = fx;
 
     for (int k = 0, n = ext_count(); k < EXT_SLOTS; k++) zsteady[ZONE_EXT0 + k] = k < n && ext_slot_steady(k);
@@ -806,7 +909,7 @@ void effects_render(int fx, const scene_t *sc, const sensors_t *sn, double dt, r
         fx_t[e] += dt * spd;
         // effects read their clock as a float: kept small so it stays fine-grained after days on
         // shortcut: one small jump every ~4.5 h of the effect's clock, a seamless wrap would need every effect's period
-        if (fx_t[e] >= 16384) fx_t[e] -= 16384;
+        if (fx_t[e] >= 16384) { fx_t[e] -= 16384; if (e == FX_CUSTOM) comp_t0 -= 16384; }   // the tracks' time goes on
     }
 
     // an effect that was not on screen starts from no reading: no old value, no flash of old sound
@@ -885,6 +988,7 @@ int effects_bake(int fx, const scene_t *sc, int dev, int zone, int max_frames, i
     case FX_PENDULUM: period = 4; break;
     case FX_STEPS:   period = (P(P_ST_SEGMENTS) * 0.5 + P(P_ST_PAUSE)) * (np > 1 ? np : 2); break;
     case FX_LAVA:    period = 2 * 3.14159265 / 0.2; break;   // the waves repeat; the slow palette drift makes a soft seam
+    case FX_CUSTOM:  period = nscn ? comp_total : 24 * spd; break;   // the scenes loop (up to the 60 s below)
     default:         period = 24 * spd; break;
     }
     if (mixed) period = 24 * spd;

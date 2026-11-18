@@ -254,6 +254,11 @@ int  net_check_json(char *out, int cap);
 // ---- sensors.c
 void sensors_init(void);
 void sensors_poll(sensors_t *s, int need_gpu, int need_audio);
+// what a live LCD layout shows, NAN where it does not read: temperatures °C, loads and memory %, the fastest fan rpm.
+// Read only while wanted (sensors_sys_want within the last 5 s), by the render loop's own poll, once a second.
+typedef struct { float cpu_t, gpu_t, cpu_l, gpu_l, mem, fan; } sys_t;
+void sensors_sys_want(void);
+void sensors_sys(sys_t *out);              // any thread
 
 // ---- audio.cpp (WASAPI loopback, own thread while needed)
 void audio_start(void);
@@ -274,6 +279,7 @@ void fans_crash(void);                   // a crash: every channel its own setti
 void fans_feed(float gpu_temp, DWORD at); // the render loop's GPU reading and when it was taken, for curves
 int  fans_need_gpu(void);
 float fans_water(void);                 // the first connected temperature sensor, NAN when none
+int  fans_rpm(void);                    // the fastest fan that reads, -1 none
 int  fans_json(char *out, int cap);
 int  fans_trouble(void);                  // 1 the QUADRO not heard from, 2 a channel on its emergency speed, 0 neither
 // link.c while it holds the iCUE LINK hub: the % for each fan/pump channel (want comes in with link.c's default); n 0: let go
@@ -327,7 +333,13 @@ void  ui_refresh_state(void);   // the open window gets the whole state (setting
 void  app_set_brightness(float b, int save_now);
 void  app_set_fans(const char *const *kv, int n);   // key, value pairs written as one change
 int   app_draft_save(const char *sec, const char *const *kv, int n);   // a constructor draft's whole section; 0: not on disk, taken back out, -1: no room
-int   app_comp_apply(const char *const *kv, int n);   // the constructor's [custom] keys as one change; 0: not written to disk, -1: no room, not taken
+int   app_comp_apply(const char *const *kv, int n);   // the constructor's [custom] keys as one change; 0: not written to disk, -1: no room, not taken, -3: a new track without Pro
+int   comp_tracks_ok(const char *const *kv, int n);   // 0: a track (t1..t8) among these pairs that is new and Pro is off
+// the constructor's scenes ("cscene.", 8) and layer groups ("cgroup.", 16): n, or -1 not understood, -2 no room,
+// -3 Pro (saving and moving; deleting is free), -4 not saved
+int   comp_store_save(const char *pre, int n, const char *const *kv, int pairs);
+int   comp_store_delete(const char *pre, int n);
+int   comp_store_move(int n, int d);
 void  app_config_changed(int layout);   // after cfg_set: re-read params (and rebuild LED layout)
 void  app_toggle_device(const char *layout_key);   // ram_enabled / gpu_enabled
 void  app_pc_own(int own);                         // the PC's lighting given back to its own programs (1) / taken by haku (0)
@@ -372,6 +384,35 @@ void  pro_ref_poll(void);             // with every update check (update.c): a f
 void  pro_ref_join(void);             // "Get my invite link" in the window; answers with ui_refresh_state()
 int   pro_ref_json(char *out, int cap);
 int   pro_kind(const char *kind);     // 1: a device kind that needs Pro (devices.c)
+// Scenarios (pro/rules.c; nothing in the open build): [rule.N] switch a profile and the brightness while their
+// conditions hold. All on the main thread except rules_json.
+#define RULE_MAX 16
+int   rules_tick(int sensing);        // 1: every 3 s, conditions looked at; 0: steps only. 1 back while steps are left
+void  rules_manual(void);             // a profile or brightness chosen by hand: the scenarios holding wait for their end
+void  rules_suspend(int sleeping);
+int   rules_holding(void);            // a scenario is in charge (programs' profiles wait)
+void  rules_profile_gone(int id);
+int   rules_save(int n, const char *const *kv, int pairs);   // n (0: new) or <0: -1 not understood, -2 no room, -3 Pro, -4 not saved
+int   rules_on(int n, int on);
+int   rules_delete(int n);
+int   rules_move(int n, int d);
+int   rules_json(char *out, int cap);
+void  app_rule_profile(int id, int why);   // main.c: a scenario's steps (why 4), not a choice by hand
+void  app_rule_bright(float b, int save);
+int   app_prof_why(void);
+void  app_rules_now(void);           // a scenario changed in the window: looked at now, not at the next 3 s tick
+// Live LCD layouts (pro/lcdlive.cpp; nothing in the open build): [lcd.N] drawn once a second for a round screen that
+// takes live frames ([dev.N] live = N). Editing needs Pro, deleting does not; without Pro lcd_open gives nothing.
+#define LCD_MAX 6
+typedef struct lcd_layout lcd_layout;
+int   lcd_save(int n, const char *const *kv, int pairs);   // n (0: new) or <0: -1 not understood, -2 no room, -3 Pro, -4 not saved
+int   lcd_delete(int n);              // the later ones move up, [dev.N] live follows them
+unsigned lcd_sig(int n);              // changes when [lcd.n] or Pro does; 0: nothing to show
+lcd_layout *lcd_open(int n);          // NULL: none, not valid or no Pro. Any thread
+int   lcd_draw(lcd_layout *l, unsigned char **pack);   // the screen's frame pack (black, then the page now), malloc'd: its size, 0 none
+void  lcd_free(lcd_layout *l);
+int   lcd_json(char *out, int cap);   // what the widgets read now, while a layout is shown or edited; "null" otherwise
+void  lcd_watch(void);                // the editor is open: read the values for the next 5 s
 // Home Assistant through MQTT (pro/mqtt.c; nothing in the open build)
 void  mqtt_apply(void);               // start / connect again after [mqtt] changed
 void  mqtt_refresh(void);             // the profiles or the language changed: announce again

@@ -58,6 +58,26 @@ void mqtt_refresh(void) {}
 void mqtt_stop(void) {}
 int  mqtt_json(char *out, int cap) { return jcat(out, cap, 0, "null"); }
 
+// scenarios
+int  rules_tick(int sensing) { (void)sensing; return 0; }
+void rules_manual(void) {}
+void rules_suspend(int sleeping) { (void)sleeping; }
+int  rules_holding(void) { return 0; }
+void rules_profile_gone(int id) { (void)id; }
+int  rules_save(int n, const char *const *kv, int pairs) { (void)n; (void)kv; (void)pairs; return -3; }
+int  rules_on(int n, int on) { (void)n; (void)on; return -3; }
+int  rules_delete(int n) { (void)n; return -3; }
+int  rules_move(int n, int d) { (void)n; (void)d; return -3; }
+int  rules_json(char *out, int cap) { return jcat(out, cap, 0, "{\"none\":1}"); }
+int  lcd_save(int n, const char *const *kv, int pairs) { (void)n; (void)kv; (void)pairs; return -3; }
+int  lcd_delete(int n) { (void)n; return -3; }
+unsigned lcd_sig(int n) { (void)n; return 0; }
+lcd_layout *lcd_open(int n) { (void)n; return NULL; }
+int  lcd_draw(lcd_layout *l, unsigned char **pack) { (void)l; *pack = NULL; return 0; }
+void lcd_free(lcd_layout *l) { (void)l; }
+int  lcd_json(char *out, int cap) { return jcat(out, cap, 0, "null"); }
+void lcd_watch(void) {}
+
 // phone control
 void remote_apply(void) {}
 void remote_stop(void) {}

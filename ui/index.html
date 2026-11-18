@@ -89,6 +89,7 @@
             <button class="btn primary small" type="submit"><span data-i18n="preset.save">Save preset</span></button>
           </form>
           <button class="prof-save" id="prof-save" type="button"><span class="plus">+</span><span data-i18n="prof.save">Save profile</span></button>
+          <button class="prof-save hidden" id="rules-open" type="button"><span class="plus">⚙</span><span data-i18n="rules.open">Scenarios…</span></button>
           <p class="hint" data-i18n="prof.note"></p>
         </div>
         <div class="prof-quick" id="prof-quick"></div>
@@ -96,6 +97,8 @@
         <div class="prof-err hidden" id="prof-err" role="alert"><span></span><button class="x" type="button" data-i18n-title="close">×</button></div>
         <!-- a profile's settings (time, days, keys, programs...): drawn here, shown in the sheet by the pencil -->
         <div class="hidden"><div class="card prof-panel" id="prof-panel"></div></div>
+        <!-- scenarios (haku Pro): the list and its editor, shown in the sheet -->
+        <div class="hidden"><div class="card rules-panel" id="rules-panel"></div></div>
       </div>
       <div class="chips" id="chips"></div>
     </div>
@@ -957,6 +960,7 @@
       <div class="cdlg-edit" id="cdlg-edit"></div>
     </div>
     <details class="fx-adv" id="cdlg-knobs-box"><summary data-i18n="cmp.knobs">Settings on the effect panel</summary><div id="cdlg-knobs"></div></details>
+    <details class="fx-adv" id="cdlg-scenes-box"><summary data-i18n="cmp.sc">Scenes and layer groups</summary><div id="cdlg-scenes"></div></details>
     <p class="cdlg-st" id="cdlg-st" role="status" aria-live="polite"></p>
     <div class="cdlg-ask hidden" id="cdlg-ask" role="alertdialog" aria-labelledby="cdlg-ask-title" aria-describedby="cdlg-ask-text">
       <b id="cdlg-ask-title" data-i18n="cmp.ask.title">Close the constructor?</b>
@@ -1030,6 +1034,13 @@
     </div>
     <input type="file" id="txb-file" accept="image/*,video/mp4,video/webm" hidden>
     <input type="file" id="txb-file2" accept="image/*" hidden>
+  </div>
+</div>
+<!-- live LCD layouts (haku Pro, experimental): the list, and an editor with a preview of the round screen -->
+<div class="sheet-wrap pdlg-wrap hidden" id="lcded">
+  <div class="card pdlg lcded" role="dialog" aria-modal="true" aria-labelledby="lcded-title">
+    <div class="pdlg-head"><h3 id="lcded-title" data-i18n="lcd.title"></h3><button class="sheet-x" type="button" id="lcded-x" data-i18n-title="close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div id="lcded-body"></div>
   </div>
 </div>
 <!-- the calibration guide for a LAN device: where its LEDs end, which way effects run, its white against the rest -->

@@ -50,6 +50,7 @@
 static int sleeping, pro_off;   // the Wi-Fi lights are let go of: PC asleep / no Pro (main thread)
 #define SAVE_TIMER   1
 #define AUTO_TIMER   2   // profiles switched by the programs running and by the clock (every 3 s)
+#define RULES_TIMER  3   // a scenario's steps: its waits and fades (5 a second, only while some are left)
 enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN, HK_PROFILE_NEXT, HK_PROFILE = 100 /* + profile number */ };
 
 static const char default_ini[] =
@@ -654,7 +655,7 @@ static void set_brightness_ex(float b, int save_now) {
     update_tip();
 }
 
-static void set_brightness(float b) { set_brightness_ex(b, 1); ui_refresh(); }
+static void set_brightness(float b) { rules_manual(); set_brightness_ex(b, 1); ui_refresh(); }
 
 // ---- presets: the whole look saved under a name, [preset.N] (N = 1..PRESET_MAX):
 //   name, effect, palette, speed        the effect and its colours / speed
@@ -843,7 +844,7 @@ static int profile_key(const char *sec, const char *key) {
     if (!_stricmp(sec, "general")) return !_stricmp(key, "effect") || !_stricmp(key, "brightness") || !_stricmp(key, "sync") || !_stricmp(key, "preset");
     if (!_stricmp(sec, "layout")) { size_t n = strlen(key); return n > 8 && !_stricmp(key + n - 8, "_enabled"); }
     if (!_stricmp(sec, "ui")) return !_stricmp(key, "hero_hide");
-    if (!_strnicmp(sec, "dev.", 4)) return !_stricmp(key, "enabled") || !_stricmp(key, "screen") || !_stricmp(key, "clock");
+    if (!_strnicmp(sec, "dev.", 4)) return !_stricmp(key, "enabled") || !_stricmp(key, "screen") || !_stricmp(key, "clock") || !_stricmp(key, "live");
     if (!_strnicmp(sec, "group.", 6)) return 1;
     if (!_strnicmp(sec, "zone.", 5)) {
         for (int k = 0; k < (int)(sizeof(ZONE_KEYS) / sizeof(ZONE_KEYS[0])); k++) if (!_stricmp(key, ZONE_KEYS[k])) return 1;
@@ -927,10 +928,16 @@ static void auto_tick(void) {
 
 // chosen by hand (window, tray, hotkey, phone) or by the clock: wins over a program's profile until that program closes
 static void profile_pick(int id, int why) {
+    rules_manual();
     if (auto_on) { auto_skip = auto_on; auto_on = 0; }
     profile_apply(id, why);
 }
 void app_profile_apply(int id) { profile_pick(id, 1); }
+// a scenario's steps (pro\rules.c): not a choice by hand, so the scenarios holding are not told to wait
+void app_rule_profile(int id, int why) { profile_apply(id, why); }
+void app_rule_bright(float b, int save) { set_brightness_ex(b, save); ui_refresh(); }
+int  app_prof_why(void) { return prof_why; }
+void app_rules_now(void) { if (rules_tick(1)) SetTimer(hwnd, RULES_TIMER, 200, NULL); }
 
 // [general] auto_pause = 1: no profile comes on by itself (programs, clock) until it is cleared
 static int auto_paused(void) { return cfg_geti("general", "auto_pause", 0) != 0; }
@@ -973,6 +980,7 @@ int app_profile_dup(int src, const char *name) { return prof_dup(src, name); }
 void app_profile_delete(int id) {
     if (cfg_geti("general", "profile", 0) == id) prof_why = 0;
     prof_delete(id);
+    rules_profile_gone(id);
     PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
 }
 
@@ -1008,7 +1016,7 @@ void  app_fx_recent(const char *id) {
     int fx = effect_index(id);
     if (fx != effect_index("off") && !_stricmp(g_effects[fx].id, id)) cfg_list_front("general", "fx_recent", g_effects[fx].id, 5);
 }
-void  app_set_brightness(float b, int save_now) { set_brightness_ex(b, save_now); }
+void  app_set_brightness(float b, int save_now) { rules_manual(); set_brightness_ex(b, save_now); }
 void  app_config_changed(int layout) {
     InterlockedIncrement(&cfg_gen);
     EnterCriticalSection(&cs); effects_reset(); LeaveCriticalSection(&cs);
@@ -1141,6 +1149,10 @@ static int status_body(char *out, int cap) {
     n += pro_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"ref\":");
     n += pro_ref_json(out + n, cap - n);
+    n = jcat(out, cap, n, ",\"rules\":");
+    n += rules_json(out + n, cap - n);
+    n = jcat(out, cap, n, ",\"lcd\":");   // the live LCD values while a layout is drawn or its editor is open, else null
+    n += lcd_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"prof\":");
     n += prof_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"cfg_full\":%d", cfg_dropped());   // changes refused since start: the settings file was full
@@ -1326,6 +1338,7 @@ void app_set(const char *s, const char *k, const char *v) {
 // the constructor's layers and knobs ([custom] l1..l8, k1..k3, checked by the caller) as one change, written to disk
 // now: 1 written, 0 in use but not on disk yet (written with the next change), -1 not taken: the settings file is full
 int app_comp_apply(const char *const *kv, int n) {
+    if (!comp_tracks_ok(kv, n)) return -3;
     if (cfg_set_many("custom", kv, n) != CFG_OK) return -1;
     app_config_changed(0);
     return cfg_save_if_dirty();
@@ -1342,6 +1355,95 @@ int app_draft_save(const char *sec, const char *const *kv, int n) {
     if (cfg_save_if_dirty()) return 1;
     if (n) cfg_remove_section(sec);
     return 0;
+}
+
+// ---- the constructor's keyframes, scenes [cscene.1..8] (played in turn when [custom] sc=1) and layer groups
+// [cgroup.1..16]. Writing new ones needs Pro; deleting them and playing them do not. Keys not known here are kept.
+static const char *const COMP_KEYS[] = { "dur", "fade", "nm", "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8",
+                                         "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8" };   // groups: no dur, fade
+static int comp_key(const char *k, int scene) {
+    for (int i = scene ? 0 : 2; i < (int)(sizeof(COMP_KEYS) / sizeof(COMP_KEYS[0])); i++) if (!_stricmp(k, COMP_KEYS[i])) return 1;
+    return 0;
+}
+static int comp_is_track(const char *k) { return (k[0] == 't' || k[0] == 'T') && k[1] >= '1' && k[1] <= '8' && !k[2]; }
+// a track's line after its layer number ("v 4 loop 0:-50 2:80"): the same track on another layer is the same track
+static const char *track_body(const char *v) {
+    while (*v == ' ' || *v == '\t') v++;
+    while (*v && *v != ' ' && *v != '\t') v++;
+    while (*v == ' ' || *v == '\t') v++;
+    return v;
+}
+static int track_stored(const char *v) {
+    const char *b = track_body(v);
+    if (!*b) return 1;   // a cleared track
+    for (int s = 0; s <= 24; s++) {
+        char sec[24];
+        if (!s) strcpy_s(sec, sizeof(sec), "custom"); else snprintf(sec, sizeof(sec), s <= 8 ? "cscene.%d" : "cgroup.%d", s <= 8 ? s : s - 8);
+        for (int i = 1; i <= 8; i++) { char k[4]; snprintf(k, sizeof(k), "t%d", i); if (!strcmp(track_body(cfg_get(sec, k, "")), b)) return 1; }
+    }
+    return 0;
+}
+// 0: one of these keys is a track Pro is needed for: without Pro only tracks already stored are written (ones that came
+// with a preset, a scene or a group play, move to another layer, are cleared), new keyframes are not
+int comp_tracks_ok(const char *const *kv, int n) {
+    if (pro_active()) return 1;
+    for (int i = 0; i < n; i++) if (comp_is_track(kv[2 * i]) && !track_stored(kv[2 * i + 1])) return 0;
+    return 1;
+}
+static int comp_has(const char *pre, int n) { char sec[24]; cfg_item it; snprintf(sec, sizeof(sec), "%s%d", pre, n); return cfg_items(sec, &it, 1) > 0; }
+static int comp_count(const char *pre) { int n = 0, max = !strcmp(pre, "cscene.") ? 8 : 16; while (n < max && comp_has(pre, n + 1)) n++; return n; }
+static void comp_copy(const char *pre, int to, int from) {   // [pre.to] becomes what [pre.from] is, every key
+    static cfg_item it[64]; char a[24], b[24];
+    snprintf(a, sizeof(a), "%s%d", pre, to); snprintf(b, sizeof(b), "%s%d", pre, from);
+    int k = cfg_items(b, it, 64);
+    cfg_remove_section(a);
+    for (int i = 0; i < k; i++) cfg_set(a, it[i].key, it[i].val);
+}
+static int comp_done(int r) { app_config_changed(0); return cfg_save_if_dirty() ? r : -4; }
+// pre "cscene." or "cgroup.", n (0: a new one at the end): its keys, at least one layer. n, or -1 not understood, -2 no
+// room, -3 Pro, -4 not saved (kept in memory, written with the next change)
+int comp_store_save(const char *pre, int n, const char *const *kv, int pairs) {
+    int scene = !strcmp(pre, "cscene."), cnt = comp_count(pre), lay = 0;
+    if (!scene && strcmp(pre, "cgroup.")) return -1;
+    if (n < 0 || n > cnt) return -1;
+    for (int i = 0; i < pairs; i++) {
+        if (!comp_key(kv[2 * i], scene)) return -1;
+        if ((kv[2 * i][0] == 'l' || kv[2 * i][0] == 'L') && kv[2 * i + 1][0]) lay = 1;
+    }
+    if (!lay) return -1;
+    if (!pro_active()) return -3;
+    if (!n) { if (cnt >= (scene ? 8 : 16)) return -2; n = cnt + 1; }
+    char sec[24]; snprintf(sec, sizeof(sec), "%s%d", pre, n);
+    static cfg_item old[64]; int k = cfg_items(sec, old, 64);
+    cfg_group_begin();   // the old one goes only when the new one fits whole
+    cfg_remove_section(sec);
+    for (int i = 0; i < k; i++) if (!comp_key(old[i].key, scene)) cfg_set(sec, old[i].key, old[i].val);   // a newer version's keys
+    for (int i = 0; i < pairs; i++) if (kv[2 * i + 1][0]) cfg_set(sec, kv[2 * i], kv[2 * i + 1]);
+    if (!cfg_group_end()) return -2;
+    return comp_done(n);
+}
+// the later ones move up a number (free: what is not wanted can always go)
+int comp_store_delete(const char *pre, int n) {
+    if (strcmp(pre, "cscene.") && strcmp(pre, "cgroup.")) return -1;
+    int cnt = comp_count(pre);
+    if (n < 1 || n > cnt) return -1;
+    char sec[24]; snprintf(sec, sizeof(sec), "%s%d", pre, cnt);
+    cfg_group_begin();
+    for (int i = n; i < cnt; i++) comp_copy(pre, i, i + 1);
+    cfg_remove_section(sec);
+    if (!cfg_group_end()) return -2;
+    return comp_done(n);
+}
+// a scene one place earlier (d < 0) or later: its new number
+int comp_store_move(int n, int d) {
+    int cnt = comp_count("cscene."), m = n + (d < 0 ? -1 : 1);
+    if (n < 1 || n > cnt || m < 1 || m > cnt) return -1;
+    if (!pro_active()) return -3;
+    cfg_group_begin();
+    comp_copy("cscene.", 9, n); comp_copy("cscene.", n, m); comp_copy("cscene.", m, 9);   // [cscene.9] is never played
+    cfg_remove_section("cscene.9");
+    if (!cfg_group_end()) return -2;
+    return comp_done(m);
 }
 
 // the fan panel's curve, its source and the other sources' curves, as one change (fans.c reads them together)
@@ -1641,7 +1743,12 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER:
         if (wp == SAVE_TIMER) { KillTimer(h, SAVE_TIMER); cfg_save_if_dirty(); }
-        if (wp == AUTO_TIMER) { if (!auto_paused()) auto_tick(); sched_tick(); conflicts_tick(); update_tip(); tray_refresh(); }
+        if (wp == AUTO_TIMER) {
+            if (rules_tick(1)) SetTimer(h, RULES_TIMER, 200, NULL);
+            if (!auto_paused() && !rules_holding()) auto_tick();   // a scenario in charge goes first; a program's profile waits
+            sched_tick(); conflicts_tick(); update_tip(); tray_refresh();
+        }
+        if (wp == RULES_TIMER && !rules_tick(0)) KillTimer(h, RULES_TIMER);
         return 0;
     case WM_SETTINGCHANGE:
         // light / dark taskbar switched: swap the tray icon
@@ -1725,9 +1832,9 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_POWERBROADCAST:
-        if (wp == PBT_APMSUSPEND) { logf_("sleep"); sleeping = 1; nano_suspend(1); lights_suspend(1); ext_suspend(1); fans_suspend(1); link_suspend(1); }
+        if (wp == PBT_APMSUSPEND) { logf_("sleep"); sleeping = 1; nano_suspend(1); lights_suspend(1); ext_suspend(1); fans_suspend(1); link_suspend(1); rules_suspend(1); }
         if (wp == PBT_APMRESUMEAUTOMATIC) { InterlockedExchange(&need_reinit, 1); logf_("resume"); }
-        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { sleeping = 0; nano_suspend(pro_off); lights_suspend(pro_off); ext_suspend(0); fans_suspend(0); link_suspend(0); }
+        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { sleeping = 0; nano_suspend(pro_off); lights_suspend(pro_off); ext_suspend(0); fans_suspend(0); link_suspend(0); rules_suspend(0); }
         return TRUE;
     case WM_QUERYENDSESSION:
         return TRUE;

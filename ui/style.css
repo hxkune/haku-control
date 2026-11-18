@@ -346,6 +346,22 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .cdlg-knob input[type=number] { background-color: transparent; border: 1px solid var(--line2); color: var(--text); font: 13px var(--font); outline: none; width: 100%; }
 .cdlg-knob input[type=number]:focus { border-color: var(--strong); }   /* the outline is off: the border shows the focus */
 @media (max-width: 560px) { .cdlg-knob { grid-template-columns: 1fr 1fr; } }
+/* keyframe tracks, scenes and groups: rows of small fields */
+.cdlg-track { border: 1px solid var(--line2); padding: 8px; margin-top: 8px; }
+.cdlg-track-head, .cdlg-key, .cdlg-store li, #cdlg-scenes .btn-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cdlg-key { margin-top: 6px; }
+.cdlg-key > span { width: 1.5em; color: var(--muted); font-size: 12px; }
+.cdlg-track .select, #cdlg-scenes .select { margin-top: 0; width: auto; flex: 1 1 120px; padding: 6px 28px 6px 12px; background-position: right 10px center; }
+.cdlg-num, #cdlg-sc-name { background-color: transparent; border: 1px solid var(--line2); color: var(--text); font: 13px var(--font); outline: none; padding: 6px 8px; }
+.cdlg-num { width: 72px; }
+#cdlg-sc-name { flex: 1 1 160px; min-width: 0; }
+.cdlg-num:focus, #cdlg-sc-name:focus { border-color: var(--strong); }   /* the outline is off: the border shows the focus */
+.cdlg-num:disabled, #cdlg-sc-name:disabled { opacity: .5; }
+.cdlg-track > .btn, .cdlg-edit [data-ta="tadd"] { margin-top: 6px; }
+.cdlg-store { list-style: none; margin: 8px 0 0; padding: 0; }
+.cdlg-store li { padding: 6px 0; border-bottom: 1px solid var(--line2); }
+.cdlg-store .grow { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+.cdlg-sub { display: block; margin-top: 14px; }
 .cdlg-st { margin: 0; min-height: 1.3em; font-size: 12px; color: var(--muted); }
 .cdlg-st.draft { color: var(--text); }
 .cdlg-st.ok { color: var(--ok, var(--text)); }
@@ -635,9 +651,9 @@ body.no-net #accounts, body.no-net #phone-card { display: none !important; }
 .pro-form { display: flex; gap: 8px; margin-top: 14px; }
 .pro-form input { flex: 1; min-width: 0; font-family: var(--mono, monospace); font-size: 12px; }
 .pro-err { color: var(--strong); font-size: 12px; margin-top: 8px; }
-.pro-lock { margin-bottom: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border-color: var(--strong); }
-.pro-lock > div { flex: 1; min-width: 220px; }
-.pro-lock .btn-row { margin-top: 0; flex: 0 1 auto; }   /* as wide as its buttons: "Enter a key" stays beside "Get Pro" */
+.pro-lock, .rules-lock { margin-bottom: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border-color: var(--strong); }
+.pro-lock > div, .rules-lock > div { flex: 1; min-width: 220px; }
+.pro-lock .btn-row, .rules-lock .btn-row { margin-top: 0; flex: 0 1 auto; }   /* as wide as its buttons: "Enter a key" stays beside "Get Pro" */
 .set-col > .card { margin-bottom: 20px; }
 #set-grid { row-gap: 20px; }
 #phone-card { grid-row: span 2; }   /* the tall one: the card after it goes under its short neighbour, not under a gap */
@@ -1208,6 +1224,73 @@ header .prof-err { left: auto; right: 0; }
 .prof-save:hover { color: var(--strong); border-color: var(--line3); }
 .prof-save .plus { font-size: 16px; line-height: 1; }
 .prof-menu > .hint { margin: 6px 4px 2px; }
+/* scenarios (haku Pro): the list and its editor in the sheet */
+.rules-lock { border: 1px solid var(--strong); padding: 12px; margin-bottom: 14px; }
+.rules-lock p { margin: 4px 0 0; }
+.rules-note { margin: 0 0 12px; }
+.rules-list { display: flex; flex-direction: column; gap: 8px; }
+.rule { border: 1px solid var(--line2); padding: 8px 10px; }
+.rule.win { border-color: var(--line3); background: rgba(var(--ink), .04); }
+.rule.off .rule-txt { opacity: .55; }
+.rule-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rule-head .check { margin: 0; min-width: 0; }
+.rule-head .check b { overflow-wrap: anywhere; }
+.rule-head .grow { flex: 1; }
+.rule-head .btn { margin: 0; }
+.rule-mv { min-width: 30px; padding: 0 8px; }
+.rule-txt { margin: 6px 0 0; color: var(--text); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.rule-txt > span { color: var(--muted); font: 10px var(--mono); letter-spacing: 1px; text-transform: uppercase; margin-right: 6px; }
+.rule-st { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
+.rule-st.on { color: var(--strong); }
+.rule-st.warn { color: #d0605a; }
+.rules-new { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.rules-new .btn { margin: 0; }
+.rule-ed { display: flex; flex-direction: column; gap: 12px; }
+.rule-ed fieldset { border: 1px solid var(--line2); margin: 0; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rule-ed legend { padding: 0 4px; color: var(--muted); font: 10px var(--mono); letter-spacing: 1px; text-transform: uppercase; }
+.rule-ed fieldset > .btn { align-self: flex-start; margin: 0; }
+.rule-ed .hint { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.rule-ed .re-err:empty { display: none; }
+.re-fld { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.rule-ed input[type=text], .rule-ed input[type=number], .rule-ed input[type=time] {
+  height: 34px; padding: 0 8px; border: 1px solid var(--line2); background: var(--bg); color: var(--text); font: inherit; outline: none; min-width: 0;
+}
+.rule-ed input:focus { border-color: var(--line3); }
+.rule-ed input:invalid { border-color: #d0605a; }
+.rule-ed .select { margin: 0; }
+.re-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); }
+.re-row .re-ct, .re-row .re-at { flex: 0 1 230px; }
+.re-v { display: flex; align-items: center; gap: 6px; flex: 1 1 180px; min-width: 0; }   /* a value and its unit wrap together */
+.re-v .re-apps, .re-v .re-prof { flex: 1 1 auto; width: 0; }
+.re-v > span { white-space: nowrap; }
+.re-row input[type=number] { width: 72px; flex: none; }
+.re-row .prof-days { flex-basis: 100%; }
+.re-row .x { margin-left: auto; width: 30px; height: 30px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 18px; }
+.re-row .x:hover { color: #d0605a; }
+.rule-ed .btns { display: flex; gap: 6px; }
+.rule-ed .btns .btn { margin: 0; }
+.rule-ed .btns .grow { flex: 1; }
+@media (max-width: 560px) { .re-row .re-ct, .re-row .re-at { flex-basis: 100%; } .rule-head .grow { flex-basis: 100%; height: 0; } }
+/* live LCD layouts (haku Pro): the list, the editor and its preview */
+.card.pdlg.lcded { width: min(860px, 100%); }
+.lcd-ed { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); gap: 14px; align-items: start; }
+.lcd-stage { width: 100%; max-width: 480px; aspect-ratio: 1; display: block; background: #000; touch-action: none; cursor: crosshair; outline: none; }
+.lcd-stage:focus-visible { box-shadow: 0 0 0 2px var(--line3); }
+.lcd-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lcd-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 12px; }
+.lcd-top .re-fld { flex: 1 1 120px; }
+.lcd-top .re-fld.name { flex: 2 1 200px; }
+.lcd-ws { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow: auto; }
+.lcd-ws button { text-align: left; justify-content: flex-start; margin: 0; }
+.lcd-ws button[aria-pressed="true"] { border-color: var(--line3); background: rgba(var(--ink), .08); }
+.lcd-props { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lcd-props .wide { grid-column: 1 / -1; }
+.lcd-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lcd-row .btn { margin: 0; }
+.lcd-ed input[type=color] { height: 34px; width: 100%; padding: 2px; border: 1px solid var(--line2); background: var(--bg); }
+.lcd-live { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 4px 0; }
+.lcd-live .num { margin: 0; }
+@media (max-width: 700px) { .lcd-ed { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .prof { margin: 0 0 10px; } .prof-btn { flex: 1; } .prof-btn .chev { margin-left: auto; } .prof-menu { width: 100%; } }
 
 /* ---- the local model for the mood: setup progress */

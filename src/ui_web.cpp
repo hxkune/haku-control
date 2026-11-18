@@ -209,23 +209,29 @@ static void on_message(const std::string &js) {
     else if (cmd == "set") {
         std::string s = field(js, "s"), k = field(js, "k");
         if (other_profile(field(js, "p"), s.c_str(), k.c_str())) post_state();   // dropped: the page catches up with the profile in use
-        else app_set(s.c_str(), k.c_str(), field(js, "v").c_str());
+        else if (!_strnicmp(s.c_str(), "rule.", 5) || !_strnicmp(s.c_str(), "lcd.", 4) || !_strnicmp(s.c_str(), "cscene.", 7) || !_strnicmp(s.c_str(), "cgroup.", 7))
+            post_state();   // scenarios, LCD layouts, scenes and layer groups change only through their own commands (checked, Pro)
+        else {
+            std::string v = field(js, "v"); const char *kv[2] = { k.c_str(), v.c_str() };
+            if (!_stricmp(s.c_str(), "custom") && !comp_tracks_ok(kv, 1)) post_state();   // a new keyframe track: Pro
+            else app_set(s.c_str(), k.c_str(), v.c_str());
+        }
     }
     else if (cmd == "fans_set") {   // "key=value" lines, all written as one change; not in remote_allowed: the fans stay with this PC
         std::string kv = field(js, "kv"); std::vector<std::string> part; std::vector<const char *> p;
         bool ok = kv_lines(kv, 128, part);   // a group of every channel with every source's curve fits
         if (ok && !part.empty()) { for (const std::string &x : part) p.push_back(x.c_str()); app_set_fans(p.data(), (int)p.size() / 2); }
     }
-    else if (cmd == "comp_apply") {   // the constructor's Apply: its 8 layers and 3 knobs as one change. Not in remote_allowed
+    else if (cmd == "comp_apply") {   // the constructor's Apply: its 8 layers, 3 knobs, 8 tracks and scenes on / off as one change. Not in remote_allowed
         std::string req = field(js, "req"), err; std::vector<std::string> part; std::vector<const char *> p;
         for (char &c : req) if (!isdigit((unsigned char)c)) c = '0';   // goes back into JSON as is
         if (req.size() > 12) req.resize(12);
-        static const char *keys[] = { "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "k1", "k2", "k3" };
-        bool ok = kv_lines(field(js, "kv"), 11, part) && part.size() == 22;
-        for (int i = 0; ok && i < 11; i++) ok = part[2 * i] == keys[i];   // all of them, in order: an empty one is a cleared layer
+        static const char *keys[] = { "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "k1", "k2", "k3", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "sc" };
+        bool ok = kv_lines(field(js, "kv"), 20, part) && part.size() == 40;
+        for (int i = 0; ok && i < 20; i++) ok = part[2 * i] == keys[i];   // all of them, in order: an empty one is a cleared layer
         if (!ok) err = "bad";
         else if (other_profile(field(js, "p"), NULL, NULL)) err = "prof";
-        else { for (const std::string &x : part) p.push_back(x.c_str()); int r = app_comp_apply(p.data(), 11); if (r < 0) err = "cap"; else if (!r) err = "save"; }
+        else { for (const std::string &x : part) p.push_back(x.c_str()); int r = app_comp_apply(p.data(), 20); if (r == -3) err = "pro"; else if (r < 0) err = "cap"; else if (!r) err = "save"; }
         post_state();
         char b[96]; snprintf(b, sizeof(b), "{\"type\":\"comp_done\",\"req\":\"%s\",\"err\":\"%s\"}", req.c_str(), err.c_str());
         post(b);
@@ -235,8 +241,9 @@ static void on_message(const std::string &js) {
         std::string req = field(js, "req"), slot = field(js, "slot"), err; std::vector<std::string> part; std::vector<const char *> p;
         for (char &c : req) if (!isdigit((unsigned char)c)) c = '0';
         if (req.size() > 12) req.resize(12);
-        static const char *keys[] = { "name", "at", "prof", "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "k1", "k2", "k3" };
-        bool ok = (slot.empty() || slot == "r") && kv_lines(field(js, "kv"), 14, part) && (part.size() == 28 || (part.empty() && slot == "r"));
+        static const char *keys[] = { "name", "at", "prof", "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "k1", "k2", "k3",
+                                      "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8" };
+        bool ok = (slot.empty() || slot == "r") && kv_lines(field(js, "kv"), 22, part) && (part.size() == 44 || (part.empty() && slot == "r"));
         for (size_t i = 0; ok && i < part.size() / 2; i++) ok = part[2 * i] == keys[i];
         if (ok && !part.empty()) ok = !part[3].empty();   // the time is what marks a slot as taken
         char sec[16] = "crecover"; int n = 0;
@@ -252,6 +259,52 @@ static void on_message(const std::string &js) {
         char b[112]; snprintf(b, sizeof(b), "{\"type\":\"draft_done\",\"req\":\"%s\",\"err\":\"%s\",\"n\":%d}", req.c_str(), err.c_str(), n);
         post(b);
     }
+    else if (cmd.compare(0, 5, "rule_") == 0) {   // scenarios (pro\rules.c checks the format and Pro). Not in remote_allowed
+        // rule_save {n (0: new), kv: "key=value" lines}, rule_on {n, on}, rule_delete {n}, rule_move {n, d: -1 / 1}
+        std::string req = field(js, "req"); std::vector<std::string> part; std::vector<const char *> p;
+        for (char &c : req) if (!isdigit((unsigned char)c)) c = '0';
+        if (req.size() > 12) req.resize(12);
+        int n = atoi(field(js, "n").c_str()), r = -1;
+        if (cmd == "rule_save") { if (kv_lines(field(js, "kv"), 18, part)) { for (const std::string &x : part) p.push_back(x.c_str()); r = rules_save(n, p.data(), (int)p.size() / 2); } }
+        else if (cmd == "rule_on") r = rules_on(n, field(js, "on") == "1");
+        else if (cmd == "rule_delete") r = rules_delete(n);
+        else if (cmd == "rule_move") r = rules_move(n, atoi(field(js, "d").c_str()));
+        if (r > 0) { cfg_save_if_dirty(); app_rules_now(); }   // what it changes shows now, not in up to 3 s
+        static const char *const errs[] = { "", "bad", "full", "pro", "save" };
+        post_state();
+        char b[112]; snprintf(b, sizeof(b), "{\"type\":\"rule_done\",\"req\":\"%s\",\"err\":\"%s\",\"n\":%d}", req.c_str(), errs[r > 0 ? 0 : -r], r > 0 ? r : 0);
+        post(b);
+    }
+    else if (cmd == "lcd_save" || cmd == "lcd_delete") {   // live LCD layouts (pro\lcdlive.cpp checks the format and Pro). Not in remote_allowed
+        // lcd_save {n (0: new), kv: "key=value" lines}, lcd_delete {n}: lcd_done {req, err, n}
+        std::string req = field(js, "req"); std::vector<std::string> part; std::vector<const char *> p;
+        for (char &c : req) if (!isdigit((unsigned char)c)) c = '0';
+        if (req.size() > 12) req.resize(12);
+        int n = atoi(field(js, "n").c_str()), r = -1;
+        if (cmd == "lcd_save") { if (kv_lines(field(js, "kv"), 40, part)) { for (const std::string &x : part) p.push_back(x.c_str()); r = lcd_save(n, p.data(), (int)p.size() / 2); } }
+        else r = lcd_delete(n);
+        if (r > 0) cfg_save_if_dirty();
+        static const char *const errs[] = { "", "bad", "full", "pro", "save" };
+        post_state();
+        char b[112]; snprintf(b, sizeof(b), "{\"type\":\"lcd_done\",\"req\":\"%s\",\"err\":\"%s\",\"n\":%d}", req.c_str(), errs[r > 0 ? 0 : -r], r > 0 ? r : 0);
+        post(b);
+    }
+    else if (cmd.compare(0, 6, "scene_") == 0 || cmd.compare(0, 6, "group_") == 0) {   // the constructor's scenes and layer groups (main.c checks them and Pro). Not in remote_allowed
+        // scene_save / group_save {n (0: new), kv}, scene_delete / group_delete {n}, scene_move {n, d}: scene_done / group_done {req, err, n}
+        std::string req = field(js, "req"); std::vector<std::string> part; std::vector<const char *> p;
+        for (char &c : req) if (!isdigit((unsigned char)c)) c = '0';
+        if (req.size() > 12) req.resize(12);
+        bool scene = cmd[0] == 's'; const char *pre = scene ? "cscene." : "cgroup.";
+        int n = atoi(field(js, "n").c_str()), r = -1;
+        if (cmd == "scene_save" || cmd == "group_save") { if (kv_lines(field(js, "kv"), 19, part)) { for (const std::string &x : part) p.push_back(x.c_str()); r = comp_store_save(pre, n, p.data(), (int)p.size() / 2); } }
+        else if (cmd == "scene_delete" || cmd == "group_delete") r = comp_store_delete(pre, n);
+        else if (cmd == "scene_move") r = comp_store_move(n, atoi(field(js, "d").c_str()));
+        static const char *const errs[] = { "", "bad", "full", "pro", "save" };
+        post_state();
+        char b[112]; snprintf(b, sizeof(b), "{\"type\":\"%s_done\",\"req\":\"%s\",\"err\":\"%s\",\"n\":%d}", scene ? "scene" : "group", req.c_str(), errs[r > 0 ? 0 : -r], r > 0 ? r : 0);
+        post(b);
+    }
+    else if (cmd == "lcd_watch") lcd_watch();   // the layout editor is open: the values and the music for its preview (stops by itself)
     else if (cmd == "toggle") { app_toggle_device(field(js, "k").c_str()); post_status(); }
     else if (cmd == "power") { app_power(); post_status(); }
     else if (cmd == "timed_off") { app_timed_off(atoi(field(js, "min").c_str())); post_status(); }
@@ -271,6 +324,7 @@ static void on_message(const std::string &js) {
         bool has = js.find("\"fxkv\":") != std::string::npos;
         if (has && !kv_lines(fxkv, 64, part)) { post_state(); return; }
         for (const std::string &x : part) p.push_back(x.c_str());
+        if (has && !comp_tracks_ok(p.data(), (int)p.size() / 2)) { post_state(); return; }   // a draft's new keyframes: Pro
         int id = app_preset_save(atoi(field(js, "id").c_str()), field(js, "name").c_str(), field(js, "effect").c_str(),
                                  field(js, "palette").c_str(), field(js, "speed").c_str(), bri.c_str(), field(js, "zones").c_str(),
                                  field(js, "fx") == "cur", p.data(), has ? (int)p.size() / 2 : -1);
