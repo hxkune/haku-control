@@ -3299,7 +3299,8 @@
       $('#cdlg-sc-name').value = 'Calm'; press('[data-sa="sadd"]'); ok(B('[data-sa="sadd"]').disabled, 'busy while the core writes'); await done('scene saved');
       const sv = sent.filter(o => o.cmd === 'scene_save');
       ok(sv.length === 1 && sv[0].n === 0 && sv[0].kv.split('\n').length === 19 && cv('cscene.1', 'nm', '') === 'Calm' && cv('cscene.1', 't1', '') === tr()[0] && cv('cscene.1', 'dur', '') === '10', 'a scene: ' + JSON.stringify(sv));
-      ok($$('#cdlg-scenes ol.cdlg-store')[0].children.length === 1 && document.activeElement === B('[data-sa="sload"][data-n="1"]'), 'listed, the focus on it');
+      ok($$('#cdlg-scenes ol.cdlg-store')[0].children.length === 1 && document.activeElement === B('[data-sa="sload"][data-n="1"]'), 'listed, the focus on it: ' + document.activeElement.outerHTML.slice(0, 80));
+      cmpScenes(); ok(document.activeElement === B('[data-sa="sload"][data-n="1"]'), 'a rebuild keeps the focus: ' + document.activeElement.outerHTML.slice(0, 80));
       E('[data-ta="tdel"]').click(); await wait(20); ok(!CMP.T.length && !E('.cdlg-track'), 'track removed');
       $('#cdlg-sc-name').value = 'Bare'; B('[data-sa="sadd"]').click(); await done('second scene');
       ok(cv('cscene.2', 'nm', '') === 'Bare' && !cv('cscene.2', 't1', ''), 'a second scene without tracks');

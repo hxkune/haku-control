@@ -2277,7 +2277,10 @@ function cmpScenes() {
   const num = (f, n, v, lbl, min, max) => `<input type="number" class="cdlg-num" data-sf="${f}" data-n="${n}" value="${cmpNum(v)}" min="${min}" max="${max}" step="any" title="${esc(lbl)}" aria-label="${esc(lbl)}"${pro(false)}>`;
   const name = s => s.nm || t('cmp.sc.n', s.n), gname = g => g.nm || t('cmp.gr.n', g.n);
   const fits = g => CMP.L.length + g.L.length <= fxc.MAX && CMP.T.length + g.T.length <= fxc.MAX;
-  $('#cdlg-scenes').innerHTML =
+  // any rebuild (a state, a status, an answer) keeps the focused control, found again by its id or its data-sa/data-sf and n
+  const host = $('#cdlg-scenes'), a = document.activeElement, ds = host.contains(a) ? a.dataset : {};
+  const keep = !host.contains(a) ? '' : a.id ? '#' + a.id : ds.sa ? `[data-sa="${ds.sa}"][data-n="${ds.n}"]` : ds.sf ? `[data-sf="${ds.sf}"][data-n="${ds.n}"]` : '';
+  host.innerHTML =
     (lock ? `<div class="rules-lock"><div><b>${t('cmp.sc.lock')}</b><p class="muted">${t('cmp.sc.lock.text')}</p></div><div class="btn-row"><button class="btn small primary" type="button" data-sa="buy">${t('pro.buy')}</button><button class="btn small ghost" type="button" data-sa="key">${t('pro.lock.key')}</button></div></div>` : '') +
     `<div class="set-row"><b>${t('cmp.sc.on')}</b><label class="switch"><input type="checkbox" data-sa="on" aria-label="${t('cmp.sc.on')}"${cv('custom', 'sc', '') === '1' ? ' checked' : ''}${dis(false)}><span></span></label></div>` +
     `<ol class="cdlg-store">${sc.map((s, i) => `<li><span class="grow">${esc(name(s))} <small class="muted">${t('cmp.sc.layers', s.L.length)}</small></span>` +
@@ -2291,6 +2294,8 @@ function cmpScenes() {
       btn('gins', g.n, t('cmp.gr.ins'), dis(!fits(g)), fits(g) ? '' : t('cmp.gr.nofit')) + btn('gdel', g.n, '✕', dis(false), t('cmp.gr.del')) + '</li>').join('')}</ol>` +
     (gr.length ? '' : `<p class="note">${t('cmp.gr.none')}</p>`) +
     `<p class="note">${t('cmp.sc.note')}</p><p class="cdlg-st bad" role="status" aria-live="polite">${esc(CMP.scNote || '')}</p>`;
+  const f = keep && host.querySelector(keep);
+  if (f && !f.disabled) f.focus();
 }
 $('#cdlg-scenes').addEventListener('change', e => {
   const x = e.target;
