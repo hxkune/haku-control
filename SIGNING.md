@@ -1,7 +1,8 @@
 # Code signing
 
-Releases of haku control are signed through [SignPath.io](https://signpath.io), with a certificate issued by the
-[SignPath Foundation](https://signpath.org) for open-source projects. Windows then shows *SignPath Foundation* as
+Releases of haku control are not signed yet: the application to the [SignPath Foundation](https://signpath.org) is
+still waiting for an answer. Once it is accepted, releases are signed through [SignPath.io](https://signpath.io) with a
+certificate issued by the SignPath Foundation for open-source projects. Windows then shows *SignPath Foundation* as
 the publisher, and a changed or rebuilt copy is easy to tell apart from the official one.
 
 Only builds made by GitHub Actions from this repository's source are signed (`.github/workflows/build.yml`):

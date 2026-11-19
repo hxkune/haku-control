@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.75',
+    en: ['Fixed (haku Pro): deleting a live LCD layout no longer leaves profiles pointing at the wrong layout. A profile that used the deleted layout goes back to the screen’s own picture, and the others keep theirs.',
+         'Fixed (haku Pro): a scenario that switched to a deleted profile no longer picks up a new profile that later gets the same number.',
+         'The code signing page now says plainly that releases are not signed yet.'],
+    ru: ['Исправлено (haku Pro): удаление живого макета LCD больше не оставляет профили со ссылкой на чужой макет. Профиль с удалённым макетом возвращается к собственной картинке экрана, остальные сохраняют свои.',
+         'Исправлено (haku Pro): сценарий, переключавший на удалённый профиль, больше не подхватывает новый профиль, получивший тот же номер.',
+         'Страница о подписи кода теперь прямо говорит, что выпуски пока не подписаны.'],
+    fr: ['Corrigé (haku Pro) : supprimer une mise en page LCD en direct ne laisse plus des profils pointer vers la mauvaise mise en page. Un profil qui utilisait la mise en page supprimée revient à l’image propre de l’écran, les autres gardent la leur.',
+         'Corrigé (haku Pro) : un scénario qui passait à un profil supprimé ne reprend plus un nouveau profil qui obtient ensuite le même numéro.',
+         'La page sur la signature du code dit maintenant clairement que les versions ne sont pas encore signées.'] },
   { v: '0.4.74',
     en: ['New in haku Pro: scenarios, in the Profile menu → Scenarios…. A scenario switches the profile or the brightness by what the PC is doing: a program running or in front, the time of day, no mouse or keys for a while, Windows locked, a full-screen program. Several conditions and steps, the higher scenario wins, and a profile you choose yourself always comes first.',
          'New in haku Pro, experimental: live layouts for round LCD screens that take live frames. Up to four pages of the time, the date, temperatures, loads, memory, fan speed or the music playing, drawn again each second. They have not been checked on a real screen yet.',

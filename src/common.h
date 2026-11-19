@@ -106,6 +106,7 @@ int  prof_dup(int src, const char *name);     // its number, 0: none
 void prof_delete(int id);
 void prof_saved(int id);                      // writes the settings, PE_CFG when they can't be yet
 void prof_check(void);
+int  prof_renumber(const char *pre, const char *key, int gone);   // every file's [pre*] key follows a deleted item; files not written
 int  prof_json(char *out, int cap);
 
 // ---- effects.c

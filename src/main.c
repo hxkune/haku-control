@@ -979,8 +979,8 @@ int app_profile_save(int id, const char *name) {
 int app_profile_dup(int src, const char *name) { return prof_dup(src, name); }
 void app_profile_delete(int id) {
     if (cfg_geti("general", "profile", 0) == id) prof_why = 0;
+    rules_profile_gone(id);   // first: prof_delete saves, and a scenario must not keep the number a new profile gets
     prof_delete(id);
-    rules_profile_gone(id);
     PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
 }
 

@@ -221,6 +221,38 @@ void prof_delete(int id) {
     err = 0;
 }
 
+// item `gone` of a numbered list was deleted and the later ones moved up: in every profile's file [pre*] key = K
+// follows (K == gone -> 0, K > gone -> K - 1). A file that does not read whole is left as it is (it is never loaded).
+// Returns how many files could not be written (each also in prof_json)
+int prof_renumber(const char *pre, const char *key, int gone) {
+    static prof_entry e[4096];
+    size_t pl = strlen(pre); int bad = 0;
+    for (int id = 1; id <= PROFILE_MAX; id++) {
+        wchar_t p[MAX_PATH], tmp[MAX_PATH]; prof_file(id, p);
+        size_t len; char *b = prof_exists(id) ? slurp(p, &len) : NULL;
+        if (!b) continue;
+        int n = prof_parse(b, len, e, 4096), changed = 0;
+        free(b);
+        for (int i = 0; i < n; i++) {
+            int k = atoi(e[i].val);
+            if (_strnicmp(e[i].sec, pre, pl) || _stricmp(e[i].key, key) || k < gone) continue;
+            snprintf(e[i].val, 256, "%d", k == gone ? 0 : k - 1); changed = 1;
+        }
+        if (!changed) continue;
+        FILE *f = file_begin(p, tmp);
+        if (f) {
+            fprintf(f, "; haku control profile %d v2: its setup, written when another profile takes over\r\n", id);
+            for (int i = 0; i < n; i++) {
+                if (!i || strcmp(e[i].sec, e[i - 1].sec)) fprintf(f, "[%s]\r\n", e[i].sec);
+                fprintf(f, "%s=%s\r\n", e[i].key, e[i].val);
+            }
+            fprintf(f, "; end\r\n");
+        }
+        if (!f || !file_commit(f, tmp, p)) { fail(PE_WRITE, id); bad++; }
+    }
+    return bad;
+}
+
 // at start: [general] profile names one that is gone (its [profile.N] removed by hand, a restore): none is in use
 void prof_check(void) {
     int cur = cfg_geti("general", "profile", 0);

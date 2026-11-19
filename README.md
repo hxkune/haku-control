@@ -244,7 +244,8 @@ third_party WebView2 SDK loader, PawnIO SMBus module and setup
 ## Code signing policy
 
 Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
-Only release builds made by GitHub Actions from this repository are signed, each one approved by hand; see [SIGNING.md](SIGNING.md).
+Releases are not signed yet (the application is pending). Once signing starts, only release builds made by GitHub Actions
+from this repository are signed, each one approved by hand; see [SIGNING.md](SIGNING.md).
 
 - Committers and reviewers: [hxkune](https://github.com/hxkune)
 - Approvers: [hxkune](https://github.com/hxkune)

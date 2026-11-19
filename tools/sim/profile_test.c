@@ -17,7 +17,7 @@ static int fails;
 // as main.c's profile_key, cut down: the effect, brightness, a device's on/off and [flow]
 static int keep(const char *sec, const char *key) {
     if (!_stricmp(sec, "general")) return !_stricmp(key, "effect") || !_stricmp(key, "brightness");
-    if (!_strnicmp(sec, "dev.", 4)) return !_stricmp(key, "enabled");
+    if (!_strnicmp(sec, "dev.", 4)) return !_stricmp(key, "enabled") || !_stricmp(key, "live");
     if (!_strnicmp(sec, "group.", 6)) return 1;
     return !_stricmp(sec, "flow");
 }
@@ -139,6 +139,22 @@ int main(void) {
     start("[general]\r\nprofile=5\r\n[profile.1]\r\nname=Day\r\n");
     prof_check();
     CHECK(cfg_geti("general", "profile", 0) == 0, "at start a profile in use that is gone is cleared");
+
+    // ---- a deleted live LCD layout: every profile's screens follow the renumbering, a damaged file is left alone
+    start(BASE);
+    put(L"profiles\\1.ini", "; haku control profile 1 v2: x\r\n[general]\r\neffect=flow\r\n[dev.1]\r\nlive=3\r\n[dev.2]\r\nlive=1\r\n; end\r\n");
+    put(L"profiles\\2.ini", "; haku control profile 2 v2: x\r\n[dev.1]\r\nlive=2\r\nenabled=1\r\n; end\r\n");
+    CHECK(prof_renumber("dev.", "live", 2) == 0, "renumber: every file written");
+    CHECK(strstr(get(L"profiles\\1.ini"), "[dev.1]\r\nlive=2\r\n[dev.2]\r\nlive=1") && strstr(get(L"profiles\\1.ini"), "effect=flow"),
+          "renumber: a later one moves up, an earlier one stays, the rest of the file too");
+    CHECK(strstr(get(L"profiles\\2.ini"), "live=0\r\nenabled=1") && strstr(get(L"profiles\\2.ini"), "; end"), "renumber: the deleted one is none");
+    CHECK(prof_switch(2) && cfg_geti("dev.1", "live", -1) == 0, "renumber: the rewritten file loads");
+    put(L"profiles\\1.ini", "; haku control profile 1 v2: cut\r\n[dev.1]\r\nlive=3\r\n");
+    CHECK(prof_renumber("dev.", "live", 1) == 0 && strstr(get(L"profiles\\1.ini"), "live=3"), "renumber: a damaged file is left as it is");
+    put(L"profiles\\1.ini", "; haku control profile 1 v2: x\r\n[dev.1]\r\nlive=3\r\n; end\r\n");
+    file_fail = 2;
+    CHECK(prof_renumber("dev.", "live", 1) == 1 && err() == PE_WRITE && strstr(get(L"profiles\\1.ini"), "live=3"), "renumber: a failed write is counted, the old file whole");
+    file_fail = 0;
 
     // ---- the settings' own save goes through the same fault points
     start(BASE);
