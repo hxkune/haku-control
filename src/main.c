@@ -51,7 +51,7 @@ static int sleeping, pro_off;   // the Wi-Fi lights are let go of: PC asleep / n
 #define SAVE_TIMER   1
 #define AUTO_TIMER   2   // profiles switched by the programs running and by the clock (every 3 s)
 #define RULES_TIMER  3   // a scenario's steps: its waits and fades (5 a second, only while some are left)
-enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN, HK_PROFILE_NEXT, HK_PROFILE = 100 /* + profile number */ };
+enum { HK_NEXT = 1, HK_PREV, HK_OFF, HK_BUP, HK_BDOWN, HK_PROFILE_NEXT, HK_VOICE, HK_VOICE_WAKE, HK_PROFILE = 100 /* + profile number */ };
 
 static const char default_ini[] =
 "; haku control settings. The file is re-read automatically after it is saved.\r\n"
@@ -996,6 +996,7 @@ void app_reload_all(void) {
     ext_reload();
     remote_apply();
     mqtt_apply();
+    voice_apply();
     PostMessageW(hwnd, WM_REHOTKEY, 0, 0);
     ui_refresh_state();
 }
@@ -1178,6 +1179,10 @@ static int status_body(char *out, int cap) {
     n += mood_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"ollama\":");
     n += ollama_json(out + n, cap - n);
+    n = jcat(out, cap, n, ",\"voice\":");
+    n += voice_json(out + n, cap - n);
+    n = jcat(out, cap, n, ",\"walls\":");
+    n += walls_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"netchk\":");
     n += net_check_json(out + n, cap - n);
     n = jcat(out, cap, n, ",\"perf\":{\"fps10\":%ld,\"chg10\":%ld,\"avg_us\":%ld,\"max_us\":%ld,\"want\":%d}", perf_fps10, perf_chg10, perf_avg_us, perf_max_us, fps);
@@ -1331,6 +1336,7 @@ void app_set(const char *s, const char *k, const char *v) {
     if (!_strnicmp(s, "dev.", 4)) { cfg_save_if_dirty(); ext_reload(); }
     if (!_stricmp(s, "remote")) { cfg_save_if_dirty(); remote_apply(); }
     if (!_stricmp(s, "mqtt")) { cfg_save_if_dirty(); mqtt_apply(); }
+    if (!_stricmp(s, "voice")) { cfg_save_if_dirty(); voice_apply(); }
     if (!_stricmp(s, "devices")) { cfg_save_if_dirty(); InterlockedExchange(&need_own, 1); }
     app_config_changed(!_stricmp(s, "layout") || !_stricmp(s, "calibration"));
 }
@@ -1457,6 +1463,10 @@ int app_lang(void) { const char *l = cfg_get("general", "lang", "en"); return !_
 int app_ru(void) { return app_lang() == 1; }
 
 int app_effect_now(void) { return cur_effect; }
+int app_cur_palette(rgbf *out, int max) {
+    EnterCriticalSection(&cs); int n = effects_palette(cur_effect, out, max); LeaveCriticalSection(&cs);
+    return n;
+}
 float app_brightness_now(void) { return brightness; }
 
 // the one on / off: off keeps what showed (also over a restart), on brings it back with its preset; the devices
@@ -1677,7 +1687,7 @@ static int parse_hotkey(const char *s, UINT *mods, UINT *vk) {
 static void register_hotkeys(void) {
     static const struct { int id; const char *key; } hk[] = {
         { HK_NEXT, "next" }, { HK_PREV, "prev" }, { HK_OFF, "off" }, { HK_BUP, "brighter" }, { HK_BDOWN, "dimmer" },
-        { HK_PROFILE_NEXT, "profile" } };
+        { HK_PROFILE_NEXT, "profile" }, { HK_VOICE, "voice" }, { HK_VOICE_WAKE, "voicewake" } };
     for (int i = 0; i < (int)(sizeof(hk) / sizeof(hk[0])); i++) {
         UnregisterHotKey(hwnd, hk[i].id);
         UINT mods, vk;
@@ -1773,6 +1783,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         nano_suspend(sleeping || pro_off); lights_suspend(sleeping || pro_off);
         remote_apply();
         mqtt_apply();
+        voice_apply();
         ui_refresh_state();
         return 0;
     case WM_BLOCKED:   // this version was stopped by its author: the lights are let go of as on quit
@@ -1827,14 +1838,16 @@ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case HK_BUP:  set_brightness(brightness + 0.1f); break;
         case HK_BDOWN: set_brightness(brightness - 0.1f); break;
         case HK_PROFILE_NEXT: profile_next(); break;
+        case HK_VOICE: voice_listen(); break;
+        case HK_VOICE_WAKE: voice_wake_toggle(); break;
         default: if (wp > HK_PROFILE && wp <= HK_PROFILE + PROFILE_MAX) app_profile_apply((int)wp - HK_PROFILE);
         }
         return 0;
     }
     case WM_POWERBROADCAST:
-        if (wp == PBT_APMSUSPEND) { logf_("sleep"); sleeping = 1; nano_suspend(1); lights_suspend(1); ext_suspend(1); fans_suspend(1); link_suspend(1); rules_suspend(1); }
+        if (wp == PBT_APMSUSPEND) { logf_("sleep"); sleeping = 1; nano_suspend(1); lights_suspend(1); ext_suspend(1); fans_suspend(1); link_suspend(1); rules_suspend(1); voice_suspend(1); }
         if (wp == PBT_APMRESUMEAUTOMATIC) { InterlockedExchange(&need_reinit, 1); logf_("resume"); }
-        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { sleeping = 0; nano_suspend(pro_off); lights_suspend(pro_off); ext_suspend(0); fans_suspend(0); link_suspend(0); rules_suspend(0); }
+        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) { sleeping = 0; nano_suspend(pro_off); lights_suspend(pro_off); ext_suspend(0); fans_suspend(0); link_suspend(0); rules_suspend(0); voice_suspend(0); }
         return TRUE;
     case WM_QUERYENDSESSION:
         return TRUE;
@@ -1986,6 +1999,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     if (wcsstr(GetCommandLineW(), L"--scan")) ext_scan();   // look for LAN lights right away (results in the log)
     orgb_check_start();   // OpenRGB on this PC: the PC page offers what it has
     ollama_init();
+    voice_apply();   // the microphone only with [voice] on and Pro
     hw_scan_start();   // the PC's lighting hardware, for the PC tab (in the background)
 
     ram_event = CreateEventW(NULL, FALSE, FALSE, NULL);
@@ -2013,6 +2027,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show) {
     ext_stop();
     remote_stop();
     mqtt_stop();
+    voice_stop();
     update_stop();
     hotspot_watch_stop();
     sensors_close();

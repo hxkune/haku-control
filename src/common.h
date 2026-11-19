@@ -77,7 +77,8 @@ static inline void cfg_clean_name(char *s) {
 static inline int cfg_pc_only(const char *sec, const char *key) {
     return (!strcmp(sec, "openrgb") && !strcmp(key, "path")) || (!strcmp(sec, "mood") && !strcmp(key, "ollama_path")) ||
            (!strcmp(sec, "general") && !strcmp(key, "update_repo")) || (!strcmp(sec, "ui") && !strcmp(key, "devtools")) ||
-           (!strcmp(sec, "link") && !strcmp(key, "orgb_det"));
+           (!strcmp(sec, "link") && !strcmp(key, "orgb_det")) || !strcmp(sec, "voice") ||   // voice: this PC's microphone
+           !strcmp(sec, "wall");   // wallpapers: this PC's folders and desktop picture
 }
 int         cfg_json(char *out, int cap);   // whole config as {"section":{"key":"value"}}
 void        cfg_remove_section(const char *section);
@@ -223,8 +224,11 @@ void app_blocked(const char *msg, const char *url);               // (main.c) le
 int  update_json(char *out, int cap);
 
 // ---- mood.c (describe a mood -> palette, effect, speed through a local Ollama model)
-void mood_request(const char *text, int again);
+int  mood_request(const char *text, int again, int apply);   // apply: shown as soon as it is ready (voice); 0: busy
 int  mood_json(char *out, int cap);
+int  ollama_http(const char *method, const char *path, const char *body, char *buf, int cap);   // status, body in buf; 0 offline
+int  ollama_pick_model(char *out, int cap, char *buf, int bufcap);   // 1 picked, 0 none installed, -1 Ollama offline
+void json_unesc(const char *s, char *out, int cap);   // the JSON string after its opening quote, escapes decoded to UTF-8
 // ---- ollama.c (the local model for the mood: started only for requests, set up from the window)
 int  ollama_acquire(void);          // 1: Ollama answers (started if needed); then ollama_release()
 void ollama_release(void);
@@ -414,6 +418,23 @@ int   lcd_draw(lcd_layout *l, unsigned char **pack);   // the screen's frame pac
 void  lcd_free(lcd_layout *l);
 int   lcd_json(char *out, int cap);   // what the widgets read now, while a layout is shown or edited; "null" otherwise
 void  lcd_watch(void);                // the editor is open: read the values for the next 5 s
+// Voice control (pro/voice.c; nothing in the open build): a hotkey, the window's button or "Haku ..." said aloud, heard
+// by whisper.cpp on this PC and understood by the local Ollama model, then run as the window's own commands
+void  voice_apply(void);              // [voice] or Pro changed (and at start): the microphone opened or closed to match
+void  voice_listen(void);             // one command now (the hotkey, the window's button)
+void  voice_wake_toggle(void);        // the hotkey: [voice] wake flipped
+int   full_screen_now(void);          // pro/rules.c: a game or a film in full screen (scenarios, voice's "Haku" pause)
+void  voice_setup(void);              // downloads whisper.cpp and its model, in the background
+void  voice_suspend(int sleeping);
+void  voice_stop(void);
+int   voice_json(char *out, int cap); // "null" when there is no voice control
+// wallpapers to match the lights (pro/wallpaper.cpp; nothing in the open build but putting the old one back)
+void  wall_find(int more);            // 6 pictures for the palette showing, in the background; more: the next 6
+void  wall_set(int k);                // the k-th shown as the desktop picture
+void  wall_restore(void);             // the desktop picture before haku's first change
+void  wall_pick_dir(HWND owner);      // a folder of the user's own pictures, looked through too
+int   walls_json(char *out, int cap); // "null" in the open build
+int   app_cur_palette(rgbf *out, int max);   // the colours of the effect showing, under cs
 // Home Assistant through MQTT (pro/mqtt.c; nothing in the open build)
 void  mqtt_apply(void);               // start / connect again after [mqtt] changed
 void  mqtt_refresh(void);             // the profiles or the language changed: announce again

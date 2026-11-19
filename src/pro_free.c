@@ -84,3 +84,17 @@ void remote_stop(void) {}
 void remote_forget(void) {}
 void remote_new_pin(void) {}
 int  remote_json(char *out, int cap) { return jcat(out, cap, 0, "{\"enabled\":0,\"on\":0,\"port\":0,\"pin\":\"\",\"paired\":0,\"urls\":[],\"none\":1}"); }
+
+// voice control
+void voice_apply(void) {}
+void voice_listen(void) {}
+void voice_wake_toggle(void) {}
+void voice_setup(void) {}
+void voice_suspend(int sleeping) { (void)sleeping; }
+void voice_stop(void) {}
+int  voice_json(char *out, int cap) { return jcat(out, cap, 0, "null"); }
+void wall_find(int more) { (void)more; }
+void wall_set(int k) { (void)k; }
+void wall_restore(void) {}
+void wall_pick_dir(HWND owner) { (void)owner; }
+int  walls_json(char *out, int cap) { return jcat(out, cap, 0, "null"); }

@@ -50,10 +50,14 @@ rem the folder for files run with admin rights, and a program started without th
 call :one safetmp  tools\sim\safetmp_test.c advapi32.lib
 rem "Invite friends" (the paid build only) against a scripted site: nothing leaves the PC
 if exist pro\referral.c call :one referral /DREF_TEST pro\referral.c src\netutil.c ws2_32.lib winhttp.lib bcrypt.lib wintrust.lib crypt32.lib advapi32.lib
+rem voice control (the paid build only): the phrase finder, "Haku" at the start and the checks on the model answer, on made-up input
+if exist pro\voice.c call :one voice /DVOICE_TEST pro\voice.c src\netutil.c ws2_32.lib winhttp.lib bcrypt.lib wintrust.lib crypt32.lib advapi32.lib
 rem scenarios (the paid build only) against a scripted PC: no program, window or profile of this PC is touched
 if exist pro\rules.c call :one rules /DRULES_TEST pro\rules.c src\config.c
 rem live LCD layouts: the format, saving, deleting, a frame drawn with GDI+ (no screen is touched)
 if exist pro\lcdlive.cpp call :one lcdlive /std:c++17 /EHsc /DLCD_TEST pro\lcdlive.cpp src\config.c gdiplus.lib ole32.lib runtimeobject.lib
+rem wallpapers to match the lights: hues, the score, wallhaven's answer checked, a thumbnail made with WIC (no wallpaper set, nothing downloaded)
+if exist pro\wallpaper.cpp call :one wall /std:c++17 /EHsc /DWALL_TEST pro\wallpaper.cpp src\netutil.c ws2_32.lib winhttp.lib bcrypt.lib wintrust.lib crypt32.lib advapi32.lib windowscodecs.lib ole32.lib shell32.lib
 
 echo === orgb (against the fake OpenRGB server)
 del /q "%T%\orgb_test.exe" 2>nul

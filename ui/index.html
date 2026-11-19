@@ -39,6 +39,9 @@
     <button data-tab="fans" class="pc-only">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 12c-1.5-3-1-6.5 1.5-6.5s2.5 3.5-1.5 6.5zM12 12c3.3.2 6 2.3 4.8 4.5S12.8 16.6 12 12zM12 12c-1.8 2.8-5 4.2-6.3 2s1.4-4.4 6.3-2z"/></svg>
       <span data-i18n="nav.cooling">Cooling</span></button>
+    <button data-tab="walls" class="pc-only hidden" id="walls-nav">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="1.5"/><path d="M3 16.5l5.5-5.5 4.5 4.5 2.5-2.5 5.5 5"/><circle class="f" cx="16" cy="8.8" r="1.6"/></svg>
+      <span data-i18n="nav.walls">Wallpapers</span></button>
     <!-- not a page: the notices waiting for the user (an answer to a report, a new version, Pro running out) -->
     <button type="button" id="notes-btn" class="nav-end pc-only" aria-haspopup="dialog">
       <svg viewBox="0 0 24 24"><path d="M5 17.5h14l-1.8-2.6v-4.4a5.2 5.2 0 0 0-10.4 0v4.4z"/><path d="M12 3v2.3"/><path class="f" d="M10 19.5h4l-2 2z"/></svg>
@@ -330,6 +333,31 @@
       <div class="card-head"><div><h3>Lian Li Wireless <span class="beta" data-i18n="fans.beta" data-i18n-title="ll.beta.t">beta</span></h3><p class="muted" id="ll-status" role="status"></p></div></div>
       <div class="found" id="ll-list"></div>
       <details class="trouble"><summary data-i18n="fans.how">How the control works</summary><p class="hint" data-i18n="ll.note"></p></details>
+    </div>
+  </section>
+
+  <!-- ============ WALLPAPERS (Pro): pictures in the colours of the lights, from this PC and wallhaven.cc ============ -->
+  <section class="tab" id="tab-walls">
+    <div class="card pc-only hidden" id="walls-card">
+      <div class="card-head"><h3 data-i18n="walls">Wallpapers to match</h3><span class="pro-badge" id="walls-badge"></span></div>
+      <p class="muted" id="walls-status" aria-live="polite"></p>
+      <div class="ai-bar busy hidden" id="walls-bar"><i></i></div>
+      <div class="walls-grid" id="walls-grid"></div>
+      <div class="btn-row">
+        <button class="btn small primary" id="walls-find" type="button"><span data-i18n="walls.find">Find wallpapers</span></button>
+        <button class="btn small hidden" id="walls-more" type="button"><span data-i18n="walls.more">Other options</span></button>
+        <button class="btn small hidden" id="walls-restore" type="button"><span data-i18n="walls.restore">Put my wallpaper back</span></button>
+      </div>
+      <div class="set-row">
+        <div><b data-i18n="walls.web">Also search wallhaven.cc</b><p class="muted" data-i18n="walls.web.note"></p></div>
+        <label class="switch"><input type="checkbox" id="walls-web"><span></span></label>
+      </div>
+      <div class="set-row">
+        <div><b data-i18n="walls.dir">My pictures folder</b><p class="muted" id="walls-dir"></p></div>
+        <div class="btn-row"><button class="btn small" id="walls-dir-pick" type="button"><span data-i18n="walls.dir.pick">Choose</span></button>
+          <button class="btn small hidden" id="walls-dir-clear" type="button"><span data-i18n="walls.dir.clear">Clear</span></button></div>
+      </div>
+      <p class="hint" data-i18n="walls.hint"></p>
     </div>
   </section>
 
@@ -716,6 +744,25 @@
           <div><b data-i18n="ai.demand">Ollama only when needed</b><p class="muted" id="ai-demand-note"></p></div>
           <label class="switch"><input type="checkbox" id="ai-demand"><span></span></label>
         </div>
+      </div>
+      <div class="card pc-only hidden" id="voice-card" data-cat="integr">
+        <div class="card-head"><h3 data-i18n="voice">Voice control</h3><span class="pro-badge" id="voice-badge"></span></div>
+        <p class="muted" id="voice-status"></p>
+        <div class="ai-bar hidden" id="voice-bar"><i></i></div>
+        <div class="btn-row">
+          <button class="btn small primary hidden" id="voice-setup" type="button"><span data-i18n="voice.go">Download and set up</span></button>
+          <button class="btn small hidden" id="voice-listen" type="button"><span data-i18n="voice.listen">Listen</span></button>
+        </div>
+        <p class="ha-state" id="voice-said" aria-live="polite"></p>
+        <div class="set-row">
+          <div><b data-i18n="voice.wake">Answer to “Haku”</b><p class="muted" data-i18n="voice.wake.note"></p></div>
+          <label class="switch"><input type="checkbox" id="voice-wake"><span></span></label>
+        </div>
+        <div class="set-row">
+          <div><b data-i18n="voice.lang">Language I speak</b><p class="muted" data-i18n="voice.lang.note"></p></div>
+          <select class="select" id="voice-lang" data-i18n-aria="voice.lang" aria-label="Language I speak"></select>
+        </div>
+        <p class="hint" data-i18n="voice.hint"></p>
       </div>
       <div class="card pc-only" id="phone-card" data-cat="integr">
         <h3 data-i18n="phone">Phone</h3>

@@ -14,8 +14,8 @@ const fxName = id => t('fx.' + id);
 // the ARGB header zone can be given its own name (e.g. "Water block")
 const stripName = () => cv('layout', 'strip_name', '') || t('pc.block');
 // the pages, in one list; the old ones (PC, Nanoleaf, AiDot, a brand's own tab) open the catalogue filtered (see route)
-const PAGES = ['home', 'effects', 'devices', 'fans', 'help', 'settings'];
-const HOTKEYS = ['next', 'prev', 'off', 'brighter', 'dimmer', 'profile'];
+const PAGES = ['home', 'effects', 'devices', 'fans', 'walls', 'help', 'settings'];
+const HOTKEYS = ['next', 'prev', 'off', 'brighter', 'dimmer', 'profile', 'voice', 'voicewake'];   // voice*: shown with haku Pro's voice control only
 const PRESETS = ['#FF0000', '#FF5A00', '#FFA000', '#FFE000', '#9DFF00', '#00FF6A', '#00FFD5', '#00C8FF',
   '#0068FF', '#2B2BFF', '#7A3CFF', '#B400FF', '#FF00D4', '#FF2D95', '#FFB070', '#FFFFFF'];
 const DEFAULT_PAL = ['#00C8FF', '#7A3CFF', '#FF2D95'];
@@ -606,7 +606,7 @@ const brandOf = kind => BRANDS[kind] || null;   // null: PC hardware
 // pages from older versions, saved links and the guide: each opens the catalogue with its filter
 const LEGACY = { pc: { where: 'pc' }, nano: { brand: 'Nanoleaf' }, bulbs: { brand: 'AiDot' } };
 function route(p) {
-  if (p === 'fans' && remote()) return 'home';   // the phone never reaches the fans
+  if ((p === 'fans' || p === 'walls') && remote()) return 'home';   // the phone never reaches the fans or the PC's wallpaper
   if (PAGES.includes(p)) return p;
   const b = /^brand-/.test(p) && Object.values(BRANDS).find(x => 'brand-' + x[0] === p);
   const f = LEGACY[p] || (b && { brand: b[1] });
@@ -5743,6 +5743,94 @@ function aiSetup() { S.ollama = { ...(S.ollama || {}), stage: 4, pct: 0, err: ''
 $('#ai-setup').addEventListener('click', aiSetup);
 $('#mood-setup').addEventListener('click', aiSetup);
 $('#ai-demand').addEventListener('change', e => send({ cmd: 'ai_on_demand', v: e.target.checked ? '1' : '0' }));
+
+// ---- voice control (haku Pro): speech recognised on this PC by whisper.cpp (set up from here), understood by the local model
+const VOICE_BUSY = [1, 2, 3, 4];
+function updateVoice() {
+  const V = S.voice, card = $('#voice-card');
+  card.classList.toggle('hidden', !V);   // (the open build has no voice control)
+  $$('[data-hk^="voice"]').forEach(b => b.parentElement.classList.toggle('hidden', !V));
+  if (!V) return;
+  const locked = !!(S.pro && !S.pro.on), st = V.setup || 0, busy = VOICE_BUSY.includes(st), A = S.ollama || {};
+  $('#voice-badge').textContent = 'Pro'; $('#voice-badge').classList.toggle('on', !locked);
+  const msg = locked ? t('ha.pro') : busy ? t('voice.st.' + st, V.pct || 0) : st === 6 ? t('voice.serr.' + V.serr) :
+    !V.ready ? t('voice.none') : V.state === 1 ? t('voice.listening') : V.state === 2 ? t('voice.thinking') :
+    V.err ? t('voice.err.' + V.err) : !A.exe ? t('voice.err.noollama') : !A.model ? t('voice.err.nomodel') :
+    V.mic && V.wake ? t('voice.waiting') : t('voice.ready');
+  const s = $('#voice-status'); s.textContent = msg;
+  s.classList.toggle('bad', !locked && (st === 6 || !!V.ready && !V.state && !!V.err && V.err !== 'unknown'));
+  const bar = $('#voice-bar'), known = st === 1 || st === 4;
+  bar.classList.toggle('hidden', !busy || locked);
+  bar.classList.toggle('busy', busy && !known);
+  bar.firstElementChild.style.width = known ? (V.pct || 0) + '%' : '';
+  const b = $('#voice-setup');
+  b.classList.toggle('hidden', locked || !!V.ready && st !== 6);
+  b.disabled = busy;
+  b.querySelector('span').textContent = st === 6 ? t('ai.retry') : t('voice.go');
+  const l = $('#voice-listen');
+  l.classList.toggle('hidden', locked || !V.ready);
+  l.disabled = V.state === 2;
+  l.classList.toggle('primary', V.state === 1);
+  // what was heard last, and what came of it (the core keeps only the last command)
+  const r = V.did ? t('voice.did.' + V.did, V.arg) : '';
+  $('#voice-said').textContent = locked || !V.heard ? '' : t('voice.heard', V.heard) + (r ? ' → ' + r : '');
+  const w = $('#voice-wake'); w.checked = cv('voice', 'wake', '0') === '1'; w.disabled = locked || !V.ready;
+  const sel = $('#voice-lang'), langs = [['', t('voice.lang.auto')], ['en', 'English'], ['ru', 'Русский'], ['fr', 'Français']];
+  if (sel.options.length !== langs.length || sel.options[0].text !== langs[0][1])
+    sel.innerHTML = langs.map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
+  if (document.activeElement !== sel) sel.value = V.lang || '';
+  sel.disabled = locked;
+}
+$('#voice-setup').addEventListener('click', () => { S.voice = { ...(S.voice || {}), setup: 1, pct: 0, serr: '' }; updateVoice(); send({ cmd: 'voice_setup' }); });
+$('#voice-listen').addEventListener('click', () => send({ cmd: 'voice_listen' }));
+$('#voice-wake').addEventListener('change', e => { setCfg('voice', 'wake', e.target.checked ? '1' : '0'); updateVoice(); });
+$('#voice-lang').addEventListener('change', e => setCfg('voice', 'lang', e.target.value));
+
+// ---- wallpapers to match the lights (haku Pro): pictures from this PC and wallhaven.cc picked by the palette showing
+function updateWalls() {
+  const W = S.walls, card = $('#walls-card');
+  card.classList.toggle('hidden', !W); $('#walls-nav').classList.toggle('hidden', !W);   // (the open build has none)
+  if (!W) { if (tab === 'walls' && S.walls === null) showTab('home'); return; }
+  const locked = !W.pro, busy = !!W.busy, items = W.items || [];
+  $('#walls-badge').textContent = 'Pro'; $('#walls-badge').classList.toggle('on', !locked);
+  const s = $('#walls-status');
+  s.textContent = locked ? t('ha.pro') : busy ? t(W.busy === 2 ? 'walls.setting' : 'walls.looking') :
+    W.err ? t('walls.err.' + W.err) : items.length ? t('walls.pick') : t('walls.idle');
+  s.classList.toggle('bad', !locked && !busy && !!W.err && W.err !== 'none');
+  $('#walls-bar').classList.toggle('hidden', !busy);
+  // the thumbnails: rebuilt only when the core shows a new set (seq), so a click is never lost to a refresh
+  const g = $('#walls-grid'), key = locked ? '' : W.seq + ':' + items.length;
+  if (g.dataset.key !== key) {
+    g.dataset.key = key; g.textContent = '';
+    if (!locked) items.forEach((it, k) => {
+      const b = document.createElement('button'), img = document.createElement('img'), l = document.createElement('span');
+      b.type = 'button'; b.className = 'wall'; b.dataset.k = k; b.title = it.name;
+      img.src = it.thumb; img.alt = ''; img.loading = 'lazy';
+      l.textContent = (it.src === 'wh' ? 'wallhaven' : t('walls.pc')) + ' · ' + it.w + '×' + it.h;
+      b.setAttribute('aria-label', t('walls.set', it.name) + ', ' + l.textContent);
+      b.append(img, l); g.append(b);
+    });
+  }
+  $$('#walls-grid .wall').forEach(b => { const k = +b.dataset.k;
+    b.classList.toggle('on', k === W.cur); b.setAttribute('aria-pressed', k === W.cur ? 'true' : 'false');
+    b.classList.toggle('busy', k === W.setting); b.disabled = busy; });
+  const f = $('#walls-find'); f.classList.toggle('hidden', locked); f.disabled = busy;
+  const m = $('#walls-more'); m.classList.toggle('hidden', locked || !items.length); m.disabled = busy;
+  const r = $('#walls-restore'); r.classList.toggle('hidden', !W.saved); r.disabled = busy;
+  const w = $('#walls-web'); w.checked = cv('wall', 'web', String(W.web)) === '1'; w.disabled = locked;
+  $('#walls-dir').textContent = W.dir || t('walls.dir.none');
+  $('#walls-dir-pick').disabled = locked;
+  $('#walls-dir-clear').classList.toggle('hidden', locked || !W.dir);
+}
+// busy shown at once: the core's answer comes with the next state
+const wallCmd = (cmd, x) => { S.walls = { ...S.walls, busy: /find|more/.test(cmd) ? 1 : 2, err: '', setting: cmd === 'wall_set' ? x.k : -1 }; updateWalls(); send({ cmd, ...x }); };
+$('#walls-find').addEventListener('click', () => wallCmd('wall_find', {}));
+$('#walls-more').addEventListener('click', () => wallCmd('wall_more', {}));
+$('#walls-restore').addEventListener('click', () => wallCmd('wall_restore', {}));
+$('#walls-grid').addEventListener('click', e => { const b = e.target.closest('.wall'); if (b && !b.disabled) wallCmd('wall_set', { k: +b.dataset.k }); });
+$('#walls-web').addEventListener('change', e => { setCfg('wall', 'web', e.target.checked ? '1' : '0'); updateWalls(); });
+$('#walls-dir-pick').addEventListener('click', () => send({ cmd: 'wall_dir' }));
+$('#walls-dir-clear').addEventListener('click', () => send({ cmd: 'wall_dir_clear' }));
 $('#mood-form').addEventListener('submit', e => { e.preventDefault(); askMood(false); });
 $('#mood-again').addEventListener('click', () => askMood(true));
 $('#mood-save').addEventListener('click', () => { $('#mood-apply').click(); presetDialog(0, (S.mood || {}).name || ''); });
@@ -5781,7 +5869,7 @@ $$('#lang button').forEach(b => b.addEventListener('click', () => {
   LANG = b.dataset.v;
   setCfg('general', 'lang', LANG);
   applyI18n(); applyTheme(); buildEffects(); buildHotkeys(); buildBulbs(); buildDevices(); renderEffectSide();
-  showTab(tab); updateNano(); updateChips(); updateSettings(); updateMood(); drawAll();
+  showTab(tab); updateNano(); updateChips(); updateSettings(); updateMood(); updateVoice(); updateWalls(); drawAll();
   if (!$('#wizard').classList.contains('hidden')) wzGo(wzStep);
 }));
 
@@ -7671,7 +7759,7 @@ function applyStatus(m) {
   if (effectChanged) { markEffect(); renderEffectSide(); } else updateFxState();
   if (bulbsChanged) buildBulbs(); else updateBulbs();
   if (sig !== devSig) { devSig = sig; buildDevices(); drawAll(); } else updateDevices();
-  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateAccounts(); updatePro(); updateRef(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck(); updateNotes(); renderRules(); lcdStatus();
+  updateNano(); updateChips(); updateOffTimer(); updateSettings(); updateWizard(); updateMood(); updateAi(); updateVoice(); updateWalls(); updateAccounts(); updatePro(); updateRef(); buildCatalog(); updateHa(); updateBackup(); updateFans(); fixedCheck(); updateNotes(); renderRules(); lcdStatus();
   if (nanoLayoutChanged) drawAll();
   if (cmpShown() && !CMP.away && cmpStk() !== CMP.stk) cmpRender();   // Pro came or went with the constructor open
   cmpWake();

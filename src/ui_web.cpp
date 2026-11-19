@@ -345,6 +345,14 @@ static void on_message(const std::string &js) {
     else if (cmd == "cf_close") { conflicts_close(field(js, "id").c_str()); post_status(); }   // cf_close, cf_end: not in remote_allowed, they end programs on this PC
     else if (cmd == "cf_end") { conflicts_end(field(js, "id").c_str()); post_status(); }
     else if (cmd == "ai_setup") { ollama_setup(); post_status(); }
+    else if (cmd == "voice_setup") { voice_setup(); post_status(); }   // not in remote_allowed: this PC's microphone
+    else if (cmd == "voice_listen") { voice_listen(); post_status(); }
+    // wallpapers: not in remote_allowed, this PC's desktop and folders
+    else if (cmd == "wall_find" || cmd == "wall_more") { wall_find(cmd == "wall_more"); post_status(); }
+    else if (cmd == "wall_set") { wall_set(atoi(field(js, "k").c_str())); post_status(); }
+    else if (cmd == "wall_restore") { wall_restore(); post_status(); }
+    else if (cmd == "wall_dir") { wall_pick_dir(wnd); post_status(); }
+    else if (cmd == "wall_dir_clear") { cfg_set_and_save("wall", "dir", ""); post_status(); }
     else if (cmd == "theme") title_bar(field(js, "v").c_str());
     else if (cmd == "orgb_setup") { orgbapp_setup(); post_status(); }
     else if (cmd == "pc_own") { app_pc_own(field(js, "v") == "1"); post_state(); }
@@ -443,7 +451,7 @@ static void on_message(const std::string &js) {
         SecureZeroMemory(&pw[0], pw.size());
         post_status();
     }
-    else if (cmd == "mood") { mood_request(field(js, "text").c_str(), field(js, "again") == "1"); post_status(); }
+    else if (cmd == "mood") { mood_request(field(js, "text").c_str(), field(js, "again") == "1", 0); post_status(); }
     else if (cmd == "quit") app_quit();
     else if (cmd == "close") DestroyWindow(wnd);
 }
@@ -491,6 +499,9 @@ static void create_webview(void) {
                     ComPtr<ICoreWebView2_3> w3;
                     if (SUCCEEDED(web.As(&w3)))
                         w3->SetVirtualHostNameToFolderMapping(L"haku-control.ui", dir, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
+                    wchar_t walls[MAX_PATH];   // the wallpaper finder's thumbnails (pro/wallpaper.cpp)
+                    app_data_path(L"walls", walls); CreateDirectoryW(walls, NULL);
+                    if (w3) w3->SetVirtualHostNameToFolderMapping(L"haku-walls.ui", walls, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
 
                     EventRegistrationToken tok;
                     web->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>(

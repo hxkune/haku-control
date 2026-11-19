@@ -183,9 +183,10 @@ int https_download(const wchar_t *url, const wchar_t *to, long long max, volatil
         wchar_t cl[32] = L""; DWORD cls = sizeof(cl);
         long long total = WinHttpQueryHeaders(req, WINHTTP_QUERY_CONTENT_LENGTH, NULL, cl, &cls, NULL) ? _wtoi64(cl) : 0;
         if (code == 200 && (f = _wfopen(to, L"wb")) != NULL) {
-            static char chunk[256 * 1024]; DWORD n;
-            ok = 1;
-            while (WinHttpReadData(req, chunk, sizeof(chunk), &n) && n) {
+            enum { CHUNK = 256 * 1024 };
+            char *chunk = (char *)malloc(CHUNK); DWORD n;   // per call: downloads may run on several threads at once
+            ok = chunk != NULL;
+            while (ok && WinHttpReadData(req, chunk, CHUNK, &n) && n) {
                 if (fwrite(chunk, 1, n, f) != n) { ok = 0; break; }
                 got += n;
                 LONG p = total > 0 ? (LONG)(got * 100 / total) : 0;
@@ -193,6 +194,7 @@ int https_download(const wchar_t *url, const wchar_t *to, long long max, volatil
                 if (got > max) { ok = 0; break; }
             }
             if (total > 0 && got != total) ok = 0;
+            free(chunk);
             fclose(f);
         } else logf_("download: %ls answered %lu", host, code);
     }

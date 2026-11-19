@@ -1306,9 +1306,22 @@ header .prof-err { left: auto; right: 0; }
 .ai-bar i { display: block; height: 100%; width: 0; background: var(--chrome); transition: width .4s ease; }
 .ai-bar.busy i { width: 30%; animation: ai-slide 1.4s ease-in-out infinite; }
 @keyframes ai-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
-#ai-card .btn-row { margin-top: 12px; }
-#ai-card .btn-row .btn { margin-top: 0; }
-#ai-status.bad { color: #ff8a8a; }
+#ai-card .btn-row, #voice-card .btn-row { margin-top: 12px; }
+#ai-card .btn-row .btn, #voice-card .btn-row .btn { margin-top: 0; }
+#ai-status.bad, #voice-status.bad, #walls-status.bad { color: #ff8a8a; }
+#walls-card .btn-row { margin-top: 12px; }
+#walls-card .btn-row .btn { margin-top: 0; }
+#walls-card .set-row .btn-row { margin-top: 0; flex-wrap: nowrap; }
+/* the wallpapers found: 16:9 thumbnails, the one on the desktop outlined */
+.walls-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 12px; }
+.walls-grid:empty { display: none; }
+.wall { display: flex; flex-direction: column; gap: 4px; padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; color: var(--muted); font: inherit; font-size: 11px; line-height: 1.3; text-align: left; cursor: pointer; }
+.wall img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: var(--line); }
+.wall span { padding: 0 4px 4px; }
+.wall:hover:not(:disabled), .wall:focus-visible { border-color: var(--line2); }
+.wall.on { border-color: var(--strong); color: var(--text); }
+.wall.busy img { opacity: .5; }
+.wall:disabled { cursor: default; }
 
 #orgb-guide-text.bad { color: #ff8a8a; }
 .orgb-guide .ai-bar { margin: 4px 0 10px; }

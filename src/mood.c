@@ -19,7 +19,7 @@ static char err[16];                // "", "noollama" (not installed), "offline"
 static char name[96], effect[24], model[96], colors[MOOD_MAX][8];
 static int  ncolors, speed;
 static char req_text[600];
-static int  req_again;
+static int  req_again, req_apply;
 
 // the effects a mood may use: what they look like and what they suit (the model picks one; without the hints small
 // models answer "breathe" to almost everything)
@@ -53,7 +53,7 @@ static unsigned hex4(const char *s) {
 }
 
 // Decodes the JSON string that starts right after the opening quote at s (\n, \", \uXXXX -> UTF-8).
-static void junesc(const char *s, char *out, int cap) {
+void json_unesc(const char *s, char *out, int cap) {
     int n = 0;
     while (*s && *s != '"' && n < cap - 5) {
         if (*s != '\\') { out[n++] = *s++; continue; }
@@ -160,7 +160,7 @@ static int wanted_colors(const char *text) {
 }
 
 // HTTP to Ollama with a long read timeout: the first answer may wait for the model to load.
-static int ollama(const char *method, const char *path, const char *body, char *buf, int cap) {
+int ollama_http(const char *method, const char *path, const char *body, char *buf, int cap) {
     buf[0] = 0;
     SOCKET s = tcp_connect("127.0.0.1", OLLAMA_PORT, 1500);
     if (s == INVALID_SOCKET) return 0;
@@ -181,10 +181,10 @@ static int ollama(const char *method, const char *path, const char *body, char *
 
 // [mood] model, or else the largest installed chat model up to ~12 GB (bigger ones answer too slowly; embedding
 // models can't chat): a bigger model picks noticeably better colours than a 4B one
-static int pick_model(char *out, int cap, char *buf, int bufcap) {
+int ollama_pick_model(char *out, int cap, char *buf, int bufcap) {
     const char *m = cfg_get("mood", "model", "");
     if (*m) { snprintf(out, cap, "%s", m); return 1; }
-    if (ollama("GET", "/api/tags", NULL, buf, bufcap) != 200) return -1;
+    if (ollama_http("GET", "/api/tags", NULL, buf, bufcap) != 200) return -1;
     double best = -1, small = 0; char small_nm[96] = "";
     for (const char *p = buf; (p = strstr(p, "\"name\"")) != NULL; ) {
         p += 6;
@@ -240,7 +240,7 @@ static unsigned __stdcall ask(void *arg) {
     (void)arg;
     static char buf[256 * 1024], body[12288], content[4096];
     char mdl[96];
-    int pm = pick_model(mdl, sizeof(mdl), buf, sizeof(buf));
+    int pm = ollama_pick_model(mdl, sizeof(mdl), buf, sizeof(buf));
     if (pm < 0) { finish("offline"); return 0; }
     if (!pm) { finish("nomodel"); return 0; }
 
@@ -284,13 +284,13 @@ static unsigned __stdcall ask(void *arg) {
         mj, req_again ? "1.1" : "0.7", (unsigned)GetTickCount(), want ? want : 3, want ? want : 6, fxe, sysj, txt,
         req_again ? " (give a different variation from before)" : "");
 
-    int st = ollama("POST", "/api/chat", body, buf, sizeof(buf));
+    int st = ollama_http("POST", "/api/chat", body, buf, sizeof(buf));
     if (st != 200) { logf_("mood: ollama answered %d: %.200s", st, buf); finish(st ? "answer" : "offline"); return 0; }
     const char *msg = json_get_obj(buf, "message");
     const char *c = msg ? strstr(msg, "\"content\"") : NULL;
     if (c) { c += 9; while (*c == ' ' || *c == ':') c++; }
     if (!c || *c != '"') { logf_("mood: no answer text: %.200s", buf); finish("answer"); return 0; }
-    junesc(c + 1, content, sizeof(content));
+    json_unesc(c + 1, content, sizeof(content));
 
     char nm[96] = "", ef[24] = "", cols[MOOD_MAX][8]; int nc = 0;
     json_get_str(content, "name", nm, sizeof(nm));
@@ -322,6 +322,13 @@ static unsigned __stdcall ask(void *arg) {
     speed = sp < 1 ? 1 : sp > 10 ? 10 : sp;
     ReleaseSRWLockExclusive(&lk);
     logf_("mood: %s, %d colours%s, speed %d (%s)", ef, nc, want ? " (as asked)" : "", speed, mdl);
+    if (req_apply) {   // asked by voice: shown right away, as the page's Apply does
+        char cmd[256], pal[MOOD_MAX * 9 + 8] = ""; int pn = 0, sp2 = speed;
+        for (int i = 0; i < nc; i++) pn += snprintf(pal + pn, sizeof(pal) - pn, "%s%s", i ? ", " : "", cols[i]);
+        snprintf(cmd, sizeof(cmd), "{\"cmd\":\"set\",\"s\":\"%s\",\"k\":\"palette\",\"v\":\"%s\"}", ef, pal); app_remote_cmd(cmd);
+        snprintf(cmd, sizeof(cmd), "{\"cmd\":\"set\",\"s\":\"%s\",\"k\":\"speed\",\"v\":\"%d\"}", ef, sp2); app_remote_cmd(cmd);
+        snprintf(cmd, sizeof(cmd), "{\"cmd\":\"effect\",\"id\":\"%s\"}", ef); app_remote_cmd(cmd);
+    }
     finish("");
     return 0;
 }
@@ -334,12 +341,13 @@ static unsigned __stdcall run(void *arg) {
     return 0;
 }
 
-void mood_request(const char *text, int again) {
-    if (!text || !*text || InterlockedCompareExchange(&busy, 1, 0)) return;
+int mood_request(const char *text, int again, int apply) {
+    if (!text || !*text || InterlockedCompareExchange(&busy, 1, 0)) return 0;
     snprintf(req_text, sizeof(req_text), "%s", text);
-    req_again = again;
+    req_again = again; req_apply = apply;
     HANDLE t = (HANDLE)_beginthreadex(NULL, 0, run, NULL, 0, NULL);
     if (t) CloseHandle(t); else InterlockedExchange(&busy, 0);
+    return t != NULL;
 }
 
 // {"seq":3,"busy":0,"err":"","name":"...","effect":"lava","speed":4,"model":"...","colors":["#FF5500",...]}

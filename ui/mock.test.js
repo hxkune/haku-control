@@ -3488,6 +3488,85 @@
     tab(false); ok(true, 'no modal: Tab left alone');
   });
 
+  test('voice control: hidden without it, set up with progress, the last command shown as text, wake and language saved, locked without Pro', async () => {
+    await fresh();
+    const was = S.voice, wasPro = S.pro, st = () => $('#voice-status');
+    const hid = id => $(id).classList.contains('hidden');
+    try {
+      S.voice = null; updateVoice();
+      const rows = () => $$('[data-hk^="voice"]').map(b => b.parentElement.classList.contains('hidden'));
+      ok(hid('#voice-card') && rows().length === 2 && rows().every(h => h), 'the open build shows voice control');
+      S.voice = { pro: 1, ready: 0, wake: 0, lang: '', setup: 0, pct: 0, serr: '', mic: 0, state: 0, err: '', heard: '', did: '', arg: '', seq: 0 };
+      updateVoice();
+      ok(!hid('#voice-card') && rows().every(h => !h), 'not shown with it');
+      ok(!hid('#voice-setup') && hid('#voice-listen') && $('#voice-wake').disabled && st().textContent === t('voice.none'), 'before the setup: ' + st().textContent);
+      $('#voice-setup').click();
+      ok(sent.some(o => o.cmd === 'voice_setup') && $('#voice-setup').disabled && !hid('#voice-bar'), 'the setup did not start');
+      S.voice = { ...S.voice, setup: 4, pct: 37 }; updateVoice();
+      ok(st().textContent === t('voice.st.4', 37) && $('#voice-bar i').style.width === '37%', 'the model download: ' + st().textContent);
+      S.voice = { ...S.voice, setup: 6, serr: 'verify' }; updateVoice();
+      ok(st().textContent === t('voice.serr.verify') && st().classList.contains('bad') && $('#voice-setup span').textContent === t('ai.retry') && !$('#voice-setup').disabled, 'a failed setup: ' + st().textContent);
+      S.voice = { ...S.voice, ready: 1, setup: 5, serr: '', heard: 'Haku, <b>gaming</b>', did: 'profile', arg: 'Gaming' }; updateVoice();
+      ok(hid('#voice-setup') && !hid('#voice-listen') && hid('#voice-bar') && !$('#voice-wake').disabled, 'set up: the buttons are wrong');
+      ok($('#voice-said').textContent === t('voice.heard', 'Haku, <b>gaming</b>') + ' → ' + t('voice.did.profile', 'Gaming') && !$('#voice-said b'), 'what was heard: ' + $('#voice-said').innerHTML);
+      $('#voice-listen').click(); ok(sent.some(o => o.cmd === 'voice_listen'), 'Listen sent nothing');
+      S.voice = { ...S.voice, state: 2 }; updateVoice();
+      ok($('#voice-listen').disabled && st().textContent === t('voice.thinking'), 'while it thinks: ' + st().textContent);
+      S.voice = { ...S.voice, state: 0, err: 'nomic' }; updateVoice();
+      ok(st().textContent === t('voice.err.nomic') && st().classList.contains('bad') && !$('#voice-listen').disabled, 'no microphone: ' + st().textContent);
+      S.voice = { ...S.voice, err: 'unknown', did: 'unknown', arg: '' }; updateVoice();
+      ok(!st().classList.contains('bad') && $('#voice-said').textContent.endsWith(' → ' + t('voice.did.unknown')), 'not understood: ' + $('#voice-said').textContent);
+      const w = $('#voice-wake'); w.checked = true; w.dispatchEvent(new Event('change'));
+      ok(sets('voice', 'wake').some(o => o.v === '1') && w.checked, 'answering to Haku is not saved');
+      const l = $('#voice-lang');
+      ok(l.options.length === 4 && l.options[0].text === t('voice.lang.auto') && l.value === '', 'the languages: ' + [...l.options].map(o => o.value));
+      l.value = 'ru'; l.dispatchEvent(new Event('change'));
+      ok(sets('voice', 'lang').some(o => o.v === 'ru'), 'the language is not saved');
+      S.pro = { ...(S.pro || {}), on: 0 }; updateVoice();
+      ok(st().textContent === t('ha.pro') && hid('#voice-listen') && hid('#voice-setup') && w.disabled && l.disabled && !$('#voice-badge').classList.contains('on') && !$('#voice-said').textContent,
+        'without Pro: ' + st().textContent);
+    } finally { S.voice = was; S.pro = wasPro; setCfg('voice', 'wake', '0'); setCfg('voice', 'lang', ''); updateVoice(); }
+  });
+
+  test('wallpapers: hidden in the open build, found pictures as buttons, one set, the old one put back, locked without Pro', async () => {
+    await fresh();
+    const was = S.walls, st = () => $('#walls-status'), hid = id => $(id).classList.contains('hidden'), tiles = () => $$('#walls-grid .wall');
+    try {
+      S.walls = null; updateWalls();
+      ok(hid('#walls-card') && hid('#walls-nav'), 'the open build shows the wallpapers');
+      const it = k => ({ src: k ? 'wh' : 'pc', name: k ? 'wallhaven-x' : '<b>me</b>.jpg', w: 2560, h: 1440, thumb: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' });
+      S.walls = { pro: 1, busy: 0, seq: 0, err: '', cur: -1, setting: -1, saved: 0, web: 1, dir: '', items: [] }; updateWalls();
+      ok(!hid('#walls-card') && !hid('#walls-nav') && !hid('#walls-find') && hid('#walls-more') && hid('#walls-restore') && !tiles().length && st().textContent === t('walls.idle'), 'before a search: ' + st().textContent);
+      ok($('#walls-web').checked && $('#walls-dir').textContent === t('walls.dir.none') && hid('#walls-dir-clear'), 'the switch or the folder');
+      $('#walls-find').click();
+      ok(sent.some(o => o.cmd === 'wall_find') && $('#walls-find').disabled && !hid('#walls-bar') && st().textContent === t('walls.looking'), 'Find: ' + st().textContent);
+      S.walls = { ...S.walls, busy: 0, seq: 1, items: [0, 1, 2, 3, 4, 5].map(it) }; updateWalls();
+      ok(tiles().length === 6 && !hid('#walls-more') && !$('#walls-find').disabled && hid('#walls-bar') && st().textContent === t('walls.pick'), 'found: ' + tiles().length);
+      ok(tiles()[0].title === '<b>me</b>.jpg' && !$('#walls-grid b') && tiles()[1].textContent.startsWith('wallhaven') && tiles()[0].textContent.startsWith(t('walls.pc')), 'a tile: ' + tiles()[0].outerHTML);
+      const first = tiles()[2]; updateWalls();
+      ok(tiles()[2] === first, 'a refresh with the same set rebuilt the tiles');
+      first.click();
+      ok(sent.some(o => o.cmd === 'wall_set' && o.k === 2) && tiles().every(b => b.disabled) && first.classList.contains('busy') && st().textContent === t('walls.setting'), 'a click: ' + st().textContent);
+      S.walls = { ...S.walls, busy: 0, cur: 2, setting: -1, saved: 1 }; updateWalls();
+      ok(first.classList.contains('on') && first.getAttribute('aria-pressed') === 'true' && !hid('#walls-restore'), 'the one set is not marked, or no way back');
+      $('#walls-more').click(); ok(sent.some(o => o.cmd === 'wall_more'), 'More sent nothing');
+      S.walls = { ...S.walls, busy: 0, err: 'offline' }; updateWalls();
+      ok(st().textContent === t('walls.err.offline') && st().classList.contains('bad'), 'offline: ' + st().textContent);
+      S.walls = { ...S.walls, err: 'none', items: [] }; updateWalls();
+      ok(st().textContent === t('walls.err.none') && !st().classList.contains('bad') && !tiles().length, 'none found: ' + st().textContent);
+      const w = $('#walls-web'); w.checked = false; w.dispatchEvent(new Event('change'));
+      ok(sets('wall', 'web').some(o => o.v === '0') && !w.checked, 'wallhaven is not turned off');
+      $('#walls-dir-pick').click(); ok(sent.some(o => o.cmd === 'wall_dir'), 'Choose sent nothing');
+      S.walls = { ...S.walls, dir: 'D:\\Pics' }; updateWalls();
+      ok($('#walls-dir').textContent === 'D:\\Pics' && !hid('#walls-dir-clear'), 'the folder: ' + $('#walls-dir').textContent);
+      $('#walls-dir-clear').click(); ok(sent.some(o => o.cmd === 'wall_dir_clear'), 'Clear sent nothing');
+      S.walls = { ...S.walls, pro: 0, err: '', items: [0, 1].map(it), seq: 2 }; updateWalls();
+      ok(st().textContent === t('ha.pro') && hid('#walls-find') && hid('#walls-more') && !tiles().length && w.disabled && $('#walls-dir-pick').disabled && !$('#walls-badge').classList.contains('on'), 'without Pro: ' + st().textContent);
+      ok(!hid('#walls-restore') && !$('#walls-restore').disabled, 'putting the old one back needs Pro');
+      $('#walls-restore').click(); ok(sent.some(o => o.cmd === 'wall_restore'), 'Put back sent nothing');
+    } finally { S.walls = was; setCfg('wall', 'web', '1'); updateWalls(); }
+  });
+
   const only =decodeURIComponent(location.hash.slice(1));   // ?mock&test#TRYX: only the tests whose name has it
   setCfg('general', 'ui_motion', '1'); applyMotion();   // the tests move whatever this Windows says about motion
   for (const [name, fn] of tests) {
