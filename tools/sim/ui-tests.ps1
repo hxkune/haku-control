@@ -133,3 +133,5 @@ if ($unfinished) { Write-Output "the tests never finished in $Minutes min: $($un
 if (-not $log -and -not $Only) { Write-Output 'no results'; exit 1 }
 if ($bad.Count) { Write-Output "$($bad.Count) of $(@($log).Count) UI tests failed"; exit 1 }
 Write-Output "all $(@($log).Count) UI tests passed"
+# said outright: a taskkill that found a child already gone leaves $LASTEXITCODE at 1, and CI's pwsh exits with it
+exit 0
