@@ -21,6 +21,7 @@ const LAYOUTS = {
 // and has been sent about 30 frames a second (devices.c ns) without a failed write (nf)
 const sentOf = x => (x.ext || { devs: [] }).devs.forEach(v => { const lit = v.online && v.enabled && !v.own && !v.held && !v.covered;
   if (v.sent === undefined) v.sent = lit ? 120 : -1; if (v.ns === undefined) v.ns = lit ? Math.round(performance.now() * 0.03) : 0; if (v.nf === undefined) v.nf = 0; });
+let VLVL = 0;   // the made-up microphone level while the logo is held
 const emit = d => L.forEach(f => { const c = d === STATE ? JSON.parse(JSON.stringify(d)) : d; if (d === STATE) sentOf(c); f({ data: c }); });
 window.chrome = { webview: {
   postMessage(s) {
@@ -53,6 +54,12 @@ window.chrome = { webview: {
       if (o.cmd === 'wall_dir_clear') W.dir = '';
       setTimeout(() => emit(STATE), 30); }
     if (o.cmd === 'set' && o.s === 'wall' && o.k === 'web') STATE.walls.web = +o.v;
+    // pro/voice.c voice_hold: the logo held down listens (a made-up microphone level for the waves), let go it thinks, then
+    // shows the command it ran
+    if (o.cmd === 'voice_hold' && STATE.voice) { const V = STATE.voice; clearInterval(VLVL);
+      if (o.on && V.ready && V.state !== 2) { V.mic = 1; V.state = 1; VLVL = setInterval(() => emit({ type: 'vlevel', l: Math.round(20 + 70 * Math.random()) }), 50); }
+      else if (!o.on && V.state === 1) { V.state = 2; setTimeout(() => { Object.assign(V, { state: 0, mic: 0, heard: 'lights off', did: 'off', arg: '', seq: V.seq + 1 }); emit(STATE); }, 700); }
+      setTimeout(() => emit(STATE), 30); }
     // config.c full (window.mockCfgFull = 1): what adds lines is refused whole and counted in cfg_full (comp_apply, draft_save,
     // preset_save and preset_copy here); the page is told by the reply's err 'cap' or by the count
     const full = window.mockCfgFull && ['comp_apply', 'draft_save', 'preset_save', 'preset_copy'].includes(o.cmd);

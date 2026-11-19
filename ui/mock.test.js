@@ -3496,6 +3496,7 @@
       S.voice = null; updateVoice();
       const rows = () => $$('[data-hk^="voice"]').map(b => b.parentElement.classList.contains('hidden'));
       ok(hid('#voice-card') && rows().length === 2 && rows().every(h => h), 'the open build shows voice control');
+      ok(!$('#brand').classList.contains('talk') && !$('#logo').hasAttribute('role'), 'the open build: the logo is a button');
       S.voice = { pro: 1, ready: 0, wake: 0, lang: '', setup: 0, pct: 0, serr: '', mic: 0, state: 0, err: '', heard: '', did: '', arg: '', seq: 0 };
       updateVoice();
       ok(!hid('#voice-card') && rows().every(h => !h), 'not shown with it');
@@ -3510,6 +3511,21 @@
       ok(hid('#voice-setup') && !hid('#voice-listen') && hid('#voice-bar') && !$('#voice-wake').disabled, 'set up: the buttons are wrong');
       ok($('#voice-said').textContent === t('voice.heard', 'Haku, <b>gaming</b>') + ' → ' + t('voice.did.profile', 'Gaming') && !$('#voice-said b'), 'what was heard: ' + $('#voice-said').innerHTML);
       $('#voice-listen').click(); ok(sent.some(o => o.cmd === 'voice_listen'), 'Listen sent nothing');
+      // the logo held down: push to talk, with the waves while it listens; Space or Enter from the keyboard
+      const lg = $('#logo'), br = $('#brand'), pe = n => lg.dispatchEvent(new PointerEvent(n, { bubbles: true, button: 0, pointerId: 1 }));
+      ok(br.classList.contains('talk') && lg.getAttribute('role') === 'button' && lg.tabIndex === 0 && lg.getAttribute('aria-label') === t('voice.hold') && !lg.hasAttribute('aria-hidden'), 'the logo is not a button');
+      sent.length = 0; pe('pointerdown');
+      ok(sent.some(o => o.cmd === 'voice_hold' && o.on === 1) && br.classList.contains('listen'), 'holding the logo does not listen');
+      wavesLevel(80); ok(WV.lvl === .8 && WV.on, 'the level is not kept for the waves');
+      pe('pointerup');
+      ok(sent.some(o => o.cmd === 'voice_hold' && o.on === 0) && !br.classList.contains('listen'), 'letting go: ' + JSON.stringify(sent));
+      S.voice = { ...S.voice, state: 1 }; updateVoice(); ok(br.classList.contains('listen'), 'the hotkey listening shows no waves');
+      S.voice = { ...S.voice, state: 2 }; updateVoice();
+      sent.length = 0; pe('pointerdown'); ok(!sent.length && br.classList.contains('think'), 'held while it thinks: ' + JSON.stringify(sent));
+      S.voice = { ...S.voice, state: 0 }; updateVoice();
+      sent.length = 0; lg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })); lg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, repeat: true }));
+      lg.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
+      ok(sent.filter(o => o.cmd === 'voice_hold').map(o => o.on).join() === '1,0', 'Space on the logo: ' + JSON.stringify(sent));
       S.voice = { ...S.voice, state: 2 }; updateVoice();
       ok($('#voice-listen').disabled && st().textContent === t('voice.thinking'), 'while it thinks: ' + st().textContent);
       S.voice = { ...S.voice, state: 0, err: 'nomic' }; updateVoice();
@@ -3525,6 +3541,8 @@
       S.pro = { ...(S.pro || {}), on: 0 }; updateVoice();
       ok(st().textContent === t('ha.pro') && hid('#voice-listen') && hid('#voice-setup') && w.disabled && l.disabled && !$('#voice-badge').classList.contains('on') && !$('#voice-said').textContent,
         'without Pro: ' + st().textContent);
+      sent.length = 0; pe('pointerdown');
+      ok(!br.classList.contains('talk') && !lg.hasAttribute('role') && lg.getAttribute('aria-hidden') === 'true' && !sent.length, 'without Pro the logo listens');
     } finally { S.voice = was; S.pro = wasPro; setCfg('voice', 'wake', '0'); setCfg('voice', 'lang', ''); updateVoice(); }
   });
 

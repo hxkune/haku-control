@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.78',
+    en: ['haku Pro voice control: the haku logo in the side bar is now a button. Hold it down, say a command and let go: haku listens for as long as it is held, no “Haku” needed. Space or Enter on the focused logo does the same.',
+         'While haku listens, waves in the colours of your lights play over the logo and follow your voice, like a voice assistant.'],
+    ru: ['Голосовое управление в haku Pro: логотип haku в боковой панели теперь кнопка. Зажмите его, скажите команду и отпустите: haku слушает, пока логотип зажат, «Хаку» говорить не нужно. Пробел или Enter на выделенном логотипе работают так же.',
+         'Пока haku слушает, над логотипом бегут волны в цветах вашей подсветки и следуют за голосом, как у голосового помощника.'],
+    fr: ['Commande vocale de haku Pro : le logo haku de la barre latérale est maintenant un bouton. Maintenez-le, dites une commande et relâchez : haku écoute tant qu’il est maintenu, sans dire « Haku ». Espace ou Entrée sur le logo sélectionné font de même.',
+         'Pendant que haku écoute, des vagues aux couleurs de vos lumières passent sur le logo et suivent votre voix, comme un assistant vocal.'] },
   { v: '0.4.77',
     en: ['haku Pro voice control is much faster: simple commands such as “lights off”, “brightness 50”, “brighter”, “off in 30 minutes” or the name of a profile, preset or effect are now understood right away on this PC, without waiting for the local model. Only longer phrases, like describing a mood, still go to the model.',
          'Wallpapers: when wallhaven.cc does not answer and nothing on this PC matches the colours, haku says so instead of showing an empty page, and “Other options” starts again from the best pictures once it has shown them all.'],

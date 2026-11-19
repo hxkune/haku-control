@@ -67,6 +67,16 @@ h3::before { content: none; margin-right: 9px; font-size: 10px; color: var(--mut
 html:not(.intro):not(.intro-out) .brand .logo::after { animation: logo-glint 16s cubic-bezier(.45, 0, .25, 1) .8s infinite; }
 @keyframes logo-glint { 0% { transform: translateX(-66.667%); } 16%, 100% { transform: translateX(0); } }
 html.intro .brand .logo::after { opacity: 0; }
+/* haku Pro voice: the logo held down listens; waves in the lights' colours over it while it does (app.js) */
+.brand { position: relative; }
+.brand.talk .logo { cursor: pointer; touch-action: none; transition: opacity .25s ease; }
+.brand.talk .logo:focus-visible { outline: 2px solid var(--line3); outline-offset: 6px; border-radius: 6px; }
+.brand .waves { position: absolute; left: 0; right: 0; top: -14px; width: 100%; height: calc(100% - 4px); pointer-events: none; opacity: 0; transition: opacity .25s ease; }
+.brand.listen .logo { opacity: .18; }
+.brand.listen .waves { opacity: 1; }
+.brand.think .logo { animation: logo-think 1.2s ease-in-out infinite alternate; }
+@keyframes logo-think { to { opacity: .45; } }
+body.calm .brand.think .logo { animation: none; opacity: .6; }
 .brand .word { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 4px; font: 600 11px var(--display); letter-spacing: .3em; color: var(--muted); }
 .brand .word::after { content: ""; flex: 1; height: 1px; background: var(--line2); }
 nav { display: flex; flex-direction: column; gap: clamp(4px, .3145vw, 6px); }

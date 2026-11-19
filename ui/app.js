@@ -5748,6 +5748,7 @@ $('#ai-demand').addEventListener('change', e => send({ cmd: 'ai_on_demand', v: e
 const VOICE_BUSY = [1, 2, 3, 4];
 function updateVoice() {
   const V = S.voice, card = $('#voice-card');
+  updateTalk();
   card.classList.toggle('hidden', !V);   // (the open build has no voice control)
   $$('[data-hk^="voice"]').forEach(b => b.parentElement.classList.toggle('hidden', !V));
   if (!V) return;
@@ -5785,6 +5786,73 @@ $('#voice-setup').addEventListener('click', () => { S.voice = { ...(S.voice || {
 $('#voice-listen').addEventListener('click', () => send({ cmd: 'voice_listen' }));
 $('#voice-wake').addEventListener('change', e => { setCfg('voice', 'wake', e.target.checked ? '1' : '0'); updateVoice(); });
 $('#voice-lang').addEventListener('change', e => setCfg('voice', 'lang', e.target.value));
+
+// ---- the logo as a push-to-talk button (haku Pro voice): held down it listens, let go the command goes. While a
+// command is listened for, waves in the lights' colours follow the microphone (vlevel, 20 a second from ui_web.cpp)
+const WV = { held: false, lvl: 0, amp: 0, ph: 0, raf: 0, on: false };
+function updateTalk() {
+  const V = S.voice, lg = $('#logo'), br = $('#brand');
+  const talk = !!V && !(S.pro && !S.pro.on) && !!V.ready && !VOICE_BUSY.includes(V.setup || 0);
+  br.classList.toggle('talk', talk);
+  if (talk) {
+    lg.setAttribute('role', 'button'); lg.tabIndex = 0; lg.removeAttribute('aria-hidden');
+    lg.setAttribute('aria-label', t('voice.hold')); lg.title = t('voice.hold');
+  } else {
+    ['role', 'tabindex', 'aria-label', 'title'].forEach(a => lg.removeAttribute(a)); lg.setAttribute('aria-hidden', 'true');
+    WV.held = false;
+  }
+  const listen = talk && (V.state === 1 || WV.held);
+  br.classList.toggle('listen', listen);
+  br.classList.toggle('think', talk && V.state === 2 && !WV.held);
+  WV.on = listen;
+  if (listen && !WV.raf) WV.raf = requestAnimationFrame(wavesDraw);
+}
+function voiceHold(on) {
+  if (WV.held === on || on && (!$('#brand').classList.contains('talk') || S.voice.state === 2)) return;
+  WV.held = on; if (on) WV.lvl = 0;
+  send({ cmd: 'voice_hold', on: on ? 1 : 0 });
+  updateTalk();
+}
+const wavesLevel = l => { WV.lvl = Math.max(0, Math.min(100, +l || 0)) / 100; };
+// Siri-like: four lobed sine curves under a bell, mirrored and added up; the height eases toward the level
+function wavesDraw() {
+  WV.raf = 0;
+  const cv2 = $('#waves'), r = cv2.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+  if (!w || !h) return;   // the side bar hidden (narrow window); updateTalk starts it again
+  if (cv2.width !== w || cv2.height !== h) { cv2.width = w; cv2.height = h; }
+  const c = cv2.getContext('2d'), still = stillMotion();
+  WV.amp += ((WV.on ? Math.max(.08, WV.lvl) : 0) - WV.amp) * (still ? 1 : .2);
+  if (!still) WV.ph += .06 + WV.amp * .14;
+  c.clearRect(0, 0, w, h);
+  let cols = effPal(S.effect || 'custom').map(hex2rgb).filter(([R, G, B]) => R + G + B > 90).slice(0, 4);
+  if (!cols.length) cols = [(getComputedStyle($('#logo')).backgroundColor.match(/\d+/g) || [255, 255, 255]).slice(0, 3).map(Number)];
+  c.globalCompositeOperation = 'lighter';
+  const mid = h / 2, step = 3 * dpr;
+  for (let k = 0; k < 4; k++) {
+    const [R, G, B] = cols[k % cols.length], f = 1.5 + k * .65, sp = [1, -1.3, .8, -1.7][k], a = WV.amp * mid * .95 * [1, .78, .6, .45][k];
+    const y = x => { const u = x / w * 2 - 1; return a * Math.exp(-u * u * 4.5) * Math.abs(Math.sin(u * f * Math.PI + WV.ph * sp + k)); };
+    c.beginPath(); c.moveTo(0, mid);
+    for (let x = 0; x <= w; x += step) c.lineTo(x, mid - y(x));
+    for (let x = w; x >= 0; x -= step) c.lineTo(x, mid + y(x));
+    c.closePath(); c.fillStyle = `rgba(${R},${G},${B},.55)`; c.fill();
+  }
+  if (WV.on || WV.amp > .01) WV.raf = requestAnimationFrame(wavesDraw);
+  else { WV.amp = 0; c.clearRect(0, 0, w, h); }
+}
+{
+  const lg = $('#logo'), up = () => voiceHold(false), key = e => e.key === ' ' || e.key === 'Enter';
+  lg.addEventListener('pointerdown', e => {
+    if (e.button || !$('#brand').classList.contains('talk')) return;
+    e.preventDefault(); try { lg.setPointerCapture(e.pointerId); } catch { }
+    voiceHold(true);
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture', 'blur'].forEach(n => lg.addEventListener(n, up));
+  lg.addEventListener('keydown', e => { if (key(e) && $('#brand').classList.contains('talk')) { e.preventDefault(); if (!e.repeat) voiceHold(true); } });
+  lg.addEventListener('keyup', e => { if (key(e)) up(); });
+  lg.addEventListener('contextmenu', e => { if ($('#brand').classList.contains('talk')) e.preventDefault(); });
+  addEventListener('blur', up);   // the window left while held: let go, or it would listen until 8 s are up
+}
 
 // ---- wallpapers to match the lights (haku Pro): pictures from this PC and wallhaven.cc picked by the palette showing
 function updateWalls() {
@@ -7770,6 +7838,7 @@ if (wv) wv.addEventListener('message', e => {
   if (m.type === 'frame') onFrame(m.l);
   else if (m.type === 'focus') document.body.classList.toggle('idle', !m.on);   // behind other windows: endless animations pause
   else if (m.type === 'status') applyStatus(m);
+  else if (m.type === 'vlevel') wavesLevel(m.l);
   else if (m.type === 'go') { if (m.to === 'settings') showTab('settings'); else helpOpen(''); }   // the tray's Settings or Help
   else if (m.type === 'tryx_built') { if (TXB?.wait?.req === m.req) TXB.wait.done(m); }
   else if (m.type === 'comp_done') cmpDone(m);

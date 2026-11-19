@@ -89,6 +89,8 @@ int  remote_json(char *out, int cap) { return jcat(out, cap, 0, "{\"enabled\":0,
 void voice_apply(void) {}
 void voice_listen(void) {}
 void voice_wake_toggle(void) {}
+void voice_hold(int on) { (void)on; }
+int  voice_level(void) { return -1; }
 void voice_setup(void) {}
 void voice_suspend(int sleeping) { (void)sleeping; }
 void voice_stop(void) {}

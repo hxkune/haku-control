@@ -347,6 +347,7 @@ static void on_message(const std::string &js) {
     else if (cmd == "ai_setup") { ollama_setup(); post_status(); }
     else if (cmd == "voice_setup") { voice_setup(); post_status(); }   // not in remote_allowed: this PC's microphone
     else if (cmd == "voice_listen") { voice_listen(); post_status(); }
+    else if (cmd == "voice_hold") { voice_hold(field(js, "on") == "1"); post_status(); }   // not in remote_allowed: this PC's microphone
     // wallpapers: not in remote_allowed, this PC's desktop and folders
     else if (cmd == "wall_find" || cmd == "wall_more") { wall_find(cmd == "wall_more"); post_status(); }
     else if (cmd == "wall_set") { wall_set(atoi(field(js, "k").c_str())); post_status(); }
@@ -550,6 +551,8 @@ static LRESULT CALLBACK proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TIMER:
         if (!page_ready) return 0;
         if (wp == FRAME_TIMER) {   // 20 a second in front, 5 behind other windows, 2.5 for the glow alone, none minimised
+            int lv = voice_level();   // the logo's waves, 20 a second while a command is listened for
+            if (lv >= 0 && !IsIconic(h)) { char b[40]; snprintf(b, sizeof(b), "{\"type\":\"vlevel\",\"l\":%d}", lv); post(b); }
             static unsigned n;
             unsigned every = !live_view ? 8 : GetForegroundWindow() != h ? 4 : 1;
             if (IsIconic(h) || ++n % every) return 0;

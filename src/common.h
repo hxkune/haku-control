@@ -423,6 +423,8 @@ void  lcd_watch(void);                // the editor is open: read the values for
 void  voice_apply(void);              // [voice] or Pro changed (and at start): the microphone opened or closed to match
 void  voice_listen(void);             // one command now (the hotkey, the window's button)
 void  voice_wake_toggle(void);        // the hotkey: [voice] wake flipped
+void  voice_hold(int on);             // the window's logo held down / let go: the command is what is said meanwhile
+int   voice_level(void);              // 0..100 while a command is listened for (the window's waves), -1 otherwise
 int   full_screen_now(void);          // pro/rules.c: a game or a film in full screen (scenarios, voice's "Haku" pause)
 void  voice_setup(void);              // downloads whisper.cpp and its model, in the background
 void  voice_suspend(int sleeping);
