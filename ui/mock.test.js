@@ -3552,6 +3552,8 @@
       $('#walls-more').click(); ok(sent.some(o => o.cmd === 'wall_more'), 'More sent nothing');
       S.walls = { ...S.walls, busy: 0, err: 'offline' }; updateWalls();
       ok(st().textContent === t('walls.err.offline') && st().classList.contains('bad'), 'offline: ' + st().textContent);
+      S.walls = { ...S.walls, items: [] }; updateWalls();
+      ok(st().textContent === t('walls.err.offline.0') && st().classList.contains('bad'), 'offline, nothing shown: ' + st().textContent);
       S.walls = { ...S.walls, err: 'none', items: [] }; updateWalls();
       ok(st().textContent === t('walls.err.none') && !st().classList.contains('bad') && !tiles().length, 'none found: ' + st().textContent);
       const w = $('#walls-web'); w.checked = false; w.dispatchEvent(new Event('change'));

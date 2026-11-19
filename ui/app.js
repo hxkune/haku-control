@@ -5795,7 +5795,7 @@ function updateWalls() {
   $('#walls-badge').textContent = 'Pro'; $('#walls-badge').classList.toggle('on', !locked);
   const s = $('#walls-status');
   s.textContent = locked ? t('ha.pro') : busy ? t(W.busy === 2 ? 'walls.setting' : 'walls.looking') :
-    W.err ? t('walls.err.' + W.err) : items.length ? t('walls.pick') : t('walls.idle');
+    W.err ? t('walls.err.' + W.err + (W.err === 'offline' && !items.length ? '.0' : '')) : items.length ? t('walls.pick') : t('walls.idle');
   s.classList.toggle('bad', !locked && !busy && !!W.err && W.err !== 'none');
   $('#walls-bar').classList.toggle('hidden', !busy);
   // the thumbnails: rebuilt only when the core shows a new set (seq), so a click is never lost to a refresh
