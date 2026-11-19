@@ -212,6 +212,13 @@ static void hear(cl_t *u) {
 // last one went, as before.
 // The backlight counts as sent only once the screen took it: a refused one is tried again, with the latest value,
 // every cl_br_retry_ms at most, and logged once until it goes.
+// the frame clock in whole ms from the performance counter: GetTickCount64 moves in 15.6 ms steps, so a frame could go
+// that much early (the 1 ms timer the app sets makes the waits exact, not that tick)
+static ULONGLONG clock_ms(void) {
+    LARGE_INTEGER c, f; QueryPerformanceCounter(&c); QueryPerformanceFrequency(&f);
+    return (ULONGLONG)(c.QuadPart / f.QuadPart * 1000 + c.QuadPart % f.QuadPart * 1000 / f.QuadPart);
+}
+
 static DWORD WINAPI stream(void *arg) {
     cl_t *u = arg;
     cl_pack *p = NULL; int f = 1, sent_br = -1, br_fails = 0, draw_fails = 0;
@@ -229,7 +236,7 @@ static DWORD WINAPI stream(void *arg) {
         if (nx && lay) free_pack(nx);
         else if (nx) { free_pack(p); p = nx; f = 1; due = 0; }
         int br = u->dark ? 0 : u->br;
-        ULONGLONG now = GetTickCount64();
+        ULONGLONG now = clock_ms();
         if (lay && (!p || !u->dark) && (!drawn || now - drawn >= 1000)) {
             cl_pack *lp = live_pack(lay);
             drawn = now;
@@ -254,7 +261,7 @@ static DWORD WINAPI stream(void *arg) {
         if (u->heard < 3) hear(u);
         DWORD wait = CL_STILL;
         if (!still) {
-            due += p->fr[k].delay; now = GetTickCount64();
+            due += p->fr[k].delay; now = clock_ms();
             if (now > due) due = now;
             wait = due > now ? (DWORD)(due - now) : 0;
             if (++f >= p->nfr) f = 1;
