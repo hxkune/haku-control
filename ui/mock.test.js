@@ -2258,8 +2258,11 @@
       ok(gone(fr) && !fr.contentDocument.documentElement.classList.contains('intro-out'), 'the background did not end it, or ended it with the coming in');
       fr.remove(); fr = await open();
       if (fr.ms >= SLOW && !run(fr)) await again(fr);   // the fallback's open page is not the intro ending
+      // the bound is the intro's own, from when it starts: before that come intro.js's 800 ms and its first draws, which
+      // took over 1 s on the 2-core runner (CI saw it still on 7 s after the frame opened, its film not yet over)
+      await until(() => run(fr) || gone(fr), 'the last intro to start or end', 15000);
       i = 0; while (i++ < 140 && !gone(fr)) await wait(50);   // the preview's page is hidden: its frames hardly come, the worst slow case
-      ok(gone(fr), 'still on after 7 s');
+      ok(gone(fr), 'still on 7 s after it started');
     } finally { fr.remove(); }
   });
 
