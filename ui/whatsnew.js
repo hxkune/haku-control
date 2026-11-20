@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.80',
+    en: ['haku Pro voice: while haku listens, the waves now take the shape of the haku logo: two soft translucent layers in one colour that shifts along your lights’ palette the louder you speak, with a light neon edge. Where an edge passes over the “control” word and its line, they bend and blur as if under glass.',
+         'Pressing the logo sends a ripple through it, like a drop falling into water.'],
+    ru: ['Голос в haku Pro: пока haku слушает, волны теперь повторяют форму логотипа haku: два мягких полупрозрачных слоя одного цвета, который сдвигается по палитре вашей подсветки, чем громче вы говорите, с лёгким неоновым краем. Где край проходит по слову «control» и линии, они изгибаются и расплываются, как под стеклом.',
+         'Нажатие на логотип пускает по нему рябь, как от капли, упавшей в воду.'],
+    fr: ['Voix de haku Pro : pendant que haku écoute, les ondes prennent maintenant la forme du logo haku : deux couches douces et translucides d’une seule couleur, qui glisse dans la palette de vos lumières quand vous parlez plus fort, avec un léger bord néon. Là où un bord passe sur le mot « control » et sa ligne, ils se courbent et se brouillent comme sous du verre.',
+         'Appuyer sur le logo y fait passer une onde, comme une goutte qui tombe dans l’eau.'] },
   { v: '0.4.79',
     en: ['haku Pro voice: while haku listens, soft translucent rings in the colours of your lights now spread out of the haku logo, like ripples, more and livelier the louder you speak. The logo itself stays in view.'],
     ru: ['Голос в haku Pro: пока haku слушает, от логотипа haku расходятся мягкие полупрозрачные кольца в цветах вашей подсветки, как круги на воде, и чем громче вы говорите, тем их больше и они живее. Сам логотип остаётся видно.'],

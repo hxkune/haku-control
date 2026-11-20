@@ -5788,8 +5788,9 @@ $('#voice-wake').addEventListener('change', e => { setCfg('voice', 'wake', e.tar
 $('#voice-lang').addEventListener('change', e => setCfg('voice', 'lang', e.target.value));
 
 // ---- the logo as a push-to-talk button (haku Pro voice): held down it listens, let go the command goes. While a
-// command is listened for, waves in the lights' colours follow the microphone (vlevel, 20 a second from ui_web.cpp)
-const WV = { held: false, lvl: 0, amp: 0, raf: 0, on: false, rings: [], last: 0, n: 0 };
+// command is listened for, waves in the lights' colours follow the microphone (vlevel, 20 a second from ui_web.cpp); the
+// press itself ripples through the logo like a drop falling into water
+const WV = { held: false, lvl: 0, amp: 0, raf: 0, on: false, rings: [], last: 0, pc: 0 };
 function updateTalk() {
   const V = S.voice, lg = $('#logo'), br = $('#brand');
   const talk = !!V && !(S.pro && !S.pro.on) && !!V.ready && !VOICE_BUSY.includes(V.setup || 0);
@@ -5805,64 +5806,227 @@ function updateTalk() {
   br.classList.toggle('listen', listen);
   br.classList.toggle('think', talk && V.state === 2 && !WV.held);
   WV.on = listen;
-  if (listen && !WV.raf) WV.raf = requestAnimationFrame(wavesDraw);
+  if ((listen || WV.drop) && !WV.raf) WV.raf = requestAnimationFrame(wavesDraw);
 }
 function voiceHold(on) {
   if (WV.held === on || on && (!$('#brand').classList.contains('talk') || S.voice.state === 2)) return;
   WV.held = on; if (on) WV.lvl = 0;
+  if (on && !stillMotion()) { WV.drop = { t0: performance.now(), x: WV.px ?? .5, y: WV.py ?? .55 }; WV.px = WV.py = undefined; }
   send({ cmd: 'voice_hold', on: on ? 1 : 0 });
   updateTalk();
 }
 const wavesLevel = l => { WV.lvl = Math.max(0, Math.min(100, +l || 0)) / 100; };
-// Shazam-like, fluid: soft rings spread out of the logo, more and wobblier the louder; each a band that fades as it grows
+// squared distances to the nearest 0 along one line (Felzenszwalb's lower envelope of parabolas), in place
+function edt1(f, n, v, z, d) {
+  let k = 0; v[0] = 0; z[0] = -1e30; z[1] = 1e30;
+  for (let q = 1; q < n; q++) {
+    let s;
+    while ((s = (f[q] + q * q - f[v[k]] - v[k] * v[k]) / (2 * q - 2 * v[k])) <= z[k]) k--;
+    v[++k] = q; z[k] = s; z[k + 1] = 1e30;
+  }
+  for (let q = 0, j = 0; q < n; q++) { while (z[j + 1] < q) j++; d[q] = (q - v[j]) * (q - v[j]) + f[v[j]]; }
+  for (let q = 0; q < n; q++) f[q] = d[q];
+}
+// what the rings are drawn from, in CSS px over the waves canvas: how far each point is from the logo's outer shape
+// (the blurred wordmark cut low, so it sits just outside the letters, every hole in it filled) and its angle round the
+// logo's centre. Made once per layout
+function wavesField(gw, gh, lx, ly, lw) {
+  const key = [gw, gh, lx, ly, lw].join();
+  if (WV.field && WV.field.key === key) return WV.field;
+  if (!WV.img) { WV.img = new Image(); WV.img.onload = () => { WV.img.ok = 1; }; WV.img.src = 'haku.svg'; }
+  if (!WV.img.ok) return null;
+  const n = gw * gh, cv = document.createElement('canvas'); cv.width = gw; cv.height = gh;
+  const x = cv.getContext('2d', { willReadFrequently: true });
+  x.filter = `blur(${Math.max(1, lw * .03)}px)`; x.drawImage(WV.img, lx, ly, lw, lw * 903 / 1540); x.filter = 'none';
+  const a = x.getImageData(0, 0, gw, gh).data, out = new Uint8Array(n), q = [];
+  for (let i = 0; i < gw; i++) q.push(i, n - gw + i);
+  for (let j = 0; j < gh; j++) q.push(j * gw, j * gw + gw - 1);
+  while (q.length) {   // the outside: flooded in from the border through what the logo does not cover
+    const i = q.pop();
+    if (out[i] || a[i * 4 + 3] > 40) continue;
+    out[i] = 1; const X = i % gw;
+    if (X > 0) q.push(i - 1); if (X < gw - 1) q.push(i + 1); if (i >= gw) q.push(i - gw); if (i < n - gw) q.push(i + gw);
+  }
+  const m = Math.max(gw, gh), f = new Float64Array(m), v = new Int32Array(m), z = new Float64Array(m + 1), t = new Float64Array(m);
+  const g = new Float64Array(n), d = new Float32Array(n), ab = new Uint8Array(n);
+  for (let i = 0; i < n; i++) g[i] = out[i] ? 1e20 : 0;
+  for (let X = 0; X < gw; X++) {
+    for (let j = 0; j < gh; j++) f[j] = g[j * gw + X];
+    edt1(f, gh, v, z, t);
+    for (let j = 0; j < gh; j++) g[j * gw + X] = f[j];
+  }
+  const cx = lx + lw / 2, cy = ly + lw * 903 / 1540 / 2;
+  for (let j = 0; j < gh; j++) {
+    for (let X = 0; X < gw; X++) f[X] = g[j * gw + X];
+    edt1(f, gw, v, z, t);
+    for (let X = 0; X < gw; X++) { const i = j * gw + X; d[i] = Math.sqrt(f[X]); ab[i] = (Math.atan2(j - cy, X - cx) / 6.2832 + 1) * 256 & 255; }
+  }
+  for (let it = 0; it < 2; it++) for (const [len, cnt, st, ls] of [[gw, gh, 1, gw], [gh, gw, gw, 1]]) {   // rounder: the distances box-blurred twice
+    for (let l = 0; l < cnt; l++) {
+      z[0] = 0;
+      for (let q = 0; q < len; q++) z[q + 1] = z[q] + d[l * ls + q * st];
+      for (let q = 0; q < len; q++) { const lo = Math.max(0, q - 7), hi = Math.min(len - 1, q + 7); d[l * ls + q * st] = (z[hi + 1] - z[lo]) / (hi - lo + 1); }
+    }
+  }
+  x.clearRect(0, 0, gw, gh);
+  return (WV.field = { key, gw, gh, d, ab, cv, x, img: x.createImageData(gw, gh) });
+}
+// Shazam-like, fluid: two translucent layers in the logo's outer shape spread out of it (each an even distance round it,
+// so never smaller than the logo, rounding as they grow), softly wavier the louder, all one colour that moves along the
+// palette with the loudness; a thin light rim and a glow round
+// each; the older (further out, under the newer) the fainter
 function wavesDraw() {
   WV.raf = 0;
   const cv2 = $('#waves'), r = cv2.getBoundingClientRect(), lr = $('#logo').getBoundingClientRect(), dpr = devicePixelRatio || 1;
   const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
-  if (!w || !h || !lr.width) return;   // the side bar hidden (narrow window); updateTalk starts it again
+  if (!w || !h || !lr.width) { WV.drop = null; $('#brand').classList.remove('drop', 'warp'); return; }   // the side bar hidden (narrow window); updateTalk starts it again
   if (cv2.width !== w || cv2.height !== h) { cv2.width = w; cv2.height = h; }
   const c = cv2.getContext('2d'), still = stillMotion(), now = performance.now();
   WV.amp += ((WV.on ? Math.max(.08, WV.lvl) : 0) - WV.amp) * (still ? 1 : .15);
-  let cols = effPal(S.effect || 'custom').map(hex2rgb).filter(([R, G, B]) => R + G + B > 90).slice(0, 4);
-  const lc = (getComputedStyle($('#logo')).backgroundColor.match(/\d+/g) || [255, 255, 255]).slice(0, 3).map(Number);
-  if (!cols.length) cols = [lc];
+  let cols = effPal(S.effect || 'custom').map(hex2rgb).filter(([R, G, B]) => R + G + B > 90).slice(0, 6);
+  if (!cols.length) cols = [logoRgb()];
+  // one colour for every layer, so they show stacked: it moves along the palette with the loudness, slower than the size
+  WV.pc += ((WV.on ? WV.lvl : 0) - WV.pc) * (still ? 1 : .06);
+  const f = Math.min(1, WV.pc * 1.4) * (cols.length - 1), i0 = Math.floor(f), c1 = cols[i0], c2 = cols[Math.min(i0 + 1, cols.length - 1)];
+  const col = c1.map((v, i) => v + (c2[i] - v) * (f - i0)), lite = col.map(v => v + (255 - v) * .68);   // the rim: whitish, like neon
   const LIFE = 2600, rings = WV.rings;
   if (still) rings.length = 0;
   else {
     while (rings.length && now - rings[0].t0 > LIFE) rings.shift();
-    if (WV.on && now - WV.last > 900 - 520 * WV.amp) { WV.last = now; rings.push({ t0: now, s: Math.random() * 6.28, k: ++WV.n }); }
+    if (WV.on && now - WV.last > LIFE / 2) { WV.last = now; rings.push({ t0: now, s: Math.random() * 6.28 }); }
   }
-  c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
-  c.globalCompositeOperation = lc[0] + lc[1] + lc[2] > 382 ? 'screen' : 'source-over';   // a dark theme (a light logo): only lighten
-  // the logo's box in the canvas: the rings start a little outside it and grow to the canvas' edge, rounder as they go
-  const cx = w / 2, cy = h / 2, rx0 = lr.width * dpr * .5, ry0 = lr.height * dpr * .62, reach = cx - rx0;
-  const ring = (p, s, k, t) => {
-    const e = 1 - Math.pow(1 - p, 2.4), rx = rx0 + reach * e, ry = ry0 + reach * e * .92, fade = Math.pow(1 - p, 1.5);
-    const wob = (.025 + .1 * WV.amp) * (.35 + p), [R, G, B] = cols[k % cols.length], N = 72, pts = [];
-    for (let i = 0; i < N; i++) {
-      const a = i / N * Math.PI * 2;
-      const d = 1 + wob * (Math.sin(2 * a + s + t * .0011) * .6 + Math.sin(3 * a - s * 1.7 + t * .0017) * .35 + Math.sin(5 * a + s * 2.3 - t * .0023) * .2);
-      pts.push([cx + rx * d * Math.cos(a), cy + ry * d * Math.sin(a)]);
+  c.clearRect(0, 0, w, h);
+  const F = wavesField(Math.round(r.width), Math.round(r.height), Math.round(lr.left - r.left), Math.round(lr.top - r.top), Math.round(lr.width));
+  if (F) {
+    const L = (still ? (WV.amp > .01 ? [{ p: .25, s: 0 }] : []) : rings.map(q => ({ p: (now - q.t0) / LIFE, s: q.s }))).map(({ p, s }) => {
+      const e = 1 - Math.pow(1 - p, 2.2), A = (.6 + 3.4 * WV.amp) * (.5 + p), tab = new Float32Array(256), tt = still ? 0 : now;
+      for (let b = 0; b < 256; b++) { const th = b / 256 * 6.2832; tab[b] = A * (.75 * Math.sin(3 * th + s + tt * .0016) + .25 * Math.sin(5 * th - 1.3 * s - tt * .0026)); }
+      return { R: 5 + 44 * e, A, tab, a: Math.min(1, .75 * Math.pow(1 - p, 1.2) * Math.min(1, p / .06) * (.6 + .6 * WV.amp)) };
+    });
+    const D = F.d, AB = F.ab, o = F.img.data, far = L.reduce((m, q) => Math.max(m, q.R + q.A + 16), 0);
+    for (let i = 0, n = F.gw * F.gh; i < n; i++) {
+      const di = D[i], j = i * 4;
+      if (di > far) { o[j + 3] = 0; continue; }
+      let R = 0, G = 0, B = 0, al = 0;
+      for (const q of L) {   // oldest first: each newer layer over it; a translucent fill with a soft glow out of it, then a thin light rim
+        const e = q.R + q.tab[AB[i]] - di;
+        if (e < -16) continue;
+        let k = q.a * (.26 * Math.max(0, Math.min(1, e / .8 + .5)) + .22 * Math.exp(e < 0 ? e / 5 : -e / 1.5));
+        R += (col[0] - R) * k; G += (col[1] - G) * k; B += (col[2] - B) * k; al += (1 - al) * k;
+        k = q.a * .6 * Math.max(0, 1 - Math.abs(e - .3) / .9);
+        if (k > 0) { R += (lite[0] - R) * k; G += (lite[1] - G) * k; B += (lite[2] - B) * k; al += (1 - al) * k; }
+      }
+      if (al) { o[j] = R / al; o[j + 1] = G / al; o[j + 2] = B / al; }   // the sums are premultiplied
+      o[j + 3] = al * 255;
     }
-    c.beginPath();   // a smooth closed curve through the midpoints
-    pts.forEach(([x, y], i) => { const [x2, y2] = pts[(i + 1) % N], mx = (x + x2) / 2, my = (y + y2) / 2; i ? c.quadraticCurveTo(x, y, mx, my) : c.moveTo(mx, my); });
-    c.closePath();
-    c.save(); c.setTransform(1, 0, 0, ry / rx, 0, cy - cy * ry / rx);   // a band: clear inside, the colour toward the edge
-    const g = c.createRadialGradient(cx, cy, rx * .45, cx, cy, rx * (1 + wob));
-    g.addColorStop(0, `rgba(${R},${G},${B},0)`); g.addColorStop(1, `rgba(${R},${G},${B},${(.2 * fade * (.55 + .6 * WV.amp)).toFixed(3)})`);
-    c.fillStyle = g; c.fill(); c.restore();
-    c.lineWidth = 2 * dpr; c.strokeStyle = `rgba(${R},${G},${B},${(.32 * fade).toFixed(3)})`; c.stroke();
-  };
-  if (still) { if (WV.amp > .01) ring(.3, 0, 0, 0); }
-  else rings.forEach(q => ring((now - q.t0) / LIFE, q.s, q.k, now));
-  if (WV.on || rings.length) WV.raf = requestAnimationFrame(wavesDraw);
+    F.x.putImageData(F.img, 0, 0);
+    c.imageSmoothingQuality = 'high'; c.drawImage(F.cv, 0, 0, w, h);
+    wavesWarp(F, still ? [] : L, r, dpr);
+  }
+  if (WV.drop) wavesDrop(now, lr, dpr);
+  if (WV.on || rings.length || WV.drop) WV.raf = requestAnimationFrame(wavesDraw);
   else { WV.amp = 0; c.clearRect(0, 0, w, h); }
+}
+// the "control" word and its line under the layers, seen through them as through glass: bent where an edge passes over
+// them and smeared along it. Drawn on a canvas in the word's place while there are layers, the word itself hidden
+function wavesWarp(F, L, r, dpr) {
+  const br = $('#brand'), wd = br.querySelector('.word'), cv = $('#warp');
+  if (!L.length) { br.classList.remove('warp'); return; }
+  const bb = br.getBoundingClientRect(), wb = wd.getBoundingClientRect(), cs = getComputedStyle(wd), lc = getComputedStyle(wd, '::after').backgroundColor;
+  const pad = 8, cw = Math.round(wb.width * dpr), ch = Math.round((wb.height + 2 * pad) * dpr);
+  const key = [cw, ch, wb.left - r.left, wb.top - r.top, cs.color, lc, cs.font, cs.letterSpacing].join();
+  if (!WV.wsrc || WV.wsrc.key !== key) {   // the word as it shows, once per layout and colour
+    cv.width = cw; cv.height = ch;
+    Object.assign(cv.style, { left: wb.left - bb.left + 'px', top: wb.top - bb.top - pad + 'px', width: wb.width + 'px', height: wb.height + 2 * pad + 'px' });
+    const x = cv.getContext('2d', { willReadFrequently: true }), rg = document.createRange(), tx = wd.textContent;
+    rg.selectNodeContents(wd); const tb = rg.getBoundingClientRect();
+    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, wb.width, wb.height + 2 * pad);
+    x.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`; x.letterSpacing = cs.letterSpacing; x.fillStyle = cs.color;
+    x.fillText(tx, tb.left - wb.left, tb.top - wb.top + pad + x.measureText(tx).fontBoundingBoxAscent);
+    const lx = tb.right - wb.left + (parseFloat(cs.columnGap) || 0);   // the line: the rest of the row after the gap, 1px, centred
+    x.fillStyle = lc; x.fillRect(lx, pad + (wb.height - 1) / 2, wb.width - lx, 1);
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    WV.wsrc = { key, x, src: x.getImageData(0, 0, cw, ch).data, img: x.createImageData(cw, ch), ox: wb.left - r.left, oy: wb.top - pad - r.top };
+  }
+  br.classList.add('warp');
+  const { src, img, ox, oy } = WV.wsrc, o = img.data, D = F.d, AB = F.ab, gw = F.gw, gh = F.gh;
+  let sr, sg, sb, sa;
+  const tap = (sx, sy) => {   // bilinear, premultiplied
+    if (sx < 0 || sy < 0 || sx >= cw - 1 || sy >= ch - 1) return;
+    const x0 = sx | 0, y0 = sy | 0, fx = sx - x0, fy = sy - y0;
+    for (const [k, wt] of [[(y0 * cw + x0) * 4, (1 - fx) * (1 - fy)], [(y0 * cw + x0 + 1) * 4, fx * (1 - fy)], [((y0 + 1) * cw + x0) * 4, (1 - fx) * fy], [((y0 + 1) * cw + x0 + 1) * 4, fx * fy]]) {
+      const a = src[k + 3] * wt; sr += src[k] * a; sg += src[k + 1] * a; sb += src[k + 2] * a; sa += a;
+    }
+  };
+  for (let y = 0; y < ch; y++) for (let X = 0; X < cw; X++) {
+    const j = (y * cw + X) * 4, px = ox + X / dpr, py = oy + y / dpr, x0 = px | 0, y0 = py | 0;
+    let s = 0, gx = 0, gy = 0;
+    if (x0 > 0 && y0 > 0 && x0 < gw - 2 && y0 < gh - 2) {
+      const i = y0 * gw + x0, fx = px - x0, fy = py - y0;
+      const di = (D[i] * (1 - fx) + D[i + 1] * fx) * (1 - fy) + (D[i + gw] * (1 - fx) + D[i + gw + 1] * fx) * fy;
+      gx = D[i + 1] - D[i - 1]; gy = D[i + gw] - D[i - gw];
+      const gl = Math.hypot(gx, gy) || 1; gx /= gl; gy /= gl;
+      for (const q of L) { const e = q.R + q.tab[AB[i]] - di; s += q.a * e * Math.exp(-e * e / 18); }   // a lens along each edge
+    }
+    if (Math.abs(s) < .02) { o[j] = src[j]; o[j + 1] = src[j + 1]; o[j + 2] = src[j + 2]; o[j + 3] = src[j + 3]; continue; }
+    const dx = gx * s * 2.6 * dpr, dy = gy * s * 2.6 * dpr, sp = Math.abs(s) * 1.6 * dpr;   // bent outwards, smeared along the bend
+    sr = sg = sb = sa = 0;
+    for (const t of [-1, -.5, 0, .5, 1]) tap(X - dx + gx * sp * t, y - dy + gy * sp * t);
+    if (sa) { o[j] = sr / sa; o[j + 1] = sg / sa; o[j + 2] = sb / sa; }
+    o[j + 3] = sa / 5;
+  }
+  WV.wsrc.x.putImageData(img, 0, 0);
+}
+// the logo's own colour (a gradient theme's: its text colour)
+function logoRgb() {
+  const m = getComputedStyle($('#logo')).backgroundColor.match(/[\d.]+/g) || [];
+  return m.length > 3 && +m[3] === 0 || m.length < 3 ? (getComputedStyle(document.body).color.match(/\d+/g) || [255, 255, 255]).slice(0, 3).map(Number) : m.slice(0, 3).map(Number);
+}
+// the logo's colour as it shows: the glint's layer keeps it a shade toward the background
+function dropRgb() {
+  const bg = (getComputedStyle(document.body).backgroundColor.match(/\d+/g) || [0, 0, 0]).map(Number);
+  return logoRgb().map((v, i) => v + ((bg[i] ?? v) - v) * .16);
+}
+// a drop into water where the logo was pressed: rings run through the letters from there, bending them and catching the
+// light, and calm in a second. Drawn on a canvas over the logo, which is hidden meanwhile
+function wavesDrop(now, lr, dpr) {
+  const Q = WV.drop, br = $('#brand'), p = (now - Q.t0) / 1100;
+  if (p >= 1 || stillMotion()) { WV.drop = null; br.classList.remove('drop'); return; }
+  const Wp = Math.round(lr.width * dpr), pad = Math.round(Wp * .08), Hp = Math.round(Wp * 903 / 1540), cw = Wp + 2 * pad, ch = Hp + 2 * pad;
+  if (!WV.img || !WV.img.ok) return;
+  const cv = $('#drop');
+  if (Q.cw !== cw || Q.ch !== ch) {   // the letters' coverage at this size, once a drop
+    cv.width = cw; cv.height = ch;
+    const ctx = cv.getContext('2d', { willReadFrequently: true }); ctx.clearRect(0, 0, cw, ch); ctx.drawImage(WV.img, pad, pad, Wp, Hp);
+    const s = ctx.getImageData(0, 0, cw, ch).data, al = new Uint8Array(cw * ch);
+    for (let i = 0; i < al.length; i++) al[i] = s[i * 4 + 3];
+    const px = pad + Q.x * Wp, py = pad + Q.y * Hp;
+    Object.assign(Q, { cw, ch, al, px, py, ctx, img: ctx.createImageData(cw, ch), far: Math.hypot(Math.max(px, cw - px), Math.max(py, ch - py)) });
+  }
+  br.classList.add('drop');
+  const { al, px, py, img } = Q, o = img.data, [cr, cg, cb] = dropRgb(), lam = .13 * Wp, sg = 2 * (1.2 * lam) ** 2, kk = 6.2832 / lam;
+  const Rf = p * Q.far, amp = .022 * Wp * Math.pow(1 - p, 1.5), band = 3.6 * lam;
+  for (let y = 0; y < ch; y++) for (let X = 0; X < cw; X++) {
+    const i = y * cw + X, j = i * 4, dx = X - px, dy = y - py, d = Math.hypot(dx, dy), u = d - Rf;
+    let a = al[i], sh = 0;
+    if (Math.abs(u) < band && d > .5) {
+      const env = Math.exp(-u * u / sg) * Math.min(1, d / lam), ph = u * kk, off = amp * env * Math.sin(ph);
+      const sx = Math.min(cw - 1.001, Math.max(0, X - dx / d * off)), sy = Math.min(ch - 1.001, Math.max(0, y - dy / d * off));
+      const x0 = sx | 0, y0 = sy | 0, fx = sx - x0, fy = sy - y0, k = y0 * cw + x0;   // bilinear
+      a = (al[k] * (1 - fx) + al[k + 1] * fx) * (1 - fy) + (al[k + cw] * (1 - fx) + al[k + cw + 1] * fx) * fy;
+      sh = .3 * env * (1 - p) * Math.cos(ph);   // the crests catch the light, the troughs a shade
+    }
+    o[j] = sh > 0 ? cr + (255 - cr) * sh : cr * (1 + sh); o[j + 1] = sh > 0 ? cg + (255 - cg) * sh : cg * (1 + sh);
+    o[j + 2] = sh > 0 ? cb + (255 - cb) * sh : cb * (1 + sh); o[j + 3] = a;
+  }
+  Q.ctx.putImageData(img, 0, 0);
 }
 {
   const lg = $('#logo'), up = () => voiceHold(false), key = e => e.key === ' ' || e.key === 'Enter';
   lg.addEventListener('pointerdown', e => {
     if (e.button || !$('#brand').classList.contains('talk')) return;
     e.preventDefault(); try { lg.setPointerCapture(e.pointerId); } catch { }
+    WV.px = e.offsetX / lg.clientWidth; WV.py = e.offsetY / lg.clientHeight;   // where the drop falls
     voiceHold(true);
   });
   ['pointerup', 'pointercancel', 'lostpointercapture', 'blur'].forEach(n => lg.addEventListener(n, up));
