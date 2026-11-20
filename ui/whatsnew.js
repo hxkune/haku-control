@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.79',
+    en: ['haku Pro voice: while haku listens, soft translucent rings in the colours of your lights now spread out of the haku logo, like ripples, more and livelier the louder you speak. The logo itself stays in view.'],
+    ru: ['Голос в haku Pro: пока haku слушает, от логотипа haku расходятся мягкие полупрозрачные кольца в цветах вашей подсветки, как круги на воде, и чем громче вы говорите, тем их больше и они живее. Сам логотип остаётся видно.'],
+    fr: ['Voix de haku Pro : pendant que haku écoute, des anneaux doux et translucides aux couleurs de vos lumières s’étendent depuis le logo haku, comme des ronds dans l’eau, plus nombreux et vifs quand vous parlez fort. Le logo reste visible.'] },
   { v: '0.4.78',
     en: ['haku Pro voice control: the haku logo in the side bar is now a button. Hold it down, say a command and let go: haku listens for as long as it is held, no “Haku” needed. Space or Enter on the focused logo does the same.',
          'While haku listens, waves in the colours of your lights play over the logo and follow your voice, like a voice assistant.'],

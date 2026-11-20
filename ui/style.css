@@ -67,12 +67,13 @@ h3::before { content: none; margin-right: 9px; font-size: 10px; color: var(--mut
 html:not(.intro):not(.intro-out) .brand .logo::after { animation: logo-glint 16s cubic-bezier(.45, 0, .25, 1) .8s infinite; }
 @keyframes logo-glint { 0% { transform: translateX(-66.667%); } 16%, 100% { transform: translateX(0); } }
 html.intro .brand .logo::after { opacity: 0; }
-/* haku Pro voice: the logo held down listens; waves in the lights' colours over it while it does (app.js) */
+/* haku Pro voice: the logo held down listens; rings in the lights' colours spread out of it while it does (app.js) */
 .brand { position: relative; }
 .brand.talk .logo { cursor: pointer; touch-action: none; transition: opacity .25s ease; }
 .brand.talk .logo:focus-visible { outline: 2px solid var(--line3); outline-offset: 6px; border-radius: 6px; }
-.brand .waves { position: absolute; left: 0; right: 0; top: -14px; width: 100%; height: calc(100% - 4px); pointer-events: none; opacity: 0; transition: opacity .25s ease; }
-.brand.listen .logo { opacity: .18; }
+/* the canvas the side bar's width, centred on the logo (its height 903/1540 of its width): the rings spread out of it */
+.brand .logo { z-index: 1; }
+.brand .waves { position: absolute; left: 50%; top: calc(clamp(150px, 6.29vw + 70px, 190px) * 903 / 1540 / 2); width: var(--side-w); height: 260px; transform: translate(-50%, -50%); pointer-events: none; opacity: 0; transition: opacity .4s ease; }
 .brand.listen .waves { opacity: 1; }
 .brand.think .logo { animation: logo-think 1.2s ease-in-out infinite alternate; }
 @keyframes logo-think { to { opacity: .45; } }

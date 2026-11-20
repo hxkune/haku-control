@@ -5789,7 +5789,7 @@ $('#voice-lang').addEventListener('change', e => setCfg('voice', 'lang', e.targe
 
 // ---- the logo as a push-to-talk button (haku Pro voice): held down it listens, let go the command goes. While a
 // command is listened for, waves in the lights' colours follow the microphone (vlevel, 20 a second from ui_web.cpp)
-const WV = { held: false, lvl: 0, amp: 0, ph: 0, raf: 0, on: false };
+const WV = { held: false, lvl: 0, amp: 0, raf: 0, on: false, rings: [], last: 0, n: 0 };
 function updateTalk() {
   const V = S.voice, lg = $('#logo'), br = $('#brand');
   const talk = !!V && !(S.pro && !S.pro.on) && !!V.ready && !VOICE_BUSY.includes(V.setup || 0);
@@ -5814,30 +5814,48 @@ function voiceHold(on) {
   updateTalk();
 }
 const wavesLevel = l => { WV.lvl = Math.max(0, Math.min(100, +l || 0)) / 100; };
-// Siri-like: four lobed sine curves under a bell, mirrored and added up; the height eases toward the level
+// Shazam-like, fluid: soft rings spread out of the logo, more and wobblier the louder; each a band that fades as it grows
 function wavesDraw() {
   WV.raf = 0;
-  const cv2 = $('#waves'), r = cv2.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  const cv2 = $('#waves'), r = cv2.getBoundingClientRect(), lr = $('#logo').getBoundingClientRect(), dpr = devicePixelRatio || 1;
   const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
-  if (!w || !h) return;   // the side bar hidden (narrow window); updateTalk starts it again
+  if (!w || !h || !lr.width) return;   // the side bar hidden (narrow window); updateTalk starts it again
   if (cv2.width !== w || cv2.height !== h) { cv2.width = w; cv2.height = h; }
-  const c = cv2.getContext('2d'), still = stillMotion();
-  WV.amp += ((WV.on ? Math.max(.08, WV.lvl) : 0) - WV.amp) * (still ? 1 : .2);
-  if (!still) WV.ph += .06 + WV.amp * .14;
-  c.clearRect(0, 0, w, h);
+  const c = cv2.getContext('2d'), still = stillMotion(), now = performance.now();
+  WV.amp += ((WV.on ? Math.max(.08, WV.lvl) : 0) - WV.amp) * (still ? 1 : .15);
   let cols = effPal(S.effect || 'custom').map(hex2rgb).filter(([R, G, B]) => R + G + B > 90).slice(0, 4);
-  if (!cols.length) cols = [(getComputedStyle($('#logo')).backgroundColor.match(/\d+/g) || [255, 255, 255]).slice(0, 3).map(Number)];
-  c.globalCompositeOperation = 'lighter';
-  const mid = h / 2, step = 3 * dpr;
-  for (let k = 0; k < 4; k++) {
-    const [R, G, B] = cols[k % cols.length], f = 1.5 + k * .65, sp = [1, -1.3, .8, -1.7][k], a = WV.amp * mid * .95 * [1, .78, .6, .45][k];
-    const y = x => { const u = x / w * 2 - 1; return a * Math.exp(-u * u * 4.5) * Math.abs(Math.sin(u * f * Math.PI + WV.ph * sp + k)); };
-    c.beginPath(); c.moveTo(0, mid);
-    for (let x = 0; x <= w; x += step) c.lineTo(x, mid - y(x));
-    for (let x = w; x >= 0; x -= step) c.lineTo(x, mid + y(x));
-    c.closePath(); c.fillStyle = `rgba(${R},${G},${B},.55)`; c.fill();
+  const lc = (getComputedStyle($('#logo')).backgroundColor.match(/\d+/g) || [255, 255, 255]).slice(0, 3).map(Number);
+  if (!cols.length) cols = [lc];
+  const LIFE = 2600, rings = WV.rings;
+  if (still) rings.length = 0;
+  else {
+    while (rings.length && now - rings[0].t0 > LIFE) rings.shift();
+    if (WV.on && now - WV.last > 900 - 520 * WV.amp) { WV.last = now; rings.push({ t0: now, s: Math.random() * 6.28, k: ++WV.n }); }
   }
-  if (WV.on || WV.amp > .01) WV.raf = requestAnimationFrame(wavesDraw);
+  c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
+  c.globalCompositeOperation = lc[0] + lc[1] + lc[2] > 382 ? 'screen' : 'source-over';   // a dark theme (a light logo): only lighten
+  // the logo's box in the canvas: the rings start a little outside it and grow to the canvas' edge, rounder as they go
+  const cx = w / 2, cy = h / 2, rx0 = lr.width * dpr * .5, ry0 = lr.height * dpr * .62, reach = cx - rx0;
+  const ring = (p, s, k, t) => {
+    const e = 1 - Math.pow(1 - p, 2.4), rx = rx0 + reach * e, ry = ry0 + reach * e * .92, fade = Math.pow(1 - p, 1.5);
+    const wob = (.025 + .1 * WV.amp) * (.35 + p), [R, G, B] = cols[k % cols.length], N = 72, pts = [];
+    for (let i = 0; i < N; i++) {
+      const a = i / N * Math.PI * 2;
+      const d = 1 + wob * (Math.sin(2 * a + s + t * .0011) * .6 + Math.sin(3 * a - s * 1.7 + t * .0017) * .35 + Math.sin(5 * a + s * 2.3 - t * .0023) * .2);
+      pts.push([cx + rx * d * Math.cos(a), cy + ry * d * Math.sin(a)]);
+    }
+    c.beginPath();   // a smooth closed curve through the midpoints
+    pts.forEach(([x, y], i) => { const [x2, y2] = pts[(i + 1) % N], mx = (x + x2) / 2, my = (y + y2) / 2; i ? c.quadraticCurveTo(x, y, mx, my) : c.moveTo(mx, my); });
+    c.closePath();
+    c.save(); c.setTransform(1, 0, 0, ry / rx, 0, cy - cy * ry / rx);   // a band: clear inside, the colour toward the edge
+    const g = c.createRadialGradient(cx, cy, rx * .45, cx, cy, rx * (1 + wob));
+    g.addColorStop(0, `rgba(${R},${G},${B},0)`); g.addColorStop(1, `rgba(${R},${G},${B},${(.2 * fade * (.55 + .6 * WV.amp)).toFixed(3)})`);
+    c.fillStyle = g; c.fill(); c.restore();
+    c.lineWidth = 2 * dpr; c.strokeStyle = `rgba(${R},${G},${B},${(.32 * fade).toFixed(3)})`; c.stroke();
+  };
+  if (still) { if (WV.amp > .01) ring(.3, 0, 0, 0); }
+  else rings.forEach(q => ring((now - q.t0) / LIFE, q.s, q.k, now));
+  if (WV.on || rings.length) WV.raf = requestAnimationFrame(wavesDraw);
   else { WV.amp = 0; c.clearRect(0, 0, w, h); }
 }
 {
