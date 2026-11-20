@@ -3,7 +3,14 @@
 # Its queue of 5 overflowed on a 2-core runner when Chrome opened its connections at once; Windows then dropped the
 # rest and Chrome tried again 1, 2, 4... s later: a frame's style sheet came after 7 s, a fetch after 18 s.
 #   python tools/sim/ui-server.py <port> <folder>
-import functools, http.server, sys, time
+import ctypes, functools, http.server, sys, time
+
+# High priority: on the 2-core runner headless Chrome keeps both cores busy, its GPU process at AboveNormal, and a
+# Normal server read a request from a new connection only 8-21 s after it was sent (a frame's scripts missed the
+# test's wait). The app serves these files itself, without that wait. It uses little CPU, so it takes little from Chrome.
+# The handle must go as a pointer: an int -1 is cut to 32 bits on x64 and the call fails with an invalid handle.
+if not ctypes.windll.kernel32.SetPriorityClass(ctypes.c_void_p(-1), 0x80):
+    sys.exit('ui-server: SetPriorityClass failed, error %d' % ctypes.windll.kernel32.GetLastError())
 
 class Server(http.server.ThreadingHTTPServer):
     request_queue_size = 128
