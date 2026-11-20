@@ -51,9 +51,11 @@ try {
     $url = "http://127.0.0.1:$Port/$page" + '?mock&test' + $(if ($Only) { '#' + [uri]::EscapeDataString($Only) })
     $portFile = Join-Path $profileDir 'DevToolsActivePort'
     Remove-Item $portFile -Force -ErrorAction SilentlyContinue
+    # the browser's own net log: on a failure, which requests waited and on what (the cache, a connection, the server)
+    $netLog = "$profileDir.$page.netlog.json"
     $br = Start-Process $chrome -PassThru -WindowStyle Hidden -RedirectStandardError $errFile -ArgumentList @(
       '--headless=new', '--disable-gpu', '--no-first-run', "--user-data-dir=`"$profileDir`"", '--window-size=1280,900',
-      '--remote-debugging-port=0', '--enable-logging=stderr', '--v=0', $url)
+      '--remote-debugging-port=0', '--enable-logging=stderr', '--v=0', "--log-net-log=`"$netLog`"", $url)
     $ws = $null; $state = $null
     try {
       $dev = $null
@@ -111,7 +113,7 @@ try {
   $srvErr = @($srvAll | Where-Object { $_ -notmatch '" (200|304) ' } | Select-Object -Last 30)
   # the requests since the last frame of the main page was asked for (which of its files reached the server)
   $last = -1; for ($i = 0; $i -lt $srvAll.Count; $i++) { if ($srvAll[$i] -match '"GET /index\.html\?mock HTTP') { $last = $i } }
-  $srvTail = if ($last -ge 0) { @($srvAll[$last..($srvAll.Count - 1)] | Where-Object { $_ -match '"GET ' } | Select-Object -First 40) } else { @() }
+  $srvTail = if ($last -ge 0) { @($srvAll[$last..($srvAll.Count - 1)] | Where-Object { $_ -match '"GET |begin GET ' } | Select-Object -First 60) } else { @() }
   # requests begun and never answered, over the whole run
   $open = [ordered]@{}; foreach ($l in $srvAll) { if ($l -match 'begin (GET \S+)') { $open[$Matches[1]] = 1 + [int]$open[$Matches[1]] } elseif ($l -match '"(GET \S+) HTTP[^"]*" \d{3}' -and $open[$Matches[1]]) { $open[$Matches[1]]-- } }
   $hung = @($open.Keys | Where-Object { $open[$_] -gt 0 } | ForEach-Object { "$_ x$($open[$_])" })
@@ -128,7 +130,12 @@ if ($bad.Count -or $unfinished) {
   Get-Process | ForEach-Object { [pscustomobject]@{ n = $_.ProcessName; s = $_.CPU - [double]$cpu0["$($_.Id)"] } } | Group-Object n |
     ForEach-Object { [pscustomobject]@{ n = $_.Name; s = ($_.Group | Measure-Object s -Sum).Sum } } | Sort-Object s -Descending | Select-Object -First 8 |
     ForEach-Object { Write-Output ("  cpu: {0,8:N1} s  {1}" -f $_.s, $_.n) }
+  Get-Item "$profileDir.*.netlog.json" -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Output "  net log of $($_.Name -replace '^.*?\.(\w+\.html)\.netlog\.json$', '$1'):"
+    & python (Join-Path $PSScriptRoot 'netlog-slow.py') $_.FullName | ForEach-Object { Write-Output "    $_" }
+  }
 }
+Remove-Item "$profileDir.*.netlog.json" -Force -ErrorAction SilentlyContinue
 if ($unfinished) { Write-Output "the tests never finished in $Minutes min: $($unfinished -join ', ')"; exit 1 }
 if (-not $log -and -not $Only) { Write-Output 'no results'; exit 1 }
 if ($bad.Count) { Write-Output "$($bad.Count) of $(@($log).Count) UI tests failed"; exit 1 }
