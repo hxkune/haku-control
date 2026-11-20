@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.81',
+    en: ['haku Pro voice: the ripple when you press the logo is calmer, with wider waves, so the logo no longer warps so much. While you hold it, and while haku makes out what you said, the logo gently pulses instead of fading out.',
+         'Fixed (haku Pro): after putting your own wallpaper back, a new one could not be set (“The wallpaper could not be set”).'],
+    ru: ['Голос в haku Pro: рябь при нажатии на логотип стала спокойнее, волны шире, и логотип больше не так сильно искажается. Пока вы его держите и пока haku разбирает сказанное, логотип мягко пульсирует, а не гаснет.',
+         'Исправлено (haku Pro): после возврата своих обоев новые не ставились («Не удалось поставить обои»).'],
+    fr: ['Voix de haku Pro : l’onde quand vous appuyez sur le logo est plus calme, avec des vagues plus larges, et le logo se déforme beaucoup moins. Pendant que vous le maintenez et que haku comprend ce que vous avez dit, le logo pulse doucement au lieu de s’éteindre.',
+         'Corrigé (haku Pro) : après avoir remis votre propre fond d’écran, un nouveau ne pouvait plus être mis (« Impossible de changer le fond d’écran »).'] },
   { v: '0.4.80',
     en: ['haku Pro voice: while haku listens, the waves now take the shape of the haku logo: two soft translucent layers in one colour that shifts along your lights’ palette the louder you speak, with a light neon edge. Where an edge passes over the “control” word and its line, they bend and blur as if under glass.',
          'Pressing the logo sends a ripple through it, like a drop falling into water.'],

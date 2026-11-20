@@ -81,13 +81,16 @@ html.intro .brand .logo::after { opacity: 0; }
 .brand .ripple { position: absolute; left: 50%; top: calc(clamp(150px, 6.29vw + 70px, 190px) * 903 / 1540 / 2); width: calc(clamp(150px, 6.29vw + 70px, 190px) * 1.16);
   height: calc(clamp(150px, 6.29vw + 70px, 190px) * (903 / 1540 + .16)); transform: translate(-50%, -50%); z-index: 2; pointer-events: none; display: none; }
 .brand.drop .ripple { display: block; }
-.brand.drop .logo { opacity: 0; transition: none; }
+.brand.drop .logo { visibility: hidden; }   /* not opacity: the pulse below animates it */
 /* the word under the layers, seen through them as through glass: drawn bent on a canvas in its place, the word hidden */
 .brand .warp { position: absolute; pointer-events: none; display: none; }
 .brand.warp .warp { display: block; }
 .brand.warp .word { visibility: hidden; }
-.brand.think .logo { animation: logo-think 1.2s ease-in-out infinite alternate; }
-@keyframes logo-think { to { opacity: .45; } }
+/* held down, and on while the command is made out: the logo (and the drop over it) pulses, one animation for both states so
+   letting go never restarts it */
+.brand.listen .logo, .brand.listen .ripple, .brand.think .logo { animation: logo-pulse 1.4s ease-in-out infinite; }
+@keyframes logo-pulse { 50% { opacity: .5; } }
+body.calm .brand.listen .logo { animation: none; }
 body.calm .brand.think .logo { animation: none; opacity: .6; }
 .brand .word { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 4px; font: 600 11px var(--display); letter-spacing: .3em; color: var(--muted); }
 .brand .word::after { content: ""; flex: 1; height: 1px; background: var(--line2); }

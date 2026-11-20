@@ -5802,9 +5802,12 @@ function updateTalk() {
     ['role', 'tabindex', 'aria-label', 'title'].forEach(a => lg.removeAttribute(a)); lg.setAttribute('aria-hidden', 'true');
     WV.held = false;
   }
-  const listen = talk && (V.state === 1 || WV.held);
+  const listen = talk && (V.state === 1 || WV.held), think = talk && V.state === 2 && !WV.held;
+  const op = (br.classList.contains('listen') || br.classList.contains('think')) && !listen && !think ? getComputedStyle(lg).opacity : '';
   br.classList.toggle('listen', listen);
-  br.classList.toggle('think', talk && V.state === 2 && !WV.held);
+  br.classList.toggle('think', think);
+  // the pulse stopped half-way: back to full from where it was (the logo's transition), not a jump
+  if (op) { lg.style.opacity = op; getComputedStyle(lg).opacity; lg.style.opacity = ''; }
   WV.on = listen;
   if ((listen || WV.drop) && !WV.raf) WV.raf = requestAnimationFrame(wavesDraw);
 }
@@ -6004,8 +6007,9 @@ function wavesDrop(now, lr, dpr) {
     Object.assign(Q, { cw, ch, al, px, py, ctx, img: ctx.createImageData(cw, ch), far: Math.hypot(Math.max(px, cw - px), Math.max(py, ch - py)) });
   }
   br.classList.add('drop');
-  const { al, px, py, img } = Q, o = img.data, [cr, cg, cb] = dropRgb(), lam = .13 * Wp, sg = 2 * (1.2 * lam) ** 2, kk = 6.2832 / lam;
-  const Rf = p * Q.far, amp = .022 * Wp * Math.pow(1 - p, 1.5), band = 3.6 * lam;
+  const { al, px, py, img } = Q, o = img.data, [cr, cg, cb] = dropRgb(), lam = .22 * Wp, sg = 2 * (1.2 * lam) ** 2, kk = 6.2832 / lam;
+  // wide rings and a small lift: the steepest bend (amp * kk) stays near .3, the letters lean and never fold over
+  const Rf = p * Q.far, amp = .01 * Wp * Math.pow(1 - p, 1.5), band = 3.6 * lam;
   for (let y = 0; y < ch; y++) for (let X = 0; X < cw; X++) {
     const i = y * cw + X, j = i * 4, dx = X - px, dy = y - py, d = Math.hypot(dx, dy), u = d - Rf;
     let a = al[i], sh = 0;
@@ -6014,7 +6018,7 @@ function wavesDrop(now, lr, dpr) {
       const sx = Math.min(cw - 1.001, Math.max(0, X - dx / d * off)), sy = Math.min(ch - 1.001, Math.max(0, y - dy / d * off));
       const x0 = sx | 0, y0 = sy | 0, fx = sx - x0, fy = sy - y0, k = y0 * cw + x0;   // bilinear
       a = (al[k] * (1 - fx) + al[k + 1] * fx) * (1 - fy) + (al[k + cw] * (1 - fx) + al[k + cw + 1] * fx) * fy;
-      sh = .3 * env * (1 - p) * Math.cos(ph);   // the crests catch the light, the troughs a shade
+      sh = .2 * env * (1 - p) * Math.cos(ph);   // the crests catch the light, the troughs a shade
     }
     o[j] = sh > 0 ? cr + (255 - cr) * sh : cr * (1 + sh); o[j + 1] = sh > 0 ? cg + (255 - cg) * sh : cg * (1 + sh);
     o[j + 2] = sh > 0 ? cb + (255 - cb) * sh : cb * (1 + sh); o[j + 3] = a;
