@@ -2244,7 +2244,14 @@
         for (i = 0; i++ < 60 && !run(fr) && !gone(fr);) await wait(50);
         if (run(fr)) break;
         saw(fr);
-        if (fr.ms >= SLOW) { await again(fr); for (i = 0; i++ < 60 && !run(fr) && !gone(fr);) await wait(50); break; }
+        // armed again it starts after intro.js's 800 ms and its first draws, seconds on a busy 2-core runner: until it
+        // runs or ends, and which of them is said
+        if (fr.ms >= SLOW) {
+          await again(fr); const t1 = performance.now();
+          try { await until(() => run(fr) || gone(fr), 'the intro armed again', 15000); } catch { }
+          if (!run(fr)) seen.push('armed again: ' + (gone(fr) ? 'gone' : 'not started') + ' after ' + Math.round(performance.now() - t1) + ' ms');
+          break;
+        }
       }
       ok(run(fr), 'the intro did not start, 5 times: ' + seen.join(', '));
       Object.defineProperty(fr.contentDocument, 'hidden', { value: true, configurable: true }); fr.contentDocument.dispatchEvent(new Event('visibilitychange'));
