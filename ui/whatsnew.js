@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.83',
+    en: ['The effect constructor is now a workshop: blocks with their pictures on the left — click one, or drag it into the layers or straight onto the picture; drag a layer by ⠿ to reorder it.',
+         'Shape the layer right on the picture: drag a ring to move it, drag a gradient, wave or noise to turn it, the mouse wheel changes the size. The chosen layer’s settings are on the right.',
+         'Drag the lines between the panels to make them wider or narrower; haku remembers it, a double-click puts it back.'],
+    ru: ['Конструктор эффектов стал мастерской: слева блоки с картинками — нажмите на блок или перетащите его в слои или прямо на картинку; слой переставляется перетаскиванием за ⠿.',
+         'Слой настраивается прямо на картинке: кольцо перетаскивается, градиент, волна и шум поворачиваются мышью, колесо меняет размер. Настройки выбранного слоя — справа.',
+         'Линии между панелями перетаскиваются — панели шире или уже; haku это запоминает, двойной щелчок возвращает как было.'],
+    fr: ['Le constructeur d’effets devient un atelier : à gauche, des blocs avec leur aperçu — cliquez sur un bloc ou faites-le glisser dans les calques ou directement sur l’image ; faites glisser un calque par ⠿ pour le déplacer.',
+         'Réglez le calque directement sur l’image : faites glisser un anneau pour le déplacer, un dégradé, une vague ou un bruit pour le tourner ; la molette change la taille. Les réglages du calque choisi sont à droite.',
+         'Faites glisser les lignes entre les panneaux pour les élargir ou les rétrécir ; haku s’en souvient, un double-clic les remet comme avant.'] },
   { v: '0.4.82',
     en: ['Easier control: a device’s rarer settings fold under “Advanced”; right-click a tile on Home for quick settings; Devices has a compact list view (View: List); Ctrl+K, or the magnifier at the top, finds a device, a page, a profile or a command as you type; “Colours from a mood” folds to one line until you open it.',
          'Settings are in fewer tabs: the app, its look and the files are together under “General”. Help is now the ? button at the top, next to the magnifier.',

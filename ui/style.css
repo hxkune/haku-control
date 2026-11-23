@@ -333,36 +333,88 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .pdlg .check { display: flex; }
 .pdlg-zones-note { margin: 6px 0 0 !important; }
 .card.pdlg.txb { width: min(680px, 100%); }
-/* the constructor: the picture (64x36, scaled up as the LEDs would show it), the layers on the left, the chosen one on the right */
-.card.pdlg.cdlg { width: min(760px, 100%); }
+/* the constructor: a workshop. Blocks and layers on the left, the stage (the picture as the LEDs show it, 64x36, with
+   handles to drag) in the middle, the chosen layer's settings on the right; the panels between are dragged wider */
+.card.pdlg.cdlg { width: min(1400px, 100%); height: calc(100vh - 32px); overflow: hidden; gap: 10px; }
+.cdlg-hd { min-width: 0; }
+.cdlg-hint { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 .cdlg-tools { display: flex; gap: 6px; align-items: center; }
 .cdlg-tools .select { margin-top: 0; padding-block: 6px; width: auto; max-width: 220px; }
 .cdlg-tools .btn:disabled { opacity: .35; cursor: default; }
-.cdlg-view { width: 100%; aspect-ratio: 16 / 9; display: block; background: #000; image-rendering: pixelated; }
-.card.pdlg.cdlg.big { width: min(1400px, 100%); }
-.cdlg.big .cdlg-view { flex: none; width: auto; max-width: 100%; height: min(66vh, calc((100vw - 80px) * 9 / 16)); margin-inline: auto; }
+.cdlg-ws { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: var(--cl, 240px) 8px minmax(0, 1fr) 8px var(--cr, 320px); }
+.cdlg-side, .cdlg-mid, .cdlg-insp { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.cdlg-mid { padding: 0 4px; }
+.cdlg-h { display: flex; align-items: center; gap: 8px; margin: 2px 0 0; font: 600 13px/1.2 var(--body); color: var(--text); }
+.cdlg-h i { flex: none; font-style: normal; width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid var(--line3); font-size: 10px; }
+.cdlg-h span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cdlg-note { margin: 0; font-size: 11.5px; color: var(--faint, var(--muted)); line-height: 1.4; }
+.cdlg-note:empty { display: none; }
+/* the splitters: a thin line that thickens under the pointer */
+.cdlg-split { cursor: col-resize; position: relative; outline: none; touch-action: none; }
+.cdlg-split::before { content: ''; position: absolute; inset: 0 3px; background: var(--line2); transition: background-color .15s, inset .15s; }
+.cdlg-split:hover::before, .cdlg-split:focus-visible::before, .cdlg-split.drag::before { inset: 0 2px; background: var(--strong); }
+/* the blocks: one tile per shape, its look drawn in the effect's colours; dragged into the layers or onto the stage */
+.cdlg-blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 4px; }
+.cdlg-blocks button { display: flex; flex-direction: column; gap: 4px; align-items: stretch; padding: 4px; background: transparent; border: 1px dashed var(--line3); color: var(--muted); font: 11px var(--body); cursor: grab; transition: border-color .15s, color .15s; }
+.cdlg-blocks button:hover:not(:disabled), .cdlg-blocks button:focus-visible { border-style: solid; border-color: var(--strong); color: var(--text); }
+.cdlg-blocks button:active { cursor: grabbing; }
+.cdlg-blocks button:disabled { opacity: .35; cursor: default; }
+.cdlg-blocks canvas { width: 100%; aspect-ratio: 16 / 9; display: block; background: #000; image-rendering: pixelated; }
+/* the stage: a dotted bench, the picture as big as fits at 16:9, its LED grid over it and the handles over that */
+.cdlg-stage { flex: 1 1 auto; min-height: 150px; container-type: size; display: grid; place-items: center;
+  background: radial-gradient(var(--line2) 1px, transparent 1.5px) 0 0 / 14px 14px; border: 1px solid var(--line2); }
+.cdlg-stage.drop { border-color: var(--strong); border-style: dashed; }
+.cdlg-frame { position: relative; width: min(100cqw - 16px, (100cqh - 16px) * 16 / 9); aspect-ratio: 16 / 9; --gx: 64; --gy: 36; touch-action: none; }
+.cdlg-frame::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(to right, rgba(0, 0, 0, .45) 1px, transparent 1px) 0 0 / calc(100% / var(--gx)) 100%,
+    linear-gradient(to bottom, rgba(0, 0, 0, .45) 1px, transparent 1px) 0 0 / 100% calc(100% / var(--gy)); }
+.cdlg-view { width: 100%; height: 100%; display: block; background: #000; image-rendering: pixelated; }
+.cdlg-hand { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; overflow: visible; pointer-events: none; }
+.cdlg-frame.grab { cursor: crosshair; }
+.cdlg-frame.grab.drag { cursor: grabbing; }
+.cdlg-hand * { vector-effect: non-scaling-stroke; fill: none; stroke: #fff; stroke-width: 1.5; }
+.cdlg-hand .sh { stroke: rgba(0, 0, 0, .7); stroke-width: 4; }
+.cdlg-hand .knob { fill: #fff; } .cdlg-hand .reach { stroke-dasharray: 4 4; }
+/* enlarged: the stage alone, the panels folded away */
+.cdlg.big .cdlg-ws { grid-template-columns: 0 0 minmax(0, 1fr) 0 0; }
+.cdlg.big .cdlg-side, .cdlg.big .cdlg-insp, .cdlg.big .cdlg-split { visibility: hidden; overflow: hidden; }
 #cdlg-ab[aria-pressed=true], #cdlg-big[aria-pressed=true] { border-color: var(--strong); color: var(--strong); }
 .cdlg-play { display: flex; gap: 8px; align-items: center; }
 .cdlg-play .range { flex: 1; min-width: 0; }
 .cdlg-play b { font: 12px var(--font); color: var(--muted); min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
 .cdlg-play .select { margin-top: 0; padding-block: 6px; width: auto; }
 .cdlg-cap { margin: -4px 0 0; font-size: 12px; color: var(--muted); }
+.cdlg-mid > .fx-adv { margin: 0; }
 .cdlg-list .cdlg-solo[aria-pressed="true"] { color: var(--strong); }
 .cdlg-dead { margin: 0; font-size: 12px; color: var(--muted); }
-.cdlg-body { display: grid; grid-template-columns: minmax(180px, 230px) 1fr; gap: 16px; align-items: start; }
-@media (max-width: 560px) { .cdlg-body { grid-template-columns: 1fr; } }
-.cdlg-side { display: flex; flex-direction: column; gap: 8px; }
+/* the layers: a grip, the colour, the name; a line shows where a dragged block or layer lands */
 .cdlg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.cdlg-list li { display: flex; align-items: center; gap: 2px; border: 1px solid var(--line2); }
+.cdlg-list li { display: flex; align-items: center; gap: 2px; border: 1px solid var(--line2); position: relative; }
 .cdlg-list li.on { border-color: var(--strong); }
 .cdlg-list li.off .cdlg-pick { opacity: .45; }
-.cdlg-list button { background: transparent; border: 0; color: var(--muted); font: 12px var(--body); padding: 7px 5px; cursor: pointer; }
+.cdlg-list li.lift { opacity: .4; }
+.cdlg-list li.drop-a::before, .cdlg-list li.drop-b::after { content: ''; position: absolute; left: -1px; right: -1px; height: 2px; background: var(--strong); pointer-events: none; }
+.cdlg-list li.drop-a::before { top: -4px; }
+.cdlg-list li.drop-b::after { bottom: -4px; }
+.cdlg-list button { background: transparent; border: 0; color: var(--muted); font: 12px var(--body); padding: 7px 4px; cursor: pointer; }
 .cdlg-list button:hover:not(:disabled) { color: var(--text); }
 .cdlg-list button:disabled { opacity: .3; cursor: default; }
-.cdlg-list .cdlg-pick { flex: 1; text-align: left; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cdlg-list .cdlg-grip { cursor: grab; padding-inline: 5px 2px; color: var(--faint, var(--muted)); }
+.cdlg-list .cdlg-chip { flex: none; width: 10px; height: 10px; border: 1px solid var(--line3); background: var(--c); }
+.cdlg-list .cdlg-pick { flex: 1; min-width: 0; text-align: left; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cdlg-list .cdlg-pick i { color: var(--muted); font-style: normal; }
 .cdlg-edit { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .cdlg-edit .fx-adv { margin: 0; }
+/* a small window: one column that scrolls, no splitters, the stage at its own 16:9 */
+@media (max-width: 900px) {
+  .card.pdlg.cdlg { height: auto; overflow-y: auto; }
+  .cdlg-ws { flex: none; display: flex; flex-direction: column; gap: 14px; }
+  .cdlg-side, .cdlg-mid, .cdlg-insp { flex: none; overflow: visible; }
+  .cdlg-split { display: none; }
+  .cdlg-stage { flex: none; min-height: 0; container-type: inline-size; padding: 8px; }
+  .cdlg-frame { width: 100%; }
+  .cdlg.big .cdlg-side, .cdlg.big .cdlg-insp { display: none; }
+}
 .cdlg-col { display: flex; gap: 10px; align-items: center; }
 .cdlg-col .select { flex: 1; }
 .cdlg-col .sw { flex: none; margin-top: 9px; }

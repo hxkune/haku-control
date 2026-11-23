@@ -975,7 +975,7 @@
 <div class="sheet-wrap pdlg-wrap hidden" id="cdlg">
   <div class="card pdlg cdlg" role="dialog" aria-modal="true" aria-labelledby="cdlg-title">
     <div class="pdlg-head">
-      <h3 id="cdlg-title" data-i18n="cmp.title">Constructor</h3>
+      <div class="cdlg-hd"><h3 id="cdlg-title" data-i18n="cmp.title">Constructor</h3><p class="cdlg-hint" data-i18n="cmp.ws.hint">Build an effect from blocks: drag a block into the layers or onto the stage, then shape it right on the picture</p></div>
       <div class="cdlg-tools">
         <select class="select" id="cdlg-tut" aria-label="Start from"></select>
         <button class="btn ghost small" type="button" id="cdlg-undo" data-i18n-title="cmp.undo" title="Undo (Ctrl+Z)">↶</button>
@@ -997,8 +997,25 @@
         <button class="btn small ghost" type="button" id="cdlg-rec-drop"><span data-i18n="cmp.rec.drop">Delete</span></button>
       </div>
     </div>
-    <canvas class="cdlg-view" id="cdlg-view" width="64" height="36"></canvas>
-    <canvas class="pdlg-prev" id="cdlg-strip"></canvas>
+    <div class="cdlg-ws" id="cdlg-ws">
+      <section class="cdlg-side" aria-labelledby="cdlg-h-blocks">
+        <h4 class="cdlg-h" id="cdlg-h-blocks"><i>1</i><span data-i18n="cmp.ws.blocks">Blocks</span></h4>
+        <div class="cdlg-blocks" id="cdlg-blocks"></div>
+        <h4 class="cdlg-h"><i>2</i><span data-i18n="cmp.ws.layers">Layers</span></h4>
+        <ol class="cdlg-list" id="cdlg-list"></ol>
+        <button class="btn small ghost" type="button" id="cdlg-add"><span data-i18n="cmp.add">Add layer</span></button>
+        <p class="cdlg-note" data-i18n="cmp.ws.stack">Lower in the list is drawn on top. Drag a row (⠿) to reorder.</p>
+      </section>
+      <div class="cdlg-split" data-side="l" role="separator" aria-orientation="vertical" tabindex="0" data-i18n-aria="cmp.ws.split" aria-label="Panel width (arrows; double-click: back)"></div>
+      <section class="cdlg-mid">
+        <div class="cdlg-stage" id="cdlg-stage">
+          <div class="cdlg-frame" id="cdlg-frame">
+            <canvas class="cdlg-view" id="cdlg-view" width="64" height="36"></canvas>
+            <svg class="cdlg-hand" id="cdlg-hand" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
+        </div>
+        <p class="cdlg-note" id="cdlg-stage-hint"></p>
+        <canvas class="pdlg-prev" id="cdlg-strip"></canvas>
     <div class="cdlg-play">
       <button class="btn ghost small" type="button" id="cdlg-pp" aria-pressed="true" title="Pause">❚❚</button>
       <button class="btn ghost small" type="button" id="cdlg-rs" data-i18n-title="cmp.restart" title="From the start">⏮</button>
@@ -1010,16 +1027,16 @@
       <button class="btn ghost small" type="button" id="cdlg-ab" aria-pressed="false" data-i18n-title="cmp.ab.t" title="Show the applied composition at the same moment (nothing is sent)"><span data-i18n="cmp.ab">Before</span></button>
       <button class="btn ghost small" type="button" id="cdlg-big" aria-pressed="false" data-i18n-title="cmp.big" title="Enlarge the picture (Esc: back)">⤢</button>
     </div>
-    <p class="cdlg-cap" id="cdlg-cap"></p>
-    <div class="cdlg-body">
-      <div class="cdlg-side">
-        <ol class="cdlg-list" id="cdlg-list"></ol>
-        <button class="btn small ghost" type="button" id="cdlg-add"><span data-i18n="cmp.add">Add layer</span></button>
-      </div>
-      <div class="cdlg-edit" id="cdlg-edit"></div>
+        <p class="cdlg-cap" id="cdlg-cap"></p>
+        <details class="fx-adv" id="cdlg-knobs-box"><summary data-i18n="cmp.knobs">Settings on the effect panel</summary><div id="cdlg-knobs"></div></details>
+        <details class="fx-adv" id="cdlg-scenes-box"><summary data-i18n="cmp.sc">Scenes and layer groups</summary><div id="cdlg-scenes"></div></details>
+      </section>
+      <div class="cdlg-split" data-side="r" role="separator" aria-orientation="vertical" tabindex="0" data-i18n-aria="cmp.ws.split" aria-label="Panel width (arrows; double-click: back)"></div>
+      <section class="cdlg-insp" aria-labelledby="cdlg-insp-t">
+        <h4 class="cdlg-h"><i>3</i><span id="cdlg-insp-t"></span></h4>
+        <div class="cdlg-edit" id="cdlg-edit"></div>
+      </section>
     </div>
-    <details class="fx-adv" id="cdlg-knobs-box"><summary data-i18n="cmp.knobs">Settings on the effect panel</summary><div id="cdlg-knobs"></div></details>
-    <details class="fx-adv" id="cdlg-scenes-box"><summary data-i18n="cmp.sc">Scenes and layer groups</summary><div id="cdlg-scenes"></div></details>
     <p class="cdlg-st" id="cdlg-st" role="status" aria-live="polite"></p>
     <div class="cdlg-ask hidden" id="cdlg-ask" role="alertdialog" aria-labelledby="cdlg-ask-title" aria-describedby="cdlg-ask-text">
       <b id="cdlg-ask-title" data-i18n="cmp.ask.title">Close the constructor?</b>

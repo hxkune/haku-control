@@ -3429,6 +3429,78 @@
     });
   });
 
+  test('constructor workshop: blocks added by a click or dropped in the layers or on the stage, rows dragged, handles and the wheel on the picture, panel widths kept; nothing sent', async () => {
+    await fresh(); showTab('effects');
+    let keptW = null; try { keptW = localStorage.getItem('cmpW'); } catch (e) { }
+    await cmpKeep(async () => {
+      for (let i = 1; i <= 8; i++) setCfg('custom', 'l' + i, ''); for (let i = 1; i <= 3; i++) setCfg('custom', 'k' + i, '');
+      STATE.effect = S.effect = 'custom'; renderEffectSide(); flushSets();
+      $('#cmp-open').click(); await wait(80); sent.length = 0;
+      const fxc = fxPreview.comp, li = () => $$('#cdlg-list li'), blk = i => $(`#cdlg-blocks button[data-shape="${i}"]`), fr = $('#cdlg-frame');
+      const at = (x, y) => { const r = fr.getBoundingClientRect(); return { clientX: r.left + r.width * x / 100, clientY: r.top + r.height * y / 100 }; };
+      const drag = (el, type, data, o) => { const dt = new DataTransfer(); if (data) dt.setData(data[0], data[1]);
+        const e = new DragEvent(type, Object.assign({ bubbles: true, cancelable: true, dataTransfer: dt }, o)); el.dispatchEvent(e); return e; };
+      const half = (el, top) => { const r = el.getBoundingClientRect(); return { clientX: r.left + 20, clientY: top ? r.top + 2 : r.bottom - 2 }; };
+      ok($$('#cdlg-blocks button').length === fxc.SHAPES.length && $$('#cdlg-blocks canvas').length === fxc.SHAPES.length, 'a block per shape, each with its picture');
+      ok(li().length === 3 && li().every(x => x.draggable && x.querySelector('.cdlg-grip') && x.querySelector('.cdlg-chip')), 'rows: dragged, with a grip and the colour');
+      // a click adds the block over the chosen layer, chosen, one undo step
+      li()[0].querySelector('[data-a="pick"]').click(); await wait(20);
+      const h0 = CMP.hist.length; blk(fxc.SHAPES.indexOf('ring')).click(); await wait(20);
+      ok(dl().length === 4 && dl()[1].startsWith('s:ring') && CMP.sel === 1 && li()[1].classList.contains('on') && CMP.hist.length === h0 + 1, 'a click: ' + dl().join(' | '));
+      key(document.body, 'z', true); await wait(20); ok(dl().length === 3, 'undo the block');
+      // dropped on the list: before or after the row under the pointer; the line says where
+      const d0 = drag(li()[0], 'dragover', ['application/x-haku-block', '1'], half(li()[0], 1));
+      ok(d0.defaultPrevented && li()[0].classList.contains('drop-a'), 'a block over the first row shows a line above it');
+      drag(li()[0], 'drop', ['application/x-haku-block', '1'], half(li()[0], 1)); await wait(20);
+      ok(dl().length === 4 && dl()[0].startsWith('s:grad') && CMP.sel === 0 && !$('#cdlg .drop-a, #cdlg .drop-b'), 'dropped above the first: ' + dl().join(' | '));
+      // a row dragged: the layer moves, its knob with it; dropped where it was, nothing changes
+      const x = CMP.L[3], k = CMP.K.find(K => K.L === x); ok(k && dk()[2].startsWith('4 n '), 'the reactor knob on layer 4: ' + dk()[2]);
+      drag(li()[0], 'drop', ['application/x-haku-layer', '3'], half(li()[0], 1)); await wait(20);
+      ok(CMP.L[0] === x && k.L === x && CMP.sel === 0 && dk()[2].startsWith('1 n '), 'moved to the top with its knob: ' + dk()[2]);
+      const same = CMP.cur, hs = CMP.hist.length; drag(li()[1], 'drop', ['application/x-haku-layer', '1'], half(li()[1], 0)); await wait(20);
+      ok(CMP.cur === same && CMP.hist.length === hs, 'dropped in its own place: no step');
+      ok(!drag($('#cdlg-stage'), 'dragover', ['application/x-haku-layer', '1'], at(50, 50)).defaultPrevented, 'the stage takes blocks only');
+      // dropped on the stage: over the chosen layer; a ring lands where it fell
+      ok(drag($('#cdlg-stage'), 'dragover', ['application/x-haku-block', '3'], at(25, 75)).defaultPrevented && $('#cdlg-stage').classList.contains('drop'), 'a block over the stage');
+      drag($('#cdlg-stage'), 'drop', ['application/x-haku-block', '3'], at(25, 75)); await wait(20);
+      const R = () => CMP.L[CMP.sel], P = n => R().p[CMP_LP[n]];
+      ok(CMP.sel === 1 && fxc.SHAPES[R().shape] === 'ring' && Math.abs(P('x') - 25) <= 1 && Math.abs(P('y') - 75) <= 1 && !$('#cdlg-stage').classList.contains('drop'), 'the ring where it fell: ' + dl()[1]);
+      // the ring's handle: dragged on the picture, one undo step; the slider shows it; the wheel sizes it
+      ok(fr.classList.contains('grab') && $$('#cdlg-hand ellipse').length >= 2 && $('#cdlg-stage-hint').textContent === t('cmp.ws.do.xy'), 'a ring has a handle and says so');
+      const h1 = CMP.hist.length, pe = (ty, o) => fr.dispatchEvent(new PointerEvent(ty, Object.assign({ bubbles: true, cancelable: true, pointerId: 1, button: 0 }, o)));
+      pe('pointerdown', at(60, 40)); pe('pointermove', at(65, 35)); pe('pointermove', at(70, 30)); pe('pointerup', at(70, 30));
+      ok(Math.abs(P('x') - 70) <= 1 && Math.abs(P('y') - 30) <= 1 && CMP.hist.length === h1 + 1 && !fr.classList.contains('drag'), 'dragged to 70,30 in one step: ' + dl()[1]);
+      const xr = $('#cdlg-edit input[type=range][data-p="x"]'); ok(!xr || +xr.value === P('x'), 'the x slider follows');
+      key(document.body, 'z', true); await wait(20); ok(Math.abs(P('x') - 25) <= 1, 'undo the drag: ' + P('x'));
+      const sz = P('sz'); fr.dispatchEvent(new WheelEvent('wheel', Object.assign({ bubbles: true, cancelable: true, deltaY: -100 }, at(50, 50))));
+      ok(P('sz') === Math.min(fxc.LPD[CMP_LP.sz][3], sz + 5), 'the wheel: size ' + sz + ' -> ' + P('sz'));
+      // a gradient turns towards the pointer
+      li()[2].querySelector('[data-a="pick"]').click(); await wait(20);   // the undo made the layers anew: by place
+      ok(dl()[2].startsWith('s:grad') && $('#cdlg-stage-hint').textContent === t('cmp.ws.do.a') && $('#cdlg-hand line'), 'a gradient: an angle handle');
+      pe('pointerdown', at(60, 60)); pe('pointerup', at(60, 60)); ok(P('a') === 45, 'turned to 45: ' + P('a'));
+      // a fill has nothing to drag; Before hides the handles
+      const fi = CMP.L.findIndex(L => fxc.SHAPES[L.shape] === 'fill');
+      if (fi >= 0) { li()[fi].querySelector('[data-a="pick"]').click(); await wait(20);
+        const cur = CMP.cur; pe('pointerdown', at(30, 30)); pe('pointerup', at(30, 30));
+        ok(!fr.classList.contains('grab') && CMP.cur === cur && !$('#cdlg-hand').innerHTML, 'a fill: nothing to drag'); }
+      // full: the blocks are off with the add button
+      let n = 0; while (CMP.L.length < fxc.MAX && n < 9) { $('#cdlg-add').click(); n++; } await wait(20);
+      ok($$('#cdlg-blocks button').every(b => b.disabled), 'eight layers: the blocks are off');
+      blk(0).click(); drag($('#cdlg-stage'), 'drop', ['application/x-haku-block', '0'], at(50, 50)); ok(CMP.L.length === fxc.MAX, 'nothing past eight');
+      // the panels: arrows widen and keep it, a double-click puts it back; never past the room the stage needs
+      const sp = $('.cdlg-split[data-side="l"]'), w0 = CMPW_NOW.l;
+      sp.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      ok(CMPW_NOW.l === w0 + 16 && JSON.parse(localStorage.getItem('cmpW')).l === w0 + 16 && $('#cdlg-ws').style.getPropertyValue('--cl') === (w0 + 16) + 'px' && +sp.getAttribute('aria-valuenow') === w0 + 16, 'wider by the arrow and kept: ' + CMPW_NOW.l);
+      const sr = $('.cdlg-split[data-side="r"]'); for (let i = 0; i < 40; i++) sr.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      ok(CMPW_NOW.r <= 520 && $('.cdlg-mid').getBoundingClientRect().width >= 290, 'the stage keeps its room: ' + CMPW_NOW.r);
+      sp.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); sr.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      ok(CMPW_NOW.l === 240 && CMPW_NOW.r === 320, 'a double-click: back to the defaults');
+      const st = $('#cdlg-strip'); ok(st.width === Math.round(st.clientWidth * devicePixelRatio), 'the strip follows its width: ' + st.width + ' / ' + st.clientWidth);
+      ok(!cmpSets().length && !sent.some(o => o.cmd === 'comp_apply'), 'nothing sent: ' + JSON.stringify(cmpSets()));
+    });
+    try { if (keptW === null) localStorage.removeItem('cmpW'); else localStorage.setItem('cmpW', keptW); } catch (e) { }
+  });
+
   test('constructor keyframes, scenes and layer groups: made with Pro and applied with the layers; without Pro they play, open, insert and go, new ones refused here and by the core', async () => {
     await fresh(); showTab('effects');
     const pro0 = { ...STATE.pro };

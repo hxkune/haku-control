@@ -1838,8 +1838,7 @@ function cmpOpen(c) {
   $('#cdlg-ask').classList.add('hidden');
   cmpBig(0);
   $('#cdlg').classList.remove('hidden');
-  cmpRender();
-  const s = $('#cdlg-strip'); s.width = s.clientWidth * devicePixelRatio; s.height = s.clientHeight * devicePixelRatio;
+  cmpRender(); cmpWFit();
   if (!CMP.raf) CMP.raf = requestAnimationFrame(cmpPreview);
   setTimeout(() => $('#cdlg-tut').focus(), 30);
 }
@@ -1891,6 +1890,8 @@ function cmpTools() {
   const dirty = cmpDirty();
   $('#cdlg-undo').disabled = !CMP.hist.length; $('#cdlg-redo').disabled = !CMP.fut.length;
   $('#cdlg-add').disabled = CMP.L.length >= fxc.MAX;
+  document.querySelectorAll('#cdlg-blocks button').forEach(b => { b.disabled = CMP.L.length >= fxc.MAX; });
+  cmpHand();
   $('#cdlg-apply').disabled = !dirty || CMP.st === 'sent'; $('#cdlg-revert').disabled = !dirty;
   if (!dirty) CMP.ab = 0;   // nothing to compare: the draft is what is applied
   const ab = $('#cdlg-ab'); ab.disabled = !dirty; ab.setAttribute('aria-pressed', String(!!CMP.ab));
@@ -2057,8 +2058,10 @@ function cmpRender() { CMP.stk = cmpStk(); cmpList(); cmpEdit(); cmpKnobs(); cmp
 // what besides [custom] changes the editor: the Pro lock, the stored scenes and groups
 const cmpStk = () => JSON.stringify([proLocked(), Object.keys(S.cfg).filter(s => /^c(scene|group)\.\d+$/.test(s)).map(s => [s, S.cfg[s]])]);
 function cmpList() {
-  const n = CMP.L.length, off = L => L.p[CMP_LP.hide] >= 0.5;
-  $('#cdlg-list').innerHTML = CMP.L.map((L, i) => `<li class="${i === CMP.sel ? 'on' : ''}${off(L) ? ' off' : ''}" data-i="${i}">` +
+  const n = CMP.L.length, off = L => L.p[CMP_LP.hide] >= 0.5, pal = effPal('custom');
+  const chip = L => L.col === -1 && pal.length > 1 ? `linear-gradient(90deg,${pal.join(',')})` : cmpHex(L);
+  $('#cdlg-list').innerHTML = CMP.L.map((L, i) => `<li class="${i === CMP.sel ? 'on' : ''}${off(L) ? ' off' : ''}" data-i="${i}" draggable="true">` +
+    `<span class="cdlg-grip" title="${t('cmp.ws.grip')}" aria-hidden="true">⠿</span><span class="cdlg-chip" style="--c:${chip(L)}"></span>` +
     `<button type="button" class="cdlg-eye" data-a="eye" title="${t(off(L) ? 'cmp.show' : 'cmp.hide')}" aria-pressed="${!off(L)}">${off(L) ? '○' : '●'}</button>` +
     `<button type="button" class="cdlg-pick" data-a="pick" aria-current="${i === CMP.sel}">${i + 1} · ${esc(cmpName(L))}${L.blend ? ` <i>${t('cmp.b.' + fxc.BLENDS[L.blend])}</i>` : ''}</button>` +
     `<button type="button" class="cdlg-solo" data-a="solo" title="${t('cmp.solo')}" aria-pressed="${CMP.solo === L}">◐</button>` +
@@ -2080,6 +2083,138 @@ $('#cdlg-list').addEventListener('click', e => {
   }
   cmpChanged(''); cmpRender();
 });
+// the blocks: one per shape, drawn in the effect's colours. A click adds it over the chosen layer; dragged, it lands
+// where it is let go (in the layers, or on the stage: a ring where it fell)
+const CMP_DB = 'application/x-haku-block', CMP_DL = 'application/x-haku-layer', cmpBlockLine = i => 's:' + fxc.SHAPES[i] + ' c:p';
+function cmpBlocks(pal) {
+  const box = $('#cdlg-blocks'), sig = pal.join() + LANG; if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  box.innerHTML = fxc.SHAPES.map((s, i) => `<button type="button" draggable="true" data-shape="${i}" title="${esc(t('cmp.ws.block', t('cmp.s.' + s)))}"${CMP.L.length < fxc.MAX ? '' : ' disabled'}><canvas width="32" height="18"></canvas><span>${t('cmp.s.' + s)}</span></button>`).join('');
+  box.querySelectorAll('canvas').forEach((c, i) => c.getContext('2d').putImageData(new ImageData(fxc.frame([fxc.parse(cmpBlockLine(i))], pal, 32, 18, 1.5, [], 1.5), 32, 18), 0, 0));
+}
+function cmpInsert(shape, at, xy) {
+  if (CMP.L.length >= fxc.MAX) return;
+  const L = fxc.parse(cmpBlockLine(shape));
+  if (xy && fxc.SHAPES[shape] === 'ring') { L.p[CMP_LP.x] = Math.round(xy[0]); L.p[CMP_LP.y] = Math.round(xy[1]); }
+  CMP.L.splice(at, 0, L); CMP.sel = at; cmpChanged(''); cmpRender();
+}
+const cmpOver = () => Math.min(CMP.sel + 1, CMP.L.length);   // over the chosen layer: drawn on top of it
+$('#cdlg-blocks').addEventListener('click', e => { const b = e.target.closest('button[data-shape]'); if (b && !b.disabled) cmpInsert(+b.dataset.shape, cmpOver()); });
+const cmpDragIs = (e, ty) => !!e.dataTransfer && [...e.dataTransfer.types].includes(ty);
+const cmpDropClear = () => document.querySelectorAll('#cdlg .drop-a, #cdlg .drop-b, #cdlg .lift, #cdlg .drop').forEach(x => x.classList.remove('drop-a', 'drop-b', 'lift', 'drop'));
+$('#cdlg-blocks').addEventListener('dragstart', e => {
+  const b = e.target.closest('button[data-shape]'); if (!b || b.disabled) { e.preventDefault(); return; }
+  e.dataTransfer.setData(CMP_DB, b.dataset.shape); e.dataTransfer.effectAllowed = 'copy';
+});
+$('#cdlg-list').addEventListener('dragstart', e => {
+  const li = e.target.closest('li'); if (!li) return;
+  e.dataTransfer.setData(CMP_DL, li.dataset.i); e.dataTransfer.effectAllowed = 'move'; li.classList.add('lift');
+});
+// where in the list a drop lands: before the row under the pointer or after it (below the last row: at the end)
+function cmpDropAt(e) {
+  const lis = [...$('#cdlg-list').children], li = e.target.closest('#cdlg-list li') || lis[lis.length - 1]; if (!li) return null;
+  const r = li.getBoundingClientRect(), a = e.clientY < r.top + r.height / 2;
+  return { li, a, at: +li.dataset.i + (a ? 0 : 1) };
+}
+$('#cdlg-list').addEventListener('dragover', e => {
+  if (!cmpDragIs(e, CMP_DB) && !cmpDragIs(e, CMP_DL)) return;
+  const d = cmpDropAt(e); if (!d) return; e.preventDefault();
+  $('#cdlg-list').querySelectorAll('.drop-a, .drop-b').forEach(x => { if (x !== d.li) x.classList.remove('drop-a', 'drop-b'); });
+  d.li.classList.toggle('drop-a', d.a); d.li.classList.toggle('drop-b', !d.a);
+});
+$('#cdlg-list').addEventListener('dragleave', e => { if (!$('#cdlg-list').contains(e.relatedTarget)) $('#cdlg-list').querySelectorAll('.drop-a, .drop-b').forEach(x => x.classList.remove('drop-a', 'drop-b')); });
+$('#cdlg-list').addEventListener('drop', e => {
+  const d = cmpDropAt(e), b = e.dataTransfer.getData(CMP_DB), l = e.dataTransfer.getData(CMP_DL); cmpDropClear();
+  if (!d || !/^\d$/.test(b || l)) return; e.preventDefault();
+  if (b) { cmpInsert(+b, d.at); return; }
+  const L = CMP.L, j = +l, to = d.at > j ? d.at - 1 : d.at; if (!L[j] || to === j) return;
+  const [x] = L.splice(j, 1); L.splice(to, 0, x); CMP.sel = to;   // the knobs and tracks hold the layer itself: they go with it
+  cmpChanged(''); cmpRender();
+});
+$('#cdlg').addEventListener('dragend', cmpDropClear);
+// a point on the picture, 0..100 across and down (the shapes' own measure: the ring's x, y)
+const cmpAt = e => { const r = $('#cdlg-frame').getBoundingClientRect(), c = v => Math.min(100, Math.max(0, v * 100)); return [c((e.clientX - r.left) / r.width), c((e.clientY - r.top) / r.height)]; };
+$('#cdlg-stage').addEventListener('dragover', e => { if (!cmpDragIs(e, CMP_DB)) return; e.preventDefault(); $('#cdlg-stage').classList.add('drop'); });
+$('#cdlg-stage').addEventListener('dragleave', e => { if (!$('#cdlg-stage').contains(e.relatedTarget)) $('#cdlg-stage').classList.remove('drop'); });
+$('#cdlg-stage').addEventListener('drop', e => {
+  const b = e.dataTransfer.getData(CMP_DB); cmpDropClear(); if (!/^\d$/.test(b)) return;
+  e.preventDefault(); cmpInsert(+b, cmpOver(), cmpAt(e));
+});
+// the handles on the picture: a ring goes where it is dragged, a gradient, wave or noise turns towards the pointer;
+// the wheel sizes it (or counts, for dots and sparks). One drag is one step of undo; nothing is sent
+const cmpGrip = L => !L || CMP.ab ? '' : ({ ring: 'xy', grad: 'a', wave: 'a', noise: 'a' })[fxc.SHAPES[L.shape]] || '';
+const cmpWheelP = L => !L || CMP.ab ? '' : ['sz', 'n'].find(k => CMP_P[fxc.SHAPES[L.shape]].includes(k)) || '';
+function cmpSetP(k, v) {   // a setting changed on the stage, shown on the inspector's slider too
+  const L = CMP.L[CMP.sel], d = fxc.LPD[CMP_LP[k]]; v = Math.min(d[3], Math.max(d[2], v)); L.p[CMP_LP[k]] = v;
+  const r = $(`#cdlg-edit input[type=range][data-p="${k}"]`); if (r) { r.value = v; fill(r); r.parentElement.querySelector('b').textContent = cmpNum(v); }
+}
+function cmpGrab(e) {
+  const g = cmpGrip(CMP.L[CMP.sel]), [x, y] = cmpAt(e); if (!g) return;
+  if (g === 'xy') { cmpSetP('x', Math.round(x)); cmpSetP('y', Math.round(y)); }
+  else if (Math.hypot(x - 50, y - 50) > 1) cmpSetP('a', Math.round((Math.atan2(y - 50, x - 50) * 180 / Math.PI + 360) % 360));
+  cmpChanged('stage' + CMP.sel); cmpWake();
+}
+const cmpFr = $('#cdlg-frame');
+cmpFr.addEventListener('pointerdown', e => {
+  if (e.button || !cmpGrip(CMP.L[CMP.sel])) return;
+  try { cmpFr.setPointerCapture(e.pointerId); } catch (_) { }
+  cmpFr.classList.add('drag'); e.preventDefault(); cmpGrab(e);
+});
+cmpFr.addEventListener('pointermove', e => { if (cmpFr.classList.contains('drag')) cmpGrab(e); });
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => cmpFr.addEventListener(ev, () => cmpFr.classList.remove('drag')));
+cmpFr.addEventListener('wheel', e => {
+  const L = CMP.L[CMP.sel], k = cmpWheelP(L); if (!k || !e.deltaY) return;
+  e.preventDefault(); cmpSetP(k, L.p[CMP_LP[k]] - Math.sign(e.deltaY) * (k === 'n' ? 1 : 5)); cmpChanged('wheel' + CMP.sel); cmpWake();
+}, { passive: false });
+// the handles drawn over the picture (0..100 both ways, as the shapes measure), and what can be done there
+function cmpHand() {
+  const L = CMP.L[CMP.sel], g = cmpGrip(L), k = cmpWheelP(L), P = n => L.p[CMP_LP[n]], q = 16 / 9;   // q: a dot stays round on 16:9
+  const el = (tag, a, c) => `<${tag} ${a} class="sh"/><${tag} ${a}${c ? ` class="${c}"` : ''}/>`;   // c: knob, or reach (how far a ring goes)
+  let s = '';
+  if (g === 'xy') {
+    const x = P('x'), y = P('y'), r = P('sz') / 2;
+    s = el('ellipse', `cx="${x}" cy="${y}" rx="${r}" ry="${r}"`, 'reach') + el('line', `x1="${x - 3}" y1="${y}" x2="${x + 3}" y2="${y}"`) +
+      el('line', `x1="${x}" y1="${y - 3 * q}" x2="${x}" y2="${y + 3 * q}"`) + el('ellipse', `cx="${x}" cy="${y}" rx="1.2" ry="${1.2 * q}"`, 'knob');
+  } else if (g === 'a') {
+    const a = P('a') * Math.PI / 180, x = 50 + 35 * Math.cos(a), y = 50 + 35 * Math.sin(a);
+    s = el('line', `x1="50" y1="50" x2="${x}" y2="${y}"`) + el('ellipse', `cx="50" cy="50" rx="1" ry="${q}"`, 'knob') + el('ellipse', `cx="${x}" cy="${y}" rx="1.6" ry="${1.6 * q}"`, 'knob');
+  }
+  $('#cdlg-hand').innerHTML = s;
+  cmpFr.classList.toggle('grab', !!g);
+  $('#cdlg-stage-hint').textContent = !L || CMP.ab ? '' : t('cmp.ws.do.' + (g || (k ? 'n' : 'none')));
+  $('#cdlg-insp-t').textContent = L ? t('cmp.ws.layer', CMP.sel + 1, cmpName(L)) : '';
+}
+// the panels' widths: a splitter dragged, or moved with the arrows, back with a double-click; kept for the next time.
+// CMPW is what was chosen, the window may show less (the stage keeps 300 px)
+const CMP_W = { l: [180, 420, 240], r: [240, 520, 320] }, CMPW = { l: 240, r: 320 }, CMPW_NOW = {};
+try { const w = JSON.parse(localStorage.getItem('cmpW') || '{}'); ['l', 'r'].forEach(k => { if (isFinite(w[k])) CMPW[k] = +w[k]; }); } catch (e) { }
+function cmpW(side, v, save) {
+  const [lo, hi] = CMP_W[side], ws = $('#cdlg-ws'), o = side === 'l' ? 'r' : 'l';
+  const room = ws.clientWidth ? ws.clientWidth - 16 - (CMPW_NOW[o] || CMPW[o]) - 300 : hi;
+  v = Math.round(Math.max(lo, Math.min(hi, room, v)));
+  CMPW_NOW[side] = v; ws.style.setProperty(side === 'l' ? '--cl' : '--cr', v + 'px');
+  const sp = $(`.cdlg-split[data-side="${side}"]`); sp.setAttribute('aria-valuenow', v); sp.setAttribute('aria-valuemin', lo); sp.setAttribute('aria-valuemax', hi);
+  if (save) { CMPW[side] = v; try { localStorage.setItem('cmpW', JSON.stringify(CMPW)); } catch (e) { } }
+  cmpStripFit();
+}
+const cmpWFit = () => { cmpW('l', CMPW.l); cmpW('r', CMPW.r); };
+document.querySelectorAll('.cdlg-split').forEach(sp => {
+  const side = sp.dataset.side, dir = side === 'l' ? 1 : -1; let x0 = 0, w0 = 0;
+  sp.addEventListener('pointerdown', e => {
+    if (e.button) return; try { sp.setPointerCapture(e.pointerId); } catch (_) { }
+    x0 = e.clientX; w0 = CMPW_NOW[side] || CMPW[side]; sp.classList.add('drag'); e.preventDefault();
+  });
+  sp.addEventListener('pointermove', e => { if (sp.classList.contains('drag')) cmpW(side, w0 + dir * (e.clientX - x0)); });
+  ['pointerup', 'pointercancel'].forEach(ev => sp.addEventListener(ev, () => { if (!sp.classList.contains('drag')) return; sp.classList.remove('drag'); cmpW(side, CMPW_NOW[side], 1); }));
+  sp.addEventListener('keydown', e => { const d = { ArrowLeft: -16, ArrowRight: 16 }[e.key]; if (!d) return; e.preventDefault(); cmpW(side, (CMPW_NOW[side] || CMPW[side]) + dir * d, 1); });
+  sp.addEventListener('dblclick', () => cmpW(side, CMP_W[side][2], 1));
+});
+// the strip's pixels follow its width on the screen (a panel moved, the window resized, the picture enlarged)
+function cmpStripFit() {
+  const s = $('#cdlg-strip'), w = Math.round(s.clientWidth * devicePixelRatio), h = Math.round(s.clientHeight * devicePixelRatio);
+  if (w && (s.width !== w || s.height !== h)) { s.width = w; s.height = h; cmpWake(); }
+}
+addEventListener('resize', () => { if (!$('#cdlg').classList.contains('hidden')) cmpWFit(); });
 // the chosen layer: its shape, colour, blending and settings, then what moves it (time, sound)
 function cmpEdit() {
   const L = CMP.L[CMP.sel], box = $('#cdlg-edit'); if (!L) { box.innerHTML = ''; return; }
@@ -2365,6 +2500,7 @@ addEventListener('resize', cmpWake);
 // still: on a pause the picture is drawn again only when what it shows changed (the frame is a function of these)
 function cmpDraw(still) {
   const pal = effPal('custom').map(hex2rgb), [show, tw] = cmpShow(), lines = show.map(fxc.line), tt = CMP.t;
+  cmpBlocks(pal);
   const v = $('#cdlg-view'), s = $('#cdlg-strip'), sig = [lines.join('|'), tw.join('|'), pal.join(), tt, v.width, v.height, s.width, s.height].join(';');
   if (still && !CMP.play && CMP.sig === sig) return;
   CMP.sig = sig; CMP.draws = (CMP.draws || 0) + 1;
@@ -2390,7 +2526,8 @@ const cmpIsBig = () => $('#cdlg .cdlg').classList.contains('big');
 function cmpBig(on) {
   if (!!on === cmpIsBig()) return;
   const v = $('#cdlg-view'); $('#cdlg .cdlg').classList.toggle('big', !!on); v.width = on ? 96 : 64; v.height = on ? 54 : 36;
-  $('#cdlg-big').setAttribute('aria-pressed', String(!!on));
+  cmpFr.style.setProperty('--gx', v.width); cmpFr.style.setProperty('--gy', v.height);   // the LED grid over it
+  $('#cdlg-big').setAttribute('aria-pressed', String(!!on)); cmpStripFit();
   if (!$('#cdlg').classList.contains('hidden')) cmpDraw();
 }
 $('#cdlg-big').addEventListener('click', () => cmpBig(!cmpIsBig()));
