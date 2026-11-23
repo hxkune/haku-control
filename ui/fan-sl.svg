@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 20 200 175" width="100%" height="100%" fill="none" style="--fan-rgb-color: #ff3385; --fan-rgb-opacity: 1;">
+  <defs>
+    <linearGradient id="sl-frame-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#25252b"/>
+      <stop offset="55%" stop-color="#141418"/>
+      <stop offset="100%" stop-color="#0b0b0e"/>
+    </linearGradient>
+    <linearGradient id="sl-bar-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color: var(--fan-rgb-color, #ff3385)" stop-opacity="0.9"/>
+      <stop offset="50%" style="stop-color: var(--fan-rgb-color, #ff3385)" stop-opacity="1"/>
+      <stop offset="100%" style="stop-color: var(--fan-rgb-color, #ff3385)" stop-opacity="0.9"/>
+    </linearGradient>
+    <filter id="sl-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+  </defs>
+  <g transform="translate(145, 107.5)">
+    <rect x="-64" y="-64" width="128" height="128" rx="21" fill="url(#sl-frame-grad)" stroke="#32323c" stroke-width="1.6"/>
+    <circle cx="0" cy="0" r="51" fill="#08080a" stroke="#222229" stroke-width="1.4"/>
+    <rect x="-58" y="-36" width="7" height="72" rx="3" fill="#0e0e12" stroke="#24242c" stroke-width="1"/>
+    <rect x="51" y="-36" width="7" height="72" rx="3" fill="#0e0e12" stroke="#24242c" stroke-width="1"/>
+    <g fill="#101014" stroke="#282832" stroke-width="1">
+      <circle cx="-49" cy="-49" r="3.6"/>
+      <circle cx="49" cy="-49" r="3.6"/>
+      <circle cx="49" cy="49" r="3.6"/>
+      <circle cx="-49" cy="49" r="3.6"/>
+    </g>
+    <g class="fb">
+      <path d="M 0,-14 C 11,-27 26,-34 43,-24 C 40,-10 25,-6 11,-9 Z" fill="#1c1c23" stroke="#30303a" stroke-width="1.1"/>
+      <path d="M 0,-14 C 11,-27 26,-34 43,-24 C 40,-10 25,-6 11,-9 Z" fill="#1e1e26" stroke="#30303a" stroke-width="1.1" transform="rotate(45)"/>
+      <path d="M 0,-14 C 11,-27 26,-34 43,-24 C 40,-10 25,-6 11,-9 Z" fill="#1c1c23" stroke="#30303a" stroke-width="1.1" transform="rotate(90)"/>
+      <path d="M 0,-14 C 11,-27 26,-34 43,-24 C 40,-10 25,-6 11,-9 Z" fill="#202028" stroke="#30303a" stroke-width="1.1" transform="rotate(135)"/>
+      <path d="M 0,-14 C 11,-27 26,-34 43,-24 C 40,-10 25,-6 11,-9 Z" fill="#1c1c23" stroke="#30303a" stroke-width="1.1" transform="rotate(180)"/>
+      <path d="M 0,-14 C 11,-27 26,-34 43,-24 C 40,-10 25,-6 11,-9 Z" fill="#1e1e26" stroke="#30303a" stroke-width="1.1" transform="rotate(225)"/>
+      <path d="M 0,-14 C 11,-27 26,-34 43,-24 C 40,-10 25,-6 11,-9 Z" fill="#1c1c23" stroke="#30303a" stroke-width="1.1" transform="rotate(270)"/>
+      <path d="M 0,-14 C 11,-27 26,-34 43,-24 C 40,-10 25,-6 11,-9 Z" fill="#202028" stroke="#30303a" stroke-width="1.1" transform="rotate(315)"/>
+    </g>
+    <circle cx="0" cy="0" r="14.5" fill="#16161c" stroke="#32323c" stroke-width="1.5"/>
+    <circle cx="0" cy="0" r="6" fill="#0d0d11" stroke="#26262f" stroke-width="1"/>
+    <g style="transition: opacity 0.25s ease; opacity: var(--fan-rgb-opacity, 1)">
+      <rect x="-60" y="-38" width="11" height="76" rx="5" fill="url(#sl-bar-grad)" filter="url(#sl-glow)" opacity="0.7"/>
+      <rect x="49" y="-38" width="11" height="76" rx="5" fill="url(#sl-bar-grad)" filter="url(#sl-glow)" opacity="0.7"/>
+      <rect x="-58" y="-36" width="7" height="72" rx="3" fill="url(#sl-bar-grad)" style="stroke: var(--fan-rgb-color, #ff3385)" stroke-width="0.9"/>
+      <rect x="51" y="-36" width="7" height="72" rx="3" fill="url(#sl-bar-grad)" style="stroke: var(--fan-rgb-color, #ff3385)" stroke-width="0.9"/>
+      <line x1="-54.5" y1="-32" x2="-54.5" y2="32" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity="0.45"/>
+      <line x1="54.5" y1="-32" x2="54.5" y2="32" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity="0.45"/>
+    </g>
+  </g>
+</svg>

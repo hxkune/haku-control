@@ -622,7 +622,7 @@
     setCfg('fans', 'fan2_look', 'sl'); FAN.sig = ''; updateFans();
     ok(look($('#fan-panel [data-g="1"] .fanic')) === '', 'a mixed group shows a plain one');
     updateLL(); const ll = $$('#ll-list .found-row');
-    ok(ll.length === 2 && ll.every(r => r.querySelectorAll('.fi-lit rect').length === 2), 'Lian Li groups: lit edges');
+    ok(ll.length === 2 && ll.every(r => look(r.querySelector('.fanic')) === 'sl'), 'Lian Li groups: lit edges');
     // lianli.c's give-up after 10 asks: the group says its board ARGB sync would not go off, or back on
     const g0 = S.ll.g[0], sm = () => $('#ll-list .found-row small').textContent;
     ok(!sm().includes(t('ll.sync.1')) && !sm().includes(t('ll.sync.2')), 'a group that synced as asked says nothing: ' + sm());

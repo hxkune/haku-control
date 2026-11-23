@@ -6657,10 +6657,10 @@ const PUMP_SVG = '<rect x="8" y="8" width="84" height="84" rx="18" fill="#141414
   [0, 60, 120, 180, 240, 300].map(a => `<path d="${PUMP_BLADE}" transform="rotate(${a} 50 53)"/>`).join('') +
   '</g><circle cx="50" cy="53" r="9.5" fill="#b5b5b5" stroke="#d4d4d4" stroke-width="1.8"/>';
 const FAN_BLADES = Array.from({ length: 7 }, (_, k) => `<path transform="rotate(${(k * 360 / 7).toFixed(1)})" d="M-1.5-4.8C-2-10 1-15 6-16.8C9-15.8 11-14.3 12.3-12.3C8.5-9.5 5.5-6.5 3.8-3.3Z"/>`).join('');
-// four looks are pictures (ui/fan-<name>.svg): their gradients and filters go once into a hidden <svg> (the ids are
+// the looks are pictures (ui/fan-<name>.svg): their gradients and filters go once into a hidden <svg> (the ids are
 // unique per file), the rest is drawn inline; .on lights them in --live and turns the blades (.fb)
 const FAN_ART = {};
-Object.entries({ '': 't30', ring: 'halo', qx: 'qx', inf: 'slinf' }).forEach(([look, n]) =>
+Object.entries({ '': 't30', ring: 'halo', hub: 'hub', qx: 'qx', sl: 'sl', inf: 'slinf' }).forEach(([look, n]) =>
   fetch(`fan-${n}.svg`, { cache: 'no-cache' }).then(r => r.text()).then(t => {
     const defs = (t.match(/<defs>([\s\S]*?)<\/defs>/) || [])[1] || '';
     let d = $('svg.fan-defs');
@@ -6669,7 +6669,7 @@ Object.entries({ '': 't30', ring: 'halo', qx: 'qx', inf: 'slinf' }).forEach(([lo
     FAN_ART[look] = t.replace(/^[\s\S]*?<svg[^>]*>|<\/svg>\s*$/g, '').replace(/<defs>[\s\S]*?<\/defs>/, '').replace(/\sid="[^"]*"/g, '');
     FAN.sig = ''; $('#fs-look').dataset.sig = ''; updateFans();
   }).catch(() => {}));
-// sl: Lian Li SL has its LEDs down the sides
+// drawn inline until its picture has loaded, and for pumps; sl: Lian Li SL has its LEDs down the sides
 function fanIcon(look, pump, on) {
   if (!pump && FAN_ART[look]) return `<svg class="fanic fan-art${on ? ' on' : ''}" data-look="${look}" viewBox="72 34.5 146 146" aria-hidden="true">${FAN_ART[look]}</svg>`;
   const ring = (r, o) => `<circle r="${r}"${o ? ` opacity="${o}"` : ''}/>`, hub = '<circle class="f" r="5"/>', bar = y => `<rect class="f" x="-14" y="${y}" width="28" height="2.4" rx="1.2"/>`;
