@@ -3536,6 +3536,10 @@
       sent.length = 0; lg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })); lg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, repeat: true }));
       lg.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
       ok(sent.filter(o => o.cmd === 'voice_hold').map(o => o.on).join() === '1,0', 'Space on the logo: ' + JSON.stringify(sent));
+      sent.length = 0; pe('pointerdown'); S.voice = { ...S.voice, setup: 4 }; updateVoice();
+      ok(sent.filter(o => o.cmd === 'voice_hold').map(o => o.on).join() === '1,0' && !WV.held && !br.classList.contains('listen'), 'held when voice went: ' + JSON.stringify(sent));
+      pe('pointerup'); S.voice = { ...S.voice, setup: 5 }; updateVoice();
+      ok(sent.filter(o => o.cmd === 'voice_hold').length === 2, 'let go after: ' + JSON.stringify(sent));
       S.voice = { ...S.voice, state: 2 }; updateVoice();
       ok($('#voice-listen').disabled && st().textContent === t('voice.thinking'), 'while it thinks: ' + st().textContent);
       S.voice = { ...S.voice, state: 0, err: 'nomic' }; updateVoice();

@@ -5800,7 +5800,8 @@ function updateTalk() {
     lg.setAttribute('aria-label', t('voice.hold')); lg.title = t('voice.hold');
   } else {
     ['role', 'tabindex', 'aria-label', 'title'].forEach(a => lg.removeAttribute(a)); lg.setAttribute('aria-hidden', 'true');
-    WV.held = false;
+    // held when voice went (Pro off, a setup): the core lets go too, or it records on for its 8 s and runs what it heard
+    if (WV.held) { WV.held = false; send({ cmd: 'voice_hold', on: 0 }); }
   }
   const listen = talk && (V.state === 1 || WV.held), think = talk && V.state === 2 && !WV.held;
   const op = (br.classList.contains('listen') || br.classList.contains('think')) && !listen && !think ? getComputedStyle(lg).opacity : '';
