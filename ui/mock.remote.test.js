@@ -3,7 +3,9 @@
 'use strict';
 const fs = require('fs'), path = require('path'), assert = require('assert');
 
-const el = () => ({ className: '', textContent: '', classList: { add() { }, remove() { }, toggle() { } }, setAttribute() { }, appendChild() { } });
+// querySelector, events, focus and select: enough for the PIN form
+const el = () => ({ className: '', textContent: '', value: '', on: {}, q: {}, classList: { add() { }, remove() { }, toggle() { } }, setAttribute() { }, appendChild() { },
+  querySelector(s) { return this.q[s] = this.q[s] || el(); }, addEventListener(t, f) { this.on[t] = f; }, focus() { }, select() { } });
 const timers = [];
 global.window = global;
 global.document = { hidden: false, body: el(), documentElement: el(), createElement: el };
@@ -14,10 +16,12 @@ global.setInterval = f => timers.push(f);
 global.setTimeout = () => 0; global.clearTimeout = () => { };
 
 // the fake PC: what it answers, and what it was asked
-const pc = { rev: 1, up: true, profile: '1', calls: [], prof: { 'profile.1': { name: 'Day' }, 'profile.2': { name: 'Night', pin: '1' } } };
+const pc = { rev: 1, up: true, paired: true, profile: '1', calls: [], prof: { 'profile.1': { name: 'Day' }, 'profile.2': { name: 'Night', pin: '1' } } };
 global.fetch = async (url, o = {}) => {
   pc.calls.push(url + (o.body ? ' ' + o.body : ''));
   if (!pc.up) throw new Error('offline');
+  if (url === '/api/pair') { pc.paired = true; return { ok: true, status: 200, json: async () => ({ token: 'new' }) }; }
+  if (!pc.paired) return { ok: false, status: 401, json: async () => ({}) };
   // what the PC does with a copy (app_profile_dup): the next free number, the source as it was
   if (url === '/api/cmd' && /"cmd":"profile_dup"/.test(o.body)) {
     const c = JSON.parse(o.body); let n = 1; while (pc.prof['profile.' + n]) n++;
@@ -64,5 +68,18 @@ const states = () => got.filter(d => d.type === 'state').length;
 
   window.chrome.webview.postMessage(JSON.stringify({ cmd: 'quit' }));
   assert.ok(!pc.calls.some(c => /quit/.test(c)), 'PC-only commands stay on the phone');
+  // pairing: the PC gone while Connect is pressed says so; a second press while the first is out sends nothing more
+  const made = []; document.createElement = () => { const e = el(); made.push(e); return e; };
+  pc.paired = false; await tick();
+  const box = made.find(e => e.className === 'wizard');
+  assert.ok(box, 'a 401 asks for the PIN');
+  const pin = box.querySelector('.pin-in'), msg = box.querySelector('.pin-msg'), go = box.querySelector('.pin-go').on.click;
+  pin.value = '123456'; pc.up = false;
+  await go();
+  assert.equal(msg.textContent, 'PC not reachable', 'an unreachable PC is said, not swallowed');
+  pc.up = true; const n = pc.calls.length;
+  await Promise.all([go(), go()]);
+  assert.equal(pc.calls.slice(n).filter(c => c.startsWith('/api/pair')).length, 1, 'one pairing per press: ' + pc.calls.slice(n));
+  assert.equal(msg.textContent, '', 'and the old message goes');
   console.log('remote: all ok');
 })().catch(e => { console.error('remote: FAIL', e.message); process.exit(1); });

@@ -103,10 +103,16 @@
       </div>`;
     document.body.appendChild(pinBox);
     const input = pinBox.querySelector('.pin-in'), msg = pinBox.querySelector('.pin-msg');
+    let busy = false;
     const go = async () => {
       const pin = input.value.replace(/\D/g, '');
       if (pin.length !== 6) { input.focus(); return; }
-      const r = await fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
+      if (busy) return;   // a second press would come back 401: the PIN changes once one pairing took it
+      busy = true; msg.textContent = '';
+      let r;
+      try { r = await fetch('/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) }); }
+      catch (e) { msg.textContent = tt('remote.offline', 'PC not reachable'); return; }
+      finally { busy = false; }
       if (r.ok) {
         token = (await r.json()).token;
         try { localStorage.setItem('haku_token', token); } catch (e) { }
