@@ -3,7 +3,7 @@
 // (app_tray_json) and sends the window's commands (ui_dispatch); a command is only "done" once the state says so.
 'use strict';
 const T = {
-  en: { on: 'Lighting is on', off: 'Lighting is off', power: 'Lighting', bri: 'Brightness', prof: 'Profile', profs: 'Profiles',
+  en: { on: 'Lighting is on', off: 'Lighting is off', power: 'Lighting', bri: 'Brightness', hue: 'Hue', prof: 'Profile', profs: 'Profiles',
     allProf: 'All profiles', fx: 'Effect', fxs: 'Effects', presets: 'Your presets', preset: 'preset', devs: 'Devices',
     allDev: 'Show all {0} devices', noDev: 'No devices yet', open: 'Open haku control', more: 'More', back: 'Back',
     settings: 'Settings', pc: 'PC lighting control', pcGive: 'Hand over to the devices\' own apps', pcTake: 'Light with haku',
@@ -16,7 +16,7 @@ const T = {
     'err.write': 'The profile file could not be written.', 'err.leave': 'Not switched: the changes in “{0}” could not be saved.',
     'err.missing': 'Profile “{0}” was not used: its file is missing.', 'err.bad': 'Profile “{0}” was not used: its file is damaged.',
     'err.cfg': 'Switched, but the settings file could not be written yet.', 'err.full': 'All profiles are taken.', 'err.room': 'Not changed: the settings file is full.' },
-  ru: { on: 'Подсветка включена', off: 'Подсветка выключена', power: 'Подсветка', bri: 'Яркость', prof: 'Профиль', profs: 'Профили',
+  ru: { on: 'Подсветка включена', off: 'Подсветка выключена', power: 'Подсветка', bri: 'Яркость', hue: 'Оттенок', prof: 'Профиль', profs: 'Профили',
     allProf: 'Все профили', fx: 'Эффект', fxs: 'Эффекты', presets: 'Ваши пресеты', preset: 'пресет', devs: 'Устройства',
     allDev: 'Показать все устройства: {0}', noDev: 'Устройств пока нет', open: 'Открыть haku control', more: 'Ещё', back: 'Назад',
     settings: 'Настройки', pc: 'Управление подсветкой ПК', pcGive: 'Передать управление приложениям устройств', pcTake: 'Управлять через haku',
@@ -29,7 +29,7 @@ const T = {
     'err.write': 'Не удалось записать файл профиля.', 'err.leave': 'Не переключено: изменения в «{0}» не удалось сохранить.',
     'err.missing': 'Профиль «{0}» не использован: его файл не найден.', 'err.bad': 'Профиль «{0}» не использован: его файл повреждён.',
     'err.cfg': 'Переключено, но файл настроек пока не записан.', 'err.full': 'Все профили заняты.', 'err.room': 'Не изменено: файл настроек заполнен.' },
-  fr: { on: 'L’éclairage est allumé', off: 'L’éclairage est éteint', power: 'Éclairage', bri: 'Luminosité', prof: 'Profil', profs: 'Profils',
+  fr: { on: 'L’éclairage est allumé', off: 'L’éclairage est éteint', power: 'Éclairage', bri: 'Luminosité', hue: 'Teinte', prof: 'Profil', profs: 'Profils',
     allProf: 'Tous les profils', fx: 'Effet', fxs: 'Effets', presets: 'Vos préréglages', preset: 'préréglage', devs: 'Appareils',
     allDev: 'Afficher les {0} appareils', noDev: 'Aucun appareil pour l’instant', open: 'Ouvrir haku control', more: 'Plus', back: 'Retour',
     settings: 'Réglages', pc: 'Contrôle de l’éclairage du PC', pcGive: 'Rendre aux applications des appareils', pcTake: 'Éclairer avec haku',
@@ -54,6 +54,7 @@ const errs = {};            // a section's last failure, shown under it until th
 let profBase = null;        // prof.n when the panel opened: a refusal raises it
 let fxQ = '';               // the effects view's search, until the panel closes
 let briDrag = 0, briHoldTill = 0, briTimer = 0, briLast = -1;
+let hueDrag = 0, hueHoldTill = 0, hueTimer = 0, hueLast = '', hueBase = null;   // as the brightness; hueBase: [s, v] the drag keeps
 
 const $ = (s, r = document) => r.querySelector(s);
 const t = (k, ...a) => (L[k] ?? T.en[k] ?? k).replace(/\{(\d)\}/g, (_, i) => a[i]);
@@ -204,6 +205,12 @@ function render() {
   $('#bri-l').textContent = t('bri');
   $('#bri-v').textContent = br.value + '%';
   put('err-power', errLine('power'));
+  // the static effect shows one colour (effects.c FX_STATIC: pal[0]): its hue on a strip, made once like the brightness
+  const hu = $('#hue'), c0 = (S.pal || [])[0] || '#ffffff';
+  hu.hidden = !(on && S.fx === 'static');
+  if (!hueDrag && Date.now() > hueHoldTill) { const h = hsv(c0)[0]; if (+hu.value !== h) hu.value = h; hu.style.setProperty('--hc', c0); }
+  hu.setAttribute('aria-label', t('hue'));
+  hu.setAttribute('aria-valuetext', hu.value + '°');
   // profiles: the pinned ones (at most 3), else the one in use, and the whole list one step further
   const P = S.profiles || [];
   let shown = P.filter(p => p.pin).slice(0, 3);
@@ -343,6 +350,32 @@ function briInput() {
   if (!briTimer) briTimer = setTimeout(() => briSend(false), BRI_MS);
 }
 function briDone() { if (!briDrag) return; briDrag = 0; briHoldTill = Date.now() + BRI_HOLD; briSend(true); }
+// '#rrggbb' <-> hue 0..359 with saturation and value 0..1
+function hsv(c) {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16) / 255 || 0), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+  const h = !d ? 0 : mx === r ? (g - b) / d % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [Math.round((h * 60 + 360) % 360), mx ? d / mx : 0, mx];
+}
+function hex(h, s, v) {
+  const f = n => { const k = (n + h / 60) % 6; return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1)))); };
+  return '#' + [5, 3, 1].map(n => f(n).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+// the hue: at most one command per BRI_MS while dragging, and the last colour always (the core saves it, app_set)
+function hueSend(final) {
+  clearTimeout(hueTimer); hueTimer = 0;
+  if (!hueBase) return;
+  const c = hex(+$('#hue').value, ...hueBase);
+  if (c !== hueLast || final) { hueLast = c; send({ cmd: 'set', s: 'static', k: 'palette', v: c }); }
+}
+function hueInput() {
+  const hu = $('#hue');
+  if (!hueDrag) { const [, s, v] = hsv((S.pal || [])[0] || '#ffffff'); hueBase = s && v ? [s, v] : [1, 1]; }   // white or black: a full colour
+  hueDrag = 1; hueHoldTill = Date.now() + BRI_HOLD;
+  hu.style.setProperty('--hc', hex(+hu.value, ...hueBase));
+  hu.setAttribute('aria-valuetext', hu.value + '°');
+  if (!hueTimer) hueTimer = setTimeout(() => hueSend(false), BRI_MS);
+}
+function hueDone() { if (!hueDrag) return; hueDrag = 0; hueHoldTill = Date.now() + BRI_HOLD; hueSend(true); }
 
 // ---- the window's messages (ui_tray.cpp)
 function onMessage(m) {
@@ -358,7 +391,7 @@ function onMessage(m) {
     if (f && !p.contains(document.activeElement)) f.focus({ preventScroll: true });
   }
   else if (m.type === 'closed') {   // next time it opens on its first view, without old "sending" or errors
-    briDone();
+    briDone(); hueDone();
     for (const k in pend) delete pend[k];
     for (const k in errs) delete errs[k];
     fxQ = '';
@@ -375,6 +408,9 @@ function init() {
   br.addEventListener('pointerup', briDone);
   br.addEventListener('keyup', briDone);
   br.addEventListener('blur', briDone);
+  const hu = $('#hue');
+  hu.addEventListener('input', hueInput);
+  for (const k of ['change', 'pointerup', 'keyup', 'blur']) hu.addEventListener(k, hueDone);
   matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', applyMotion);
   if (bridge) bridge.addEventListener('message', e => onMessage(e.data));
   send({ cmd: 'hello' });

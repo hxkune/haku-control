@@ -42,6 +42,10 @@ h3 { margin: 6px 4px 0; }
 /* the brightness slider: one element, never redrawn under the pointer */
 #bri { width: 100%; margin: 8px 0 2px; accent-color: var(--strong); height: 20px; }
 input[type=range] { -webkit-appearance: none; appearance: none; background: none; }
+/* the static colour's hue, its thumb in the colour itself (--hc, tray.js) */
+#hue { width: 100%; margin: 8px 0 2px; height: 20px; }
+#hue::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
+#hue::-webkit-slider-thumb { margin-top: -4px; background: var(--hc, var(--strong)); }
 input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--line2); }
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; margin-top: -6px; background: var(--strong); border: 2px solid var(--menu); }
 

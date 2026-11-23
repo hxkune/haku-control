@@ -46,9 +46,6 @@
     <button type="button" id="notes-btn" class="nav-end pc-only" aria-haspopup="dialog">
       <svg viewBox="0 0 24 24"><path d="M5 17.5h14l-1.8-2.6v-4.4a5.2 5.2 0 0 0-10.4 0v4.4z"/><path d="M12 3v2.3"/><path class="f" d="M10 19.5h4l-2 2z"/></svg>
       <span data-i18n="nav.notes">Notifications</span><i id="notes-n"></i></button>
-    <button data-tab="help">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.4a2.75 2.75 0 1 1 3.9 2.5c-.75.35-1.2.95-1.2 1.75v.6"/><circle class="f" cx="12" cy="16.9" r="1.1"/></svg>
-      <span data-i18n="nav.help">Help</span></button>
     <button data-tab="settings">
       <svg viewBox="0 0 24 24"><path d="M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z"/><path d="M12 8.5l3.5 3.5-3.5 3.5-3.5-3.5z"/></svg>
       <span data-i18n="nav.settings">Settings</span></button>
@@ -79,6 +76,7 @@
     <!-- one profile switcher for every page; the chips say how the devices are doing -->
     <div class="head-r">
       <button class="cmdk-btn" id="cmdk-btn" type="button" aria-haspopup="dialog" data-i18n-title="cmd.btn" data-i18n-aria="cmd.btn"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></button>
+      <button class="cmdk-btn" id="help-btn" type="button" data-i18n-title="nav.help" data-i18n-aria="nav.help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.4a2.75 2.75 0 1 1 3.9 2.5c-.75.35-1.2.95-1.2 1.75v.6"/><circle class="f" cx="12" cy="16.9" r="1.1"/></svg></button>
       <div class="prof" id="prof">
         <button class="prof-btn" id="prof-btn" type="button" aria-haspopup="true" aria-expanded="false">
           <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
@@ -90,7 +88,7 @@
           <div class="prof-list" id="prof-list"></div>
           <form class="prof-new hidden" id="prof-new" autocomplete="off">
             <input type="text" id="prof-new-name" maxlength="40" spellcheck="false">
-            <button class="btn primary small" type="submit"><span data-i18n="preset.save">Save preset</span></button>
+            <button class="btn primary small" type="submit"><span data-i18n="prof.save">Save profile</span></button>
           </form>
           <button class="prof-save" id="prof-save" type="button"><span class="plus">+</span><span data-i18n="prof.save">Save profile</span></button>
           <button class="prof-save hidden" id="rules-open" type="button"><span class="plus">⚙</span><span data-i18n="rules.open">Scenarios…</span></button>
@@ -698,7 +696,7 @@
 
   <!-- ============ SETTINGS: one category at a time, the bar remembers the last ============ -->
   <section class="tab" id="tab-settings">
-    <div class="seg set-cats" id="set-cats" role="tablist"><button type="button" role="tab" data-v="app" data-i18n="set.c.app">App</button><button type="button" role="tab" data-v="look" data-i18n="set.c.look">Appearance</button><button type="button" role="tab" data-v="control" data-i18n="set.c.control">Control</button><button type="button" role="tab" data-v="integr" data-i18n="set.c.integr">Integrations</button><button type="button" role="tab" data-v="data" data-i18n="set.c.data">Data</button><button type="button" role="tab" data-v="about" data-i18n="set.c.about">About</button></div>
+    <div class="seg set-cats" id="set-cats" role="tablist"><button type="button" role="tab" data-v="app" data-i18n="set.c.general">General</button><button type="button" role="tab" data-v="control" data-i18n="set.c.control">Control</button><button type="button" role="tab" data-v="integr" data-i18n="set.c.integr">Integrations</button><button type="button" role="tab" data-v="about" data-i18n="set.c.about">About</button></div>
     <div class="set-grid" id="set-grid">
       <div class="card" data-cat="app">
         <h3 data-i18n="set.c.app">App</h3>
@@ -716,7 +714,7 @@
         </div>
         <button class="btn danger mt" id="quit" data-i18n="quit">Quit haku control</button>
       </div>
-      <div class="card" data-cat="look">
+      <div class="card" data-cat="app">
         <h3 data-i18n="set.c.look">Appearance</h3>
         <div class="set-row">
           <div><b data-i18n="theme">Theme</b></div>
@@ -821,7 +819,7 @@
         <p class="ha-state" id="ha-state"></p>
         <details class="trouble"><summary data-i18n="ha.how">How to set it up</summary><p class="hint" data-i18n="ha.how.text"></p></details>
       </div>
-      <div class="card" data-cat="data">
+      <div class="card" data-cat="app" id="data-card">
         <h3 data-i18n="files">Files</h3>
         <div class="btn-row">
           <button class="btn ghost" data-open="ini" data-i18n="f.ini">Settings file</button>

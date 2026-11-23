@@ -1936,6 +1936,8 @@ header .prof-menu { left: auto; right: 0; }
 .cmdk-btn { display: grid; place-items: center; width: 34px; height: 34px; flex: none; padding: 0; border: 1px solid var(--line2); border-radius: 10px; background: none; color: var(--muted); cursor: pointer; }
 .cmdk-btn:hover, .cmdk-btn:focus-visible { color: var(--text); border-color: var(--line3); }
 .cmdk-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.cmdk-btn svg .f { fill: currentColor; stroke: none; }
+.cmdk-btn.on { color: var(--text); border-color: var(--strong); }
 .dev-store { display: none; }
 
 /* ---- Settings: one group at a time */

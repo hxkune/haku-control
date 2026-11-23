@@ -737,6 +737,7 @@ function showTab(p) {
   tab = p;
   $$('#nav button').forEach(b => { const on = b.dataset.tab === p; b.classList.toggle('active', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   $$('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + p));
+  const hb = $('#help-btn'); hb.classList.toggle('on', p === 'help'); if (p === 'help') hb.setAttribute('aria-current', 'page'); else hb.removeAttribute('aria-current');   // Help is in the header, not the nav
   navMark(); buildCatalog(true);
   const m = $('main'); m.scrollTop = Math.min(tabScroll[p] || 0, Math.max(0, m.scrollHeight - m.clientHeight));
   updateAccounts(); updateChips();
@@ -4479,7 +4480,7 @@ document.addEventListener('keydown', e => {
 const CMDK = { items: [], shown: [], i: 0, back: null };
 function cmdkItems() {
   const L = [], cur = +cv('general', 'profile', 0);
-  $$('#nav button[data-tab]').filter(b => b.getClientRects().length).forEach(b => { const p = b.dataset.tab; L.push({ id: 'p-' + p, label: t(p === 'fans' ? 'nav.cooling' : 'nav.' + p), sub: t('cmd.page'), run: () => showTab(p) }); });
+  [...$$('#nav button[data-tab]').filter(b => b.getClientRects().length).map(b => b.dataset.tab), 'help'].forEach(p => L.push({ id: 'p-' + p, label: t(p === 'fans' ? 'nav.cooling' : 'nav.' + p), sub: t('cmd.page'), run: () => showTab(p) }));
   heroItems(true).forEach(h => {
     L.push({ id: 'd-' + h.key, label: h.name, sub: t('cmd.dev'), run: () => openSheet(h, innerWidth / 2, innerHeight / 3) });
     const p = devicePower(h);
@@ -4527,6 +4528,7 @@ $('#cmdk-list').addEventListener('click', e => { const li = e.target.closest('li
 $('#cmdk-list').addEventListener('mousemove', e => { const li = e.target.closest('li'); if (li && +li.dataset.i !== CMDK.i) { CMDK.i = +li.dataset.i; cmdkRender(); } });
 $('#cmdk').addEventListener('mousedown', e => { if (e.target === e.currentTarget) cmdkClose(); });
 $('#cmdk-btn').addEventListener('click', cmdkOpen);
+$('#help-btn').addEventListener('click', () => showTab('help'));
 document.addEventListener('keydown', e => {
   if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.code !== 'KeyK') return;   // the key, not the letter: Ctrl+K also on a Russian layout
   if (!$('#cmdk').classList.contains('hidden')) { e.preventDefault(); cmdkClose(); return; }
@@ -5803,7 +5805,7 @@ $('#dchk-list').addEventListener('click', e => {
   else if (x.a === 'fan') fanOpen(x.x, b);
   else if (x.a === 'cf') go('cf');
   else if (x.a === 'prof') $('#prof-btn').click();
-  else if (x.a === 'data') { go('settings'); setCat('data'); }
+  else if (x.a === 'data') { go('settings'); setCat('app'); setTimeout(() => $('#data-card').scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }
   else if (x.a === 'log') send({ cmd: 'open', what: 'log' });
 });
 function reportDialog() {

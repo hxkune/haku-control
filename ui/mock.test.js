@@ -556,9 +556,31 @@
     closeSheet(); await wait(20);
   });
 
+  test('simpler: General holds the app, its look and the files; Help is the header ? button and in Ctrl+K; the profile form says profile', async () => {
+    await fresh();
+    try {
+      showTab('settings'); setCat('app');
+      const cat = q => $(q).closest('[data-cat]').dataset.cat;
+      ok(cat('#lang') === 'app' && cat('#theme') === 'app' && cat('#data-card [data-open="ini"]') === 'app', 'General does not hold the look and the files');
+      ok($$('#set-cats button').map(b => b.dataset.v).join() === 'app,control,integr,about' && $('#set-cats [data-v="app"]').textContent === t('set.c.general'), 'the tabs: ' + $$('#set-cats button').map(b => b.dataset.v));
+      for (const old of ['look', 'data']) { setCat(old); ok($('#set-cats [data-v="app"]').classList.contains('on') && !$('#theme').closest('.cat-off'), 'an old category does not land on General: ' + old); }
+      ok(!$('#nav [data-tab="help"]'), 'Help is still in the nav');
+      const hb = $('#help-btn');
+      ok(hb.getAttribute('aria-label') === t('nav.help') && hb.title === t('nav.help'), 'the ? button has no name');
+      hb.click(); await wait(20);
+      ok(tab === 'help' && $('#tab-help').classList.contains('active') && hb.classList.contains('on') && hb.getAttribute('aria-current') === 'page', 'the ? button did not open Help');
+      ok($('#nav').style.getPropertyValue('--nh') === '0px' && !$('#nav button.active'), 'a nav page still marked on Help');
+      showTab('home'); ok(!hb.classList.contains('on') && !hb.hasAttribute('aria-current'), 'the ? button stays on');
+      cmdkOpen(); $('#cmdk-q').value = t('nav.help'); cmdkFilter();
+      ok(CMDK.shown.some(x => x.id === 'p-help'), 'Ctrl+K does not find Help: ' + CMDK.shown.map(x => x.id));
+      cmdkRun(CMDK.shown.findIndex(x => x.id === 'p-help')); ok(tab === 'help', 'Ctrl+K did not open Help');
+      ok($('#prof-new [type="submit"] span').dataset.i18n === 'prof.save', 'the profile form says preset');
+    } finally { cmdkClose(); showTab('home'); setCat('app'); }
+  });
+
   test('the theme code is folded behind a small Code button', async () => {
     await fresh();
-    showTab('settings'); setCat('look');
+    showTab('settings'); setCat('app');
     ok($('#code').classList.contains('hidden') && !$('#code-open').classList.contains('hidden'), 'the code field shows by itself');
     $('#code-open').click();
     ok(!$('#code').classList.contains('hidden') && document.activeElement === $('#code-in') && $('#code-open').classList.contains('hidden'), 'Code did not open the field');
@@ -2156,7 +2178,7 @@
     const w = motionWas(), inp = $('#code-in'), body = document.body;
     try {
       shown(true); setCfg('general', 'unlocked', 'verity'); motion('1'); setTheme('dark');
-      showTab('settings'); setCat('look'); codeShow(true); inp.value = 'abc'; inp.focus();
+      showTab('settings'); setCat('app'); codeShow(true); inp.value = 'abc'; inp.focus();
       const title = $('#title').textContent, dt = document.title;
       const same = () => tab === 'settings' && $('#title').textContent === title && document.title === dt && inp.value === 'abc' && document.activeElement === inp;
       verityArrives(); await wait(400);
@@ -2673,12 +2695,13 @@
     await fresh();
     const pages = () => $$('#nav button[data-tab]').map(b => b.dataset.tab).join(), w = motionWas();
     const moving = () => document.getAnimations().some(a => a.effect && a.effect.target && a.effect.target !== $('#cat-grid') && $('#cat-grid').contains(a.effect.target));
-    ok(pages() === PAGES.join(), 'nav: ' + pages());
+    const navPages = PAGES.filter(p => p !== 'help').join();   // Help is the header's ? button
+    ok(pages() === navPages, 'nav: ' + pages());
     STATE.ext.devs.push({ id: 77, kind: 'lifx', title: 'LIFX', name: 'Desk LIFX', host: '192.168.1.77', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1 });
     try {
       emit(STATE); await wait(80);
-      ok(pages() === PAGES.join(), 'a brand got a button: ' + pages());
-      for (const p of ['effects', 'devices', 'help', 'home']) {
+      ok(pages() === navPages, 'a brand got a button: ' + pages());
+      for (const p of ['effects', 'devices', 'settings', 'home']) {
         showTab(p); const b = $(`#nav [data-tab="${p}"]`), n = $('#nav').style;
         ok(n.getPropertyValue('--ny') === b.offsetTop + 'px' && n.getPropertyValue('--nh') === b.offsetHeight + 'px', 'the mark not on ' + p);
       }
@@ -2733,7 +2756,7 @@
 
   test('settings: one category at a time, picked by its tab and kept', async () => {
     await fresh(); showTab('settings');
-    for (const v of ['app', 'look', 'control', 'integr', 'data', 'about']) {
+    for (const v of ['app', 'control', 'integr', 'about']) {
       $(`#set-cats button[data-v="${v}"]`).click();
       const on = $$('#tab-settings [data-cat]').filter(c => !c.classList.contains('cat-off'));
       ok(on.length && on.every(c => c.dataset.cat === v) && $(`#set-cats [data-v="${v}"]`).getAttribute('aria-selected') === 'true' && localStorage.getItem('setcat') === v, 'category ' + v);

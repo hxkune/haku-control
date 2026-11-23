@@ -85,6 +85,32 @@
     ok(+br.value === 55 && q('#bri-v').textContent === '55%', 'it does not follow the core afterwards: ' + br.value);
   });
 
+  test('hue: a strip only for the static colour; a drag sends few colours of its saturation, the last always; then it follows the core', async () => {
+    await reset();
+    const hu = q('#hue');
+    ok(hu.hidden, 'shown for Aurora');
+    S.fx = 'static'; S.pal = ['#804040']; await changed();   // hue 0, half saturation, half value
+    ok(!hu.hidden && +hu.value === 0 && hu.getAttribute('aria-label') === 'Hue', 'not shown for static, or not at its hue: ' + hu.value);
+    sent.length = 0;
+    for (let v = 0; v <= 120; v += 3) { hu.value = v; hu.dispatchEvent(new Event('input', { bubbles: true })); await wait(5); }
+    const during = sent.filter(o => o.cmd === 'set' && o.k === 'palette').length;
+    ok(during > 0 && during < 12, 'colours sent during a 40-step drag: ' + during);
+    hu.dispatchEvent(new Event('change', { bubbles: true })); await settle();
+    const last = sent.filter(o => o.cmd === 'set').pop();
+    ok(last && last.s === 'static' && last.k === 'palette' && last.v === '#408040', 'the last colour: ' + JSON.stringify(last));
+    ok(!cmds('close').length && hu.getAttribute('aria-valuetext') === '120°', 'closed, or its value text');
+    S.pal = ['#0000ff']; await changed();
+    ok(+hu.value === 120, 'the thumb jumped right after the drag: ' + hu.value);
+    await wait(700); await changed();
+    ok(+hu.value === 240, 'it does not follow the core afterwards: ' + hu.value);
+    S.pal = ['#ffffff']; await changed(); sent.length = 0;
+    hu.value = 60; hu.dispatchEvent(new Event('input', { bubbles: true })); hu.dispatchEvent(new Event('change', { bubbles: true })); await settle();
+    ok(sent.filter(o => o.cmd === 'set').pop().v === '#FFFF00', 'white does not become a full colour: ' + JSON.stringify(sent));
+    q('#power').click(); await settle();
+    ok(hu.hidden, 'shown with the lighting off');
+    S.lang = 'ru'; await changed(); ok(hu.getAttribute('aria-label') === 'Оттенок', 'the Russian name');
+  });
+
   test('brightness 0 stays a brightness, not the off switch', async () => {
     await reset();
     const br = q('#bri'); sent.length = 0;
