@@ -78,6 +78,7 @@
     </div>
     <!-- one profile switcher for every page; the chips say how the devices are doing -->
     <div class="head-r">
+      <button class="cmdk-btn" id="cmdk-btn" type="button" aria-haspopup="dialog" data-i18n-title="cmd.btn" data-i18n-aria="cmd.btn"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></button>
       <div class="prof" id="prof">
         <button class="prof-btn" id="prof-btn" type="button" aria-haspopup="true" aria-expanded="false">
           <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
@@ -143,7 +144,8 @@
 
   <!-- ============ EFFECTS ============ -->
   <section class="tab" id="tab-effects">
-    <div class="card mood" id="mood">
+    <div class="card mood shut" id="mood">
+      <button class="mood-tg" id="mood-tg" type="button" aria-expanded="false" aria-controls="mood-form"><span data-i18n="mood.open">Colours from a mood</span><small data-i18n="mood.open.s">describe it in words, a local AI picks the palette</small><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
       <form class="mood-row" id="mood-form" autocomplete="off">
         <span class="mood-ic"></span>
         <input type="text" id="mood-in" maxlength="300">
@@ -371,6 +373,7 @@
       <select class="select cat-sel" id="cat-brand" data-i18n-title="cat.brand"></select>
       <select class="select cat-sel" id="cat-type" data-i18n-title="cat.type"></select>
       <select class="select cat-sel" id="cat-state" data-i18n-title="cat.state"></select>
+      <div class="seg" id="cat-view" role="group" data-i18n-aria="cat.view"><button type="button" data-v="" data-i18n="cat.cards">Cards</button><button type="button" data-v="list" data-i18n="cat.list">List</button></div>
       <button class="btn small primary" type="button" id="cat-add"><span class="plus" aria-hidden="true">+</span><span data-i18n="cat.add">Add</span></button>
     </div>
     <p class="cat-count muted" id="cat-count" role="status"></p>
@@ -525,6 +528,8 @@
         <canvas class="live" id="live-ram" data-h="170"></canvas>
         <div class="zone" data-zone="zone.ram"></div>
         <div class="opts">
+          <!-- the settings made once go under Advanced, so the colour and the switch are what the sheet shows -->
+          <details class="trouble dev-adv"><summary data-i18n="dev.adv">Advanced</summary><div class="adv-body">
           <div class="wb">
             <div class="lbl"><span data-i18n="wb">White balance</span><b data-wb-val="ram_warmth">0</b></div>
             <input type="range" class="range wbr" data-wb="ram_warmth" min="-100" max="100" step="5" value="0">
@@ -533,6 +538,7 @@
           <label class="check"><input type="checkbox" data-cal="gamma"><span></span><em data-i18n="gamma">Accurate colours (gamma correction)</em></label>
           <label class="check"><input type="checkbox" data-layout="ram_reverse"><span></span><em data-i18n="reverse">Reverse direction</em></label>
           <label class="check"><input type="checkbox" data-layout="ram_swap"><span></span><em data-i18n="swap">Swap sticks</em></label>
+          </div></details>
           <label class="check"><input type="checkbox" data-own="ene_own"><span></span><em data-i18n="own">Its own lighting</em></label>
           <p class="hint" data-i18n="own.note.ram"></p>
         </div>
@@ -545,6 +551,7 @@
         <canvas class="live" id="live-gpu" data-h="170"></canvas>
         <div class="zone" data-zone="zone.gpu"></div>
         <div class="opts">
+          <details class="trouble dev-adv"><summary data-i18n="dev.adv">Advanced</summary><div class="adv-body">
           <div class="wb">
             <div class="lbl"><span data-i18n="wb">White balance</span><b data-wb-val="gpu_warmth">0</b></div>
             <input type="range" class="range wbr" data-wb="gpu_warmth" min="-100" max="100" step="5" value="0">
@@ -556,6 +563,7 @@
             <button data-step="-1">−</button><b id="gpu-leds">8</b><button data-step="1">+</button></div>
           <label class="check"><input type="checkbox" data-layout="gpu_reverse"><span></span><em data-i18n="reverse">Reverse direction</em></label>
           <label class="check"><input type="checkbox" data-layout="board_led"><span></span><em data-i18n="boardled">Motherboard LED</em></label>
+          </div></details>
           <label class="check"><input type="checkbox" data-own="msi_own"><span></span><em data-i18n="own">Its own lighting</em></label>
           <p class="hint" data-i18n="own.note.gpu"></p>
         </div>
@@ -579,6 +587,7 @@
             <label class="switch"><input type="checkbox" data-toggle="nanoleaf_enabled"><span></span></label>
           </div>
           <canvas class="live" id="live-nano" data-h="380"></canvas>
+          <details class="trouble dev-adv"><summary data-i18n="dev.adv">Advanced</summary>
           <div class="tools">
             <button class="btn ghost" id="nano-rot-l" data-i18n-title="rot.l">
               <svg viewBox="0 0 24 24"><path d="M4 8h11l4 4v3l-4 4H8"/><path d="M8 4L4 8l4 4"/></svg>90°</button>
@@ -589,8 +598,9 @@
             <span class="grow"></span>
             <button class="btn danger" id="nano-forget" data-i18n="nano.forget">Forget</button>
           </div>
-          <p class="pair-msg" data-pair-msg></p>
           <p class="hint" data-i18n="nano.hint"></p>
+          </details>
+          <p class="pair-msg" data-pair-msg></p>
         </div>
         <div class="card">
           <h3 data-i18n="colour">Colour</h3>
@@ -599,11 +609,13 @@
             <div><b data-i18n="nano.device">Play effects on the panels</b><p class="muted" data-i18n="nano.device.note"></p></div>
             <label class="switch"><input type="checkbox" id="nano-device"><span></span></label>
           </div>
+          <details class="trouble dev-adv"><summary data-i18n="dev.adv">Advanced</summary>
           <div class="field">
             <div class="lbl"><span data-i18n="nano.rate">Update rate</span><b id="nano-rate-val">10/s</b></div>
             <input type="range" class="range" id="nano-rate" min="2" max="10" value="10">
             <p class="hint" id="nano-rate-note"></p>
           </div>
+          </details>
         </div>
       </div>
       <div class="card lead bulbs-head">
@@ -611,6 +623,7 @@
           <div><h3 data-i18n="bulbs.title">AiDot bulbs</h3><p class="muted" id="bulbs-status"></p></div>
           <label class="switch"><input type="checkbox" data-toggle="lights_enabled"><span></span></label>
         </div>
+        <details class="trouble dev-adv"><summary data-i18n="dev.adv">Advanced</summary>
         <div class="row2">
           <div class="field">
             <div class="lbl"><span data-i18n="bulbs.smooth">Colour smoothing</span><b id="smooth-val">0.35 s</b></div>
@@ -621,6 +634,7 @@
             <input type="range" class="range" id="bulb-rate" min="1" max="10" value="4">
           </div>
         </div>
+        </details>
       </div>
       <div class="bulb-grid" id="bulb-grid"></div>
       <div class="card empty hidden" id="bulbs-empty">
@@ -1172,6 +1186,15 @@
   </div>
 </div>
 
+<div class="popover qmenu hidden" id="qmenu" role="dialog" aria-labelledby="qm-name"></div>
+<!-- Ctrl+K: pages, devices and their switches, profiles, the lights' power; filled by app.js (cmdkItems) -->
+<div class="sheet-wrap pdlg-wrap cmdk-wrap hidden" id="cmdk">
+  <div class="card pdlg cmdk" role="dialog" aria-modal="true" data-i18n-aria="cmd.title">
+    <input type="text" id="cmdk-q" role="combobox" aria-expanded="true" aria-controls="cmdk-list" aria-autocomplete="list" spellcheck="false" autocomplete="off" data-i18n-ph="cmd.ph" data-i18n-aria="cmd.title">
+    <ul class="cmdk-list" id="cmdk-list" role="listbox" data-i18n-aria="cmd.title"></ul>
+    <p class="cmdk-none muted hidden" id="cmdk-none" data-i18n="cmd.none">Nothing found</p>
+  </div>
+</div>
 <div class="popover hidden" id="picker">
   <canvas id="pk-sv" width="240" height="150"></canvas>
   <input type="range" id="pk-hue" data-i18n-aria="pk.hue" min="0" max="360" value="0">

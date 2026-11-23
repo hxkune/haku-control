@@ -1236,6 +1236,8 @@ int app_tray_json(char *out, int cap) {
     // the tray's own lists: favourite and recent effects first in its picker, pinned devices first on its main view
     static const char *const lists[][2] = {{"fav", "fav"}, {"recent", "fx_recent"}, {"dpin", "tray_pin"}};
     for (int i = 0; i < 3; i++) { jesc(a, sizeof(a), cfg_get("general", lists[i][1], "")); n = jcat(out, cap, n, "\"%s\":\"%s\",", lists[i][0], a); }
+    // the window's recent palettes (app.js rememberPal: ';' between them, at most 8 of 8 colours): the tray's quick colours
+    { char r[8 * 8 * 9 + 16]; jesc(r, sizeof(r), cfg_get("general", "recent", "")); n = jcat(out, cap, n, "\"pals\":\"%s\",", r); }
     n = jcat(out, cap, n, "\"pal\":[");
     rgbf pal[MAX_PALETTE];
     EnterCriticalSection(&cs); int np = effects_palette(cur_effect, pal, MAX_PALETTE); LeaveCriticalSection(&cs);

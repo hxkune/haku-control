@@ -11,7 +11,7 @@ const T = {
     log: 'Open the log', ini: 'Open the settings file', quit: 'Quit haku control', offFx: 'Off', sending: 'Sending…',
     notDone: 'haku did not confirm this. Shown as it really is.', devGone: 'The device disconnected. The change could not be confirmed.', s_on: 'On', s_off: 'Off', s_own: 'Left to its own app',
     s_busy: 'Driven another way in haku', s_pro: 'Pro is needed to control it', s_nosup: 'Not supported here', s_offline: 'Control on · no connection', s_connecting: 'Waiting to connect',
-    fxFind: 'Find an effect', favs: 'Favourites', recent: 'Recent', allFx: 'All effects', noMatch: 'Nothing matches “{0}”',
+    qpal: 'Quick colours', qpalN: 'Recent colours {0}', fxFind: 'Find an effect', favs: 'Favourites', recent: 'Recent', allFx: 'All effects', noMatch: 'Nothing matches “{0}”',
     pin: 'Keep {0} on the first screen', pinHint: 'Pin up to 3 devices to keep them on the first screen.',
     'err.write': 'The profile file could not be written.', 'err.leave': 'Not switched: the changes in “{0}” could not be saved.',
     'err.missing': 'Profile “{0}” was not used: its file is missing.', 'err.bad': 'Profile “{0}” was not used: its file is damaged.',
@@ -24,7 +24,7 @@ const T = {
     log: 'Открыть журнал', ini: 'Открыть файл настроек', quit: 'Выйти из haku control', offFx: 'Выключено', sending: 'Отправка…',
     notDone: 'haku не подтвердил это. Показано настоящее состояние.', devGone: 'Устройство отключилось. Не удалось подтвердить изменение.', s_on: 'Включено', s_off: 'Выключено', s_own: 'У своей программы',
     s_busy: 'haku управляет им другим путём', s_pro: 'Для управления нужен Pro', s_nosup: 'Здесь не поддерживается', s_offline: 'Управление включено · нет связи', s_connecting: 'Ожидает подключения',
-    fxFind: 'Найти эффект', favs: 'Избранное', recent: 'Недавние', allFx: 'Все эффекты', noMatch: 'Ничего не найдено по «{0}»',
+    qpal: 'Быстрые цвета', qpalN: 'Недавние цвета {0}', fxFind: 'Найти эффект', favs: 'Избранное', recent: 'Недавние', allFx: 'Все эффекты', noMatch: 'Ничего не найдено по «{0}»',
     pin: 'Держать {0} на первом экране', pinHint: 'Закрепите до 3 устройств, чтобы они были на первом экране.',
     'err.write': 'Не удалось записать файл профиля.', 'err.leave': 'Не переключено: изменения в «{0}» не удалось сохранить.',
     'err.missing': 'Профиль «{0}» не использован: его файл не найден.', 'err.bad': 'Профиль «{0}» не использован: его файл повреждён.',
@@ -37,7 +37,7 @@ const T = {
     log: 'Ouvrir le journal', ini: 'Ouvrir le fichier de réglages', quit: 'Quitter haku control', offFx: 'Éteint', sending: 'Envoi…',
     notDone: 'haku ne l’a pas confirmé. Affiché tel quel.', devGone: 'L’appareil s’est déconnecté. Le changement n’a pas pu être confirmé.', s_on: 'Allumé', s_off: 'Éteint', s_own: 'Laissé à son application',
     s_busy: 'haku le pilote par un autre chemin', s_pro: 'Pro requis pour le contrôler', s_nosup: 'Non pris en charge ici', s_offline: 'Contrôle activé · pas de connexion', s_connecting: 'En attente de connexion',
-    fxFind: 'Chercher un effet', favs: 'Favoris', recent: 'Récents', allFx: 'Tous les effets', noMatch: 'Aucun résultat pour « {0} »',
+    qpal: 'Couleurs rapides', qpalN: 'Couleurs récentes {0}', fxFind: 'Chercher un effet', favs: 'Favoris', recent: 'Récents', allFx: 'Tous les effets', noMatch: 'Aucun résultat pour « {0} »',
     pin: 'Garder {0} sur le premier écran', pinHint: 'Épinglez jusqu’à 3 appareils pour les garder sur le premier écran.',
     'err.write': 'Le fichier du profil n’a pas pu être écrit.', 'err.leave': 'Pas de changement : les modifications de « {0} » n’ont pas pu être enregistrées.',
     'err.missing': 'Le profil « {0} » n’a pas été utilisé : son fichier est introuvable.', 'err.bad': 'Le profil « {0} » n’a pas été utilisé : son fichier est endommagé.',
@@ -45,7 +45,7 @@ const T = {
 };
 const PROF_ERR = ['', 'write', 'leave', 'missing', 'bad', 'full', 'cfg', 'room'];   // profile.c, as app.js
 const THEMES = ['dark', 'grey', 'light'], HIDDEN = ['verity', 'bubblegum', 'kyoka', 'akapzz'];
-const DEV_MAIN = 3, PIN_MAX = 3, CONFIRM_MS = 5000, BRI_MS = 80, BRI_HOLD = 600;
+const DEV_MAIN = 3, PIN_MAX = 3, QPAL_MAX = 4, CONFIRM_MS = 5000, BRI_MS = 80, BRI_HOLD = 600;
 let L = T.en, S = null, view = 'main', lastH = 0, side = 'b';
 // what was sent and not yet seen in the state: key -> { want(state), t, late }. want: true (done), false (not yet) or
 // the key of an error that settles it now. Once failed it stays as late: a state that agrees later takes its error away.
@@ -62,6 +62,9 @@ const bridge = window.chrome && window.chrome.webview;
 const send = o => { if (bridge) bridge.postMessage(JSON.stringify(o)); };
 const isOn = () => S && S.fx !== S.off;
 const parsePal = s => (s || '').match(/#[0-9a-fA-F]{6}/g) || [];
+// the window's recent palettes, newest first; one is "on" when the effect shows exactly it (the core sends lowercase)
+const qpals = () => (S.pals || '').split(';').map(parsePal).filter(p => p.length).slice(0, QPAL_MAX);
+const palKey = p => p.join(',').toLowerCase();
 const sw = pal => pal.length ? `<span class="pal" aria-hidden="true">${pal.slice(0, 8).map(c => `<i style="background:${esc(c)}"></i>`).join('')}</span>` : '';
 const ICON = {
   power: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>',
@@ -179,6 +182,13 @@ function fxList(on) {
   return errLine('fx') + list(t('favs'), fav, row) + list(t('recent'), rec, row) + list(top.length ? t('allFx') : '', F.filter(f => !top.includes(f)), row) + list(t('presets'), P, preRow);
 }
 
+// one tap sets a recent palette on the effect in use, as the window's #quick does (hidden off and on the screen effect)
+function qpalRow(on) {
+  const Q = qpals(), cur = palKey(S.pal || []), qb = busy('qpal') ? pend.qpal.id : null;
+  if (!on || S.fx === 'screen' || !Q.length) return '';
+  return `<div class="qpals" role="group" aria-label="${esc(t('qpal'))}">${Q.map((p, i) => `<button class="qp${qb === i ? ' busy' : ''}" type="button" data-key="q${i}" data-qpal="${i}" aria-pressed="${palKey(p) === cur}" aria-label="${esc(t('qpalN', i + 1))}" title="${esc(p.join(', '))}">${p.map(c => `<i style="background:${esc(c)}"></i>`).join('')}</button>`).join('')}</div>`;
+}
+
 function render() {
   if (!S) return;
   document.body.dataset.view = view;
@@ -203,7 +213,7 @@ function render() {
     <div class="chips">${shown.map(profChip).join('')}</div>${errLine('prof')}`);
   put('fx', `<button class="row go" type="button" data-key="fx" data-go="effects"${busy('fx') ? ' aria-busy="true"' : ''}>
     <span class="txt"><small>${esc(t('fx'))}</small><span class="name" title="${esc(fxName())}">${esc(busy('fx') ? t('sending') : fxName())}</span></span>
-    ${on ? sw(S.pal || []) : ''}${ICON.next}</button>${errLine('fx')}`);
+    ${on ? sw(S.pal || []) : ''}${ICON.next}</button>${qpalRow(on)}${errLine('fx')}`);
   const D = S.devs || [], nOn = D.filter(d => d.s === 'on').length, pins = pinsNow();
   const mainD = pins.length ? pins.map(p => D.find(d => devKey(d) === p)) : D.slice(0, DEV_MAIN);   // the pinned ones, else the first few
   put('devs', `<div class="sec-h"><h2>${esc(t('devs'))}</h2>${D.length ? `<span class="count">${nOn} / ${D.length}</span>` : ''}</div>
@@ -276,6 +286,12 @@ document.addEventListener('click', e => {
   }
   if (d.fx) { const id = d.fx; return sent('fx', { cmd: 'effect', id }, s => s.fx === id && !s.preset, 'fx', 'f' + id); }
   if (d.preset) { const id = +d.preset; return sent('fx', { cmd: 'preset', id }, s => s.preset === id, 'fx', 'p' + id); }
+  if (d.qpal) {   // the effect's own palette, the key the window sets ('set' passes the phone's checks)
+    const i = +d.qpal, p = qpals()[i], fx = S.fx;
+    if (!p) return;
+    const k = palKey(p);
+    return sent('qpal', { cmd: 'set', s: fx, k: 'palette', v: p.join(', ') }, s => s.fx === fx && palKey(s.pal || []) === k, 'fx', i);
+  }
   if (d.pin) {   // pin or unpin a device on the first screen, by its stable key
     if (busy('pin')) return;
     const cur = pinsNow(), v = (cur.includes(d.pin) ? cur.filter(p => p !== d.pin) : cur.concat(d.pin)).slice(0, PIN_MAX).join(',');

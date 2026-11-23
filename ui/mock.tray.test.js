@@ -235,6 +235,32 @@
     ok(q('[data-preset="2"]').getAttribute('aria-current') === 'true' && q('[data-fx="ocean"]').getAttribute('aria-current') === 'false', 'the preset is not the current one, or its effect still is');
   });
 
+  test('quick colours: the recent palettes under the effect, the one in use pressed; a tap sets it on the effect; none when off', async () => {
+    await reset();
+    const B = qa('#fx .qp');
+    ok(B.length === 4 && q('#fx .qpals').getAttribute('role') === 'group', 'not 4 of the 5 recent palettes: ' + B.length);
+    ok(B.map(b => b.getAttribute('aria-pressed')).join() === 'false,true,false,false', 'the one in use (aurora, any case) is not pressed');
+    ok(B[0].querySelectorAll('i').length === 3 && B[2].querySelectorAll('i').length === 1 && B[0].getAttribute('aria-label') === 'Recent colours 1', 'its colours or its name');
+    sent.length = 0; B[0].click();
+    ok(q('#fx .qp[data-qpal="0"]').classList.contains('busy') && q('#fx .qp[data-qpal="0"]').getAttribute('aria-pressed') === 'false', 'shown as done before the core answered');
+    await settle();
+    ok(JSON.stringify(sent) === JSON.stringify([{ cmd: 'set', s: 'aurora', k: 'palette', v: '#FF3D00, #FF9A00, #FFD23D' }]), 'sent ' + JSON.stringify(sent));
+    ok(qa('#fx .qp').map(b => b.getAttribute('aria-pressed')).join() === 'true,false,false,false' && !q('#fx .qp.busy') && !q('#fx .err'), 'not confirmed by the state');
+    ok(qa('#fx .pal i').map(i => i.style.background).join() === 'rgb(255, 61, 0),rgb(255, 154, 0),rgb(255, 210, 61)', 'the effect row does not show it');
+    q('#power').click(); await settle();
+    ok(!q('#fx .qpals'), 'shown with the lighting off');
+    S.pals = ''; await changed(); q('#power').click(); await settle();
+    ok(!q('#fx .qpals'), 'an empty row with no recent palettes');
+  });
+
+  test('quick colours: never confirmed, it says so after 5 s; Russian names', async () => {
+    await reset();
+    window.mockSilent = 1; q('#fx .qp[data-qpal="2"]').click(); await wait(5200);
+    ok(q('#fx .err') && q('#fx .err').textContent === 'haku did not confirm this. Shown as it really is.' && q('#fx .qp[data-qpal="1"]').getAttribute('aria-pressed') === 'true', 'no error, or shown as done');
+    window.mockSilent = 0; S.lang = 'ru'; await changed();
+    ok(q('#fx .qpals').getAttribute('aria-label') === 'Быстрые цвета' && q('#fx .qp').getAttribute('aria-label') === 'Недавние цвета 1', 'the Russian names');
+  });
+
   test('effects: favourites and recent first, each effect once; a search narrows them; arrows, letters and Enter work', async () => {
     await reset();
     const key = (k, el = document.activeElement) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));

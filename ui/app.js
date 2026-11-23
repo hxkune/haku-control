@@ -38,7 +38,7 @@ const nanoName = c => (c && c.name) || 'Nanoleaf';
 let tab = 'home';
 const SHEET = { kind: null, moved: [], page: '', back: null };
 // the Devices catalogue's search and filters, kept across visits and restarts (see buildCatalog); CATV: the tiles shown
-const CAT = { q: '', where: '', brand: '', type: '', state: '' };
+const CAT = { q: '', where: '', brand: '', type: '', state: '', view: '' };   // view: '' cards, 'list' compact rows
 try { Object.assign(CAT, JSON.parse(localStorage.getItem('cat') || '{}')); } catch (e) { }
 const saveCat = () => { try { localStorage.setItem('cat', JSON.stringify(CAT)); } catch (e) { } };
 let CATV = [];   // the open device sheet (see openSheet)
@@ -974,10 +974,9 @@ function renderZone(el) {
     <div class="seg">${modes.map(m => `<button type="button" data-m="${m}" class="${m === mode ? 'on' : ''}">${t('mode.' + m)}</button>`).join('')}</div>
     <div class="zbody"></div>
     <div class="field">
-      <div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
-      <input type="range" class="range zb" min="1" max="100" value="${br}">
-    </div>
-    <p class="note">${t('zone.bright.note')}</p>`;
+      <div class="lbl"><span class="tip" title="${esc(t('zone.bright.note'))}">${t('zone.bright')}</span><b>${br}%</b></div>
+      <input type="range" class="range zb" min="1" max="100" value="${br}" aria-description="${esc(t('zone.bright.note'))}">
+    </div>`;   // what "own" brightness means is a tooltip: shown under every device it took more room than the slider
   const body = el.querySelector('.zbody');
   el.querySelector('.zfx')?.addEventListener('change', e => { setCfg(section, 'effect', e.target.value); renderZone(el); renderOwnList(); });
   if (!steady && (own || S.effect) === 'screen' && mode === 'effect') {
@@ -1018,9 +1017,9 @@ function renderWhiteZone(el, section, caps) {
   el.innerHTML = `
     <div class="field"><div class="lbl"><span>${t('kelvin')}</span><b>${k} K</b></div>
       <input type="range" class="range kelvin" min="${caps.kmin}" max="${caps.kmax}" step="100" value="${k}"></div>
-    <div class="field"><div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
-      <input type="range" class="range zb" min="3" max="100" value="${Math.max(3, br)}"></div>
-    <p class="note">${t('zone.white')} ${t('zone.bright.note')}</p>`;
+    <div class="field"><div class="lbl"><span class="tip" title="${esc(t('zone.bright.note'))}">${t('zone.bright')}</span><b>${br}%</b></div>
+      <input type="range" class="range zb" min="3" max="100" value="${Math.max(3, br)}" aria-description="${esc(t('zone.bright.note'))}"></div>
+    <p class="note">${t('zone.white')}</p>`;
   const r = el.querySelector('.kelvin'), zb = el.querySelector('.zb'); fill(r); fill(zb);
   r.addEventListener('input', () => { r.parentElement.querySelector('b').textContent = r.value + ' K'; setCfgSoon(section, 'kelvin', r.value); });
   zb.addEventListener('input', () => { zb.parentElement.querySelector('b').textContent = zb.value + '%'; setCfgSoon(section, 'brightness', zb.value); });
@@ -2662,7 +2661,8 @@ ANIM.raf = requestAnimationFrame(animate);
 // ------------------------------------------------------------------ live drawing
 function sizeCanvases() {
   for (const c of $$('canvas.live, #hero')) {
-    const w = c.clientWidth, h = c.id === 'hero' ? c.parentElement.clientHeight : +c.dataset.h;
+    // in a device's sheet a live view is at most 220 px tall, so its colour controls are in sight without scrolling
+    const w = c.clientWidth, h = c.id === 'hero' ? c.parentElement.clientHeight : c.closest('#sheet') ? Math.min(220, +c.dataset.h) : +c.dataset.h;
     if (!w) continue;
     c.style.height = h + 'px';
     c.width = w * devicePixelRatio; c.height = h * devicePixelRatio;
@@ -3420,6 +3420,15 @@ $('#hero-keys').addEventListener('keydown', e => {
   heroMove(h.key, n.key); drawHero();
   [...$('#hero-keys').children].find(x => x.dataset.k === h.key && !x.hasAttribute('data-pw'))?.focus();
 });
+$('#hero-keys').addEventListener('contextmenu', e => {
+  const b = e.target.closest('button'), h = b && HERO.hits[+b.dataset.i]; if (!h) return;
+  const r = b.getBoundingClientRect();
+  if (qmOpen(h, r.left + 8, r.top + Math.min(r.height, 40), b)) e.preventDefault();
+});
+$('#hero').addEventListener('contextmenu', e => {
+  const h = heroHit(e); if (!h) return;
+  if (qmOpen(h, e.clientX, e.clientY, [...$('#hero-keys').children].find(x => x.dataset.k === h.key && !x.hasAttribute('data-pw')))) e.preventDefault();
+});
 $('#hero-keys').addEventListener('focusin', e => { const h = HERO.hits[+e.target.dataset.i]; if (h) { HERO.hover = h.key; drawHero(); } });
 $('#hero-keys').addEventListener('focusout', () => { HERO.hover = ''; drawHero(); });
 // the canvas follows the card while its height animates
@@ -3480,7 +3489,7 @@ $('#hero').addEventListener('pointermove', e => {
   }
   const h = heroHit(e), key = h ? h.key : '', pw = heroOnPower(h, e) ? key : '';
   $('#hero').style.cursor = h ? 'pointer' : '';
-  $('#hero').title = pw ? t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on')) : h && h.cut ? h.name : '';
+  $('#hero').title = pw ? t(h.k === 'group' ? (h.pw.on ? 'power.group.off' : 'power.group.on') : (h.pw.on ? 'power.dev.off' : 'power.dev.on')) : h && h.cut ? h.name : h && qmSec(h) && !HERO.arrange ? t('qm.hint') : '';
   if (key !== HERO.hover || pw !== HERO.hoverPw) { HERO.hover = key; HERO.hoverPw = pw; drawHero(); }
 });
 const heroDragEnd = drop => {
@@ -3507,6 +3516,82 @@ function heroOpen(h, cx, cy) {
   if (h.k !== 'fan') return openSheet(h, cx, cy);
   fanOpen(h.fan.g ? { g: h.fan.g } : { i: h.fan.i }, { getBoundingClientRect: () => new DOMRect(cx, cy, 0, 0) });
 }
+
+// ---- a tile's quick menu (right click, a long press, the menu key or Shift+F10): on/off, brightness and a colour
+// without opening the device. A group's changes go to its devices (groupSpread); fans and the + tile have none.
+const QM = { h: null, from: null }, QM_COLOURS = [['red', '#FF0000'], ['amber', '#FFA000'], ['yellow', '#FFE000'], ['green', '#00FF6A'],
+  ['cyan', '#00C8FF'], ['blue', '#2B2BFF'], ['purple', '#B400FF'], ['pink', '#FF2D95']];
+const qmSec = h => h && (h.k === 'group' ? groupSec(h.g) : h.zone);
+function qmOpen(h, x, y, from) {
+  if (!qmSec(h) || HERO.arrange) return false;
+  QM.h = h; QM.from = from || null;
+  const m = $('#qmenu'); qmRender(); m.classList.remove('hidden');
+  m.style.left = Math.max(12, Math.min(x, innerWidth - m.offsetWidth - 12)) + 'px';
+  m.style.top = Math.max(12, Math.min(y, innerHeight - m.offsetHeight - 12)) + 'px';
+  m.querySelector('input, button')?.focus();
+  return true;
+}
+function qmClose(back) {
+  const m = $('#qmenu'); if (m.classList.contains('hidden')) return;
+  m.classList.add('hidden'); m.innerHTML = '';
+  // a power switch redraws the tile buttons: back to the one with the same tile
+  const b = QM.from && !QM.from.isConnected && QM.h ? [...$('#hero-keys').children].find(x => x.dataset.k === QM.h.key && !x.hasAttribute('data-pw')) : QM.from;
+  if (back && b && b.isConnected) b.focus();
+  QM.h = QM.from = null;
+}
+function qmRender() {
+  const h = QM.h, sec = qmSec(h), kind = h.k === 'group' ? '' : zoneCaps(sec).kind, p = devicePower(h);
+  const name = h.k === 'group' ? groupTitle(groups().find(g => g.n === h.g) || { n: h.g }) : h.name;
+  const mode = zoneMode(sec), cur = (parsePal(cv(sec, 'palette'))[0] || '').toUpperCase(), br = +cv(sec, 'brightness', 100), lo = kind === 'white' ? 3 : 1;
+  const modes = !kind ? ['effect', 'white'] : kind === 'steady' ? ['white'] : [];
+  $('#qmenu').innerHTML = `<div class="qm-head"><b id="qm-name">${esc(name)}</b>${p ? `<label class="switch"><input type="checkbox" class="qm-pw" role="switch" aria-labelledby="qm-name" ${p.on ? 'checked' : ''}><span></span></label>` : ''}</div>
+    ${kind === 'onoff' ? `<p class="note">${t('zone.onoff')}</p>` : `<div class="field"><div class="lbl"><span>${t('zone.bright')}</span><b>${br}%</b></div>
+      <input type="range" class="range qm-br" min="${lo}" max="100" value="${Math.max(lo, br)}" aria-label="${esc(t('zone.bright'))}"></div>`}
+    ${modes.length ? `<div class="qm-sws" role="group" aria-label="${esc(t('mode.static'))}">${QM_COLOURS.map(([n, c]) => {
+      const on = mode === 'static' && cur === c;
+      return `<button type="button" data-c="${c}" style="background:${c}" class="${on ? 'on' : ''}" aria-pressed="${on}" aria-label="${esc(t('qm.c.' + n))}" title="${esc(t('qm.c.' + n))}"></button>`; }).join('')}</div>
+    <div class="seg qm-modes">${modes.map(m => `<button type="button" data-m="${m}" class="${m === mode ? 'on' : ''}" aria-pressed="${m === mode}">${t('mode.' + m)}</button>`).join('')}</div>` : ''}
+    <button type="button" class="btn small ghost qm-all"><span>${t('qm.all')}</span></button>`;
+  const r = $('#qmenu .qm-br'); if (r) fill(r);
+}
+// after a change: the device's own editors and the preview show it
+const qmDone = () => { renderZones(); drawHero(); };
+$('#qmenu').addEventListener('input', e => {
+  if (!e.target.matches('.qm-br')) return;
+  const r = e.target; fill(r); r.parentElement.querySelector('b').textContent = r.value + '%';
+  setCfgSoon(qmSec(QM.h), 'brightness', r.value); drawHero();
+});
+$('#qmenu').addEventListener('change', e => {
+  if (e.target.matches('.qm-br')) renderZones();
+  if (!e.target.matches('.qm-pw')) return;
+  togglePower(QM.h); drawHero();
+  const p = devicePower(QM.h); if (p) e.target.checked = p.on;
+});
+$('#qmenu').addEventListener('click', e => {
+  const b = e.target.closest('button'), h = QM.h; if (!b || !h) return;
+  const sec = qmSec(h);
+  if (b.dataset.c) {   // the colour is the palette's first: the rest of the device's own palette stays as it was
+    const p = parsePal(cv(sec, 'palette')), rest = (p.length ? p : effPal(cv(sec, 'effect', '') || S.effect)).slice(1);
+    setCfg(sec, 'palette', palStr([b.dataset.c, ...rest])); setCfg(sec, 'mode', 'static');
+  } else if (b.dataset.m) {
+    setCfg(sec, 'mode', b.dataset.m);
+  } else if (b.matches('.qm-all')) {
+    const f = QM.from, r = (f || b).getBoundingClientRect(); qmClose(false);
+    heroOpen(h, r.left + r.width / 2, r.top + r.height / 2);
+    const s = $('#sheet:not(.hidden)'), x = s && s.querySelector('button, input, select'); if (x) x.focus();
+    return;
+  } else return;
+  qmDone(); qmRender();
+  $(`#qmenu [data-c="${b.dataset.c}"], #qmenu [data-m="${b.dataset.m}"]`)?.focus();
+});
+$('#qmenu').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.stopPropagation(); qmClose(true); return; }
+  if (e.key !== 'Tab') return;   // focus stays in the menu until it is closed
+  const f = dlgFocusable($('#qmenu')), i = f.indexOf(document.activeElement);
+  if (e.shiftKey ? i <= 0 : i === f.length - 1) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+});
+document.addEventListener('pointerdown', e => { if (!$('#qmenu').contains(e.target)) qmClose(false); }, true);
+addEventListener('blur', () => qmClose(false));
 
 // ---- one power button per device in the preview: memory, the ARGB strip, each Nanoleaf controller, each bulb,
 // each LAN device. The same switches as on their own pages ([layout] ..._enabled, [dev.N] enabled).
@@ -3566,7 +3651,7 @@ function sheetCards(h) {
   if (h.k === 'ram') return [[$('#ram-card')], 'devices'];
   if (h.k === 'gpu') return [[$('#gpu-card')], 'devices'];
   if (h.k === 'nano') { if (h.slot) { nanoSlot = h.slot; updateNano(); } return [nanoOn() ? $$('#nano-main > .card') : [$('#nano-empty')], 'devices']; }
-  if (h.k === 'bulb') { const c = $('#bulb-grid').children[h.i]; return [c ? [$('.bulbs-head'), c] : [], 'devices']; }   // with the settings all bulbs share
+  if (h.k === 'bulb') { const c = $('#bulb-grid').children[h.i]; return [c ? [c, $('.bulbs-head')] : [], 'devices']; }   // the bulb first, then the settings all bulbs share
   if (h.k === 'ext') return [[$(`#dev-st-${h.id}`)?.closest('.card')], 'devices'];
   if (h.k === 'add') return [[$('#add-store')], 'devices'];
   if (h.k === 'fx') return [[$('.fx-side')], 'effects'];
@@ -4253,7 +4338,8 @@ function buildCatalog(fresh) {
   catSelect($('#cat-type'), 'type', items.map(x => x.type), fixName);
   catSelect($('#cat-state'), 'state', CAT_STATES.filter(v => items.some(x => x.state === v)), v => t('cat.st.' + v));
   $$('#cat-where button').forEach(b => { b.classList.toggle('on', b.dataset.v === CAT.where); b.setAttribute('aria-pressed', b.dataset.v === CAT.where); });
-  const q = CAT.q.trim().toLowerCase();
+  $$('#cat-view button').forEach(b => { b.classList.toggle('on', b.dataset.v === CAT.view); b.setAttribute('aria-pressed', b.dataset.v === CAT.view); });
+  const list = CAT.view === 'list', q = CAT.q.trim().toLowerCase();
   CATV = items.filter(x => (!CAT.where || x.where === CAT.where) && (!CAT.brand || x.brand === CAT.brand) && (!CAT.type || x.type === CAT.type) &&
     (!CAT.state || x.state === CAT.state) && (!q || `${x.name} ${x.brand} ${x.model}`.toLowerCase().includes(q)));
   $('#cat-none').classList.toggle('hidden', items.length > 0);
@@ -4262,21 +4348,25 @@ function buildCatalog(fresh) {
   $('#cat-count').textContent = items.length ? t('cat.count', CATV.length, items.length) : '';
   $('#pc-tools').classList.toggle('hidden', CAT.where === 'room');
   const html = CATV.map(x => {
-    const p = devicePower(x), own = catOwn(x.zone);
+    const p = devicePower(x), own = catOwn(x.zone), br = list && x.zone && zoneCaps(x.zone).kind !== 'onoff';
     const hint = x.state === 'setup' ? `<p class="cat-hint">${esc(t('zones.need'))}</p><button class="btn small primary cat-fix" type="button"><span>${esc(t('cat.fix'))}</span></button>`
       : x.state === 'offline' ? `<button class="btn small ghost" type="button" data-help="offline"><span>${esc(t('help.open'))}</span></button>`
       : x.state === 'nosup' ? `<button class="btn small ghost" type="button" data-help="orgb"><span>${esc(t('help.open'))}</span></button>`
       : x.state === 'pro' ? `<button class="btn small ghost cat-pro" type="button"><span>${esc(t('pro.lock.key'))}</span></button>` : '';
     return `<div class="cat-tile" data-key="${x.key}" data-st="${x.state}">
-      <button type="button" class="cat-open" aria-label="${esc(t('cat.open', x.name))}"><canvas class="live" id="cat-live-${x.key}" data-h="58" aria-hidden="true"></canvas>
+      <button type="button" class="cat-open" aria-label="${esc(t('cat.open', x.name))}"><canvas class="live" id="cat-live-${x.key}" data-h="${list ? 26 : 58}" aria-hidden="true"></canvas>
         <span class="cat-name" id="cat-n-${x.key}" title="${esc(x.name)}">${esc(x.name)}</span><span class="cat-model" title="${esc([x.brand, x.model].filter(Boolean).join(' · '))}">${esc([x.brand, x.model].filter(Boolean).join(' · '))}</span></button>
       <div class="cat-row"><span class="cat-st st-${x.state}" title="${esc(x.tip)}">${esc(t('cat.st.' + x.state))}</span>
+        ${br ? `<input type="range" class="range cat-br" min="${zoneCaps(x.zone).kind === 'white' ? 3 : 1}" max="100" aria-label="${esc(t('cat.bright', x.name))}">` : ''}
         ${p ? `<label class="switch"><input type="checkbox" class="cat-pw" role="switch" aria-labelledby="cat-n-${x.key}" ${p.on ? 'checked' : ''}><span></span></label>` : ''}</div>
       ${own === null ? '' : `<div class="cat-row"><span class="cat-own${own ? ' on' : ''}">${esc(t(own ? 'cat.own' : 'cat.global'))}</span>${own ? `<button class="btn small ghost cat-revert" type="button"><span>${esc(t('cat.revert'))}</span></button>` : ''}</div>`}
       ${hint ? `<div class="cat-row">${hint}</div>` : ''}</div>`;
   }).join('');
   const g = $('#cat-grid');
-  if (g.dataset.html === html) return;   // a status update with nothing new: the tiles, their focus and canvases stay
+  g.classList.toggle('list', list);
+  // the brightness is set here, not in the html: a status update while one is dragged does not rebuild the rows
+  const catBr = () => $$('.cat-br', g).forEach(r => { if (r !== document.activeElement) { r.value = cv(catItem(r).zone, 'brightness', 100); fill(r); } });
+  if (g.dataset.html === html) return catBr();   // a status update with nothing new: the tiles, their focus and canvases stay
   const a = document.activeElement, at = a && g.contains(a) ? [a.closest('.cat-tile').dataset.key, [...a.classList][0]] : null;
   // FLIP: a tile that stays slides to its new place, a new one fades in; not on the page's own entrance or with motion off
   const was = {}, flip = !fresh && g.dataset.html !== undefined && !document.body.classList.contains('calm');
@@ -4287,6 +4377,7 @@ function buildCatalog(fresh) {
     if (!r) el.animate([{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 200, easing: 'ease-out' });
     else if (r.left !== n.left || r.top !== n.top) el.animate([{ transform: `translate(${r.left - n.left}px, ${r.top - n.top}px)` }, { transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.2, .7, .2, 1)' });
   });
+  catBr();
   if (at) $(`.cat-tile[data-key="${at[0]}"] .${at[1]}`)?.focus({ preventScroll: true });
   requestAnimationFrame(sizeCanvases);
 }
@@ -4298,7 +4389,13 @@ $('#cat-grid').addEventListener('click', e => {
   else if (b.matches('.cat-revert')) { setCfg(h.zone, 'effect', ''); setCfg(h.zone, 'mode', 'effect'); renderZones(); renderOwnList(); buildCatalog(); }   // the inheritance only: its own colours stay saved
   else if (b.matches('.cat-pro')) proGoKey();
 });
-$('#cat-grid').addEventListener('change', e => { if (!e.target.matches('.cat-pw')) return; const h = catItem(e.target); if (h) { togglePower(h); buildCatalog(); } });
+$('#cat-grid').addEventListener('change', e => {
+  const h = catItem(e.target); if (!h) return;
+  if (e.target.matches('.cat-pw')) { togglePower(h); buildCatalog(); }
+  else if (e.target.matches('.cat-br')) renderZones();
+});
+$('#cat-grid').addEventListener('input', e => { if (!e.target.matches('.cat-br')) return; const h = catItem(e.target); if (h) { fill(e.target); setCfgSoon(h.zone, 'brightness', e.target.value); } });
+$$('#cat-view button').forEach(b => b.addEventListener('click', () => { CAT.view = b.dataset.v; saveCat(); buildCatalog(); }));
 $('#cat-q').value = CAT.q;
 $('#cat-q').addEventListener('input', e => { CAT.q = e.target.value; saveCat(); buildCatalog(); });
 $$('#cat-where button').forEach(b => b.addEventListener('click', () => { CAT.where = b.dataset.v; saveCat(); buildCatalog(); }));
@@ -4376,6 +4473,65 @@ document.addEventListener('keydown', e => {
   const typing = e.target.closest('input:not([type=range]):not([type=checkbox]), textarea, select, [contenteditable]');
   // (the group window has its own Cancel for what was changed in it)
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !typing && !$('.kbd.rec') && $('#gdlg').classList.contains('hidden') && $('#cdlg').classList.contains('hidden') && $('#lcded').classList.contains('hidden')) { e.preventDefault(); undo(); }
+});
+// ---- Ctrl+K (or the magnifier in the header): one box to reach a page, a device and its switch, a profile or the
+// lights' power by typing a few letters. A combobox: the focus stays in the box, the list follows aria-activedescendant.
+const CMDK = { items: [], shown: [], i: 0, back: null };
+function cmdkItems() {
+  const L = [], cur = +cv('general', 'profile', 0);
+  $$('#nav button[data-tab]').filter(b => b.getClientRects().length).forEach(b => { const p = b.dataset.tab; L.push({ id: 'p-' + p, label: t(p === 'fans' ? 'nav.cooling' : 'nav.' + p), sub: t('cmd.page'), run: () => showTab(p) }); });
+  heroItems(true).forEach(h => {
+    L.push({ id: 'd-' + h.key, label: h.name, sub: t('cmd.dev'), run: () => openSheet(h, innerWidth / 2, innerHeight / 3) });
+    const p = devicePower(h);
+    if (p) L.push({ id: 'w-' + h.key, label: t(p.on ? 'cmd.off' : 'cmd.on', h.name), sub: t('cmd.dev'), run: () => { togglePower(h); buildCatalog(); } });
+  });
+  profiles().forEach(p => L.push({ id: 'f-' + p.id, label: p.name, sub: t(p.id === cur ? 'cmd.prof.cur' : 'cmd.prof'), run: () => profGo(p.id) }));
+  L.push({ id: 'power', label: $('#power span').textContent, sub: t('cmd.all'), run: () => $('#power').click() });
+  L.push({ id: 'add', label: t('cmd.add'), sub: t('cmd.dev'), run: () => go('add') });
+  return L;
+}
+function cmdkRender() {
+  const q = $('#cmdk-q'), n = CMDK.shown.length;
+  $('#cmdk-list').innerHTML = CMDK.shown.map((x, i) => `<li role="option" id="cmdk-o-${i}" data-i="${i}" aria-selected="${i === CMDK.i}"${i === CMDK.i ? ' class="on"' : ''}><span>${esc(x.label)}</span><small>${esc(x.sub)}</small></li>`).join('');
+  $('#cmdk-none').classList.toggle('hidden', n > 0);
+  q.setAttribute('aria-expanded', n > 0);
+  if (n) q.setAttribute('aria-activedescendant', 'cmdk-o-' + CMDK.i); else q.removeAttribute('aria-activedescendant');
+  $('#cmdk-o-' + CMDK.i)?.scrollIntoView({ block: 'nearest' });
+}
+function cmdkFilter() {
+  const words = $('#cmdk-q').value.toLowerCase().split(/\s+/).filter(Boolean);
+  CMDK.shown = CMDK.items.filter(x => { const s = (x.label + ' ' + x.sub).toLowerCase(); return words.every(w => s.includes(w)); });
+  CMDK.i = 0; cmdkRender();
+}
+function cmdkOpen() {
+  CMDK.back = document.activeElement; CMDK.items = cmdkItems();
+  $('#cmdk-q').value = ''; $('#cmdk').classList.remove('hidden'); cmdkFilter(); $('#cmdk-q').focus();
+}
+function cmdkClose() {
+  $('#cmdk').classList.add('hidden');
+  const b = CMDK.back; CMDK.back = null;
+  if (b && b.isConnected && b !== document.body) b.focus({ preventScroll: true });
+}
+// closed first: a sheet the command opens takes the focus from where Ctrl+K was pressed, and gives it back there
+function cmdkRun(i) { const x = CMDK.shown[i]; if (!x) return; cmdkClose(); x.run(); }
+$('#cmdk-q').addEventListener('input', cmdkFilter);
+$('#cmdk-q').addEventListener('keydown', e => {
+  const n = CMDK.shown.length;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cmdkClose(); }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (n) { CMDK.i = (CMDK.i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n; cmdkRender(); } }
+  else if (e.key === 'Enter') { e.preventDefault(); cmdkRun(CMDK.i); }
+  else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); }   // the box is the only stop
+});
+$('#cmdk-list').addEventListener('mousedown', e => e.preventDefault());   // the focus stays in the box
+$('#cmdk-list').addEventListener('click', e => { const li = e.target.closest('li'); if (li) cmdkRun(+li.dataset.i); });
+$('#cmdk-list').addEventListener('mousemove', e => { const li = e.target.closest('li'); if (li && +li.dataset.i !== CMDK.i) { CMDK.i = +li.dataset.i; cmdkRender(); } });
+$('#cmdk').addEventListener('mousedown', e => { if (e.target === e.currentTarget) cmdkClose(); });
+$('#cmdk-btn').addEventListener('click', cmdkOpen);
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.code !== 'KeyK') return;   // the key, not the letter: Ctrl+K also on a Russian layout
+  if (!$('#cmdk').classList.contains('hidden')) { e.preventDefault(); cmdkClose(); return; }
+  if ($('.sheet-wrap:not(.hidden), .wizard:not(.hidden), .popover:not(.hidden)') || $('.kbd.rec')) return;   // not over another window or a key being recorded
+  e.preventDefault(); cmdkOpen();
 });
 // ---- calibration guide: red and blue on the device's two ends (its LED count; a board's ARGB connectors one by one,
 // as they cannot tell it), then which way effects run, then everything white so its white can be matched to the
@@ -5685,7 +5841,8 @@ $('#report-form').addEventListener('submit', e => {
 $$('#diag-go, #help-diag-save').forEach(b => b.addEventListener('click', () => { S.diag = Object.assign({}, S.diag, { busy: 1 }); updateDiag(); send({ cmd: 'diag' }); }));
 
 // ------------------------------------------------------------------ mood: describe it, a local model picks the colours
-const MOOD = { base: 0, pending: false, err: '', applied: false, text: '' };
+const MOOD = { base: 0, pending: false, err: '', applied: false, text: '', open: false };   // open: unfolded, kept
+try { MOOD.open = localStorage.getItem('mood') === '1'; } catch (e) { }
 function askMood(again) {
   const text = again ? MOOD.text : $('#mood-in').value.trim();
   if (!text || (S.mood || {}).busy) return;
@@ -5713,7 +5870,12 @@ function updateMood() {
     $('#mood-fx').textContent = `${fx} · ${t('speed').toLowerCase()} ${M.speed}`;
   }
   $('#mood-msg').textContent = busy ? t('mood.busy') : MOOD.err ? t('mood.' + MOOD.err) : MOOD.applied ? t('mood.applied') : '';
+  $('#mood').classList.toggle('shut', !MOOD.open); $('#mood-tg').setAttribute('aria-expanded', MOOD.open);
 }
+$('#mood-tg').addEventListener('click', () => {
+  MOOD.open = !MOOD.open; try { localStorage.setItem('mood', MOOD.open ? '1' : '0'); } catch (e) { }
+  updateMood(); if (MOOD.open) $('#mood-in').focus();
+});
 // ---- the local model: set up from here (Ollama's installer, then the model), and kept out of memory
 const AI_BUSY = [1, 2, 3, 4, 5];
 function updateAi() {

@@ -15,6 +15,7 @@
   const S = window.MOCK_STATE = {
     type: 'tray', lang: ['ru', 'fr'].includes(h) ? h : 'en', theme: ['light', 'grey', 'kyoka'].includes(h) ? h : 'dark', unlocked: 'kyoka', motion: 'sys',
     pro_off: h === 'pro' ? 1 : 0, fx: 'aurora', off: 'off', bri: 70, fav: 'fire', recent: 'aurora,fire,ocean', dpin: '', pal: PAL.aurora, fxs: FX,
+    pals: '#FF3D00, #FF9A00, #FFD23D;#3dd68c, #3db8d6, #8a5bff;#ffffff;#5b8cff, #ff5bb0;#000000, #222222',
     profile: 1, profiles: [{ id: 1, n: 'Games', pin: 1 }, { id: 2, n: 'Work', pin: 1 }, { id: 3, n: 'Night', pin: 1 }, { id: 4, n: 'Streaming', pin: 0 },
       { id: 5, n: 'Ночной режим для долгих сессий 🌙', pin: 0 }],
     prof: { err: 0, id: 0, n: 0 }, preset: 0,
@@ -51,6 +52,7 @@
       if (o.cmd === 'brightness') S.bri = Math.max(0, Math.min(100, +o.v));
       if (o.cmd === 'effect') { S.fx = o.id; S.preset = 0; S.pal = palOf(o.id); S.recent = [o.id].concat(S.recent.split(',').filter(x => x && x !== o.id)).slice(0, 5).join(','); }   // as app_fx_recent
       if (o.cmd === 'set' && o.s === 'general' && o.k === 'tray_pin') S.dpin = o.v;
+      if (o.cmd === 'set' && o.s === S.fx && o.k === 'palette') { S.pal = o.v.match(/#[0-9a-f]{6}/gi).map(c => c.toLowerCase()); S.preset = 0; }   // as main.c: the preset no longer shows
       if (o.cmd === 'preset') { const p = S.presets.find(x => x.id === o.id); if (p) { S.fx = p.fx; S.preset = p.id; S.pal = p.pal.match(/#[0-9a-f]{6}/gi); } }
       if (o.cmd === 'profile') {
         if (window.mockProfFail) S.prof = { err: window.mockProfFail, id: window.mockProfFail === 2 ? S.profile : o.id, n: S.prof.n + 1 };

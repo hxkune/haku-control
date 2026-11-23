@@ -2531,6 +2531,88 @@
     $('#cat-reset').click();
   });
 
+  test('devices: the list view, kept; a row has the switch and a brightness that an update does not pull from under the hand; on/off lights have none', async () => {
+    await fresh(); showTab('devices'); $('#cat-reset').click();
+    const g = $('#cat-grid'), lst = $('#cat-view [data-v="list"]'), h = CATV.find(x => x.k === 'gpu'), z = h.zone, was = cv(z, 'brightness', '');
+    try {
+      ok(!g.classList.contains('list') && !$$('.cat-br', g).length, 'the cards have a brightness, or start as a list');
+      lst.click();
+      ok(g.classList.contains('list') && lst.getAttribute('aria-pressed') === 'true' && JSON.parse(localStorage.getItem('cat')).view === 'list', 'the list not on or not kept');
+      ok($$('.cat-tile', g).length === CATV.length && $$('.cat-tile .cat-pw', g).length === CATV.filter(x => devicePower(x)).length, 'a row or a switch missing');
+      ok(CATV.every(x => !!$(`.cat-tile[data-key="${x.key}"] .cat-br`) === !!(x.zone && zoneCaps(x.zone).kind !== 'onoff')), 'a brightness on an on/off light or missing on a dimmable one');
+      ok($(`.cat-tile[data-key="${h.key}"]`).offsetHeight < 90, 'a row is not compact: ' + $(`.cat-tile[data-key="${h.key}"]`).offsetHeight);
+      const r = $(`.cat-tile[data-key="${h.key}"] .cat-br`);
+      ok(+r.value === +cv(z, 'brightness', 100), 'the row does not show the brightness: ' + r.value);
+      sent.length = 0; r.focus(); r.value = 37; r.dispatchEvent(new Event('input', { bubbles: true })); await wait(80);
+      ok(+cv(z, 'brightness') === 37 && sets(z, 'brightness').length === 1, 'brightness not set once: ' + cv(z, 'brightness'));
+      r.value = 52; emit(STATE); await wait(80);
+      ok(document.activeElement === r && r.value === '52', 'an update reset the dragged brightness or took the focus');
+      showTab('home'); showTab('devices');
+      ok(g.classList.contains('list'), 'the list not kept on the way back');
+      $('#cat-reset').click();
+      ok(g.classList.contains('list'), 'reset of the filters dropped the view');
+      $('#cat-view [data-v=""]').click();
+      ok(!g.classList.contains('list') && !$$('.cat-br', g).length && JSON.parse(localStorage.getItem('cat')).view === '', 'back to cards');
+    } finally { CAT.view = ''; saveCat(); if (was !== '') setCfg(z, 'brightness', was); buildCatalog(); }
+  });
+
+  test('mood: folded to one line by default, opens to the box and back, kept', async () => {
+    await fresh(); showTab('effects');
+    const m = $('#mood'), tg = $('#mood-tg'), was = MOOD.open;
+    try {
+      MOOD.open = false; updateMood();
+      ok(m.classList.contains('shut') && tg.getAttribute('aria-expanded') === 'false' && !$('#mood-form').getClientRects().length && m.offsetHeight < 60, 'not folded: ' + m.offsetHeight);
+      tg.click();
+      ok(!m.classList.contains('shut') && tg.getAttribute('aria-expanded') === 'true' && document.activeElement === $('#mood-in') && localStorage.getItem('mood') === '1', 'did not open, focus the box or keep it');
+      updateMood();
+      ok(!m.classList.contains('shut'), 'an update folded it');
+      tg.click();
+      ok(m.classList.contains('shut') && localStorage.getItem('mood') === '0', 'did not fold back');
+    } finally { MOOD.open = was; try { localStorage.setItem('mood', was ? '1' : '0'); } catch (e) { } updateMood(); }
+  });
+
+  test('ctrl+k: the command box opens on the key (any layout), filters, moves with the arrows, runs a page or a switch, closes back where it was; not over a sheet', async () => {
+    await fresh(); showTab('home');
+    const box = $('#cmdk'), q = $('#cmdk-q'), from = $('#nav button[data-tab="home"]'), open = () => !box.classList.contains('hidden');
+    const key = (k, o = {}) => (o.target || document).dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...o }));
+    const ctrlK = () => key('л', { code: 'KeyK', ctrlKey: true });
+    const type = v => { q.value = v; q.dispatchEvent(new Event('input', { bubbles: true })); };
+    const h = heroItems(true).find(x => devicePower(x)?.dev), on0 = devicePower(h).on;
+    try {
+      from.focus(); ctrlK();
+      ok(open() && document.activeElement === q, 'Ctrl+K on a Russian layout did not open it or focus the box');
+      ok(q.getAttribute('role') === 'combobox' && q.getAttribute('aria-controls') === 'cmdk-list' && q.getAttribute('aria-expanded') === 'true', 'the box is not a combobox');
+      const n = $$('#cmdk-list [role="option"]').length;
+      ok(n === CMDK.shown.length && n > 8 && q.getAttribute('aria-activedescendant') === 'cmdk-o-0' && $('#cmdk-o-0').getAttribute('aria-selected') === 'true', 'the list or its first choice: ' + n);
+      key('ArrowUp', { target: q });
+      ok(q.getAttribute('aria-activedescendant') === 'cmdk-o-' + (n - 1) && $$('#cmdk-list [aria-selected="true"]').length === 1, 'up from the first does not wrap to the last');
+      key('Escape', { target: q });
+      ok(!open() && document.activeElement === from, 'Escape did not close it or give the focus back');
+      ctrlK(); type('zzqqxx');
+      ok(!$$('#cmdk-list li').length && !$('#cmdk-none').classList.contains('hidden') && q.getAttribute('aria-expanded') === 'false' && !q.hasAttribute('aria-activedescendant'), 'nothing found is not said');
+      type(t('nav.settings').toUpperCase());
+      ok(CMDK.shown[0]?.id === 'p-settings', 'the settings page not found first: ' + CMDK.shown.map(x => x.id));
+      key('Enter', { target: q });
+      ok(!open() && $('#nav button[data-tab="settings"]').classList.contains('active'), 'Enter did not open the page');
+      ctrlK(); type(h.name);
+      const w = CMDK.shown.findIndex(x => x.id === 'w-' + h.key);
+      ok(w >= 0 && CMDK.shown[w].label === t(on0 ? 'cmd.off' : 'cmd.on', h.name), 'the switch of ' + h.name + ' not offered');
+      sent.length = 0; $(`#cmdk-list li[data-i="${w}"]`).click();
+      ok(!open() && devicePower(h).on === !on0 && sent.length > 0, 'the switch did not switch or did not send');
+      ctrlK();
+      ok(CMDK.items.find(x => x.id === 'w-' + h.key).label === t(on0 ? 'cmd.on' : 'cmd.off', h.name), 'the label did not follow the new state');
+      ctrlK();
+      ok(!open(), 'Ctrl+K again does not close it');
+      openSheet(h, 100, 100); ctrlK();
+      ok(!open(), 'it opened over the device sheet');
+      closeSheet();
+      $('#cmdk-btn').click();
+      ok(open() && document.activeElement === q, 'the header button does not open it');
+      box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      ok(!open(), 'a click outside does not close it');
+    } finally { if (open()) cmdkClose(); if (SHEET.kind) closeSheet(); if (devicePower(h).on !== on0) togglePower(h); showTab('home'); }
+  });
+
   test('devices: nothing found at all is its own empty state, with Add and Help', async () => {
     await fresh(); showTab('devices'); $('#cat-reset').click();
     const none = JSON.parse(JSON.stringify(STATE));
@@ -2680,6 +2762,52 @@
       ok(keys().join() === k0.join(), 'back: ' + keys());
       ok(!key(btn(first), 'ArrowRight').defaultPrevented && keys().join() === k0.join(), 'an arrow alone moved it');
     } finally { setCfg('ui', 'hero_order', was); showTab('home'); }
+  });
+
+  test('home quick menu: the menu key on a tile; power, brightness, a colour that keeps the rest of the palette, Effect; Escape back to the tile; groups spread; fans have none', async () => {
+    await fresh(); showTab('home'); await wait(60);
+    const btn = k => [...$('#hero-keys').children].find(x => x.dataset.k === k && !x.hasAttribute('data-pw'));
+    const menu = el => { const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true }); el.dispatchEvent(e); return e; };
+    const qm = $('#qmenu'), h = HERO.hits.find(x => x.k === 'gpu'), z = h.zone;
+    const was = ['palette', 'mode', 'brightness'].map(k => [k, cv(z, k, '')]), was1 = ['palette', 'mode'].map(k => [k, cv('zone.dev1', k, '')]), pw = cv('layout', 'gpu_enabled', '1');
+    let n = 0;
+    try {
+      setCfg(z, 'palette', '#111111,#222222,#333333'); setCfg(z, 'mode', 'effect'); sent.length = 0;
+      const b = btn(h.key); b.focus();
+      ok(menu(b).defaultPrevented && !qm.classList.contains('hidden'), 'no menu on the tile');
+      ok(qm.contains(document.activeElement) && $('#qm-name').textContent === h.name, 'the focus or the name: ' + $('#qm-name').textContent);
+      $('#qmenu [data-c="#FF0000"]').click();
+      ok(parsePal(cv(z, 'palette')).join() === '#FF0000,#222222,#333333' && cv(z, 'mode') === 'static', 'colour: ' + cv(z, 'palette') + ' ' + cv(z, 'mode'));
+      ok(sets(z, 'palette').length === 1 && sets(z, 'mode').length === 1, 'not sent once');
+      ok($('#qmenu [data-c="#FF0000"]').getAttribute('aria-pressed') === 'true' && document.activeElement === $('#qmenu [data-c="#FF0000"]'), 'the colour is not shown as on, or the focus left it');
+      const r = $('#qmenu .qm-br'); r.value = 40; r.dispatchEvent(new Event('input', { bubbles: true })); await wait(80);
+      ok(cv(z, 'brightness') === '40' && sets(z, 'brightness').some(o => o.v === '40'), 'brightness: ' + cv(z, 'brightness'));
+      $('#qmenu [data-m="effect"]').click();
+      ok(cv(z, 'mode') === 'effect' && parsePal(cv(z, 'palette')).join() === '#FF0000,#222222,#333333', 'Effect: ' + cv(z, 'mode'));
+      const p = $('#qmenu .qm-pw'); p.click(); await wait(20);
+      ok(cv('layout', 'gpu_enabled', '1') !== pw && p.checked === (cv('layout', 'gpu_enabled', '1') !== '0'), 'power: ' + cv('layout', 'gpu_enabled', '1'));
+      p.click(); await wait(20);
+      ok(cv('layout', 'gpu_enabled', '1') === pw, 'power not back');
+      key(document.activeElement, 'Escape');
+      ok(qm.classList.contains('hidden') && document.activeElement === btn(h.key), 'Escape: not closed, or the focus is not on the tile');
+      // All settings: the device's sheet
+      menu(btn(h.key)); $('#qmenu .qm-all').click(); await wait(60);
+      ok(qm.classList.contains('hidden') && SHEET.kind, 'All settings did not open the sheet');
+      closeSheet(); await wait(60);
+      // a group: its colour goes to its devices
+      n = groupNew(); groupAdd(n, 'zone.gpu'); groupAdd(n, 'zone.dev1'); drawHero(); await wait(60);
+      const g = HERO.hits.find(x => x.k === 'group' && x.g === n);
+      ok(g && qmOpen(g, 100, 100), 'no menu for the group');
+      $('#qmenu [data-c="#00FF6A"]').click();
+      ok(['zone.gpu', 'zone.dev1'].every(x => parsePal(cv(x, 'palette'))[0] === '#00FF6A' && cv(x, 'mode') === 'static'), 'the group did not spread');
+      qmClose();
+      const f = HERO.hits.find(x => x.k === 'fan' || x.k === 'add');
+      if (f) ok(!qmOpen(f, 100, 100) && qm.classList.contains('hidden'), 'a ' + f.k + ' tile got a menu');
+    } finally {
+      qmClose(); if (n) setMembers(n, []);
+      was.forEach(([k, v]) => setCfg(z, k, v)); was1.forEach(([k, v]) => setCfg('zone.dev1', k, v)); if (cv('layout', 'gpu_enabled', '1') !== pw) togglePower(h);
+      showTab('home');
+    }
   });
 
   test('a profile picked shows as asked until the core has it on, then as on', async () => {

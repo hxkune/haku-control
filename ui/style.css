@@ -186,6 +186,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .lbl { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); }
 .lbl > span { font-size: 12.5px; }
 .lbl b { color: var(--text); font-weight: 500; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.lbl > span.tip { cursor: help; text-decoration: underline dotted var(--faint); text-underline-offset: 3px; }
 .field { margin-top: 20px; }
 .field .range { margin-top: 8px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -720,6 +721,18 @@ body.no-net #accounts, body.no-net #phone-card { display: none !important; }
 .pk-presets button { aspect-ratio: 1; border: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(var(--ink), .2); }
 .pk-presets button:hover { transform: scale(1.12); }
 .pk-actions { display: flex; align-items: center; margin-top: 14px; }
+/* a Home tile's quick menu */
+.qmenu { width: 252px; display: flex; flex-direction: column; gap: 12px; }
+.qmenu .field { margin: 0; }
+.qm-head { display: flex; align-items: center; gap: 10px; }
+.qm-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.qm-sws { display: flex; justify-content: space-between; }
+.qm-sws button { width: 22px; height: 22px; flex: none; padding: 0; border: 0; border-radius: 50% !important; box-shadow: inset 0 0 0 1px rgba(var(--ink), .2); cursor: pointer; }
+.qm-sws button:hover { transform: scale(1.12); }
+.qm-sws button.on { box-shadow: 0 0 0 2px var(--menu), 0 0 0 4px var(--strong); }
+.qm-sws button:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+.qm-modes button { flex: 1; }
+.qm-all { align-self: flex-start; }
 
 @media (max-width: 1180px) {
   .nano-grid { grid-template-columns: 1fr; }
@@ -1034,6 +1047,12 @@ body.calm .fx:not(.comm) small { transition: none; }
 .mood { padding: 12px 16px; margin-bottom: 20px; }
 .mood:focus-within { border-color: var(--line3); --lc: var(--line3); }
 .mood-row { display: flex; align-items: center; gap: 12px; }
+/* folded by default to one line that opens it; the recent palettes (#quick) stay in view */
+.mood-tg { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 6px 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.mood-tg small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.mood-tg svg { width: 14px; height: 14px; flex: none; align-self: center; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .2s; }
+.mood-tg[aria-expanded="true"] svg { transform: rotate(180deg); }
+.mood.shut .mood-row, .mood.shut .mood-out, .mood.shut .mood-foot { display: none !important; }
 .mood-ic { color: var(--muted); font-size: 12px; transition: color .3s; }
 .mood.busy .mood-ic { color: var(--strong); animation: spin 2.4s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1893,6 +1912,30 @@ header .prof-menu { left: auto; right: 0; }
 .cat-own.on { color: var(--text); border-color: var(--line3); }
 .cat-hint { margin: 0; font-size: 12px; color: var(--muted); flex: 1 1 100%; }
 .cat-tile .btn.small { padding: 5px 12px; font-size: 12px; }
+/* the list view: one row per device, its live strip small on the left, state, brightness and switch on the right */
+.cat-grid.list { grid-template-columns: 1fr; gap: 6px; }
+.cat-grid.list .cat-tile { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 12px; border-radius: 12px; }
+.cat-grid.list .cat-open { flex: 1 1 180px; display: grid; grid-template-columns: 72px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 12px; align-items: center; }
+.cat-grid.list .cat-open canvas { grid-row: 1 / 3; margin: 0; border-radius: 6px; }
+.cat-grid.list .cat-tile > .cat-row:first-of-type { flex: 0 1 auto; flex-wrap: nowrap; }
+.cat-grid.list .cat-tile > .cat-row ~ .cat-row { flex: 1 1 100%; padding-left: 84px; }
+.cat-grid.list .cat-row:has(.cat-own) { display: none; }   /* own look or not: on the cards and in the sheet; the list stays one line */
+.cat-br { width: 120px; flex: none; }
+
+/* ---- Ctrl+K: the command box near the top, the list under it */
+.cmdk-wrap { place-items: start center !important; padding-top: 12vh !important; }
+.cmdk { width: min(540px, 100%); gap: 8px; padding: 10px; }
+.cmdk input { width: 100%; padding: 11px 12px; font-size: 15px; }
+.cmdk-list { list-style: none; margin: 0; padding: 0; max-height: min(52vh, 420px); overflow-y: auto; }
+.cmdk-list:empty { display: none; }
+.cmdk-list li { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+.cmdk-list li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdk-list li small { flex: none; font-size: 11.5px; color: var(--muted); }
+.cmdk-list li.on { background: rgba(var(--ink), .08); box-shadow: inset 2px 0 0 var(--strong); }
+.cmdk-none { margin: 4px 12px 8px; }
+.cmdk-btn { display: grid; place-items: center; width: 34px; height: 34px; flex: none; padding: 0; border: 1px solid var(--line2); border-radius: 10px; background: none; color: var(--muted); cursor: pointer; }
+.cmdk-btn:hover, .cmdk-btn:focus-visible { color: var(--text); border-color: var(--line3); }
+.cmdk-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .dev-store { display: none; }
 
 /* ---- Settings: one group at a time */
