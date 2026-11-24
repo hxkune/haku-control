@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.84',
+    en: ['Fixed: once the list of recent colours grew long enough, haku stopped saving any setting change. Your settings save again after this update.',
+         'Lighting in this PC: a Corsair iCUE LINK System Hub now leads to its control on Cooling (beta) instead of offering a support request.'],
+    ru: ['Исправлено: когда список последних цветов становился достаточно длинным, haku переставала сохранять изменения настроек. После обновления настройки снова сохраняются.',
+         'Подсветка в этом ПК: хаб Corsair iCUE LINK System Hub теперь ведёт к своему управлению в «Охлаждении» (бета), а не к запросу поддержки.'],
+    fr: ['Corrigé : une fois la liste des couleurs récentes assez longue, haku n’enregistrait plus aucun changement de réglage. Vos réglages s’enregistrent de nouveau après cette mise à jour.',
+         'Éclairage de ce PC : un Corsair iCUE LINK System Hub mène désormais à son pilotage dans Refroidissement (bêta) au lieu de proposer une demande de prise en charge.'] },
   { v: '0.4.83',
     en: ['The effect constructor is now a workshop: blocks with their pictures on the left — click one, or drag it into the layers or straight onto the picture; drag a layer by ⠿ to reorder it.',
          'Shape the layer right on the picture: drag a ring to move it, drag a gradient, wave or noise to turn it, the mouse wheel changes the size. The chosen layer’s settings are on the right.',
