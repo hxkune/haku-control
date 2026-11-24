@@ -36,19 +36,20 @@ void cfg_load(const wchar_t *p) {
     nlines = 0; dirty = save_bad = load_bad = 0;   // memory is the file again
     FILE *f = _wfopen(path_w, L"rb");
     if (!f) { ReleaseSRWLockExclusive(&lock); return; }
-    char buf[LINE_LEN];
+    char buf[LINE_LEN + 5];   // the longest line cfg_set writes (LINE_LEN - 1), its CR LF and a BOM
     while (nlines < MAX_LINES && fgets(buf, sizeof(buf), f)) {
         size_t n = strlen(buf);
-        if (n == LINE_LEN - 1 && buf[n - 1] != '\n') load_bad = 1;   // the rest of this line would read as a line of its own
+        if (n == sizeof(buf) - 1 && buf[n - 1] != '\n') load_bad = 1;   // the rest of this line would read as a line of its own
         while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
         // strip UTF-8 BOM on the first line
         char *s = buf;
         if (nlines == 0 && (unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB && (unsigned char)s[2] == 0xBF) s += 3;
+        if (strlen(s) >= LINE_LEN) { load_bad = 1; s[LINE_LEN - 1] = 0; }   // never cut silently: the file stays as it is
         strcpy_s(lines[nlines++], LINE_LEN, s);
     }
     if (nlines == MAX_LINES && fgets(buf, sizeof(buf), f)) load_bad = 1;
     fclose(f);
-    if (load_bad) logf_("settings: the file has a line past %d bytes or more than %d lines; it is left as it is, changes are not saved", LINE_LEN - 2, MAX_LINES);
+    if (load_bad) logf_("settings: the file has a line past %d bytes or more than %d lines; it is left as it is, changes are not saved", LINE_LEN - 1, MAX_LINES);
     last_write = file_time();
     ReleaseSRWLockExclusive(&lock);
 }
@@ -493,6 +494,22 @@ int main(void) {
     // a file that does not fit is not written back cut: the change stays in memory and is said
     assert(cfg_save_if_dirty() == 1);
     FILE *lf = _wfopen(f, L"ab"); for (int i = 0; i < 300; i++) fputc('z', lf); fputs("\r\n", lf); fclose(lf);
+    cfg_load(NULL); assert(load_bad);
+    // a line cfg_set wrote at its longest reads back whole (it used to lock the file: report ff6f405b4e)
+    wchar_t f2[MAX_PATH]; swprintf(f2, MAX_PATH, L"%s\\long.ini", dir); wcscpy_s(path_w, MAX_PATH, f2);
+    memset(big, 'q', LINE_LEN - 8); big[LINE_LEN - 8] = 0;   // "recent=" + this = LINE_LEN - 1
+    nlines = 0; dirty = load_bad = 0;   // a new file, not the refused one above
+    assert(cfg_set("general", "recent", big) == CFG_OK && cfg_set("general", "b", "1") == CFG_OK);
+    big[LINE_LEN - 8] = 'q'; big[LINE_LEN - 7] = 0; assert(cfg_set("general", "recent", big) == CFG_LONG);
+    assert(cfg_save_if_dirty() == 1);
+    cfg_load(NULL); assert(!load_bad && strlen(cfg_get("general", "recent", "")) == LINE_LEN - 8 && !strcmp(cfg_get("general", "b", ""), "1"));
+    lf = _wfopen(f2, L"wb"); fputs("\xEF\xBB\xBFrecent=", lf); for (int i = 0; i < LINE_LEN - 8; i++) fputc('r', lf); fputs("\r\nb=2", lf); fclose(lf);
+    cfg_load(NULL); assert(!load_bad && nlines == 2 && strlen(lines[0]) == LINE_LEN - 1 && !strcmp(lines[1], "b=2"));   // a BOM first, no end of line last
+    lf = _wfopen(f2, L"wb"); fputs("[general]\r\nrecent=", lf); for (int i = 0; i < LINE_LEN - 7; i++) fputc('r', lf); fputs("\r\n", lf); fclose(lf);
+    cfg_load(NULL); assert(load_bad);   // one byte more is refused, not cut
+    lf = _wfopen(f2, L"wb"); fputs("[general]\r\nrecent=", lf); for (int i = 0; i < LINE_LEN - 7; i++) fputc('r', lf); fclose(lf);
+    cfg_load(NULL); assert(load_bad);   // also as the last line, with no end of line
+    DeleteFileW(f2); wcscpy_s(path_w, MAX_PATH, f);
     cfg_load(NULL); assert(load_bad);
     cfg_set("general", "brightness", "0.9"); assert(cfg_save_if_dirty() == 0 && cfg_unsaved());
     cfg_load(NULL); assert(strcmp(cfg_get("general", "brightness", ""), "0.9"));   // the file was not touched

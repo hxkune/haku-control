@@ -361,6 +361,37 @@
     } finally { S.hw = was; S.orgb = o; S.ext.devs = devs; updateHw(); }
   });
 
+  test('hardware: the iCUE LINK hub leads to its control on Cooling, never to a support request (report bee317226e)', async () => {
+    await fresh(); showTab('devices');
+    const was = S.hw, devs = S.ext.devs, ctl = cv('link', 'ctl', '0'), hub = { cat: 'usb', maker: 'Corsair', name: 'iCUE LINK System Hub', id: '1B1C:0C3F' };
+    try {
+      setCfg('link', 'ctl', '0'); S.ext.devs = devs.filter(d => d.kind !== 'icuelink');
+      S.hw = { busy: 0, done: 1, items: [hub] }; updateHw();
+      let r = hwRoute(hub); ok(r.act === 'lk' && r.text === t('hw.lk.ctl'), 'control off: ' + JSON.stringify(r));
+      const b = $('#hw-list [data-hw="0"]');
+      ok(b && b.textContent === t('hw.lk.open'), 'button: ' + (b && b.textContent));
+      b.click(); await wait(120);
+      ok($('#tab-fans').classList.contains('active'), 'Cooling is shown');
+      ok(!$('#lk-card').classList.contains('hidden') && $('#lk-ctl'), 'the card with the switch is shown');
+      setCfg('link', 'ctl', '1');
+      r = hwRoute(hub); ok(r.act === 'scan' && r.text === t('hw.haku.add'), 'control on, LEDs not added: ' + JSON.stringify(r));
+      S.ext.devs = devs.concat([{ id: 78, kind: 'icuelink', host: 'hub', own: 0, online: 1, enabled: 1 }]);
+      r = hwRoute(hub); ok(r.cls === 'on' && !r.act, 'added: ' + JSON.stringify(r));
+    } finally { setCfg('link', 'ctl', ctl); S.hw = was; S.ext.devs = devs; lkAsked = false; updateHw(); updateLink(); }
+  });
+
+  test('quick colours: the recent palettes stay within one settings line (report ff6f405b4e)', async () => {
+    await fresh();
+    const was = cv('general', 'recent', '');
+    try {
+      const long = Array.from({ length: 8 }, (_, i) => Array.from({ length: 4 }, (_, k) => '#' + ((i * 4 + k) * 99991 % 0xffffff).toString(16).padStart(6, '0')).join(','));
+      setCfg('general', 'recent', long.slice(1).join(';'));
+      rememberPal(long[0], true); await wait(30);
+      const v = cv('general', 'recent', '');
+      ok(('recent=' + v).length <= 255 && v.startsWith(palStr(parsePal(long[0]))) && v.split(';').length >= 2, v.length + ': ' + v);
+    } finally { setCfg('general', 'recent', was); renderQuick(); }
+  });
+
   test('OpenRGB is fetched unasked, once, when something here lights only through it', async () => {
     await fresh();
     const was = S.hw, o = S.orgb, n = () => sent.filter(x => x.cmd === 'orgb_setup').length, n0 = n();

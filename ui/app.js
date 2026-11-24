@@ -916,6 +916,7 @@ function rememberPal(pal, now) {
     pal = palStr(parsePal(pal));
     if (!pal) return;
     const list = [pal].concat(cv('general', 'recent', '').split(';').filter(p => p && p !== pal)).slice(0, 8);
+    while (list.length > 1 && list.join(';').length > 240) list.pop();   // one settings line holds 255 bytes (config.c LINE_LEN)
     setCfg('general', 'recent', list.join(';'));
     renderQuick();
   }, now ? 0 : 1500);
@@ -5182,9 +5183,10 @@ const LINK_TYPES = { 1: 'QX RGB', 2: 'LX RGB', 3: 'RX RGB MAX', 4: 'RX MAX', 5: 
 const linkKind = ty => ty === 11 ? 'psu' : [7, 17].includes(ty) ? 'aio' : [1, 2, 3, 4, 15, 19].includes(ty) ? 'fan' : 'dev';
 const linkName = d => d.type === 11 ? ['HX1000i', 'HX1200i', 'HX1500i'][d.model] || 'HXi' :
   d.type === 17 ? 'TITAN ' + ({ 0: 240, 4: 240, 1: 280, 2: 360, 5: 360, 3: 420 }[d.model] || '') + ' AIO' : LINK_TYPES[d.type] || t('link.k.dev') + ' ' + d.type;
+let lkAsked = false;   // the hub was asked for from "Lighting in this PC": its card shows before the hub is read
 function updateLink() {
   const K = S.link || {}, ctl = cv('link', 'ctl', '0') === '1', on = ctl || cv('link', 'on', '0') === '1';   // control reads the hub too
-  $('#lk-card').classList.toggle('hidden', !K.found && !on);   // one card on Cooling: these readings, and updateLk's switch under them
+  $('#lk-card').classList.toggle('hidden', !K.found && !on && !lkAsked);   // one card on Cooling: these readings, and updateLk's switch under them
   $('#link-on').checked = on; $('#link-on').disabled = ctl; $('#link-on').setAttribute('aria-label', t('link.on'));
   $('#link-status').textContent = !on ? t('link.st.off') : K.st === 'ok' ? t('link.st.ok', K.fw, Math.round((K.age || 0) / 1000)) :
     t('link.st.' + (K.st || 'off'), K.app || '');
@@ -5306,6 +5308,12 @@ function hwRoute(it) {
   if (it.cat === 'ram' && S.sticks > 0) { const L = ramSrc(); return { cls: L.includes('unsure') ? 'warn' : L.every(x => x === 'other') ? 'off' : 'on', text: ramSrcText() }; }
   // a Corsair LCD by its whole id (drv_corsairlcd.c MODELS): Corsair's other devices are not haku's own
   const own = { '31E3': 'wooting', '1B80': 'wooting', '37FA': 'nlusb' }[vid] || (/^1B1C:0C(4E|39|33|42)$/i.test(it.id || '') ? 'corsairlcd' : '');
+  // the iCUE LINK hub (link.c): its LEDs are a device once its control is on (Cooling, beta)
+  if (/^1B1C:0C3F$/i.test(it.id || '')) {
+    const ds = S.ext.devs.filter(d => d.kind === 'icuelink');
+    return cv('link', 'ctl', '0') !== '1' ? { cls: 'warn', text: t('hw.lk.ctl'), act: 'lk' } : !ds.length ? { cls: 'warn', text: t('hw.haku.add'), act: 'scan' }
+      : ds.every(d => d.own) ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
+  }
   if (own) {
     const ds = S.ext.devs.filter(d => d.kind === own && lc(d.host).startsWith(lc(own === 'corsairlcd' ? it.id : vid)));
     return !ds.length ? { cls: 'warn', text: t('hw.haku.add'), act: 'scan' } : ds.every(d => d.own) ? { cls: 'off', text: t('hw.own') } : { cls: 'on', text: t('hw.haku') };
@@ -5351,7 +5359,7 @@ function updateHw() {
   $('#hw-scan').disabled = !!H.busy;
   const row = i => {
     const it = items[i], r = routes[i];
-    const btn = r.act === 'add' ? t('dev.add') : r.act === 'setup' ? t('orgb.setup') : r.act === 'pawnio' ? t('hw.pawnio.install') : r.act === 'scan' ? t('hw.find') : r.act === 'check' ? t('orgb.check') : r.act === 'ask' ? t('hw.ask') : '';
+    const btn = r.act === 'add' ? t('dev.add') : r.act === 'setup' ? t('orgb.setup') : r.act === 'pawnio' ? t('hw.pawnio.install') : r.act === 'scan' ? t('hw.find') : r.act === 'lk' ? t('hw.lk.open') : r.act === 'check' ? t('orgb.check') : r.act === 'ask' ? t('hw.ask') : '';
     return `<div class="found-row"><span class="kind">${t('hw.cat.' + it.cat)}</span>
       <div class="what"><b>${esc([it.maker, it.name].filter(Boolean).join(' · ') || it.id)}</b><small><span class="dot ${r.cls}"></span> ${esc(r.text)}${it.id ? ' · ' + esc(it.id) : ''}</small></div>
       ${btn ? `<button class="btn small${r.act === 'add' || r.act === 'setup' ? '' : ' ghost'}" data-hw="${i}">${esc(btn)}</button>` : ''}</div>`;
@@ -5371,6 +5379,7 @@ function updateHw() {
     else if (r.act === 'check') $('#orgb-check').click();
     else if (r.act === 'pawnio') { b.disabled = true; send({ cmd: 'open', what: 'pawnio' }); }
     else if (r.act === 'scan') { send({ cmd: 'scan' }); go('add'); }
+    else if (r.act === 'lk') { lkAsked = true; updateLink(); showTab('fans'); setTimeout(() => $('#lk-card').scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }
     else if (r.act === 'ask') askSupport(items[+b.dataset.hw]);
   }));
 }
