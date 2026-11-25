@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.86',
+    en: ['Cooling: the fan cards are easier to read. Each fan shows its rpm and a bar of its speed; a curve shows its temperature next to its name. A plain ✓ means the controller confirmed the speed; a status is written out only when something needs a look. A channel left to its QUADRO no longer shows a 0%.'],
+    ru: ['Охлаждение: карточки вентиляторов стали понятнее. У каждого вентилятора обороты и полоска скорости, у кривой рядом с названием её температура. Простая ✓ значит, что контроллер подтвердил скорость; статус пишется словами, только когда нужно что-то проверить. У канала, оставленного на QUADRO, больше нет «0%».'],
+    fr: ['Refroidissement : les cartes des ventilateurs se lisent plus facilement. Chaque ventilateur affiche ses tr/min et une barre de vitesse ; une courbe affiche sa température à côté de son nom. Un simple ✓ signifie que le contrôleur a confirmé la vitesse ; un état n’est écrit en toutes lettres que lorsqu’il faut y jeter un œil. Un canal laissé au QUADRO n’affiche plus 0 %.'] },
   { v: '0.4.85',
     en: ['Devices: the card of a motherboard lit through OpenRGB has a new switch, “Each ARGB connector on its own”. Each connector (fans, strips) then becomes a device of its own, with its own effect, colours and LED count. Switch it off to light the board whole again.'],
     ru: ['Устройства: на карточке материнской платы, которая светится через OpenRGB, появился переключатель «Каждый ARGB-разъём отдельно». Каждый разъём (вентиляторы, ленты) становится отдельным устройством со своим эффектом, цветами и числом светодиодов. Если выключить его, плата снова светится целиком.'],
