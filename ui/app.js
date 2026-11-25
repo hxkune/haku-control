@@ -7094,6 +7094,16 @@ function fanRow(i, named) {
   return (named ? `<i>${esc(fanName(i))}</i>` : '') + `<em>${f.rpm < 0 ? '—' : f.rpm ?? 0}</em> ${esc(t('fans.rpmu'))} · ${f.pct == null && f.b ? '—' : Math.round(f.pct ?? 0)}%` +
     (st + ask ? `<span class="fan-st ${cls}">${esc(st + ask)}</span>` : '') + (fanNoRpm(i) ? `<span class="fan-st warn">${esc(t('fans.norpm'))}</span>` : '');
 }
+// a panel line: name and rpm, a bar of the speed read back, then a status only when it says more than “confirmed” (a ✓ then);
+// a channel on its QUADRO's own setting gets no bar: the QUADRO reports no speed for it
+function fanLine(i, named) {
+  const f = fanCh(i), [st, cls] = fanState(i), m = cv('fans', fanKey(i), ''), p = f.pct == null || f.pct < 0 ? null : Math.round(f.pct);
+  const okd = st === t('fans.st.ok'), ask = m && !f.em && f.want >= 0 && f.want !== p ? ' · ' + t('fans.asked', f.want) : '';
+  return (named ? `<i>${esc(fanName(i))}</i>` : '') + `<span class="fl-rpm"><em>${f.rpm == null || f.rpm < 0 ? '—' : f.rpm}</em> ${esc(t('fans.rpmu'))}</span>` +
+    (!m && !f.b && !f.lk ? '' : `<span class="fl-bar"><b style="width:${p ?? 0}%"></b></span><span class="fl-pct">${p == null ? '—' : p + '%'}${esc(ask)}` +
+      (okd ? `<span class="fl-ok" title="${esc(st)}">✓<span class="fl-vh">${esc(st)}</span></span>` : '') + '</span>') +
+    (st && !okd ? `<span class="fan-st ${cls}">${esc(st)}</span>` : '') + (fanNoRpm(i) ? `<span class="fan-st warn">${esc(t('fans.norpm'))}</span>` : '');
+}
 // the chosen fan now: the curve's value at the temperature, what the limits make of it, and the speed while it slows down
 function fanNow(i) {
   const f = fanCh(i), T = fanTemp(fanSrc(i));
@@ -7251,17 +7261,20 @@ function renderFanPanel() {
   const gs = fanGroups(), inG = new Set(gs.flatMap(g => g.m)), solo = fanAll().filter(i => !fanHidden(i) && !inG.has(i));
   const o = FAN_WIDE.matches && FAN.open || {}, on = x => x ? ' on' : '';
   const grp = g => { const fold = !!FAN.fold[g.n];
-    return `<div class="card fan-tile${on(o.g === g.n && o.i == null)}" data-g="${g.n}"><div class="fan-gh"><button type="button" class="fan-hd">${fanTileIcon(g.m)}<b title="${esc(g.name)}">${esc(g.name)}</b><small>${esc(g.m.length ? fanMode(g.m[0]) : t('fans.empty'))}</small></button>` +
+    return `<div class="card fan-tile${on(o.g === g.n && o.i == null)}" data-g="${g.n}"><div class="fan-gh"><button type="button" class="fan-hd">${fanTileIcon(g.m)}<b title="${esc(g.name)}">${esc(g.name)}</b><small>${esc(g.m.length ? fanMode(g.m[0]) : t('fans.empty'))}${g.m.length ? `<span data-live-t="${g.m[0]}"></span>` : ''}</small></button>` +
       (g.m.length ? `<button type="button" class="fan-fold" data-fold="${g.n}" aria-expanded="${!fold}" title="${esc(t(fold ? 'fans.unfold' : 'fans.fold'))}" aria-label="${esc(t(fold ? 'fans.unfold' : 'fans.fold'))}">${fold ? '▸' : '▾'}</button>` : '') + '</div>' +
-      (fold ? '' : g.m.map(i => `<button type="button" class="fan-row fan-mem${on(o.g === g.n && o.i === i)}" data-gm="${i}" data-live-f="${i}"></button>`).join('')) + '</div>'; };
-  const html = gs.map(grp).join('') + solo.map(i => `<div class="card fan-tile${on(!o.g && o.i === i)}" data-f="${i}"><button type="button" class="fan-hd">${fanTileIcon([i])}<b title="${esc(fanName(i))}">${esc(fanName(i))}</b><small>${esc(fanMode(i))}</small><span class="fan-row" data-live-f="${i}"></span></button></div>`).join('');
+      (fold ? '' : g.m.map(i => `<button type="button" class="fan-row fan-ln fan-mem${on(o.g === g.n && o.i === i)}" data-gm="${i}" data-live-f="${i}"></button>`).join('')) + '</div>'; };
+  const html = gs.map(grp).join('') + solo.map(i => `<div class="card fan-tile${on(!o.g && o.i === i)}" data-f="${i}"><button type="button" class="fan-hd">${fanTileIcon([i])}<b title="${esc(fanName(i))}">${esc(fanName(i))}</b><small>${esc(fanMode(i))}<span data-live-t="${i}"></span></small><span class="fan-row fan-ln" data-live-f="${i}"></span></button></div>`).join('');
   const sig = html + LANG;
   if (FAN.sig !== sig) {   // rebuilt only when something on it changes, so a status keeps focus where it is
     const a = document.activeElement, fk = a && $('#fan-panel').contains(a) && (a.dataset.gm != null ? `[data-gm="${a.dataset.gm}"]` : a.dataset.fold ? `[data-fold="${a.dataset.fold}"]` : a.closest('[data-g]') ? `[data-g="${a.closest('[data-g]').dataset.g}"] .fan-hd` : a.closest('[data-f]') ? `[data-f="${a.closest('[data-f]').dataset.f}"] .fan-hd` : '');
     FAN.sig = sig; $('#fan-panel').innerHTML = html;
     if (fk) { const b = $('#fan-panel').querySelector(fk); if (b) b.focus(); }
   }
-  $$('#fan-panel [data-live-f]').forEach(el => { el.innerHTML = fanRow(+el.dataset.liveF, !!el.closest('[data-g]')); });
+  $$('#fan-panel [data-live-f]').forEach(el => { el.innerHTML = fanLine(+el.dataset.liveF, !!el.closest('[data-g]')); });
+  // a curve's source temperature beside its name in the tile's header
+  $$('#fan-panel [data-live-t]').forEach(el => { const i = +el.dataset.liveT, T = cv('fans', fanKey(i), '') === 'curve' ? fanTemp(fanSrc(i)) : null;
+    el.textContent = T == null ? '' : ' ' + fanDeg(T); });
   $$('#fan-panel .fan-tile').forEach(el => { const ic = el.querySelector('.fan-hd > .fanic'), g = gs.find(x => String(x.n) === el.dataset.g);
     if (ic) ic.classList.toggle('on', fanRuns(g ? g.m : [+el.dataset.f])); });
   $('#fan-add').classList.toggle('hidden', gs.length >= FAN_GROUPS);
