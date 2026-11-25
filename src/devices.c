@@ -541,6 +541,51 @@ int ext_add(const char *kind, const char *host, int sub, const char *name, int l
     return id;
 }
 
+// A board's ARGB connectors lit each on its own (on) or by the whole board again (off). A connector is a device of its own,
+// sub = board + ORGB_PART_STEP x (zone + 1), added when missing with the LED count the board had for it; the board is
+// switched off while they light (both on would be two streams to one controller: covered). Their settings stay for next time.
+// Returns how many connectors light now (on) or 1 (off), 0 when id is not a whole OpenRGB board with known connectors.
+int ext_orgb_split(int id, int on) {
+    char bsec[16], host[64], ctl[64], zf[320], v[64];
+    snprintf(bsec, sizeof(bsec), "dev.%d", id);
+    int base = cfg_geti(bsec, "sub", -1), n = 0;
+    if (_stricmp(cfg_get(bsec, "kind", ""), "openrgb") || base < 0 || base >= ORGB_PART_STEP) return 0;
+    snprintf(host, sizeof(host), "%s", cfg_get(bsec, "host", ""));
+    snprintf(ctl, sizeof(ctl), "%s", cfg_get(bsec, "match", cfg_get(bsec, "name", "")));
+    snprintf(zf, sizeof(zf), "%s", cfg_get(bsec, "zones_found", ""));
+    if (!on) {
+        for (int i = 1; i <= 64; i++) {
+            char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", i);
+            int sub = cfg_geti(sec, "sub", -1);
+            if (!_stricmp(cfg_get(sec, "kind", ""), "openrgb") && !strcmp(cfg_get(sec, "host", ""), host) && sub >= ORGB_PART_STEP && sub % ORGB_PART_STEP == base)
+                cfg_set(sec, "enabled", "0");
+        }
+        cfg_set(bsec, "enabled", "1");
+        n = 1;
+    } else {
+        char *ctx = NULL;
+        // "name:count:min:max:first LED:zone number|...", drv_openrgb.c apply_zones; the name has no ':'
+        for (char *z = strtok_s(zf, "|", &ctx); z; z = strtok_s(NULL, "|", &ctx)) {
+            char *c = strchr(z, ':'); int cnt, mn, mx, at, zi;
+            if (!c) continue;
+            *c = 0;
+            if (sscanf_s(c + 1, "%d:%d:%d:%d:%d", &cnt, &mn, &mx, &at, &zi) != 5 || zi < 0) continue;
+            char nm[128]; snprintf(nm, sizeof(nm), "%s · %s", ctl, z);
+            int cid = ext_add("openrgb", host, base + ORGB_PART_STEP * (zi + 1), nm, 0);
+            if (!cid) continue;
+            char csec[16]; snprintf(csec, sizeof(csec), "dev.%d", cid);
+            if (!cfg_get(csec, "zones", "")[0]) { snprintf(v, sizeof(v), "%s=%d", z, cnt); cfg_set(csec, "zones", v); }   // a count calibrated on it before stays
+            cfg_set(csec, "enabled", "1");
+            n++;
+        }
+        if (n) cfg_set(bsec, "enabled", "0");
+    }
+    if (n) logf_("devices: dev.%d (%s) %s", id, ctl, on ? "lit connector by connector" : "lit whole again");
+    cfg_save_if_dirty();
+    ext_reload();
+    return n;
+}
+
 void ext_save_key(ext_dev *d, const char *key) {
     char sec[16]; snprintf(sec, sizeof(sec), "dev.%d", d->id);
     strcpy_s(d->key, sizeof(d->key), key);
@@ -580,7 +625,7 @@ int ext_json(char *out, int cap) {
         ev[m] = 0;
         json_escape_to(nm, sizeof(nm), s->name); json_escape_to(inf, sizeof(inf), s->info); json_escape_to(host, sizeof(host), s->host);
         snprintf(sec, sizeof(sec), "dev.%d", s->id);
-        json_escape_to(zs, sizeof(zs), cfg_get(sec, "zones_found", ""));   // resizable zones (OpenRGB), "name:count:min:max|..."
+        json_escape_to(zs, sizeof(zs), cfg_get(sec, "zones_found", ""));   // resizable zones (OpenRGB), "name:count:min:max:first:zone|..."
         // a screen's [dev.N] media file is gone (moved, deleted): it is read again at each start (Help, Diagnostics: Check)
         // shortcut: one file lookup per screen per status; a path on a slow network share would hold the reply up
         const char *md = cfg_get(sec, "media", ""); wchar_t mw[MAX_PATH]; int mx = 0;

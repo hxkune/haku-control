@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.85',
+    en: ['Devices: the card of a motherboard lit through OpenRGB has a new switch, “Each ARGB connector on its own”. Each connector (fans, strips) then becomes a device of its own, with its own effect, colours and LED count. Switch it off to light the board whole again.'],
+    ru: ['Устройства: на карточке материнской платы, которая светится через OpenRGB, появился переключатель «Каждый ARGB-разъём отдельно». Каждый разъём (вентиляторы, ленты) становится отдельным устройством со своим эффектом, цветами и числом светодиодов. Если выключить его, плата снова светится целиком.'],
+    fr: ['Appareils : la carte d’une carte mère éclairée via OpenRGB a un nouvel interrupteur, « Chaque connecteur ARGB à part ». Chaque connecteur (ventilateurs, rubans) devient alors un appareil à part, avec son effet, ses couleurs et son nombre de LED. Désactivez-le pour éclairer de nouveau la carte en entier.'] },
   { v: '0.4.84',
     en: ['Fixed: once the list of recent colours grew long enough, haku stopped saving any setting change. Your settings save again after this update.',
          'Lighting in this PC: a Corsair iCUE LINK System Hub now leads to its control on Cooling (beta) instead of offering a support request.'],

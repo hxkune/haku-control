@@ -420,6 +420,7 @@ static void on_message(const std::string &js) {
         post_state();
     }
     else if (cmd == "dev_remove") { ext_remove(atoi(field(js, "id").c_str())); post_state(); }
+    else if (cmd == "orgb_split") { ext_orgb_split(atoi(field(js, "id").c_str()), field(js, "on") == "1"); post_state(); }
     else if (cmd == "remote_pin") { remote_new_pin(); post_status(); }
     else if (cmd == "remote_forget") { remote_forget(); post_status(); }
     else if (cmd == "autostart") { app_autostart(atoi(field(js, "v").c_str())); post_state(); }

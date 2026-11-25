@@ -4213,8 +4213,13 @@ const TRYX_THEMES = ['', 'Cooling delivery', 'Migration', 'Quantum time capsule'
 const pcDev = d => ['openrgb', 'wooting', 'nlusb', 'razer', 'steelseries', 'logitech', 'tryx', 'aura', 'lianli', 'corsairlcd', 'icuelink'].includes(d.kind);
 // a screen, not a light: its card has the screen's settings only (TRYX PANORAMA, a Corsair LCD cap)
 const isScreen = d => d.kind === 'tryx' || d.kind === 'corsairlcd';
-// the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max}]
-const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max, at] = z.split(':'); return { name, count: +count, min: +min, max: +max, at: +at || 0 }; });
+// the resizable zones of an OpenRGB device (a motherboard's ARGB headers): [{name, count, min, max, at, idx}], idx: OpenRGB's zone number (-1 not known yet)
+const devZones = d => (d.zones || '').split('|').filter(Boolean).map(z => { const [name, count, min, max, at, idx] = z.split(':'); return { name, count: +count, min: +min, max: +max, at: +at || 0, idx: idx === undefined ? -1 : +idx }; });
+// a whole OpenRGB board and its connectors as devices of their own (sub = board + 1000 x (zone + 1), devices.c ext_orgb_split)
+const orgbParts = d => S.ext.devs.filter(x => x.kind === 'openrgb' && x.host === d.host && x.sub >= 1000 && x.sub % 1000 === d.sub);
+// connector by connector: not for a board lit in one colour only (cap 3 and up), nor before its zone numbers are known
+const canSplit = d => d.kind === 'openrgb' && d.sub >= 0 && d.sub < 1000 && !(d.cap >= 3) && devZones(d).some(z => z.idx >= 0);
+const isSplit = d => !d.enabled && orgbParts(d).some(x => x.enabled);
 // OpenRGB starts a board's ARGB connectors at 0 LEDs: nothing to light (not offline) until their counts are set
 const zonesNeed = d => !d.online && devZones(d).length > 0 && devZones(d).every(z => !z.count);
 // one device seen twice, through its own driver and through OpenRGB: the OpenRGB one's [dev.M] same=N says so and path=
@@ -4226,7 +4231,7 @@ const pathPairs = o => S.ext.devs.filter(n => pcDev(n) && n.kind !== 'openrgb' &
 const pathCur = o => !o.same ? '' : (o.own && devById(o.same)?.own ? 'own' : cv('dev.' + o.id, 'path', 'direct') === 'openrgb' ? 'orgb' : 'direct') + ':' + o.same;
 function devStatus(d) {
   if (zonesNeed(d)) return t('zones.need');   // first, also when switched off: it was likely switched off for looking offline
-  if (!d.enabled) return t('dev.off');
+  if (!d.enabled) return t(isSplit(d) ? 'zones.split.st' : 'dev.off');
   if (d.own) return t('own.status');
   if (d.held) { const o = devById(d.same); return t(d.kind === 'openrgb' ? 'path.st.direct' : 'path.st.orgb', o ? o.name : '?') + (o ? ' · ' + devStatus(o) : ''); }
   if (d.covered) { const o = devById(d.covered); return t('orgb.covered', o ? o.name : '?'); }
@@ -4340,12 +4345,14 @@ function buildDevices() {
           ['direct', 'orgb', 'own'].map(v => `<option value="${v}:${n.id}"${pathCur(d) === v + ':' + n.id ? ' selected' : ''}>${esc(t('path.' + v, n.name))}</option>`).join('')).join('')}</select></label>
           <p class="hint">${t('path.note')}</p>` : ''}
         ${d.kind !== 'openrgb' && devById(d.same) ? `<p class="hint">${esc(t('path.hint', devById(d.same).name))}</p>` : ''}
+        ${canSplit(d) ? `<label class="check"><input type="checkbox" class="dev-split" ${isSplit(d) ? 'checked' : ''}><span></span><em>${t('zones.split')}</em></label>
+          <p class="hint">${t(isSplit(d) ? 'zones.split.on' : 'zones.split.note')}</p>` : ''}
         ${scr ? '' : `<details class="trouble dev-why"${DEV_WHY.has(d.id) ? ' open' : ''}><summary>${t('why.title')}</summary><div class="adv-body" id="dev-why-${d.id}"></div></details>`}
         <details class="trouble dev-adv"${DEV_ADV.has(d.id) || devStatus(d) === t('zones.need') ? ' open' : ''}><summary>${t('dev.adv')}</summary><div class="adv-body">
         ${d.per_led ? `${devZones(d).length ? '' : `<div class="stepper"><span>${t('leds')}</span><button data-d="-1">−</button><b class="dev-leds">${d.leds}</b><button data-d="1">+</button></div>`}
         <label class="check"><input type="checkbox" class="dev-rev" ${cv(sec, 'reverse', '0') === '1' ? 'checked' : ''}><span></span><em>${t('reverse')}</em></label>` : ''}
         ${scr ? '' : `<label class="num"><span>${t('fix.type')}</span><select class="select dev-type">${typeOptions(cv(sec, 'type', 'auto'), d.type)}</select></label>`}
-        ${devZones(d).length ? `<div class="field dev-zones"><div class="lbl"><span>${t('zones.title')}</span></div>
+        ${devZones(d).length && !isSplit(d) ? `<div class="field dev-zones"><div class="lbl"><span>${t('zones.title')}</span></div>
           ${devZones(d).map(z => `<label class="num"><span>${esc(z.name)}</span><input type="number" class="dev-zone" data-zone="${esc(z.name)}" min="${z.min}" max="${Math.min(z.max, 512)}" value="${z.count}"></label>`).join('')}
           <p class="hint">${t('zones.note')}</p></div>` : ''}
         ${d.kind === 'openrgb' ? `<label class="num"><span>${t('dev.rate')}</span><select class="select dev-rate">${[0, 30, 10, 5, 2].map(v =>
@@ -4388,6 +4395,7 @@ function buildDevices() {
     el.querySelector('.dev-path')?.addEventListener('change', e => pathSet(d, e.target.value));
     el.querySelector('.dev-rate')?.addEventListener('change', e => setCfg(sec, 'rate', e.target.value));
     el.querySelector('.dev-static')?.addEventListener('change', e => setCfg(sec, 'static', e.target.value));
+    el.querySelector('.dev-split')?.addEventListener('change', e => send({ cmd: 'orgb_split', id: String(d.id), on: e.target.checked ? '1' : '0' }));
     // LEDs on each connector: all of them saved together ([dev.N] zones), the device reconnects with them
     el.querySelectorAll('.dev-zone').forEach(inp => inp.addEventListener('change', () => {
       const v = [...el.querySelectorAll('.dev-zone')].map(x => {
@@ -8319,7 +8327,7 @@ function applyStatus(m) {
   Object.assign(S, m);
   S.ext = S.ext || { devs: [], found: [], kinds: [], scanning: 0 };
   profErrCheck();
-  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type, d.zones, d.same, d.held]));
+  const sig = JSON.stringify(S.ext.devs.map(d => [d.id, d.leds, d.enabled, d.per_led, d.name, d.type, d.zones, d.same, d.held, d.cap >= 3]));
   if (!dragging) { setRange($('#bright'), S.brightness); $('#bright-val').textContent = S.brightness + '%'; }
   if (effectChanged) { markEffect(); renderEffectSide(); } else updateFxState();
   if (bulbsChanged) buildBulbs(); else updateBulbs();

@@ -201,6 +201,7 @@ void ext_submit(int k, const rgbf *c, int n);
 void ext_scan(void);                      // look for devices on the LAN (background)
 int  ext_add(const char *kind, const char *host, int sub, const char *name, int leds);
 void ext_remove(int id);
+int  ext_orgb_split(int id, int on);   // a board's ARGB connectors each a device of their own (1) or the whole board (0)
 int  ext_json(char *out, int cap);
 int  ext_orgb_given_back(void);           // 1: OpenRGB's devices here are all given back to their own lighting ([dev.N] own)
 

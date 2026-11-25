@@ -269,7 +269,8 @@ static const int DRIVE_CAP[] = { CAP_EFFECTS, CAP_EXPERIMENTAL, CAP_STEADY, CAP_
 
 // The resizable zones (ARGB headers): the sizes chosen in the window ([dev.N] zones "name=count|...") given to
 // OpenRGB (it starts them at 0 and keeps a size only until it restarts, so this is done at every connect), and the
-// zones as they are written to [dev.N] zones_found "name:count:min:max:first LED|..." for the window. 1: a size was changed.
+// zones as they are written to [dev.N] zones_found "name:count:min:max:first LED:zone number|..." for the window (the number
+// names a connector's own device, see ext_orgb_split). 1: a size was changed.
 // An ARGB header cannot tell how many LEDs hang on it: one never set gets a guess so it lights at once, and the
 // calibration guide finds the count by eye (red on its first LED, blue on its last).
 // part >= 0: a device of one connector, which sizes only its own zone.
@@ -293,7 +294,7 @@ static int apply_zones(SOCKET s, unsigned idx, const char *sec, const ctrl_t *c,
             memcpy(b, &zi, 4); memcpy(b + 4, &size, 4);
             if (send_pkt(s, idx, PKT_RESIZEZONE, b, 8)) changed = 1;
         }
-        n += snprintf(found + n, sizeof(found) - n, "%s%s:%d:%d:%d:%d", n ? "|" : "", x->name, size, x->min, x->max, at);
+        n += snprintf(found + n, sizeof(found) - n, "%s%s:%d:%d:%d:%d:%d", n ? "|" : "", x->name, size, x->min, x->max, at, z);
         at += size;
         if (n >= (int)sizeof(found)) break;
     }

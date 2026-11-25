@@ -246,6 +246,14 @@ window.chrome = { webview: {
       if (!E.devs.some(same)) E.devs.push({ id: Math.max(0, ...E.devs.map(d => d.id)) + 1, kind: o.kind, title: f ? f.title : o.kind, name: o.name, host: o.host, sub: o.sub,
         leds: f ? f.leds : 1, per_led: 1, online: 1, enabled: 1, type: '', info: f ? f.info : '' });
       if (f) f.added = 1; setTimeout(() => emit(STATE), 60); }
+    if (o.cmd === 'dev_remove') { STATE.ext.devs = STATE.ext.devs.filter(x => x.id !== +o.id); setTimeout(() => emit(STATE), 60); }
+    // devices.c ext_orgb_split: the board's connectors each a device (added once, the board's count for it), the board off; or back
+    if (o.cmd === 'orgb_split') { const D = STATE.ext.devs, b = D.find(x => x.id === +o.id), on = o.on === '1', set = (x, v) => { x.enabled = v; (C['dev.' + x.id] = C['dev.' + x.id] || {}).enabled = String(v); };
+      (b.zones || '').split('|').filter(Boolean).forEach(z => { const [name, count, min, max, , idx] = z.split(':'), sub = b.sub + 1000 * (+idx + 1);
+        let x = D.find(y => y.kind === 'openrgb' && y.host === b.host && y.sub === sub);
+        if (!x && on) D.push(x = { id: Math.max(0, ...D.map(y => y.id)) + 1, kind: 'openrgb', title: 'OpenRGB', name: b.name + ' · ' + name, host: b.host, sub, leds: +count, per_led: 1, online: 1, type: 'fan', info: 'OpenRGB · ARGB connector', zones: [name, count, min, max, 0, idx].join(':') });
+        if (x) set(x, on ? 1 : 0); });
+      set(b, on ? 0 : 1); setTimeout(() => emit(STATE), 60); }
     // window.mockSaveFail: its file can't be written (1) or all are taken (5): no profile, the reason in prof; 'silent': no answer
     if (o.cmd === 'profile_save' && window.mockSaveFail && window.mockSaveFail !== 'silent') refuse(window.mockSaveFail === 5 ? 5 : 1, 0);
     if (o.cmd === 'profile_save' && !window.mockSaveFail) { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; G.profile = String(n); setTimeout(() => emit(STATE), 60); }
@@ -277,7 +285,7 @@ const STATE = {
       { id: 5, kind: 'goveecloud', title: 'Govee (cloud)', name: 'AI Sync Box 2', host: 'AA:BB:CC:DD:EE:FF:00:01', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 0, type: 'tv', info: 'Govee H6604 · cloud · screen sync' },
       { id: 6, kind: 'openrgb', title: 'OpenRGB', name: 'ASUS TUF RTX 4070', host: '127.0.0.1', sub: 2, leds: 8, per_led: 1, online: 1, enabled: 1, type: 'gpu', info: 'OpenRGB · ASUS TUF RTX 4070 · graphics card' },
       { id: 7, kind: 'openrgb', title: 'OpenRGB', name: 'Vengeance RGB', host: '127.0.0.1', sub: 3, leds: 10, per_led: 1, online: 1, enabled: 1, type: 'ram', info: 'OpenRGB · Corsair Vengeance RGB Pro · memory' },
-      { id: 8, kind: 'openrgb', title: 'OpenRGB', name: 'B550-F', host: '127.0.0.1', sub: 4, leds: 12, per_led: 1, online: 1, enabled: 1, type: 'board', info: 'OpenRGB · ASUS ROG STRIX B550-F GAMING · motherboard', zones: 'Addressable 1:24:0:1024|Addressable 2:0:0:1024' },
+      { id: 8, kind: 'openrgb', title: 'OpenRGB', name: 'B550-F', host: '127.0.0.1', sub: 4, leds: 12, per_led: 1, online: 1, enabled: 1, type: 'board', info: 'OpenRGB · ASUS ROG STRIX B550-F GAMING · motherboard', zones: 'Addressable 1:24:0:1024:0:1|Addressable 2:0:0:1024:24:2' },
       { id: 9, kind: 'openrgb', title: 'OpenRGB', name: 'Front fans', host: '127.0.0.1', sub: 1, leds: 16, per_led: 1, online: 1, enabled: 1, type: 'fan', info: 'OpenRGB · Fan hub · cooler' },
       { id: 10, kind: 'openrgb', title: 'OpenRGB', name: 'Mouse', host: '127.0.0.1', sub: 5, leds: 3, per_led: 1, online: 1, enabled: 1, type: 'mouse', info: 'OpenRGB · Mouse · mouse' },
       { id: 11, kind: 'elgato', title: 'Elgato', name: 'Key Light Air', host: '192.168.1.80', sub: -1, leds: 1, per_led: 0, online: 1, enabled: 1, type: 'keylight', info: 'Elgato Key Light Air · fw 1.0.3' },

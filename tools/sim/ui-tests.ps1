@@ -55,7 +55,9 @@ try {
     $netLog = "$profileDir.$page.netlog.json"
     $br = Start-Process $chrome -PassThru -WindowStyle Hidden -RedirectStandardError $errFile -ArgumentList @(
       '--headless=new', '--disable-gpu', '--no-first-run', "--user-data-dir=`"$profileDir`"", '--window-size=1280,900',
-      '--remote-debugging-port=0', '--enable-logging=stderr', '--v=0', "--log-net-log=`"$netLog`"", $url)
+      '--remote-debugging-port=0', '--enable-logging=stderr', '--v=0', "--log-net-log=`"$netLog`"",
+      # the HTTP cache in memory: on the CI runner its disk stages took 9.5 of app.js's 10.9 s (0.4.84), the server 3 ms
+      '--incognito', $url)
     $ws = $null; $state = $null
     try {
       $dev = $null

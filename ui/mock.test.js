@@ -380,6 +380,24 @@
     } finally { setCfg('link', 'ctl', ctl); S.hw = was; S.ext.devs = devs; lkAsked = false; updateHw(); updateLink(); }
   });
 
+  test("a board's ARGB connectors: one switch on its card lights each on its own, and the board whole again", async () => {
+    await fresh(); showTab('devices');
+    const card = () => $('#dev-st-8').closest('.card'), sw = () => card().querySelector('.dev-split'), n0 = S.ext.devs.length;
+    const parts = () => S.ext.devs.filter(x => x.kind === 'openrgb' && x.sub >= 1000 && x.sub % 1000 === 4);
+    try {
+      ok(sw() && !sw().checked && card().querySelector('.dev-zone'), 'the board card has the switch, off, and its connector counts');
+      sw().click(); await until(() => parts().length === 2 && sent.some(o => o.cmd === 'orgb_split' && o.id === '8' && o.on === '1'), 'two connector devices');
+      await until(() => sw() && sw().checked, 'the switch shown on');
+      const [a, b] = parts();
+      ok(a.sub === 2004 && b.sub === 3004 && a.enabled && b.enabled && !devById(8).enabled, 'connectors by OpenRGB zone number, the board off: ' + JSON.stringify(parts().map(x => [x.sub, x.enabled])));
+      ok($('#dev-st-8').textContent === t('zones.split.st') && !card().querySelector('.dev-zone'), 'the board says why it is off and leaves the counts to the connectors');
+      ok($('#dev-st-' + a.id) && !$('#dev-st-' + a.id).closest('.card').querySelector('.dev-split'), 'a connector card is a device of its own, without the switch');
+      sw().click(); await until(() => devById(8).enabled && parts().every(x => !x.enabled), 'the board whole again');
+      await until(() => sw() && !sw().checked, 'the switch shown off');
+      ok(parts().length === 2, 'connectors kept (their settings stay), not added twice');
+    } finally { send({ cmd: 'orgb_split', id: '8', on: '0' }); parts().forEach(x => send({ cmd: 'dev_remove', id: String(x.id) })); await until(() => !parts().length && devById(8).enabled && S.ext.devs.length === n0, 'put back'); }
+  });
+
   test('quick colours: the recent palettes stay within one settings line (report ff6f405b4e)', async () => {
     await fresh();
     const was = cv('general', 'recent', '');
