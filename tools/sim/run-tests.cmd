@@ -65,7 +65,8 @@ if exist pro\wallpaper.cpp call :one wall /std:c++17 /EHsc /DWALL_TEST pro\wallp
 echo === orgb (against the fake OpenRGB server)
 del /q "%T%\orgb_test.exe" 2>nul
 cl %CF% tools\sim\orgb_test.c src\netutil.c ws2_32.lib winhttp.lib bcrypt.lib wintrust.lib crypt32.lib /Fe:%T%\orgb_test.exe >"%T%\orgb.log" 2>&1 || (type "%T%\orgb.log" & set "BAD=1" & goto node)
-start "fake openrgb" /b python tools\sim\fake_devices.py openrgb --orgb-test --orgb-port=6799
+rem into its own log: written into this console, its lines cut into the tests' own
+start "fake openrgb" /b cmd /c "python tools\sim\fake_devices.py openrgb --orgb-test --orgb-port=6799 >"%T%\fake-openrgb.log" 2>&1"
 rem the server needs a moment to listen
 ping -n 3 127.0.0.1 >nul
 "%T%\orgb_test.exe" || set "BAD=1"

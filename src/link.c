@@ -491,12 +491,16 @@ static void release(const char *why) {
     fans_link(0, NULL, NULL, NULL, 0, NULL);
     EnterCriticalSection(&cs); L.held = 0; L.hot = 0; LeaveCriticalSection(&cs);
 }
-// from any thread (sleep, exit): without the guard mutex if it is not to be had, as this is the last chance
+// from any thread (sleep, exit): without the guard mutex if it is not to be had, as this is the last chance. The hub
+// thread stuck in a transfer holds iocs: 2 s at most, then the hub thread gives control back when it comes round (step)
 static void release_now(const char *why) {
-    int m = hub_lock();
-    if (!m) EnterCriticalSection(&iocs);
+    BOOL in = FALSE;
+    for (int i = 0; i < 20 && !(in = TryEnterCriticalSection(&iocs)); i++) Sleep(100);
+    if (!in) { logf_("link: the hub was busy (%s): its control back is not confirmed, it goes back once the hub is free", why); return; }
+    int m = hub_lock();   // iocs is ours already: only the guard mutex is waited for, 200 ms
     if (held) release(why);
-    if (m) hub_unlock(); else LeaveCriticalSection(&iocs);
+    if (m) hub_unlock();
+    LeaveCriticalSection(&iocs);
 }
 // the hub thread: control given back if held, and the hub let go (close). 0: another program's transfer, next time
 static int drop(int close, const char *why) {
@@ -631,7 +635,10 @@ static int step(void) {
         else if (h == INVALID_HANDLE_VALUE) need_hw = 0;   // the hub gets it when it is opened again
         else return 1000;
     }
-    if (paused) return 1000;
+    if (paused) {   // asleep: control still held only when the sleep found the hub busy
+        if (held && hub_lock()) { if (held) release("sleep, after the hub was busy"); hub_unlock(); }
+        return 1000;
+    }
     if (h == INVALID_HANDLE_VALUE) {   // opened without a word sent: only to know it is there
         EnterCriticalSection(&iocs); h = open_hub(); LeaveCriticalSection(&iocs);
         hello = h != INVALID_HANDLE_VALUE;
@@ -822,6 +829,8 @@ static int tick(int ms) { T_now += ms; return step(); }
 static ldev D[16];
 static int devs(const int *ch, const int *type, int n) { for (int i = 0; i < n; i++) { D[i].ch = ch[i]; D[i].type = type[i]; D[i].model = 0; } return n; }
 static HANDLE hog_go, hog_ready;
+static DWORD WINAPI io_hog(void *p) { (void)p; EnterCriticalSection(&iocs); SetEvent(hog_ready); WaitForSingleObject(hog_go, INFINITE); LeaveCriticalSection(&iocs); return 0; }
+static DWORD WINAPI sleep_now(void *p) { (void)p; link_suspend(1); return 0; }
 static DWORD WINAPI hog(void *p) { (void)p; WaitForSingleObject(mx, INFINITE); SetEvent(hog_ready); WaitForSingleObject(hog_go, INFINITE); ReleaseMutex(mx); return 0; }
 
 int main(void) {
@@ -932,6 +941,18 @@ int main(void) {
     // sleep: control back at once, nothing sent while asleep, taken again after
     link_suspend(1); assert(!S.sw && !held && F.released == 3);
     clear_log(); assert(tick(2000) == 1000 && S.nlog == 0);
+    link_suspend(0); tick(1000); assert(S.sw && held);
+    // sleep while the hub thread is stuck in a transfer (holds iocs): the sleep goes on within its bound, control still
+    // held and said so; the hub thread gives it back once the transfer returns, still asleep
+    hog_go = CreateEventW(NULL, TRUE, FALSE, NULL); hog_ready = CreateEventW(NULL, TRUE, FALSE, NULL);
+    HANDLE hi = CreateThread(NULL, 0, io_hog, NULL, 0, NULL); WaitForSingleObject(hog_ready, INFINITE);
+    clear_log(); int rel0 = F.released; DWORD t0 = GetTickCount();
+    HANDLE hs = CreateThread(NULL, 0, sleep_now, NULL, 0, NULL);
+    assert(WaitForSingleObject(hs, 4000) == WAIT_OBJECT_0 && GetTickCount() - t0 >= 1500); CloseHandle(hs);
+    assert(held && S.sw && F.released == rel0 && S.nlog == 0);   // nothing sent: the hub is the stuck thread's
+    SetEvent(hog_go); WaitForSingleObject(hi, INFINITE); CloseHandle(hi); CloseHandle(hog_go); CloseHandle(hog_ready);
+    tick(1000); assert(!held && !S.sw && F.released == rel0 + 1);
+    clear_log(); assert(tick(1000) == 1000 && S.nlog == 0);   // given back once, nothing more while asleep
     link_suspend(0); tick(1000); assert(S.sw && held);
     // a crash
     link_crash(); assert(!S.sw && !held);

@@ -28,6 +28,7 @@ if (git tag -l $tag) { Fail "$tag is already here" }
 if (git ls-remote --tags origin $tag) { Fail "$tag is already on origin" }
 if (-not (Test-Path 'pro\.git')) { Fail 'pro\ is missing: the release is built there' }
 if (git -C pro status --porcelain) { Fail 'pro\ has changes not committed' }
+if ((git -C pro rev-parse --abbrev-ref HEAD) -ne 'main') { Fail 'pro\ is not on main' }
 if (git -C pro tag -l $tag) { Fail "$tag is already in pro\" }
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { Fail 'gh is not installed' }
 
@@ -50,6 +51,7 @@ Invoke-Git add -- res/version.h ui/whatsnew.js
 Invoke-Git -c user.name=haku -c user.email=316277268+hxkune@users.noreply.github.com commit -q -m "Release $Version" -m 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
 Invoke-Git tag $tag
 Invoke-Git push -q origin main $tag
+Invoke-Git -C pro push -q origin main   # pro's main carries the tag's commit too, not only the tag
 Invoke-Git -C pro tag $tag
 Invoke-Git -C pro push -q origin $tag
 Write-Output "release: $tag pushed here and in pro\; waiting for the build"

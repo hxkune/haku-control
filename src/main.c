@@ -1527,6 +1527,7 @@ void app_open(const char *what) {
     else if (!strcmp(what, "pro")) pro_buy("");
     else if (!strncmp(what, "pro-", 4)) pro_buy(what + 4);   // one plan's checkout: "m", "h", "y", "l"
     else if (!strcmp(what, "diag")) diag_open();
+    else if (!strcmp(what, "firewall")) ShellExecuteW(NULL, L"open", L"wf.msc", NULL, NULL, SW_SHOWNORMAL);   // its rules, for the user: haku removes none it did not make
     else if (!strcmp(what, "apps")) ShellExecuteW(NULL, L"open", L"ms-settings:appsfeatures", NULL, NULL, SW_SHOWNORMAL);   // Installed apps
 }
 
