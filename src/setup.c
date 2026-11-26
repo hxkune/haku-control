@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include "../res/version.h"
 #include "safetmp.h"
+#include "firewall.h"
 
 #pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -57,16 +58,15 @@ static int run_wait(const wchar_t *exe, const wchar_t *args, DWORD ms) {
     return (int)code;
 }
 
-// Inbound rule for the phone page and for lights answering a network scan: only from private addresses (the home
-// network, also when it has several subnets, and Tailscale), only for haku-control.exe. The app itself also refuses
-// anything else, and repairs this rule when it starts (remote.c).
+// Inbound rule for the phone page and for lights answering a network scan (firewall.c): haku's own rule, Private
+// networks and private addresses only (the home network, also with several subnets, and Tailscale), only for
+// haku-control.exe; the rule older versions added for every network is replaced. Other rules, a user's Block rule
+// among them, stay. The app itself also refuses anything else, and checks this rule when it starts (remote.c).
 static void firewall_rule(int add) {
-    run_wait(L"netsh.exe", L"advfirewall firewall delete rule name=\"haku control\"", 10000);
-    if (!add) return;
-    wchar_t args[MAX_PATH + 256];
-    swprintf(args, MAX_PATH + 256, L"advfirewall firewall add rule name=\"haku control\" dir=in action=allow enable=yes profile=any "
-             L"program=\"%s\\haku-control.exe\" remoteip=LocalSubnet,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10", dest);
-    run_wait(L"netsh.exe", args, 10000);
+    wchar_t exe[MAX_PATH];
+    swprintf(exe, MAX_PATH, L"%s\\haku-control.exe", dest);
+    fw_result_t r;
+    fw_sync(exe, add, &r);
 }
 
 static int exists(const wchar_t *p) { return GetFileAttributesW(p) != INVALID_FILE_ATTRIBUTES; }

@@ -36,7 +36,7 @@ rem icons + version info
 rc /nologo /c65001 /fo %OBJ%\haku-control.res res\haku-control.rc || exit /b 1
 cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE %DEFS% %PRO_DEF% /std:c++17 /EHsc /Fo%OBJ%\ ^
    src\main.c src\config.c src\profile.c src\effects.c src\dev_msi.c src\dev_ene.c src\sensors.c src\net.c ^
-   src\netutil.c src\devices.c src\drv_openrgb.c src\drv_nlusb.c src\drv_wooting.c src\drv_razer.c src\drv_steelseries.c src\drv_logitech.c src\drv_tryx.c src\drv_corsairlcd.c src\drv_aura.c src\openrgb_app.c src\update.c src\mood.c src\ollama.c src\diag.c src\hwinfo.c src\backup.c src\fans.c src\sio.c src\cputemp.c src\lianli.c src\link.c src\conflicts.c %PRO_SRC% ^
+   src\netutil.c src\devices.c src\drv_openrgb.c src\drv_nlusb.c src\drv_wooting.c src\drv_razer.c src\drv_steelseries.c src\drv_logitech.c src\drv_tryx.c src\drv_corsairlcd.c src\drv_aura.c src\openrgb_app.c src\update.c src\mood.c src\ollama.c src\diag.c src\hwinfo.c src\backup.c src\fans.c src\sio.c src\cputemp.c src\lianli.c src\link.c src\conflicts.c src\firewall.c %PRO_SRC% ^
    src\ui_web.cpp src\ui_tray.cpp src\audio.cpp src\screen.cpp ^
    /Fe:%OUT%\haku-control.exe ^
    /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='%UAC%' uiAccess='false'" ^
@@ -66,7 +66,7 @@ rem bin, e.g. after CI replaced them with signed ones)
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\pack.ps1 || exit /b 1
 rc /nologo /c65001 /i res /fo %OBJ%\setup.res res\setup.rc || exit /b 1
 if not exist dist mkdir dist
-cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /Fo%OBJ%\ src\setup.c /Fe:dist\haku-control-setup.exe ^
+cl /nologo /utf-8 /O2 /GS /W3 /MT /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /Fo%OBJ%\ src\setup.c src\firewall.c /Fe:dist\haku-control-setup.exe ^
    /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTUAC:"level='asInvoker' uiAccess='false'" ^
    user32.lib shell32.lib ole32.lib comctl32.lib advapi32.lib secur32.lib %OBJ%\setup.res || exit /b 1
 :done

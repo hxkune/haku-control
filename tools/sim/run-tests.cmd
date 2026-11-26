@@ -35,7 +35,8 @@ call :one config   /DCFG_TEST src\config.c
 call :one profile  /W3 tools\sim\profile_test.c src\profile.c src\config.c
 call :one backup   /DHAKU_DEV tools\sim\backup_test.c src\backup.c src\config.c comdlg32.lib
 rem the installer's file part on folders under %TEMP%: never Program Files, never the running app
-call :one setup    /DSETUP_TEST src\setup.c user32.lib shell32.lib ole32.lib comctl32.lib advapi32.lib secur32.lib
+call :one firewall /DFW_TEST src\firewall.c
+call :one setup    /DSETUP_TEST src\setup.c src\firewall.c user32.lib shell32.lib ole32.lib comctl32.lib advapi32.lib secur32.lib
 rem the remote check takes only the allowlist from ui_web.cpp; the rest of the program is left unlinked on purpose
 call :one remote   /std:c++17 /EHsc tools\sim\remote_test.cpp /link /FORCE:UNRESOLVED
 rem the fan, iCUE LINK and Lian Li parts test themselves against simulated devices (no USB or Super I/O is opened)
@@ -52,6 +53,8 @@ rem "Invite friends" (the paid build only) against a scripted site: nothing leav
 if exist pro\referral.c call :one referral /DREF_TEST pro\referral.c src\netutil.c ws2_32.lib winhttp.lib bcrypt.lib wintrust.lib crypt32.lib advapi32.lib
 rem voice control (the paid build only): the phrase finder, "Haku" at the start and the checks on the model answer, on made-up input
 if exist pro\voice.c call :one voice /DVOICE_TEST pro\voice.c src\netutil.c ws2_32.lib winhttp.lib bcrypt.lib wintrust.lib crypt32.lib advapi32.lib
+rem the phone page's server (the paid build only): one deadline per request, Content-Length, cut-short bodies; then the server on 127.0.0.1
+if exist pro\remote.c call :one remotehttp /DREMOTE_TEST pro\remote.c src\netutil.c src\firewall.c ws2_32.lib winhttp.lib bcrypt.lib wintrust.lib crypt32.lib advapi32.lib
 rem scenarios (the paid build only) against a scripted PC: no program, window or profile of this PC is touched
 if exist pro\rules.c call :one rules /DRULES_TEST pro\rules.c src\config.c
 rem live LCD layouts: the format, saving, deleting, a frame drawn with GDI+ (no screen is touched)

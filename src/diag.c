@@ -182,7 +182,8 @@ static void build(buf_t *b_, int compact) {
     add_key_files(&b);
     section(&b, "network adapters");
     add_adapters(&b);
-    section(&b, "firewall rule \"haku control\"");
+    section(&b, "firewall rules \"haku control - local network\" (haku's own) and \"haku control\" (versions up to 0.4.86)");
+    add_command(&b, L"netsh.exe advfirewall firewall show rule name=\"haku control - local network\" verbose");
     add_command(&b, L"netsh.exe advfirewall firewall show rule name=\"haku control\" verbose");
     section(&b, "every firewall rule for this exe (a Block one keeps phones out)");
     {

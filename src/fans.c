@@ -61,6 +61,9 @@ static int rfail;                                           // channels whose ow
 static struct { char t[9], m[100]; int n; } lg[8]; static int lgn;   // recent problems, oldest first
 static HANDLE th, stop_ev, hc = INVALID_HANDLE_VALUE;      // hc: control (feature reports), synchronous
 static int flen, paused, bound, bad_crc;
+// sleep: pwr 1 from its first moment (nothing new is written), 2 woken and not yet taken in by a round; pwr_n counts the
+// changes, so a driver call that began before one (a read hung across it) writes nothing after
+static volatile LONG pwr, pwr_n;
 static BYTE orig[FANS][3]; static int taken[FANS], chk[FANS], sent[FANS] = { -1, -1, -1, -1 }, cer[FANS];
 static wchar_t sec[16];                                     // the serial taken/orig belong to
 // the board (io): its mode and duty found first while haku holds a channel, the section they are saved under
@@ -129,7 +132,7 @@ static void state_load(void) {
 static int not_sent(const int *res, int e) { for (int f = 0; f < FANS; f++) if (res[f] != 2 && !cer[f]) cer[f] = e; return 0; }
 static int ctl_write(const int *want, int *res) {
     static BYTE r[2048], b[2048];
-    int tk[FANS]; BYTE og[FANS][3];
+    int tk[FANS]; BYTE og[FANS][3]; LONG n0 = pwr_n;
     memcpy(tk, taken, sizeof(tk)); memcpy(og, orig, sizeof(og));
     for (int f = 0; f < FANS; f++) { res[f] = want[f] >= 0 || (want[f] == -1 && tk[f]) ? -1 : 2; cer[f] = ER_NONE; }
     if (hc == INVALID_HANDLE_VALUE) return not_sent(res, ER_NOLINK);
@@ -165,6 +168,10 @@ static int ctl_write(const int *want, int *res) {
     if (chg) {
         int c = crc16usb(r + 1, 0x3C1 - 3); r[0x3BF] = (BYTE)(c >> 8); r[0x3C0] = (BYTE)c;
         PAUSE(200);   // the controller wants a pause between reports
+        if (pwr_n != n0) {   // slept or woke meanwhile: what was read is old; nothing written, the next round reads again
+            memcpy(taken, tk, sizeof(tk)); memcpy(orig, og, sizeof(og));
+            return not_sent(res, ER_NONE);
+        }
         if (!SET_FEATURE(r, flen)) {
             flog("writing to the QUADRO failed (error %lu)", GetLastError());
             memcpy(taken, tk, sizeof(tk)); memcpy(orig, og, sizeof(og));   // maybe half done: still to give back
@@ -281,12 +288,22 @@ static int eased(int f, const tgt_t *t, int sent_) {
     return t->want >= 0 && t->smooth && sent_ >= 0 && t->want < sent_ - dn ? sent_ - dn : t->want;
 }
 
+// caller holds io: 1 when nothing may be written (stopped, asleep). A wake not yet taken in is taken in here: one that
+// could not go back is looked at again before writing.
+static int halted(void) {
+    if (InterlockedCompareExchange(&pwr, 0, 2) == 2) {
+        for (int f = 0; f < FANS; f++) chk[f] = taken[f];
+        for (int b = 0; b < bn; b++) bchk[b] = btaken[b];
+    }
+    return paused || pwr;
+}
+
 // one control round: targets, a curve eased down, written and read back; the page's view of each channel
 static void control(void) {
     tgt_t t[NCH]; targets(t);
     int want[FANS], res[FANS], fail = 0;
     EnterCriticalSection(&io);
-    if (paused || !bound) { LeaveCriticalSection(&io); return; }
+    if (halted() || !bound) { LeaveCriticalSection(&io); return; }
     for (int f = 0; f < FANS; f++) want[f] = eased(f, &t[f], sent[f]);
     ctl_write(want, res);
     for (int f = 0; f < FANS; f++) {
@@ -380,7 +397,7 @@ static void bstate_load(void) {
 // want: -2 leave, -1 its own setting back (if taken), else centi-percent in manual mode.
 // 1 read back as sent (or already so), 0 sent but not read back so, -1 not sent, 2 not touched; ber[b]: why not.
 static int board_write(int b, int want) {
-    int m, c, v = (want * 255 + 5000) / 10000;
+    int m, c, v = (want * 255 + 5000) / 10000; LONG n0 = pwr_n;
     ber[b] = ER_NONE;
     if (want == -2 || (want == -1 && !btaken[b])) return 2;
     if (!sio_get(b, &m, &c)) { ber[b] = ER_READ; return -1; }
@@ -393,6 +410,7 @@ static int board_write(int b, int want) {
         }
         if (want == -1 && !btaken[b]) return 2;
     }
+    if (pwr_n != n0) return -1;   // slept or woke during the read: nothing written, as on the QUADRO
     if (want == -1) {
         if ((m != borig[b][0] || c != borig[b][1]) && (!sio_put(b, borig[b][0], borig[b][1]) || !sio_get(b, &m, &c))) { ber[b] = ER_WRITE; return -1; }
         if (m != borig[b][0] || c != borig[b][1]) { ber[b] = ER_KEPT; flog("the board did not take back the setting of channel %d", FANS + b + 1); return 0; }
@@ -431,7 +449,7 @@ static void board_round(void) {
     for (int b = 0; b < bn; b++) { bd.rpm[b] = ok ? rpm[b] : -1; bd.pct[b] = ok ? pct[b] : -1; }
     LeaveCriticalSection(&cs);
     EnterCriticalSection(&io);
-    if (paused) { LeaveCriticalSection(&io); return; }
+    if (halted()) { LeaveCriticalSection(&io); return; }
     for (int b = 0; b < bn; b++) {
         int f = FANS + b, want = eased(f, &t[f], bsent[b]);
         res[b] = board_write(b, want);
@@ -549,7 +567,7 @@ static int io_try(int ms) {
 // the watchdog: a control thread stuck somewhere (a driver call that never returns, a loop gone wrong) would leave its
 // channels at haku's last speed whatever the temperature does, so after WD_MS they go back to the device's own setting.
 // Done once every channel is back; one that did not go back stays saved (fans-state.ini) and is tried again every
-// WD_RETRY_MS. When the thread comes round again it takes them on as usual. Not while asleep (paused).
+// WD_RETRY_MS. When the thread comes round again it takes them on as usual. Not while asleep (pwr 1).
 #define WD_RETRY_MS 10000
 static volatile int wd_out[2];   // 0 running, 1 every channel back, 2 the device was busy (tried on the next check), 3 some did not go back
 static DWORD wd_at[2];           // the last give-back tried (3)
@@ -558,7 +576,7 @@ static void wd_check(DWORD now) {
     for (int k = 0; k < 2; k++) {
         DWORD b = (DWORD)beat[k];
         if (!b || (LONG)(now - b) < WD_MS) { wd_out[k] = 0; continue; }   // signed: a beat is tick|1, up to 1 ms ahead of now
-        if (wd_out[k] == 1 || paused || (wd_out[k] == 3 && now - wd_at[k] < WD_RETRY_MS)) continue;
+        if (wd_out[k] == 1 || paused || pwr == 1 || (wd_out[k] == 3 && now - wd_at[k] < WD_RETRY_MS)) continue;
         unsigned s = (now - b) / 1000;
         if (!io_try(1000)) {
             if (!wd_out[k]) flog("fan control of the %s has not run for %u s and the device is busy; nothing given back", wd_name[k], s);
@@ -568,7 +586,7 @@ static void wd_check(DWORD now) {
         int any = 0, left = 0;
         if (k) for (int i = 0; i < bn; i++) any |= btaken[i];
         else for (int f = 0; f < FANS; f++) any |= taken[f];
-        if (any && !paused) {
+        if (any && !halted()) {
             if (wd_out[k] != 3) flog("fan control of the %s has not run for %u s; its channels go back to its own setting", wd_name[k], s);
             left = k ? board_restore() : restore_all();
             if (!left && wd_out[k] == 3) flog("the %s's channels are back on its own setting", wd_name[k]);
@@ -628,18 +646,45 @@ void fans_crash(void) {
     LeaveCriticalSection(&io);
 }
 
-// sleep: the QUADRO's and the board's own settings back now (the machine may not wake with haku); after waking, taken again
-void fans_suspend(int on) {
-    if (!th) return;
+// sleep: nothing new written from its first moment; the QUADRO's and the board's own settings back now (the machine may
+// not wake with haku). The give-back runs on a thread of its own and is waited for SLEEP_MS at most: a round that holds
+// io, or a driver call that does not return, never holds up the rest of the sleep (link.c, the lights). Not confirmed
+// in time: logged, the channels count as not given back on the page, and the give-back goes on once io is free.
+// After waking, taken again by the next round.
+static DWORD sleep_ms = 2000;
+static HANDLE sth;              // the give-back thread, may outlive one sleep (then the next one does not start another)
+static volatile LONG late;      // timed out: the thread says when it did get there
+static unsigned __stdcall give_back(void *a) {
+    (void)a;
     EnterCriticalSection(&io);
-    paused = on;
-    if (on) { restore_all(); board_restore(); }
-    else {   // one that could not go back: look again before writing. The time asleep is not a stall.
-        for (int k = 0; k < 2; k++) if (beat[k]) InterlockedExchange(&beat[k], (LONG)(GetTickCount() | 1));
-        for (int f = 0; f < FANS; f++) chk[f] = taken[f];
-        for (int b = 0; b < bn; b++) bchk[b] = btaken[b];
+    if (pwr == 1) {
+        int left = restore_all() + board_restore();
+        if (InterlockedExchange(&late, 0)) flog(left ? "the fan channels' give-back for sleep ended late; %d did not go back" : "the fan channels went back to their own setting late, after the device was busy", left);
     }
     LeaveCriticalSection(&io);
+    return 0;
+}
+void fans_suspend(int on) {
+    if (!th) return;
+    InterlockedIncrement(&pwr_n);
+    if (!on) {   // the time asleep is not a stall; the rest when a round next holds io
+        InterlockedExchange(&pwr, 2);
+        for (int k = 0; k < 2; k++) if (beat[k]) InterlockedExchange(&beat[k], (LONG)(GetTickCount() | 1));
+        return;
+    }
+    InterlockedExchange(&pwr, 1);
+    InterlockedExchange(&late, 0);
+    if (sth && WaitForSingleObject(sth, 0) == WAIT_TIMEOUT) { flog("the last sleep's fan give-back has not ended; it goes on"); return; }
+    if (sth) CloseHandle(sth);
+    sth = (HANDLE)_beginthreadex(NULL, 0, give_back, NULL, 0, NULL);
+    if (!sth) { if (io_try((int)sleep_ms)) { restore_all(); board_restore(); LeaveCriticalSection(&io); return; } }   // no thread: here, if io is free
+    else if (WaitForSingleObject(sth, sleep_ms) == WAIT_OBJECT_0) return;
+    InterlockedExchange(&late, 1);
+    int n = 0, bn_ = 0;   // read without io (it is busy): a count for the page, put right by the give-back itself
+    for (int f = 0; f < FANS; f++) n += taken[f];
+    for (int b = 0; b < bn; b++) bn_ += btaken[b];
+    EnterCriticalSection(&cs); rfail = n; brfail = bn_; LeaveCriticalSection(&cs);
+    flog("going to sleep, the fan device was busy: giving %d channel(s) back is not confirmed; it goes on when the device is free", n + bn_);
 }
 
 // at: when the GPU was last asked (the render loop passes the same reading on every frame in between)
@@ -672,7 +717,7 @@ int fans_rpm(void) {
 int fans_trouble(void) {
     if (!th) return 0;
     EnterCriticalSection(&cs);
-    int r = st.on && !paused && (!st.link || GetTickCount() - st.seen > STALE_MS) ? 1 : 0;
+    int r = st.on && !paused && pwr != 1 && (!st.link || GetTickCount() - st.seen > STALE_MS) ? 1 : 0;
     for (int f = 0; !r && f < NCH; f++) if (ch[f].em && (f < FANS + bd.n || (f >= LINK0 && lk.on[f - LINK0]))) r = 2;
     LeaveCriticalSection(&cs);
     return r;
@@ -687,7 +732,7 @@ int fans_json(char *out, int cap) {
     int any = st.on || bd.n || lk.n, last = lk.n ? LINK0 + lk.n : FANS + bd.n;
     int n = jcat(out, cap, 0, "{\"on\":%d", any);
     if (any) {
-        n = jcat(out, cap, n, ",\"q\":%d,\"paused\":%d,\"rfail\":%d,\"wd\":[%d,%d]", st.on, paused, rfail + brfail, wd_out[0], wd_out[1]);
+        n = jcat(out, cap, n, ",\"q\":%d,\"paused\":%d,\"rfail\":%d,\"wd\":[%d,%d]", st.on, paused || pwr == 1, rfail + brfail, wd_out[0], wd_out[1]);
         if (bd.n) n = jcat(out, cap, n, ",\"chip\":\"%s\"", bd.chip);
         if (st.on) {
             n = jcat(out, cap, n, ",\"link\":%d,\"age\":%lu,\"serial\":\"%05d-%05d\",\"fw\":%d,\"flow\":%.1f,\"t\":[",
@@ -726,7 +771,13 @@ int fans_json(char *out, int cap) {
 #include <assert.h>
 static BYTE dev[0x3C1];                       // the simulated QUADRO's feature report 3
 static int get_fail, set_fail, set_drop = -1;  // set_drop: the channel the device does not keep
-static int sim_get(BYTE *r, int n) { if (get_fail) return 0; memcpy(r, dev, n); return 1; }
+static HANDLE get_hang[2];   // set: the next read signals [0], then hangs until [1] (a driver call that does not return)
+static int sim_get(BYTE *r, int n) {
+    if (get_fail) return 0;
+    memcpy(r, dev, n);   // read now, returned when let go: what it holds may be old by then
+    HANDLE h = get_hang[0]; if (h) { get_hang[0] = NULL; SetEvent(h); WaitForSingleObject(get_hang[1], INFINITE); }
+    return 1;
+}
 static void sim_crc(void) { int c = crc16usb(dev + 1, 0x3C1 - 3); dev[0x3BF] = (BYTE)(c >> 8); dev[0x3C0] = (BYTE)c; }
 static int sets;   // writes tried on the simulated QUADRO, failed or not
 static int sim_set(const BYTE *r, int n) {
@@ -764,6 +815,7 @@ static int lg_n(const char *s) { for (int i = 0; i < lgn; i++) if (strstr(lg[i].
 static unsigned __stdcall hold_io(void *a) {   // holds io until told: a stalled or crashing thread
     HANDLE *e = a; EnterCriticalSection(&io); SetEvent(e[0]); WaitForSingleObject(e[1], INFINITE); LeaveCriticalSection(&io); return 0;
 }
+static unsigned __stdcall round_once(void *a) { (void)a; control(); return 0; }   // a QUADRO round on its own thread
 static unsigned __stdcall ret_two(void *a) { (void)a; return 2; }   // a thread whose give-back left two channels
 static unsigned __stdcall wait_ev(void *a) { WaitForSingleObject((HANDLE)a, INFINITE); return 0; }   // stuck, not holding io
 int main(void) {
@@ -929,7 +981,7 @@ int main(void) {
     ns = sets; wd_check(now + WD_RETRY_MS); assert(sets == ns && !wd_out[0]);
     // failing, then asleep: sleep gives back on its own, the watchdog does not write meanwhile; awake, the stall is gone
     beat[0] = (LONG)(now - WD_MS - 1000); set_fail = 1; wd_check(now); assert(wd_out[0] == 3);
-    th = (HANDLE)1; fans_suspend(1); assert(taken[0] && paused); set_fail = 0;
+    th = (HANDLE)1; fans_suspend(1); assert(taken[0] && pwr == 1 && !paused); set_fail = 0;
     ns = sets; wd_check(now + WD_RETRY_MS); assert(sets == ns && taken[0]);
     fans_suspend(0); th = NULL; wd_check(GetTickCount()); assert(!wd_out[0]);
     { DWORD e = GetTickCount() & ~1u; beat[0] = (LONG)(e | 1); wd_check(e); assert(!wd_out[0] && taken[0]); }   // a beat 1 ms ahead is no stall
@@ -954,6 +1006,36 @@ int main(void) {
     ht = (HANDLE)_beginthreadex(NULL, 0, hold_io, hb, 0, NULL); WaitForSingleObject(hb[0], INFINITE);
     th = (HANDLE)1; DWORD t0 = GetTickCount(); fans_crash(); th = NULL; assert(GetTickCount() - t0 < 4000 && taken[0] && !paused);
     SetEvent(hb[1]); WaitForSingleObject(ht, INFINITE); CloseHandle(ht);
+    // asleep while a round hangs in a driver call (holding io): the sleep goes on within its bound, nothing new is written
+    // once it began, the page is told; the give-back follows when the call returns; awake, the next round takes them again
+    {
+        HANDLE g[2] = { CreateEventW(NULL, TRUE, FALSE, NULL), CreateEventW(NULL, TRUE, FALSE, NULL) };
+        board_round(); assert(dev_is(0, 30) && taken[0] && btaken[0]);
+        set("fan1_pct", "45"); get_hang[0] = g[0]; get_hang[1] = g[1];
+        HANDLE ct = (HANDLE)_beginthreadex(NULL, 0, round_once, NULL, 0, NULL); WaitForSingleObject(g[0], INFINITE);
+        int ns2 = sets, lg0 = lg_n("not confirmed"); th = (HANDLE)1; sleep_ms = 300; DWORD t1 = GetTickCount(); fans_suspend(1);
+        assert(GetTickCount() - t1 < 1500 && pwr == 1 && rfail == 1 && brfail == 1 && lg_n("not confirmed") == lg0 + 1);
+        { static char wj[8192]; fans_json(wj, sizeof(wj)); assert(strstr(wj, "\"paused\":1,\"rfail\":2")); }
+        SetEvent(g[1]); WaitForSingleObject(ct, INFINITE); CloseHandle(ct);                 // the read returns: its 45 % is not sent
+        assert(WaitForSingleObject(sth, 2000) == WAIT_OBJECT_0);                            // the give-back had io after it
+        assert(sets == ns2 + 1 && !memcmp(dev + ctl_fan[0], O1, 3) && !taken[0] && !btaken[0] && bis(0, 5, 0x80));
+        assert(!rfail && !brfail && lg_n("late, after the device was busy") == 1 && !late);
+        ns2 = sets; control(); board_round(); assert(sets == ns2 && !taken[0] && !btaken[0] && bis(0, 5, 0x80));   // asleep: no round writes
+        fans_suspend(0); assert(pwr == 2 && !taken[0]); control(); board_round(); assert(!pwr && dev_is(0, 45) && taken[0] && btaken[0]);
+        // the same, woken before the call returns: the old read writes nothing, the give-back stands back, the round takes over
+        ResetEvent(g[0]); ResetEvent(g[1]); get_hang[0] = g[0];
+        ct = (HANDLE)_beginthreadex(NULL, 0, round_once, NULL, 0, NULL); WaitForSingleObject(g[0], INFINITE);
+        set("fan1_pct", "60"); ns2 = sets; fans_suspend(1); assert(pwr == 1 && late); fans_suspend(0); assert(pwr == 2);
+        SetEvent(g[1]); WaitForSingleObject(ct, INFINITE); CloseHandle(ct); assert(WaitForSingleObject(sth, 2000) == WAIT_OBJECT_0);
+        assert(sets == ns2 && dev_is(0, 45) && taken[0] && btaken[0]);
+        control(); assert(!pwr && sets == ns2 + 1 && dev_is(0, 60));
+        // a plain sleep: back within the bound, nothing reported; awake, taken again
+        lg0 = lg_n("not confirmed"); t1 = GetTickCount(); fans_suspend(1);
+        assert(GetTickCount() - t1 < 300 && !taken[0] && !btaken[0] && !rfail && !brfail && lg_n("not confirmed") == lg0);
+        fans_suspend(0); control(); board_round(); assert(dev_is(0, 60) && taken[0] && btaken[0]);
+        set("fan1_pct", "30"); control(); assert(dev_is(0, 30));
+        th = NULL; sleep_ms = 2000; CloseHandle(g[0]); CloseHandle(g[1]); CloseHandle(sth); sth = NULL;
+    }
     // exit: a thread's answer is the result; a stuck one is given back from here; a device held for ever is not "done"
     stop_ev = CreateEventW(NULL, TRUE, FALSE, NULL); stop_ms = 200;
     th = (HANDLE)_beginthreadex(NULL, 0, ret_two, NULL, 0, NULL); assert(fans_stop() == 2 && !th);
