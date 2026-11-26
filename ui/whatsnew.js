@@ -3,6 +3,16 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.88',
+    en: ['Home: a line for your scenarios (haku Pro) shows how many are on and which one is in charge now, or why none is. Manage opens their list.',
+      'Integrations: when a firewall rule of yours blocks the phone page, a button opens Windows Firewall.',
+      'Reliability: going to sleep or closing haku control no longer waits on a Corsair iCUE LINK hub that is stuck mid-transfer; the hub is handed back as soon as it is free. With animations off, the effect previews stop redrawing.'],
+    ru: ['Главная: строка о сценариях (haku Pro) показывает, сколько из них включено и какой сейчас главный, или почему ни один не действует. «Управлять» открывает их список.',
+      'Интеграции: если ваше правило брандмауэра блокирует страницу для телефона, кнопка открывает брандмауэр Windows.',
+      'Надёжность: переход в сон и закрытие haku control больше не ждут хаб Corsair iCUE LINK, застрявший посреди передачи; хаб возвращается, как только освободится. При выключенной анимации превью эффектов больше не перерисовываются.'],
+    fr: ['Accueil : une ligne sur vos scénarios (haku Pro) indique combien sont actifs et lequel a la main en ce moment, ou pourquoi aucun ne l’a. Gérer ouvre leur liste.',
+      'Intégrations : si l’une de vos règles de pare-feu bloque la page du téléphone, un bouton ouvre le pare-feu Windows.',
+      'Fiabilité : la mise en veille et la fermeture de haku control n’attendent plus un hub Corsair iCUE LINK bloqué en plein transfert ; le hub est rendu dès qu’il est libre. Avec les animations désactivées, les aperçus des effets ne se redessinent plus.'] },
   { v: '0.4.87',
     en: ['Phone control: the firewall rule haku control adds now works only on networks Windows calls private, and haku control no longer touches rules it did not make. If a rule of yours blocks haku control, Integrations says so. On a public Wi-Fi, make the network private in its settings to reach the phone page.',
       'Reliability: going to sleep no longer waits on a fan controller that stopped answering, and the phone page’s server closes a request that stalls or arrives cut short instead of waiting for it.'],
