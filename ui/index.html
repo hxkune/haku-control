@@ -502,7 +502,7 @@
             <div><h3 data-i18n="pc.more">Other PC hardware</h3><p class="muted" id="orgb-status"></p></div>
             <button class="btn small ghost" id="orgb-check"><span data-i18n="orgb.check">Check again</span></button>
           </div>
-          <p class="note" data-i18n="pc.more.text">Graphics cards, motherboards, RAM and coolers of any brand come in through OpenRGB (free). haku then lights them together with everything else.</p>
+          <p class="muted" data-i18n="pc.more.text">Graphics cards, motherboards, RAM and coolers of any brand come in through OpenRGB (free). haku then lights them together with everything else.</p>
           <p class="hint" data-i18n="orgb.credit">Some RGB devices are supported through OpenRGB</p>
           <div class="orgb-guide hidden" id="orgb-guide">
             <p class="note" id="orgb-guide-text"></p>
@@ -829,8 +829,8 @@
       <div class="card" data-cat="app" id="data-card">
         <h3 data-i18n="files">Files</h3>
         <div class="btn-row">
-          <button class="btn ghost" data-open="ini" data-i18n="f.ini">Settings file</button>
-          <button class="btn ghost" data-open="folder" data-i18n="f.folder">App folder</button>
+          <button class="btn small ghost" data-open="ini" data-i18n="f.ini">Settings file</button>
+          <button class="btn small ghost" data-open="folder" data-i18n="f.folder">App folder</button>
         </div>
         <div class="set-row pc-only bk-row">
           <div><b data-i18n="bk">Backup</b><p class="muted" id="bk-note"></p></div>
@@ -1080,9 +1080,9 @@
 <!-- the notices behind the bell in the side bar -->
 <div class="sheet-wrap pdlg-wrap hidden" id="notes">
   <div class="card pdlg wn" role="dialog" aria-modal="true" aria-labelledby="notes-title">
-    <div class="pdlg-head"><h3 id="notes-title" data-i18n="nav.notes">Notifications</h3></div>
+    <div class="pdlg-head"><h3 id="notes-title" data-i18n="nav.notes">Notifications</h3>
+      <button class="sheet-x" type="button" id="notes-x" data-i18n-title="close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <div class="wn-list notes-list" id="notes-list"></div>
-    <div class="btn-row"><button class="btn primary" type="button" id="notes-x"><span data-i18n="close">Close</span></button></div>
   </div>
 </div>
 <!-- what is new: once after an update, and from Settings -->

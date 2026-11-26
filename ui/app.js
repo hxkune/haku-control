@@ -5177,8 +5177,9 @@ function updateLL() {
       `<option value="${p}"${String(p) === cur ? ' selected' : ''}>${p} %</option>`).join('')}</select>`; };
   // shortcut: every fan group drawn as UNI FAN SL (lit edges); the receiver does not tell SL from TL, a per-group pick if TL owners ask
   const html = g.map(d => `<div class="found-row"><span class="kind${d.type ? '' : ' kind-ic'}">${d.type ? '' : fanIcon('sl')}${t(d.type ? 'link.k.dev' : 'link.k.fan')}</span>
-    <div class="what"><b>${esc(t('ll.n', d.n))}</b><small>${esc(d.mac + (d.own ? '' : ' · ' + t('ll.other')) + (d.sync ? ' · ' + t('ll.sync.' + d.sync) : ''))}</small></div>
-    <span class="added">${esc((d.rpm || []).map((r, i) => t('link.rpm', r) + ' ' + (d.pct || [])[i] + ' %').join(' · '))}</span>${d.own && !d.type && d.n ? sel(d) : ''}</div>`).join('');
+    <div class="what"><b>${esc(t('ll.n', d.n))}</b><small>${esc([d.mac + (d.own ? '' : ' · ' + t('ll.other')) + (d.sync ? ' · ' + t('ll.sync.' + d.sync) : ''),
+      ...(d.rpm || []).map((r, i) => t('link.rpm', r) + ' ' + (d.pct || [])[i] + ' %')].join(' · '))}</small></div>
+    <span class="added">${d.own && !d.type && d.n ? sel(d) : ''}</span></div>`).join('');
   const list = $('#ll-list');
   if (list.dataset.html !== html && !list.contains(document.activeElement)) { list.dataset.html = html; list.innerHTML = html; }
 }
@@ -6503,10 +6504,10 @@ function updateHome() {
   const F = S.fans || {}, f = fanAll().filter(i => !fanHidden(i)).map(i => {
     const x = fanCh(i), p = fanTileSt([i]), [st, c] = fanState(i), v = fanOld(i) ? '' : ` ${x.rpm == null || x.rpm < 0 ? '—' : x.rpm} ${t('home.rpm')}`;
     const [s, sc] = p ? [p[0], p[2] ? 'warn' : 'bad'] : [fanMode(i) + (st ? ' · ' + st : ''), c];
-    return `<span data-hf="${i}"><b>${esc(fanName(i))}</b>${v}<small class="fan-st ${sc}">${esc(s)}</small></span>`; });
+    return `<span data-hf="${i}"><b>${esc(fanName(i))}</b><span>${v}</span><small class="fan-st ${sc}">${esc(s)}</small></span>`; });
   const c = $('#home-cool');
   c.classList.toggle('hidden', !F.on || !f.length || !fansOn());
-  const ch = `<h3>${t('nav.fans')}</h3><div class="home-fans">${f.join('')}${F.gpu != null ? `<span><b>GPU</b> ${F.gpu}°</span>` : ''}</div>`;
+  const ch = `<div class="home-cool-h"><h3>${t('nav.fans')}</h3>${F.gpu != null ? `<span class="muted">GPU ${F.gpu}°</span>` : ''}</div><div class="home-fans">${f.join('')}</div>`;
   if (c.dataset.html !== ch) { c.dataset.html = ch; c.innerHTML = ch; }
 }
 $('#home-attn-list').addEventListener('click', e => {

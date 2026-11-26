@@ -472,7 +472,7 @@ header h1 { font: 600 30px var(--display); letter-spacing: -.01em; }
 .hw-card { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; }
 .hw-list small .dot { display: inline-block; width: 7px; height: 7px; margin: 0 2px 1px 0; vertical-align: middle; }
 .hw-list small .dot.warn { background: #f0b44a; border-color: #f0b44a; }
-.pc-more .note { margin: 0; }
+.pc-more > .muted { margin: 0; }
 .orgb-list:empty { display: none; }
 .pc-more .btn-row { display: flex; gap: 8px; }
 .pc-more .hint { margin: 0; }
@@ -701,7 +701,9 @@ body.calm .fl-bar b { transition: none; }
 .ha-state.ok { color: var(--strong); }
 .ha-state.bad { color: #ff7a7a; }
 /* backup, sharing presets */
-.bk-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.bk-row { flex-wrap: wrap; }
+.bk-row > div:first-child { flex: 1 1 220px; min-width: 0; }   /* the buttons stay on one line and go under the text only when it would get narrower */
+.bk-btns { display: flex; gap: 6px; flex: none; justify-content: flex-end; }
 .bk-btns .btn { white-space: nowrap; }
 #bk-note.bad, #share-msg { color: var(--strong); }
 .share-dlg { width: min(460px, 100%); }
@@ -909,8 +911,8 @@ body.no-anim .side, body.no-anim .side-toggle, body.no-anim .side-toggle .chev, 
 .found { display: flex; flex-direction: column; }
 .found-row { display: grid; grid-template-columns: 120px 1fr auto; align-items: center; gap: 14px; padding: 11px 0; border-top: 1px solid var(--line); }
 .found-row .kind { font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }   /* 120px: the longest word (fr Refroidissement) fits; a longer one breaks, never runs into the name */
-.found-row .kind-ic { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
-.found-row .kind-ic .fanic { width: 30px; height: 30px; }
+.found-row .kind-ic { display: flex; align-items: center; gap: 8px; }
+.found-row .kind-ic .fanic { width: 24px; height: 24px; flex: none; }
 .found-row .what b { display: block; font-weight: 600; }
 .found-row .what small { color: var(--muted); font-size: 12px; }
 .found-row .added { color: var(--muted); font-size: 12px; }
@@ -1215,7 +1217,9 @@ body.calm nav button { transition: none; }
 
 /* ---------------- sign-ins and pairing */
 .accounts { margin-top: 20px; }
-.acc-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.acc-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; border-top: 1px solid var(--line); }
+.acc-row > div { min-width: 0; }
+.acc-row > .btn { flex: none; white-space: nowrap; }
 .accounts > .muted { margin-bottom: 12px; }
 .acc-row b { display: block; font-weight: 600; }
 .acc-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -1803,9 +1807,11 @@ button.chip { font: inherit; font-size: 12px; background: none; }
 .home-sum .what small { color: var(--muted); }
 .home-sum .btn-row { margin: 0; }
 .home-cool { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
-.home-fans { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; color: var(--muted); font-size: 12.5px; }
-.home-fans b { color: var(--text); font-weight: 600; }
-.home-fans > span { display: flex; flex-wrap: wrap; column-gap: 5px; align-items: baseline; }
+.home-cool-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.home-fans { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px 18px; margin-top: 12px; color: var(--muted); font-size: 12.5px; }
+.home-fans b { display: block; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.home-fans > span { min-width: 0; }
+.home-fans .fan-st { display: block; margin-top: 2px; }
 .dev-ev { margin-top: 10px; font-size: 12px; }
 .home-help { display: flex; justify-content: center; margin-top: 14px; }
 
