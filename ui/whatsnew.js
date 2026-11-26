@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.89',
+    en: ['A tidier look: on Home the fans sit in an even grid with the GPU temperature beside the title; Lian Li fan groups show their speed choice on the same line; Settings › Files has buttons of one size; sign-in buttons no longer break onto two lines; Notifications close with the cross in the corner.'],
+    ru: ['Аккуратнее вид: на главной вентиляторы стоят ровной сеткой, а температура GPU рядом с заголовком; у групп вентиляторов Lian Li выбор скорости в той же строке; в «Настройки › Файлы» кнопки одного размера; кнопки входа больше не переносятся на две строки; «Уведомления» закрываются крестиком в углу.'],
+    fr: ['Un aspect plus net : sur l’Accueil, les ventilateurs forment une grille régulière, la température du GPU à côté du titre ; les groupes de ventilateurs Lian Li affichent le choix de vitesse sur la même ligne ; dans Paramètres › Fichiers, les boutons ont tous la même taille ; les boutons de connexion ne se coupent plus sur deux lignes ; les Notifications se ferment avec la croix dans le coin.'] },
   { v: '0.4.88',
     en: ['Home: a line for your scenarios (haku Pro) shows how many are on and which one is in charge now, or why none is. Manage opens their list.',
       'Integrations: when a firewall rule of yours blocks the phone page, a button opens Windows Firewall.',
