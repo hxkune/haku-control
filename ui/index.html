@@ -121,6 +121,11 @@
       <div class="btn-row"><button class="btn small ghost" type="button" id="home-go-fx"><span data-i18n="nav.effects">Lighting</span></button>
         <button class="btn small ghost" type="button" id="home-go-dev"><span data-i18n="nav.devices">Devices</span></button></div>
     </div>
+    <!-- the scenarios (haku Pro): how many are on, which one is in charge or why they wait; the editor is the profile menu's -->
+    <div class="card home-sum pc-only hidden" id="home-rules">
+      <div class="what"><b data-i18n="rules.title">Scenarios</b><small id="home-rules-st"></small></div>
+      <div class="btn-row"><button class="btn small ghost" type="button" id="home-rules-go"><span data-i18n="home.rules.go">Manage</span></button></div>
+    </div>
     <!-- the first-run guide (app.js updateGuide): first device, a test colour, the first profile -->
     <div class="card guide hidden" id="guide"></div>
     <!-- nothing found yet: where to start -->
@@ -792,7 +797,8 @@
             </div>
           </div>
           <div class="set-row"><div><b data-i18n="phone.pin">PIN</b><p class="muted" id="remote-paired"></p></div><b class="pin" id="remote-pin"></b></div>
-          <p class="pair-msg warn" id="remote-fw"></p>
+          <div class="pair-msg warn hidden" id="remote-fw"><span data-i18n="phone.fw"></span>
+            <div class="btn-row"><button class="btn small ghost" type="button" data-open="firewall"><span data-i18n="phone.fw.open">Open Windows Firewall</span></button></div></div>
           <div class="btn-row">
             <button class="btn small ghost" id="remote-newpin"><span data-i18n="phone.newpin">New PIN</span></button>
             <button class="btn small danger" id="remote-forget"><span data-i18n="phone.forget">Forget paired phones</span></button>
@@ -1234,6 +1240,8 @@
 <script src="qr.js"></script>
 <script src="fxpreview.js"></script>
 <script src="fans.js"></script>
+<script src="rules.js"></script>
+<script src="integr.js"></script>
 <script src="app.js"></script>
 <script src="intro.js"></script>
 <script>if (location.search === "?mock&test") document.write('<script src="mock.test.js"><\/script>');</script>

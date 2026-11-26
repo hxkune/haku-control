@@ -2198,6 +2198,34 @@
     }
   });
 
+  test('effect previews with animations off: one pass draws the cards, then the loop sleeps until a scroll or a state', async () => {
+    await fresh();
+    const w = motionWas(), raf = window.requestAnimationFrame, caf = window.cancelAnimationFrame, Q = new Map();
+    let id = 2e6, now = performance.now();
+    const n = () => [...Q.values()].filter(c => c === animate).length;
+    const tick = () => { const q = [...Q.values()]; Q.clear(); now += 34; q.forEach(c => c(now)); };
+    try {
+      showTab('effects'); motion('0'); await wait(80);
+      caf(ANIM.raf); ANIM.raf = 0;
+      window.requestAnimationFrame = cb => (Q.set(++id, cb), id);
+      window.cancelAnimationFrame = i => Q.delete(i);
+      document.body.classList.remove('idle');
+      const cvs = $('#fx-grid .fx canvas'); ok(cvs, 'no effect card');
+      cvs.scrollIntoView({ block: 'center' }); await wait(0); Q.clear(); ANIM.raf = PDLG.raf = CMP.raf = 0;   // the scroll woke it into the fake queue
+      cvs._sig = ''; ANIM.last = 0; previewWake(); tick();
+      ok(cvs._sig, 'the card was not drawn in the one pass: ' + JSON.stringify([tab, ANIM.raf, n(), cvs.getBoundingClientRect().top, innerHeight]));
+      ok(n() === 0 && !ANIM.raf, 'the loop still runs with animations off: ' + n());
+      $('main').dispatchEvent(new Event('scroll'));
+      ok(n() === 1, 'a scroll did not wake the loop: ' + n());
+      tick(); ok(n() === 0, 'the loop runs on after the scroll: ' + n());
+      motion('1'); previewWake(); tick(); tick();
+      ok(n() === 1, 'animations back on, the loop did not run on: ' + n());
+    } finally {
+      window.requestAnimationFrame = raf; window.cancelAnimationFrame = caf; Q.clear();
+      motionBack(w); ANIM.raf = 0; previewWake(); showTab('home');
+    }
+  });
+
   test('a code scene: a theme picked during it stays, it ends on its own timers, the background or Off ends it with its theme', async () => {
     await fresh();
     const w = motionWas(), th = () => document.documentElement.dataset.theme;
@@ -2568,6 +2596,50 @@
       setCfg('general', 'guide', 'dev'); document.documentElement.classList.add('remote'); updateGuide();
       ok($('#guide').classList.contains('hidden'), 'shown in the remote window');
     } finally { document.documentElement.classList.remove('remote'); setCfg('general', 'guide', ''); updateGuide(); }
+  });
+  test('home: the scenarios line counts the ones on, names the one in charge, says when they are paused, opens their list', async () => {
+    const H = $('#home-rules'), st = () => $('#home-rules-st').textContent, pro0 = { ...STATE.pro };
+    try {
+      showTab('home'); emit(STATE); await wait(60);
+      ok(H.classList.contains('hidden'), 'shown with no scenario');
+      // as the core keeps them (rule_save only; a plain set of [rule.N] is refused)
+      STATE.cfg['rule.1'] = { name: 'Evening', c1: 'idle 5', a1: 'bright 20' }; STATE.cfg['rule.2'] = { name: 'Night', on: '0', c1: 'idle 9', a1: 'bright 10' };
+      emit(STATE); await wait(60);
+      ok(H.offsetParent && st() === t('home.rules.n', 1, 2) + ' · ' + t('home.rules.none'), 'the line: ' + st());
+      STATE.rules.win = 1; emit(STATE); await wait(60);
+      ok(st().endsWith(t('home.rules.win', 'Evening')), 'the one in charge: ' + st());
+      STATE.rules.on = 0; emit(STATE); await wait(60);
+      ok(st().endsWith(t('home.rules.paused')), 'paused: ' + st());
+      Object.assign(STATE.pro, { on: 0, state: 'off' }); emit(STATE); await wait(60);
+      ok(st().endsWith(t('rules.st.pro')), 'without Pro: ' + st());
+      Object.assign(STATE.pro, pro0); STATE.rules.on = 1; STATE.rules.win = 0; emit(STATE); await wait(60);
+      ok(['en', 'ru', 'fr'].every(l => ['home.rules.n', 'home.rules.win', 'home.rules.none', 'home.rules.paused', 'home.rules.go'].every(k => STR[l][k])), 'a text is missing in a language');
+      $('#home-rules-go').click(); await until(() => SHEET.kind === 'rules' && $('#rules-panel').offsetParent, 'the scenarios window');
+      ok($('#rules-panel .rule[data-n="1"]') && $('#rules-panel').textContent.includes('Night'), 'not the list of scenarios');
+      ok($('#rules-panel').contains(document.activeElement), 'the focus is not in the window');
+      closeSheet();
+      const R0 = STATE.rules; STATE.rules = { none: 1 }; emit(STATE); await wait(60); STATE.rules = R0;
+      ok(H.classList.contains('hidden'), 'shown by the open build');
+    } finally {
+      Object.assign(STATE.pro, pro0); Object.assign(STATE.rules, { on: 1, win: 0 });
+      for (let i = 1; i <= 16; i++) delete STATE.cfg['rule.' + i];
+      emit(STATE); if (SHEET.kind === 'rules') closeSheet(); await wait(60);
+    }
+  });
+
+  test('phone: a firewall rule that blocks haku is shown with a button to the firewall, never changed by haku', async () => {
+    const en0 = cv('remote', 'enabled', '0'), cat0 = $('#set-cats .on')?.dataset.v || 'app';
+    try {
+      showTab('settings'); setCat('integr'); setCfg('remote', 'enabled', '1'); STATE.remote.fw_blocks = 1; emit(STATE); await wait(60); await fresh();
+      const m = $('#remote-fw'), b = m.querySelector('[data-open="firewall"]');
+      ok(!m.classList.contains('hidden') && m.offsetParent && m.textContent.includes(t('phone.fw')), 'the conflict line is not shown');
+      ok(b && b.offsetParent && b.textContent === t('phone.fw.open'), 'no firewall button');
+      b.click(); await wait(0);
+      ok(sent.length === 1 && sent[0].cmd === 'open' && sent[0].what === 'firewall', 'the button sent ' + JSON.stringify(sent));
+      ok(['en', 'ru', 'fr'].every(l => STR[l]['phone.fw.open']), 'the button text is missing in a language');
+      STATE.remote.fw_blocks = 0; emit(STATE); await wait(60);
+      ok(m.classList.contains('hidden'), 'shown with no blocking rule');
+    } finally { STATE.remote.fw_blocks = 0; setCfg('remote', 'enabled', en0); emit(STATE); await wait(30); setCat(cat0); showTab('home'); }
   });
 
   test('devices: one catalogue, each device once in a steady order; search by name or model; no results told from no devices; the filter kept', async () => {
