@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.87',
+    en: ['Phone control: the firewall rule haku control adds now works only on networks Windows calls private, and haku control no longer touches rules it did not make. If a rule of yours blocks haku control, Integrations says so. On a public Wi-Fi, make the network private in its settings to reach the phone page.',
+      'Reliability: going to sleep no longer waits on a fan controller that stopped answering, and the phone page’s server closes a request that stalls or arrives cut short instead of waiting for it.'],
+    ru: ['Управление с телефона: правило брандмауэра, которое добавляет haku control, теперь действует только в сетях, которые Windows считает частными, и haku control больше не трогает чужие правила. Если ваше правило блокирует haku control, об этом скажет раздел «Интеграции». В публичной Wi-Fi сети сделайте её частной в настройках сети, чтобы открыть страницу на телефоне.',
+      'Надёжность: переход в сон больше не ждёт контроллер вентиляторов, который перестал отвечать, а сервер страницы для телефона закрывает зависший или обрезанный запрос, а не ждёт его.'],
+    fr: ['Contrôle depuis le téléphone : la règle de pare-feu qu’ajoute haku control ne s’applique plus qu’aux réseaux que Windows considère comme privés, et haku control ne touche plus aux règles qu’il n’a pas créées. Si l’une de vos règles bloque haku control, Intégrations l’indique. Sur un Wi-Fi public, rendez le réseau privé dans ses paramètres pour ouvrir la page du téléphone.',
+      'Fiabilité : la mise en veille n’attend plus un contrôleur de ventilateurs qui ne répond plus, et le serveur de la page du téléphone ferme une requête bloquée ou tronquée au lieu de l’attendre.'] },
   { v: '0.4.86',
     en: ['Cooling: the fan cards are easier to read. Each fan shows its rpm and a bar of its speed; a curve shows its temperature next to its name. A plain ✓ means the controller confirmed the speed; a status is written out only when something needs a look. A channel left to its QUADRO no longer shows a 0%.'],
     ru: ['Охлаждение: карточки вентиляторов стали понятнее. У каждого вентилятора обороты и полоска скорости, у кривой рядом с названием её температура. Простая ✓ значит, что контроллер подтвердил скорость; статус пишется словами, только когда нужно что-то проверить. У канала, оставленного на QUADRO, больше нет «0%».'],
