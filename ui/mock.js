@@ -42,6 +42,8 @@ window.chrome = { webview: {
     // ui_web.cpp set: scenarios, LCD layouts, scenes and groups only through their own commands; a new track in [custom]: Pro
     if (o.cmd === 'set' && (/^(rule|lcd|cscene|cgroup)\./i.test(o.s) || o.s === 'custom' && !tracksOk([[o.k, o.v]]))) { setTimeout(() => emit(STATE), 30); return; }
     if (o.cmd === 'set') (C[o.s] = C[o.s] || {})[o.k] = o.v;
+    // devices.c load_config: a device's name is [dev.N] name
+    if (o.cmd === 'set' && /^dev\.\d+$/.test(o.s) && o.k === 'name') { const d = STATE.ext.devs.find(x => 'dev.' + x.id === o.s); if (d) d.name = o.v; }
     // pro/wallpaper.cpp: 6 pictures in the lights' colours (SVG stand-ins), one set as the wallpaper, the old one kept
     if (/^wall_/.test(o.cmd)) { const W = STATE.walls, hues = [0, 210, 280, 330, 190, 20];
       const pic = (h, k) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 9"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="hsl(${h},80%,${30 + k * 4}%)"/><stop offset="1" stop-color="hsl(${(h + 40) % 360},70%,12%)"/></linearGradient></defs><rect width="16" height="9" fill="url(#g)"/></svg>`);
@@ -211,6 +213,7 @@ window.chrome = { webview: {
       emit(STATE); }, 300);
     if (o.cmd === 'set' && o.s === 'fans') fanMode(o.k, o.v);
     if (o.cmd === 'fans_set') o.kv.split('\n').forEach(l => { const e = l.indexOf('='); fanMode(l.slice(0, e), l.slice(e + 1)); });
+    if (['effect', 'brightness', 'preset', 'profile', 'power'].includes(o.cmd)) STATE.preview = '';
     if (o.cmd === 'effect') STATE.effect = G.effect = o.id;
     // main.c app_preset_save: id 0 takes the first free slot (never one in use); a new preset carries the effect's settings as fx.*
     if (o.cmd === 'preset_save') { let id = +o.id; if (!id) { id = 1; while (C['preset.' + id] && C['preset.' + id].name) id++; }
@@ -239,6 +242,13 @@ window.chrome = { webview: {
     if (o.cmd === 'profile_dup') { let n = 1; while (C['profile.' + n] && C['profile.' + n].name) n++; C['profile.' + n] = { name: o.name }; setTimeout(() => emit(STATE), 60); }
     // main.c app_test: one zone's steady test colour, '' ends it (the core's own minute is not run here)
     if (o.cmd === 'dev_test') { STATE.test = o.zone; setTimeout(() => emit(STATE), 30); }
+    // main.c app_preview / app_preview_keep (preview.h): warm white over those zones, '' ends it; keep saves it as their white
+    // light (1), finds it ended (0) or, window.mockKeepFail, the settings full (-1); its own 45 s are not run here
+    if (o.cmd === 'preview') { STATE.preview = o.zones || ''; STATE.test = ''; setTimeout(() => emit(STATE), 30); }
+    if (o.cmd === 'preview_keep') { const z = STATE.preview ? STATE.preview.split(',') : []; STATE.preview = '';
+      const r = !z.length ? 0 : window.mockKeepFail ? -1 : 1;
+      if (r === 1) { z.forEach(s => Object.assign(C[s] = C[s] || {}, { mode: 'white', kelvin: '2700', brightness: '55' })); if (STATE.effect === 'off') STATE.effect = G.effect = 'flow'; }
+      setTimeout(() => { emit({ type: 'preview_done', r }); emit(STATE); }, 40); }
     // devices.c: the scan, short here; window.mockScanStuck: one that does not end
     if (o.cmd === 'scan') { STATE.ext.scanning = 1; emit(STATE); if (!window.mockScanStuck) setTimeout(() => { STATE.ext.scanning = 0; emit(STATE); }, 300); }
     // devices.c ext_add: the same hardware is never added twice
@@ -264,7 +274,7 @@ window.chrome = { webview: {
 const LAY = LAYOUTS[location.hash.slice(1)], MULTI = location.hash === '#multi';
 const panels = (LAY || LAYOUTS.blocks).panels;
 const STATE = {
-  type: 'state', test: '', unsaved: 0, cfg_full: 0, prof: { err: 0, id: 0, n: 0 }, perf: { fps10: 299, chg10: 299, avg_us: 420, max_us: 1900, want: 30 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
+  type: 'state', test: '', preview: '', unsaved: 0, cfg_full: 0, prof: { err: 0, id: 0, n: 0 }, perf: { fps10: 299, chg10: 299, avg_us: 420, max_us: 1900, want: 30 }, hw: { busy: 0, done: 1, items: [{ cat: 'board', maker: 'MSI', name: 'MAG B550 TOMAHAWK', id: '' }, { cat: 'ram', maker: 'Corsair', name: '2 × CMW16GX4M2C3200C16', id: '' },
     { cat: 'gpu', maker: 'ASUS', name: 'NVIDIA GeForce RTX 4070', id: '10DE:2786' }, { cat: 'usb', maker: 'Corsair', name: 'K70 RGB PRO', id: '1B1C:1BB3' },
     { cat: 'usb', maker: 'Wooting', name: 'Wooting 60HE v2', id: '31E3:1342' }, { cat: 'usb', maker: 'Lian Li', name: 'LianLi-Strimer Plus-1.5', id: '0CF2:A200' }] },
   orgb: { state: 2, exe: 1, auto: 1, ours: 1, setup: 0, pct: 0, err: '', ctls: [{ i: 0, type: 5, kind: 'keyboard', leds: 104, name: 'Keyboard' }, { i: 1, type: 3, kind: 'cooler', leds: 16, name: 'Fan hub' },

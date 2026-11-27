@@ -168,6 +168,8 @@ static rgbf kelvin_rgb(int k) {
     return c;
 }
 
+rgbf effects_kelvin(int k) { return kelvin_rgb(k); }
+
 static int zone_fx(int z) { return zeffect[z] >= 0 ? zeffect[z] : last_fx; }
 
 int effects_zone_white(int zone, int *kelvin) {

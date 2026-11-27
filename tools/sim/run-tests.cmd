@@ -20,6 +20,7 @@ if not exist "%T%" mkdir "%T%"
 set "CF=/nologo /utf-8 /D_CRT_SECURE_NO_WARNINGS /DUNICODE /D_UNICODE /Fo:%T%\ /Isrc"
 
 call :one xfade    tools\sim\xfade_test.c
+call :one preview  tools\sim\preview_test.c
 call :one tryx     tools\sim\tryx_test.c
 call :one effects  /O2 tools\sim\effects_test.c
 rem the window's previews (ui\fxpreview.js) against the engine just built: a fresh dump each run, under a new name

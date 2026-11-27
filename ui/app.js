@@ -729,7 +729,7 @@ addEventListener('resize', navMark);
 function enterFrom(x, y) { const m = $('main').style; m.setProperty('--inx', x); m.setProperty('--iny', y); }
 function showTab(p) {
   p = route(p);
-  if (p !== 'home' && GUIDE.test) { gdTestEnd(); updateGuide(); }   // the test colour is only on while its step is in view
+  if (p !== 'home' && (GUIDE.test || GUIDE.pv === 'on')) { gdTestEnd(); gdPvEnd(); updateGuide(); }   // the test light and the preview are only on while their step is in view
   SHEET.back = null; closeSheet();   // a page change keeps the focus where it went
   if (tab) tabScroll[tab] = $('main').scrollTop;   // back to the same place; a jump to a card scrolls after this
   const ord = $$('#nav button').map(b => b.dataset.tab), dir = Math.sign(ord.indexOf(p) - ord.indexOf(tab)) || 1;
@@ -6580,16 +6580,18 @@ function helpOpen(topic) {
 document.addEventListener('click', e => { const b = e.target.closest('[data-help]'); if (b) helpOpen(b.dataset.help); });
 
 // ------------------------------------------------------------------ first-run guide: a card on Home from the first device to
-// the first profile, through what is already there (the scan, the device card, the path pair, profile_save).
-// [general] guide = dev | path | test | save (where it was left) | done | skip; no key: an install from before it, not offered
-const GUIDE = { last: '', scanAt: 0, scanned: 0, adding: new Set(), dev: 0, test: '', seen: 0, said: '', prob: '', ok: 0, saving: null, err: '', name: '', tips: null, focus: 0 };
+// the first profile, through what is already there (the scan, the device names, the path pair, profile_save).
+// [general] guide = dev | path | test | try | save (where it was left) | done | skip; no key: an install from before it, not offered
+// dev: the key of the device shown by light: an added device's id ('12'), 'ram', 'gpu', 'light:<i>' (a bulb), 'nano:<slot>'
+const GUIDE = { last: '', scanAt: 0, scanned: 0, adding: new Set(), dev: '', dvn: '', test: '', seen: 0, said: '', prob: '', saving: null, err: '', name: '', tips: null, focus: 0,
+  okIds: new Set(), nm: '', nmv: null, fx: '', pv: '', pvSeen: 0, pvAt: 0, pvList: [], pvZ: [] };
 const gdStep = () => cv('general', 'guide', '');
-const gdOn = () => !document.documentElement.classList.contains('remote') && (['dev', 'path', 'test', 'save'].includes(gdStep()) || !!GUIDE.tips);
+const gdOn = () => !document.documentElement.classList.contains('remote') && (['dev', 'path', 'test', 'try', 'save'].includes(gdStep()) || !!GUIDE.tips);
 // an OpenRGB device that may be one the PC also has through its own driver: only offered, the user says (a name is no proof)
 const gdPairs = () => S.ext.devs.filter(o => o.kind === 'openrgb' && pathPairs(o).length);
-const gdSteps = () => ['dev', ...(gdStep() === 'path' || gdPairs().length ? ['path'] : []), 'test', 'save'];
+const gdSteps = () => ['dev', ...(gdStep() === 'path' || gdPairs().length ? ['path'] : []), 'test', ...(gdStep() === 'try' || gdCan().length ? ['try'] : []), 'save'];
 const gdAny = () => heroItems(true).length;   // the same catalogue as Home and Lighting: haku's own RAM and MSI count too
-// haku's own drivers (ENE memory, the MSI board or card): why: '' when the test colour can go there
+// haku's own drivers (ENE memory, the MSI board or card): why: '' when the test light can go there
 function gdDirect() {
   const on = k => cv('layout', k, '1') !== '0', L = [];
   if (S.sticks) { const w = !on('ram_enabled') ? t('cat.st.off') : ramSrc().includes('haku') ? '' : ramSrcText();
@@ -6598,12 +6600,16 @@ function gdDirect() {
     L.push({ id: 'gpu', kind: 'MSI', name: stripName(), zone: 'zone.gpu', why: w, lv: w || t('ram.src.haku') }); }
   return L;
 }
-// what can show the test colour: id is 'ram' | 'gpu' | an added device's number
-const gdCan = () => [...gdDirect().filter(x => !x.why), ...S.ext.devs.filter(d => !gdWhyNot(d)).map(d => ({ id: d.id, name: d.name, zone: 'zone.dev' + d.id }))];
-// why a device can't show the test colour here (then its own card or page is the way), '' when it can
+// what can show the test light, by stable keys (an added device's id, a bulb's slot, a panel controller's slot; never the
+// row's place in the list); nm: how it gets its name ('ext' here, 'aidot' and 'nano' from their own apps)
+const gdCan = () => [
+  ...gdDirect().filter(x => !x.why).map(x => ({ id: x.id, kind: x.kind, name: x.name, small: x.lv, zone: x.zone })),
+  ...S.ext.devs.filter(d => !gdWhyNot(d)).map(d => ({ id: String(d.id), kind: kindTitle(d.kind), name: d.name, small: [d.host, gdLevel(d)].filter(Boolean).join(' · '), zone: 'zone.dev' + d.id, nm: 'ext' })),
+  ...proLocked() ? [] : [...S.bulbs.map((x, i) => x.online && { id: 'light:' + i, kind: t('chip.lamps'), name: bulbName(i), small: x.ip || '', zone: 'zone.light' + (i + 1), nm: 'aidot' }),
+    ...nanoCtls().map(n => n.online && { id: 'nano:' + n.slot, kind: 'Nanoleaf', name: nanoName(n), small: n.ip || '', zone: nanoZone(n.slot), nm: 'nano' })].filter(Boolean)];
+// why an added device can't show the test light here (then its own card is the way), '' when it can
 function gdWhyNot(d) {
   if (isScreen(d)) return t('gd.t.screen');
-  if (cv('dev.' + d.id, 'caps', '') === 'white') return t('gd.t.white');
   if (zonesNeed(d) || !d.online || !d.enabled || d.own || d.held || d.covered || (d.pro && proLocked()) || (d.kind === 'openrgb' && d.cap >= 4)) return devStatus(d);
   return '';
 }
@@ -6617,6 +6623,16 @@ function gdLevel(d) {
   if (d.kind === 'openrgb' && d.cap === 3) return t('gd.lv.static');
   return t('gd.lv.fx');
 }
+// Ready | Needs connecting | Not available, from the same status the device cards show
+const gdState = (k, txt) => `<span class="gd-state ${k}">${txt || t('gd.st.' + k)}</span>`;
+const gdExtState = d => zonesNeed(d) || !d.online || !d.enabled ? 'need' : !isScreen(d) && gdWhyNot(d) ? 'no' : 'ok';
+// whether the device still answers (RAM and MSI: haku's own, nothing to wait for)
+function gdOnline(k) {
+  if (/^\d+$/.test(k)) return !!devById(+k)?.online;
+  if (k.startsWith('light:')) return !!S.bulbs[+k.slice(6)]?.online;
+  if (k.startsWith('nano:')) return !!nanoCtls().find(n => String(n.slot) === k.slice(5))?.online;
+  return true;
+}
 // one pair's way, as on the OpenRGB card: own first, then path, then the pair itself (the core never sees a wrong mix)
 function pathSet(d, val) {
   const sec = 'dev.' + d.id, [v, n] = val.split(':');
@@ -6626,18 +6642,29 @@ function pathSet(d, val) {
   if (own || devById(+n)?.own) setCfg('dev.' + n, 'own', own);
   setCfg(sec, 'path', v === 'orgb' ? 'openrgb' : 'direct'); setCfg(sec, 'same', n);
 }
-// the test colour: on only after Check; the core ends it by itself after a minute (TEST_MS), and on a layout change
+// the test light: on only after "Show by light"; the core ends it by itself after a minute (TEST_MS), and on a layout change
 function gdTestEnd(why) {
   if (!GUIDE.test) return;
-  const d = typeof GUIDE.dev === 'number' ? devById(GUIDE.dev) : { online: 1 };   // RAM and MSI: haku's own, no answer to wait for
   send({ cmd: 'dev_test', zone: '' });
   GUIDE.test = ''; GUIDE.seen = 0;
   // haku sends the lighting as set now; whether the device shows it again is only known while it answers
-  GUIDE.said = why === 'core' ? t('gd.t.ended') : d && d.online ? t('gd.t.back') : t('gd.t.lost');
+  GUIDE.said = why === 'core' ? t('gd.t.ended') : gdOnline(GUIDE.dev) ? t('gd.t.back') : t('gd.t.lost', GUIDE.dvn);
+}
+// "Back as it was": the overlay goes, so what each device showed before (also off) shows again; a change by hand (tray, phone)
+// has already ended it in the core, and then this changes nothing (main.c app_preview, preview.h)
+function gdPvEnd() {
+  if (GUIDE.pv !== 'on') return;
+  send({ cmd: 'preview', zones: '' });
+  GUIDE.pv = 'back';
+}
+function gdPvDone(m) {
+  if (GUIDE.pv !== 'keeping') return;
+  GUIDE.pv = m.r === 1 ? 'kept' : m.r === 0 ? 'ended' : 'full';
+  updateGuide();
 }
 function gdGo(s) {
-  gdTestEnd();
-  if (s !== 'test') { GUIDE.said = ''; GUIDE.prob = ''; GUIDE.ok = 0; }
+  gdTestEnd(); gdPvEnd();
+  GUIDE.said = ''; GUIDE.prob = ''; GUIDE.nm = ''; GUIDE.nmv = null; GUIDE.pv = '';
   GUIDE.err = '';
   setCfg('general', 'guide', s);
   updateGuide();
@@ -6653,6 +6680,14 @@ function gdName() {
   while (P.includes(t('prof.n', k))) k++;
   return t('prof.n', k);
 }
+// the name the user gives right after "Yes, I see it": [dev.N] name, the one the cards, Home, the tray, the phone and the
+// scenarios already read (devices.c load_config); a rescan finds the device by its host and keeps it
+function gdNameSave() {
+  const d = devById(+GUIDE.nm), v = ($('#gd-nm')?.value || '').replace(/[;#\[\]=]/g, '').trim();
+  if (d && v && v !== d.name) { setCfg('dev.' + d.id, 'name', v); d.name = v; renderOwnList(); }
+  GUIDE.said = d && v ? t('gd.n.done', v) : ''; GUIDE.nm = ''; GUIDE.nmv = null; GUIDE.fx = '[data-g="next"]';
+  updateGuide();
+}
 function gdSave() {
   if (GUIDE.saving) return;   // a second click while the first is on its way
   const name = $('#gd-name').value.replace(/[;#\[\]=]/g, ' ').trim() || gdName();
@@ -6665,12 +6700,14 @@ const GD_ICON = {
   dev: '<path d="M4 7h16v10H4z"/><path d="M8 17v3M16 17v3M7 11h.01M11 11h6"/>',
   path: '<path d="M4 6h6l4 6-4 6H4"/><path d="M14 12h6"/>',
   test: '<circle cx="12" cy="11" r="5"/><path d="M10 19h4M12 3v1M5 5l.7.7M19 5l-.7.7"/>',
+  try: '<path d="M4 17h16M7 17a5 5 0 0 1 10 0"/><path d="M12 6v2M5.6 9.6l1.4 1.4M18.4 9.6 17 11M8 21h8"/>',
   save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
   done: '<path d="M5 12l5 5L20 7"/>',
 };
 function gdBody(s) {
   const E = S.ext, b = (g, txt, cls, extra) => `<button class="btn small${cls == null ? ' ghost' : cls}" type="button" data-g="${g}"${extra || ''}><span>${txt}</span></button>`;
   const row = (kind, name, small, end) => `<div class="found-row"><span class="kind">${esc(kind)}</span><div class="what"><b>${esc(name)}</b><small>${esc(small)}</small></div><span class="added">${end || ''}</span></div>`;
+  const id = k => ` data-id="${esc(k)}"`, card = k => b('card', t('gd.t.card'), ' ghost', id(k));
   if (s === 'dev') {
     const err = E.scanning && GUIDE.scanAt && Date.now() - GUIDE.scanAt > 30000;
     if (!E.scanning && GUIDE.scanAt) GUIDE.scanned = 1;
@@ -6679,9 +6716,10 @@ function gdBody(s) {
     const st = err ? t('gd.d.err') : E.scanning ? t('dev.scanning.note') : fresh.length ? t('dev.found', fresh.length) : none ? t('gd.d.none') : '';
     const found = fresh.map(f => { const k = [f.kind, f.host, f.sub].join('|'), i = E.found.indexOf(f);
       return row(f.title, f.name || f.title, f.host + (f.info ? ' · ' + f.info : ''), GUIDE.adding.has(k) ? `<span>${t('gd.d.adding')}</span>` : b('add', t('dev.add'), '', ` data-i="${i}"`)); }).join('');
-    const have = [...gdDirect().map(x => row(x.kind, x.name, x.lv)), ...E.devs.map(d => row(kindTitle(d.kind), d.name, gdLevel(d))),
-      ...S.bulbs.map((x, i) => row(t('chip.lamps'), bulbName(i), x.online ? t('gd.lv.page') : t('dev.offline'))),
-      ...nanoCtls().map(n => row('Nanoleaf', nanoName(n), n.online ? t('gd.lv.page') : t('dev.offline')))].join('');
+    const pl = proLocked(), have = [...gdDirect().map(x => row(x.kind, x.name, x.lv, gdState(x.why ? 'no' : 'ok'))),
+      ...E.devs.map(d => row(kindTitle(d.kind), d.name, [d.host, gdLevel(d)].filter(Boolean).join(' · '), gdState(gdExtState(d)))),
+      ...S.bulbs.map((x, i) => row(t('chip.lamps'), bulbName(i), pl ? t('dev.pro') : x.online ? x.ip || '' : t('dev.offline'), gdState(pl ? 'no' : x.online ? 'ok' : 'need'))),
+      ...nanoCtls().map(n => row('Nanoleaf', nanoName(n), pl ? t('dev.pro') : n.online ? n.ip || '' : t('dev.offline'), gdState(pl ? 'no' : n.online ? 'ok' : 'need')))].join('');
     return { st, err: err || none, x: `${found ? `<div class="found">${found}</div>` : ''}${have ? `<p class="gd-sub">${t('gd.d.have')}</p><div class="found">${have}</div>` : ''}`,
       more: (gdAny() || err || none ? b('scan', t('gd.d.rescan'), ' ghost', E.scanning && !err ? ' disabled' : '') : '') +
         b('manual', t('gd.d.manual')) + (err || none ? b('help-start', t('help.open')) : '') + (fansOn() ? b('fans', t('gd.d.fans')) : ''),
@@ -6697,25 +6735,52 @@ function gdBody(s) {
     return { st: '', x: x + `<p class="hint">${t('path.note')}</p>`, more: '', main: b('next', t('wz.next'), ' primary') };
   }
   if (s === 'test') {
-    const can = gdCan(), d = can.find(x => x.id === GUIDE.dev) || can[0];
-    if (d && !GUIDE.test) GUIDE.dev = d.id;
+    const can = gdCan();
     if (GUIDE.test && S.test === GUIDE.test) GUIDE.seen = 1;
     else if (GUIDE.test && GUIDE.seen) gdTestEnd('core');   // the core ended it (its minute, a layout change), not the page
-    if (GUIDE.test && typeof GUIDE.dev === 'number' && !devById(GUIDE.dev)?.online) gdTestEnd();   // lost or removed meanwhile
+    if (GUIDE.test && !gdOnline(GUIDE.dev)) gdTestEnd();     // lost or removed meanwhile: said by name
+    if (GUIDE.nm && !devById(+GUIDE.nm)) { GUIDE.nm = ''; GUIDE.nmv = null; }   // removed while being named
     const on = GUIDE.test && S.test === GUIDE.test;
-    const not = [...gdDirect().filter(x => x.why).map(x => row(x.kind, x.name, x.why, b('card', t('gd.t.card'), ' ghost', ` data-id="${x.id}"`))), ...S.ext.devs.filter(x => gdWhyNot(x)).map(x => row(kindTitle(x.kind), x.name, gdWhyNot(x), b('card', t('gd.t.card'), ' ghost', ` data-id="${x.id}"`))),
-      ...S.bulbs.map((x, i) => row(t('chip.lamps'), bulbName(i), t('gd.t.page'), b('tab-bulbs', t('home.open')))),
-      ...nanoCtls().map(n => row('Nanoleaf', nanoName(n), t('gd.t.page'), b('tab-nano', t('home.open'))))].join('');
-    const pick = can.length > 1 && !GUIDE.test ? `<label class="num"><span>${t('gd.t.dev')}</span><select class="select" id="gd-dev">${can.map(x =>
-      `<option value="${x.id}"${x.id === GUIDE.dev ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : '';
+    const nmBox = `<div class="gd-nm"><label class="num"><span>${t('gd.n.label')}</span><input type="text" id="gd-nm" maxlength="40" spellcheck="false" autocomplete="off"></label>
+      <div class="btn-row">${b('nm-skip', t('gd.n.skip'))}${b('nm-ok', t('gd.n.save'), ' primary')}</div></div>`;
+    const rows = can.map(x => {
+      const k = x.id, seen = GUIDE.okIds.has(k);
+      const end = GUIDE.test && GUIDE.dev === k ? b('no', t('gd.t.no'), null, id(k)) + b('yes', t('gd.t.yes'), ' primary', id(k))
+        : (seen ? gdState('ok', t('gd.t.seen')) : '') + b('show', t('gd.t.show'), seen || GUIDE.test ? null : '', id(k));
+      return row(x.kind, x.name, x.small, end) + (GUIDE.nm === k ? nmBox : '');
+    }).join('');
+    const pl = proLocked();
+    const not = [...gdDirect().filter(x => x.why).map(x => row(x.kind, x.name, x.why, card(x.id))),
+      ...S.ext.devs.filter(x => gdWhyNot(x)).map(x => row(kindTitle(x.kind), x.name, gdWhyNot(x), card(x.id))),
+      ...S.bulbs.map((x, i) => (pl || !x.online) && row(t('chip.lamps'), bulbName(i), pl ? t('dev.pro') : t('dev.offline'), card('light:' + i))),
+      ...nanoCtls().map(n => (pl || !n.online) && row('Nanoleaf', nanoName(n), pl ? t('dev.pro') : t('dev.offline'), card('nano:' + n.slot)))].filter(Boolean).join('');
     const prob = GUIDE.prob && GUIDE.prob !== 'ask' ? `<p class="hint">${t('gd.pr.' + GUIDE.prob + '.t')}</p><div class="btn-row">${GUIDE.prob === 'dark' ? b('help-offline', t('help.open'))
-      : GUIDE.prob === 'blink' ? b('help-conflict', t('help.open')) : b('card', t('gd.t.card'), ' ghost', ` data-id="${GUIDE.dev}"`)}${b('check', t('gd.t.again'))}</div>` : '';
-    const ask = GUIDE.test ? `<div class="btn-row">${b('works', t('gd.t.works'), ' primary')}${b('problem', t('gd.t.problem'))}${b('stop', t('gd.t.stop'))}</div>` : '';
+      : GUIDE.prob === 'blink' ? b('help-conflict', t('help.open')) : card(GUIDE.dev)}${b('show', t('gd.t.again'), '', id(GUIDE.dev))}</div>` : '';
     const list = GUIDE.prob === 'ask' ? `<div class="btn-row gd-probs">${['dark', 'blink', 'other', 'colour'].map(p => b('pr-' + p, t('gd.pr.' + p))).join('')}</div>` : '';
-    const st = GUIDE.test ? (on ? t('gd.t.on', (can.find(x => x.id === GUIDE.dev) || {}).name || '') : t('gd.t.sending')) : GUIDE.ok ? t('gd.t.ok') : GUIDE.said;
-    return { st, x: (d ? pick + `<p class="hint">${t('gd.t.what')}</p>` + ask + list + prob : `<p class="hint">${t('gd.t.none')}</p>`) +
+    const st = GUIDE.test ? (on ? t('gd.t.on', GUIDE.dvn) : t('gd.t.sending')) : GUIDE.said;
+    return { st, x: (can.length ? `<div class="found">${rows}</div>` + list + prob : `<p class="hint">${t('gd.t.none')}</p>`) +
         (not ? `<p class="gd-sub">${t('gd.t.other')}</p><div class="found">${not}</div>` : ''),
-      more: '', main: GUIDE.test ? '' : d && !GUIDE.ok && !GUIDE.prob ? b('check', t('gd.t.check'), ' primary') : b('next', t('wz.next'), GUIDE.ok || !d ? ' primary' : ' ghost') };
+      more: '', main: GUIDE.test ? '' : b('next', t('wz.next'), !GUIDE.nm && (GUIDE.okIds.size || !can.length) ? ' primary' : null) };
+  }
+  if (s === 'try') {
+    const cur = (S.preview || '').split(',').filter(Boolean), Z = GUIDE.pvZ;
+    if (GUIDE.pv === 'on') {
+      // the status names the zones in its own order: the same set is what counts
+      if (cur.length === Z.length && Z.every(z => cur.includes(z))) GUIDE.pvSeen = 1;
+      else if (GUIDE.pvSeen && !cur.length) GUIDE.pv = 'ended';   // its time, or a change by hand (tray, phone, a scenario)
+      else if (!GUIDE.pvSeen && Date.now() - GUIDE.pvAt > 6000) GUIDE.pv = 'noans';
+      if (GUIDE.pv === 'on' && Date.now() - GUIDE.pvAt > 46500) GUIDE.pv = 'ended';   // the core's own 45 s are over
+    }
+    if (GUIDE.pv === 'keeping' && Date.now() - GUIDE.pvAt > 6000) GUIDE.pv = 'noans';
+    const L = GUIDE.pv ? GUIDE.pvList : gdCan().map(x => ({ id: x.id, kind: x.kind, name: x.name }));
+    const lost = GUIDE.pv ? L.filter(x => !gdOnline(x.id)).map(x => x.name) : [];
+    const rows = L.map(x => row(x.kind, x.name, '', lost.includes(x.name) ? gdState('need', t('dev.offline')) : '')).join('');
+    const pv = GUIDE.pv, bad = pv === 'full' || pv === 'noans';
+    const st = (pv ? t('gd.y.' + pv) : '') + (lost.length ? ' ' + t('gd.y.lost', lost.join(', ')) : '');
+    const done = pv && pv !== 'on' && pv !== 'keeping';
+    return { st, err: bad || !!lost.length, x: `<p class="gd-sub">${t('gd.y.in')}</p><div class="found">${rows}</div>`,
+      more: pv === 'on' ? b('revert', t('gd.y.revert')) : pv === 'keeping' ? '' : b('try', t('gd.y.try'), done ? null : ' primary', L.length ? '' : ' disabled'),
+      main: pv === 'on' ? b('keep', t('gd.y.keep'), ' primary') : pv === 'keeping' ? b('keep', t('gd.y.keep'), ' primary', ' disabled') : b('next', t('wz.next'), done ? ' primary' : null) };
   }
   if (s === 'save') {
     const P = profiles(), full = P.length >= PROFILE_MAX, sv = GUIDE.saving;
@@ -6732,8 +6797,8 @@ function gdBody(s) {
   }
 }
 function gdFinish(name) {
-  gdTestEnd();
-  GUIDE.tips = { name, prof: 1, tray: 1 };
+  gdTestEnd(); gdPvEnd();
+  GUIDE.tips = { name, devs: gdCan().map(x => x.name), prof: 1, tray: 1 };
   setCfg('general', 'guide', 'done');
   updateGuide();
 }
@@ -6747,7 +6812,7 @@ function updateGuide() {
   if (s === 'done') {
     const T = GUIDE.tips, tip = (k, txt) => T[k] ? `<div class="gd-tip"><p>${txt}</p><button class="btn small ghost" type="button" data-g="tip-${k}"><span>${t('gd.tip.ok')}</span></button></div>` : '';
     html = `<div class="gd-top"><svg class="gd-ic" viewBox="0 0 24 24" aria-hidden="true">${GD_ICON.done}</svg><h3 id="gd-h" tabindex="-1">${t('gd.done.h')}</h3></div>
-      <p class="note" role="status">${esc(T.name ? t('gd.done.t', T.name) : t('gd.done.t0'))}</p>${tip('prof', t('gd.tip.prof'))}${tip('tray', t('gd.tip.tray'))}`;
+      <p class="note" role="status">${esc(T.name ? t('gd.done.t', T.name) : t('gd.done.t0'))}${T.devs?.length ? ' ' + esc(t('gd.done.devs', T.devs.join(', '))) : ''}</p>${tip('prof', t('gd.tip.prof'))}${tip('tray', t('gd.tip.tray'))}`;
   } else {
     const L = gdSteps(), i = Math.max(0, L.indexOf(s)), B = gdBody(s);
     if (!B) return;   // finished meanwhile: gdFinish drew it
@@ -6760,19 +6825,27 @@ function updateGuide() {
       <div class="btn-row">${i ? `<button class="btn small ghost" type="button" data-g="back"><span>${t('wz.back')}</span></button>` : ''}${B.more}${B.main}</div>`;
   }
   if (el.dataset.html === html) return;
-  // drawn anew: the control that had focus gets it back, and a new step moves it to its heading
-  const a = document.activeElement, was = el.contains(a) ? (a.id ? '#' + a.id : a.dataset.g ? `[data-g="${a.dataset.g}"]` : a.dataset.gp ? `[data-gp="${a.dataset.gp}"]` : '') : '';
+  // drawn anew: the control that had focus gets it back (a name being typed keeps its text and selection: a device found
+  // meanwhile only adds a row), a new step moves it to its heading, an action to the control it leads to
+  const a = document.activeElement, was = el.contains(a) ? (a.id ? '#' + a.id : a.dataset.g ? `[data-g="${a.dataset.g}"]${a.dataset.id != null ? `[data-id="${CSS.escape(a.dataset.id)}"]` : ''}` : a.dataset.gp ? `[data-gp="${a.dataset.gp}"]` : '') : '';
   const nm = $('#gd-name'); if (nm) GUIDE.name = nm.value;
+  const ni = $('#gd-nm'), sel = ni && [ni.selectionStart, ni.selectionEnd]; if (ni) GUIDE.nmv = ni.value;
   el.dataset.html = html; el.innerHTML = html;
-  const ni = $('#gd-name'); if (ni) ni.value = GUIDE.name || (GUIDE.name = gdName());
+  const n2 = $('#gd-name'); if (n2) n2.value = GUIDE.name || (GUIDE.name = gdName());
+  const m2 = $('#gd-nm'); if (m2) m2.value = GUIDE.nmv ?? '';
+  const fx = GUIDE.fx; GUIDE.fx = '';
   if (GUIDE.last !== s) { GUIDE.last = s; if (GUIDE.focus) $('#gd-h').focus({ preventScroll: true }); }
-  else if (was) (el.querySelector(was) || $('#gd-h')).focus({ preventScroll: true });
+  else if (fx && el.querySelector(fx)) { const f = el.querySelector(fx); f.focus({ preventScroll: true }); if (f.id === 'gd-nm') f.select(); }
+  else if (was) {
+    const f = el.querySelector(was) || $('#gd-h'); f.focus({ preventScroll: true });
+    if (f === m2 && sel) m2.setSelectionRange(sel[0], sel[1]);
+  }
 }
 $('#guide').addEventListener('click', e => {
   const btn = e.target.closest('button[data-g]'); if (!btn || btn.disabled) return;
   const g = btn.dataset.g, E = S.ext;
   GUIDE.focus = 1;   // from the first click on: a new step takes the focus (not at start, the page's own focus stays)
-  if (g === 'skip') { gdTestEnd(); GUIDE.tips = null; setCfg('general', 'guide', 'skip'); updateHome(); $('.home-help button').focus(); return; }
+  if (g === 'skip') { gdTestEnd(); gdPvEnd(); GUIDE.tips = null; setCfg('general', 'guide', 'skip'); updateHome(); $('.home-help button').focus(); return; }
   if (g === 'back') return gdNext(-1);
   if (g === 'next') return gdNext(1);
   if (g === 'scan') return gdScan();
@@ -6782,21 +6855,47 @@ $('#guide').addEventListener('click', e => {
     GUIDE.adding.add(k); setTimeout(() => { GUIDE.adding.delete(k); updateGuide(); }, 8000);
     send({ cmd: 'dev_add', kind: f.kind, host: f.host, sub: f.sub, name: f.name || f.title, leds: 0 }); updateGuide(); return;
   }
+  // the form for an address by hand lives on Devices (its fields, the check); the guide waits on Home where it was left
   if (g === 'manual') { go('add'); $('#manual').open = true; setTimeout(() => { $('#man-kind').scrollIntoView({ block: 'center' }); $('#man-kind').focus(); }, 60); return; }
   if (g === 'fans') return showTab('fans');
   if (g.startsWith('help-')) return helpOpen(g.slice(5));
-  if (g.startsWith('tab-')) return showTab(g.slice(4));
-  if (g === 'card') { gdTestEnd(); updateGuide(); const r = btn.getBoundingClientRect(); const id = btn.dataset.id; openSheet(/^\d+$/.test(id) ? { k: 'ext', id: +id } : { k: id }, r.left + r.width / 2, r.top); return; }
-  if (g === 'check') {
-    gdTestEnd(); GUIDE.prob = ''; GUIDE.ok = 0; GUIDE.said = '';
-    const d = gdCan().find(x => x.id === GUIDE.dev); if (!d) return updateGuide();
-    GUIDE.test = d.zone; GUIDE.seen = 0;
-    send({ cmd: 'dev_test', zone: GUIDE.test }); updateGuide(); return;
+  if (g === 'card') {
+    gdTestEnd(); updateGuide();
+    const r = btn.getBoundingClientRect(), id = btn.dataset.id;
+    openSheet(/^\d+$/.test(id) ? { k: 'ext', id: +id } : id.startsWith('light:') ? { k: 'bulb', i: +id.slice(6) } : id.startsWith('nano:') ? { k: 'nano', slot: +id.slice(5) } : { k: id }, r.left + r.width / 2, r.top);
+    return;
   }
-  if (g === 'works') { gdTestEnd(); GUIDE.ok = 1; GUIDE.said = ''; return updateGuide(); }
-  if (g === 'problem') { gdTestEnd(); GUIDE.prob = 'ask'; return updateGuide(); }
-  if (g === 'stop') { gdTestEnd(); return updateGuide(); }
+  if (g === 'show') {
+    // one at a time: a second device's test ends the first one's (the core keeps a single test zone too)
+    gdTestEnd(); GUIDE.prob = ''; GUIDE.said = ''; GUIDE.nm = ''; GUIDE.nmv = null;
+    const x = gdCan().find(x => x.id === btn.dataset.id); if (!x) return updateGuide();
+    GUIDE.dev = x.id; GUIDE.dvn = x.name; GUIDE.test = x.zone; GUIDE.seen = 0; GUIDE.fx = `[data-g="yes"]`;
+    send({ cmd: 'dev_test', zone: x.zone }); updateGuide(); return;
+  }
+  if (g === 'yes') {
+    const k = GUIDE.dev, x = gdCan().find(x => x.id === k);
+    gdTestEnd(); GUIDE.prob = ''; GUIDE.okIds.add(k);
+    if (x?.nm === 'ext') { GUIDE.said = ''; GUIDE.nm = k; GUIDE.nmv = devById(+k).name; GUIDE.fx = '#gd-nm'; }
+    else { GUIDE.said = t(x?.nm === 'aidot' ? 'gd.n.aidot' : x?.nm === 'nano' ? 'gd.n.nano' : 'gd.t.ok'); GUIDE.fx = '[data-g="next"]'; }
+    return updateGuide();
+  }
+  if (g === 'no') { gdTestEnd(); GUIDE.prob = 'ask'; GUIDE.fx = '[data-g="pr-dark"]'; return updateGuide(); }
   if (g.startsWith('pr-')) { GUIDE.prob = g.slice(3); return updateGuide(); }
+  if (g === 'nm-ok') return gdNameSave();
+  if (g === 'nm-skip') { GUIDE.nm = ''; GUIDE.nmv = null; GUIDE.fx = '[data-g="next"]'; return updateGuide(); }
+  if (g === 'try') {
+    const can = gdCan(); if (!can.length) return;
+    GUIDE.pvList = can.map(x => ({ id: x.id, kind: x.kind, name: x.name })); GUIDE.pvZ = can.map(x => x.zone);
+    GUIDE.pv = 'on'; GUIDE.pvSeen = 0; GUIDE.pvAt = Date.now(); GUIDE.fx = '[data-g="keep"]';
+    send({ cmd: 'preview', zones: GUIDE.pvZ.join(',') });
+    setTimeout(updateGuide, 6100); setTimeout(updateGuide, 46600); updateGuide(); return;
+  }
+  if (g === 'keep') {
+    if (GUIDE.pv !== 'on') return;
+    GUIDE.pv = 'keeping'; GUIDE.pvAt = Date.now(); GUIDE.fx = '[data-g="next"]';
+    send({ cmd: 'preview_keep' }); setTimeout(updateGuide, 6100); return updateGuide();
+  }
+  if (g === 'revert') { gdPvEnd(); GUIDE.fx = '[data-g="next"]'; return updateGuide(); }
   if (g === 'save') return gdSave();
   if (g === 'prof') return profMenu(true);
   if (g === 'finish') return gdFinish('');
@@ -6806,13 +6905,16 @@ $('#guide').addEventListener('click', e => {
   }
 });
 $('#guide').addEventListener('change', e => {
-  if (e.target.id === 'gd-dev') { const v = e.target.value; GUIDE.dev = /^\d+$/.test(v) ? +v : v; GUIDE.ok = 0; GUIDE.prob = ''; GUIDE.said = ''; updateGuide(); }
   const o = e.target.dataset.gp && devById(+e.target.dataset.gp); if (o) pathSet(o, e.target.value);
 });
-$('#guide').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'gd-name') { e.preventDefault(); gdSave(); } });
-// the window going away ends the test too (the core's own minute is there for when this does not run)
-addEventListener('pagehide', () => gdTestEnd());
-$('#guide-open').addEventListener('click', () => { gdTestEnd(); GUIDE.tips = null; GUIDE.last = ''; GUIDE.focus = 1; setCfg('general', 'guide', 'dev'); showTab('home'); updateGuide(); });
+$('#guide').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'gd-name') { e.preventDefault(); gdSave(); }
+  if (e.key === 'Enter' && e.target.id === 'gd-nm') { e.preventDefault(); gdNameSave(); }
+  if (e.key === 'Escape' && e.target.id === 'gd-nm') { e.preventDefault(); e.stopPropagation(); GUIDE.nm = ''; GUIDE.nmv = null; GUIDE.fx = '[data-g="next"]'; updateGuide(); }
+});
+// the window going away ends the test and the preview too (the core's own minute and 45 s are there for when this does not run)
+addEventListener('pagehide', () => { gdTestEnd(); gdPvEnd(); });
+$('#guide-open').addEventListener('click', () => { gdTestEnd(); gdPvEnd(); GUIDE.tips = null; GUIDE.last = ''; GUIDE.focus = 1; setCfg('general', 'guide', 'dev'); showTab('home'); updateGuide(); });
 
 // ------------------------------------------------------------------ messages from the core
 // ------------------------------------------------------------------ fans: ui/fans.js; its handlers are bound here
@@ -7236,6 +7338,7 @@ if (wv) wv.addEventListener('message', e => {
   else if (m.type === 'scene_done' || m.type === 'group_done') scDone(m);
   else if (m.type === 'rule_done') rulesDone(m);
   else if (m.type === 'lcd_done') lcdDone(m);
+  else if (m.type === 'preview_done') gdPvDone(m);
   else if (m.type === 'state') {
     const prof = cv('general', 'profile', '');
     S.cfg = m.cfg || {}; S.effects = m.effects || []; S.autostart = m.autostart;

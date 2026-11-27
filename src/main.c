@@ -5,6 +5,7 @@
 // Unchanged frames are not sent, and the loop slows down to 5 Hz while nothing changes.
 #include "devices.h"   // common.h, and https_download / sha256_hex
 #include "xfade.h"
+#include "preview.h"
 #include "safetmp.h"
 #include <shellapi.h>
 #include <stdarg.h>
@@ -176,6 +177,8 @@ static volatile LONG cal_from, cal_n, cal_rev;          // 3: the ends of one co
 #define IDENT_MS     3000
 static volatile LONG test_zone = -1, test_at;   // the first-run guide's test: that zone shows one steady colour
 #define TEST_MS      60000    // ended by the window, or by itself when the window is gone
+static volatile LONG test_white;   // the tested zone is a white-only light: a gentle level step instead of green
+static preview_t pv;               // the guide's "Evening light" (preview.h)
 static volatile LONG xfade_req;          // a profile switch: the next frames blend over from the last one
 #define XFADE_MS     800
 static HINSTANCE app_inst;
@@ -412,11 +415,11 @@ static unsigned __stdcall render_thread(void *p) {
     while (running) {
         if (InterlockedExchange(&need_reinit, 0)) {
             // after resume from sleep: controllers were power-cycled
-            close_devices(0); Sleep(1500); open_devices(); test_zone = -1; build_scene();
+            close_devices(0); Sleep(1500); open_devices(); test_zone = -1; pv_end(&pv, GetTickCount()); build_scene();
         }
         if (InterlockedExchange(&need_own, 0)) { own_apply(); build_scene(); ui_refresh(); }
         // the zones may be numbered anew: the test must not land on another device
-        if (nano_layout_changed() | lights_changed() | ext_layout_changed()) { test_zone = -1; build_scene(); ui_refresh(); }
+        if (nano_layout_changed() | lights_changed() | ext_layout_changed()) { test_zone = -1; pv_end(&pv, GetTickCount()); build_scene(); ui_refresh(); }
         if (InterlockedExchange(&need_reload, 0) ||
             (GetTickCount() - last_cfg_check > 1000 && (last_cfg_check = GetTickCount(), cfg_changed_on_disk()))) {
             own_apply();
@@ -449,13 +452,20 @@ static unsigned __stdcall render_thread(void *p) {
             else if (left < OFF_FADE_MS) br *= left / (float)OFF_FADE_MS;
         }
         int tz = tk - (DWORD)test_at < TEST_MS ? test_zone : -1;
+        unsigned long long pvm = pv_active(&pv, tk);
+        rgbf pvc = scalec(effects_kelvin(PV_KELVIN), PV_LEVEL * br);
+        static int tz_was = -1; static float tz_lv;   // a white light's test level, taken once when its test starts
+        if (tz != tz_was) { tz_was = tz; tz_lv = -1; }
         int iz = tk - (DWORD)ident_at < IDENT_MS ? ident_zone : -1, iblink = (tk - (DWORD)ident_at) / 250 % 2 == 0;
         int cm = tk - (DWORD)cal_at < CAL_MS ? cal_mode : 0, cz = cal_zone, cn = 0;
         if (cm == 1 || cm == 3) for (int i = 0; i < sc.count; i++) if (sc.leds[i].zone == cz && sc.leds[i].index >= cn) cn = sc.leds[i].index + 1;
         effects_render(fx, &sc, &sn, dt, out);
         int bulb_k[8] = { 0 };
         for (int i = 0; i < sc.count; i++)
-            if (sc.leds[i].dev == DEV_LIGHT && sc.leds[i].index < 8) effects_zone_white(sc.leds[i].zone, &bulb_k[sc.leds[i].index]);
+            if (sc.leds[i].dev == DEV_LIGHT && sc.leds[i].index < 8) {
+                effects_zone_white(sc.leds[i].zone, &bulb_k[sc.leds[i].index]);
+                if (pv_has(pvm, sc.leds[i].zone)) bulb_k[sc.leds[i].index] = PV_KELVIN;   // the bulb's own white LEDs
+            }
         LeaveCriticalSection(&cs);
 
         rgbf gpu[40] = { 0 }, board = { 0, 0, 0 }, ram[2][8] = { 0 }, bulb[8] = { 0 }; int rn[2] = { 0, 0 }, gn = 0, bn = 0;
@@ -467,7 +477,15 @@ static unsigned __stdcall render_thread(void *p) {
             rgbf c = scalec(out[i], br);
             const rgbf *was = xk < 1 ? xf_from(&xf, &sc.leds[i], sc_unit) : NULL;
             if (was) c = mixc(*was, c, xk);   // (an LED new to this profile just starts)
-            if (sc.leds[i].zone == tz) { c.r = 0; c.g = .6f; c.b = .24f; }   // steady green, as the guide shows it (not saved anywhere)
+            if (pv_has(pvm, sc.leds[i].zone)) c = pvc;   // over the effect, also when it is off (not saved anywhere)
+            if (sc.leds[i].zone == tz) {
+                int white = test_white || (sc.leds[i].dev == DEV_LIGHT && sc.leds[i].index < 8 && bulb_k[sc.leds[i].index]);
+                if (!white) { c.r = 0; c.g = .6f; c.b = .24f; }   // steady green, as the guide shows it (not saved anywhere)
+                else {   // white only: green would be a jump to some level; a steady, gentle step from the one it shows
+                    if (tz_lv < 0) tz_lv = pv_test_level(max(c.r, max(c.g, c.b)));
+                    c.r = c.g = c.b = tz_lv;
+                }
+            }
             if (sc.leds[i].zone == iz) c.r = c.g = c.b = iblink ? 1.0f : 0.0f;
             if (cm == 2) c.r = c.g = c.b = 0.8f;
             else if ((cm == 1 || cm == 3) && sc.leds[i].zone == cz) {
@@ -530,20 +548,26 @@ static unsigned __stdcall render_thread(void *p) {
             nano_submit(k, nano[k], nn[k], nano_on[k]);
             // the panels play the effect themselves: bake a new loop when what they show changed (debounced, so a
             // dragged slider sends one animation, not dozens), or when the driver asks after (re)connecting
-            static int b_fx[NANO_MAX], b_on[NANO_MAX], b_init; static float b_br[NANO_MAX]; static LONG b_gen[NANO_MAX]; static DWORD b_due[NANO_MAX];
+            static int b_fx[NANO_MAX], b_on[NANO_MAX], b_pv[NANO_MAX], b_init; static float b_br[NANO_MAX]; static LONG b_gen[NANO_MAX]; static DWORD b_due[NANO_MAX];
             if (!b_init) { for (int j = 0; j < NANO_MAX; j++) { b_fx[j] = -2; b_on[j] = -1; b_br[j] = -1; b_gen[j] = -1; } b_init = 1; }
             DWORD tnow = GetTickCount();
-            if (fx != b_fx[k] || br != b_br[k] || nano_on[k] != b_on[k] || cfg_gen != b_gen[k]) {
+            // the guide's test (2) or preview (1): the panels play one still frame instead of their loop
+            int pk = tz == ZONE_NANO0 + k ? 2 : pv_has(pvm, ZONE_NANO0 + k);
+            if (fx != b_fx[k] || br != b_br[k] || nano_on[k] != b_on[k] || cfg_gen != b_gen[k] || pk != b_pv[k]) {
                 // a new effect goes out at once; sliders (brightness, speed, colours) wait until they rest
-                b_due[k] = fx != b_fx[k] || nano_on[k] != b_on[k] ? tnow | 1 : (tnow + 300) | 1;
-                b_fx[k] = fx; b_br[k] = br; b_on[k] = nano_on[k]; b_gen[k] = cfg_gen;
+                b_due[k] = fx != b_fx[k] || nano_on[k] != b_on[k] || pk != b_pv[k] ? tnow | 1 : (tnow + 300) | 1;
+                b_fx[k] = fx; b_br[k] = br; b_on[k] = nano_on[k]; b_gen[k] = cfg_gen; b_pv[k] = pk;
             }
             if (nano_bake_wanted(k)) b_due[k] = tnow | 1;
             if (b_due[k] && nano_on[k] && (int)(tnow - b_due[k]) >= 0) {   // switched off: the driver turns the panels off
                 static rgbf frames[NANO_MAX_FRAMES * NANO_MAX_PANELS];
                 float step = 1; int nf = 0;
                 b_due[k] = 0;
-                if (nano_on_device(k) && nn[k] > 0) {
+                if (nano_on_device(k) && nn[k] > 0 && pk) {
+                    rgbf g = { 0, .6f, .24f };   // the same steady green as everywhere else
+                    nf = 1; for (int i = 0; i < NANO_MAX_PANELS; i++) frames[i] = pk == 2 ? g : pvc;
+                }
+                else if (nano_on_device(k) && nn[k] > 0) {
                     int maxf = 720 / nn[k]; if (maxf > NANO_MAX_FRAMES) maxf = NANO_MAX_FRAMES; if (maxf < 4) maxf = 4;
                     EnterCriticalSection(&cs); nf = effects_bake(fx, &sc, DEV_NANO, ZONE_NANO0 + k, maxf, NANO_MAX_PANELS, frames, &step); LeaveCriticalSection(&cs);
                     for (int i = 0; i < nf * NANO_MAX_PANELS; i++) frames[i] = scalec(frames[i], br);
@@ -634,6 +658,7 @@ static void update_tip(void) {
 }
 
 static void set_effect(int fx) {
+    pv_end(&pv, GetTickCount());   // changed by hand (or by a profile): a late "back" or "keep" then changes nothing
     EnterCriticalSection(&cs);
     int went_off = fx != cur_effect && fx == effect_index("off");
     if (went_off) prev_effect = cur_effect;
@@ -647,6 +672,7 @@ static void set_effect(int fx) {
 }
 
 static void set_brightness_ex(float b, int save_now) {
+    pv_end(&pv, GetTickCount());
     b = clampf(b, 0.05f, 1);
     EnterCriticalSection(&cs); brightness = b; LeaveCriticalSection(&cs);
     char v[16]; snprintf(v, sizeof(v), "%d", (int)(b * 100 + 0.5f));
@@ -754,6 +780,7 @@ int app_preset_save(int id, const char *name, const char *effect, const char *pa
 }
 
 void app_preset_apply(int id) {
+    pv_end(&pv, GetTickCount());
     char sec[24]; snprintf(sec, sizeof(sec), "preset.%d", id);
     const char *eff = cfg_get(sec, "effect", NULL);
     if (!eff) return;
@@ -860,6 +887,7 @@ static int prof_why;
 
 static void profile_apply(int id, int why) {
     if (!profile_exists(id)) return;
+    pv_end(&pv, GetTickCount());
     InterlockedExchange(&xfade_req, 1);   // before the new setup reaches the render thread, so it blends from the old one
     if (!prof_switch(id)) { ui_refresh_state(); return; }   // nothing changed: the one in use keeps its setup (why: prof_json)
     prof_why = why;
@@ -1134,10 +1162,13 @@ volatile LONG g_state_rev;
 static int status_body(char *out, int cap) {
     char gt[16] = "null", tz[32] = "";
     if (test_zone >= 0 && GetTickCount() - (DWORD)test_at < TEST_MS) zone_section(test_zone, tz, sizeof(tz));
+    char pz[400] = ""; unsigned long long pm = pv_active(&pv, GetTickCount());
+    for (int k = 0, m = 0; k < MAX_ZONES && m < (int)sizeof(pz) - 24; k++)
+        if (pv_has(pm, k)) { if (m) pz[m++] = ','; zone_section(k, pz + m, (int)sizeof(pz) - m); m += (int)strlen(pz + m); }
     if (!isnan(last_sensors.gpu_temp)) snprintf(gt, sizeof(gt), "%d", (int)last_sensors.gpu_temp);
-    int n = jcat(out, cap, 0, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"ram_src\":[%ld,%ld],\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"unsaved\":%d,\"rev\":%ld,\"test\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
+    int n = jcat(out, cap, 0, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"ram_src\":[%ld,%ld],\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"unsaved\":%d,\"rev\":%ld,\"test\":\"%s\",\"preview\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
                      g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, ram_src & 3, ram_src >> 2 & 3, app_pc_own_now(),
-                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, cfg_unsaved(), g_state_rev, tz, effects_audio_state(), effects_temp_state());
+                     off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, cfg_unsaved(), g_state_rev, tz, pz, effects_audio_state(), effects_temp_state());
     for (int i = 0; i < lights_count() && n < cap - 300; i++) {
         char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
         n = jcat(out, cap, n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
@@ -1500,9 +1531,51 @@ void app_test(const char *zone) {
     char z[64];
     for (int k = 0; k < MAX_ZONES; k++) {
         zone_section(k, z, sizeof(z));
-        if (zone[0] && !_stricmp(z, zone)) { test_at = (LONG)GetTickCount(); test_zone = k; return; }
+        if (zone[0] && !_stricmp(z, zone)) {
+            char d[24]; snprintf(d, sizeof(d), "dev.%d", k >= ZONE_EXT0 ? ext_slot_id(k - ZONE_EXT0) : 0);
+            test_white = k >= ZONE_EXT0 && !_stricmp(cfg_get(d, "caps", ""), "white");
+            test_at = (LONG)GetTickCount(); test_zone = k; return;
+        }
     }
     test_zone = -1;
+}
+
+// "zone.light1,zone.dev3": those zones show warm white for up to PV_MS (preview.h); "" (or none of them there) ends it
+void app_preview(const char *zones) {
+    unsigned long long m = 0;
+    char z[64];
+    for (int k = 0; k < MAX_ZONES && k < 64; k++) {
+        zone_section(k, z, sizeof(z));
+        size_t n = strlen(z);
+        for (const char *p = zones; *p; ) {
+            const char *e = strchr(p, ','); size_t len = e ? (size_t)(e - p) : strlen(p);
+            if (len == n && !_strnicmp(p, z, n)) m |= 1ull << k;
+            p += len + (e != NULL);
+        }
+    }
+    test_zone = -1;
+    if (m) pv_start(&pv, m, GetTickCount()); else pv_end(&pv, GetTickCount());
+}
+
+// "Keep": what the preview shows is saved as those zones' white light, and the lights come on if they were off.
+// 1 kept, 0 it had already ended (by hand, by its time, by "back": nothing is written over that), -1 not saved
+int app_preview_keep(void) {
+    unsigned long long m = pv_end(&pv, GetTickCount());
+    if (!m) return 0;
+    char z[64], lv[8], kv[8];
+    snprintf(lv, sizeof(lv), "%d", (int)(PV_LEVEL * 100 + .5f)); snprintf(kv, sizeof(kv), "%d", PV_KELVIN);
+    cfg_group_begin();
+    for (int k = 0; k < MAX_ZONES && k < 64; k++) {
+        if (!pv_has(m, k)) continue;
+        zone_section(k, z, sizeof(z));
+        cfg_set(z, "mode", "white"); cfg_set(z, "kelvin", kv); cfg_set(z, "brightness", lv);
+    }
+    if (!cfg_group_end()) { logf_("preview not kept: the settings file is full, nothing changed"); return -1; }
+    cfg_save_if_dirty();
+    app_config_changed(0);
+    if (cur_effect == effect_index("off")) app_power();
+    logf_("preview kept");
+    return 1;
 }
 
 void app_calib(const char *zone, int mode, int from, int n) {

@@ -131,6 +131,7 @@ int  effects_need_audio(void);
 int  effects_audio_state(void);   // -2 not shown, -1 no capture, 0 silence, 1 sound
 int  effects_temp_state(void);    // -2 not shown, 0 no reading, 1 reading
 int  effects_palette(int effect, rgbf *out, int max);   // its colours as it lights, under cs
+rgbf effects_kelvin(int k);                   // a colour temperature as RGB, as the white zones show it
 int  effects_zone_white(int zone, int *kelvin);      // 1 if the zone is in "white light" mode   // "zone.ram", "zone.gpu", "zone.light1"...
 
 // ---- dev_msi.c (MSI Mystic Light: onboard LED + JRAINBOW1 ARGB header)
@@ -460,6 +461,8 @@ void  app_power(void);                       // off <-> previous effect
 void  app_timed_off(int minutes);            // everything off in N minutes, the last one fading out (0: no timer)
 void  app_identify(const char *zone);        // "zone.dev3" etc. blinks white for a few seconds
 void  app_test(const char *zone);            // that zone shows a steady test colour for up to a minute; "" ends it
+void  app_preview(const char *zones);        // "zone.a,zone.b": warm white for a while, nothing saved (preview.h); "" ends it
+int   app_preview_keep(void);                // saves it as those zones' white light: 1, 0 ended already, -1 not saved
 void  app_calib(const char *zone, int mode, int from, int n);  // the calibration guide's pattern: 0 off, 1 the zone's ends red/blue, 2 everything white,
                                                                // 3 the ends of n LEDs from LED `from` (one connector of a device)
 void  warmth_gain(float warmth, float g[3]);  // white balance -100 (cooler) .. 100 (warmer) as r/g/b gains

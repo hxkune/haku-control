@@ -2369,6 +2369,7 @@
   const gdKeep = () => JSON.stringify({ devs: STATE.ext.devs, found: STATE.ext.found, bulbs: STATE.bulbs, ctls: STATE.nano.ctls, prof: STATE.cfg.general.profile, sticks: STATE.sticks, msi: STATE.msi, msi_own: STATE.msi_own, ram_src: STATE.ram_src });
   const gdBack = async k => { const o = JSON.parse(k); Object.assign(STATE.ext, { devs: o.devs, found: o.found, scanning: 0 }); STATE.bulbs = o.bulbs; STATE.nano.ctls = o.ctls; Object.assign(STATE, { sticks: o.sticks, msi: o.msi, msi_own: o.msi_own, ram_src: o.ram_src });
     STATE.test = ''; STATE.cfg.general.profile = o.prof; window.mockScanStuck = window.mockSaveFail = 0; GUIDE.tips = null; GUIDE.saving = null; GUIDE.adding.clear(); GUIDE.test = '';
+    STATE.preview = ''; window.mockKeepFail = 0; GUIDE.okIds.clear(); GUIDE.nm = ''; GUIDE.nmv = null; GUIDE.pv = ''; GUIDE.prob = ''; GUIDE.said = '';
     setCfg('general', 'guide', ''); emit(STATE); await wait(120); };
   // direct: haku's own memory and MSI drivers, off unless a test is about them
   const gdSet = async (devs, step, direct) => { Object.assign(STATE.ext, { devs, found: [], scanning: 0 }); STATE.bulbs = []; STATE.nano.ctls = [];
@@ -2435,7 +2436,7 @@
       await fresh();
       const dev = (id, kind, name, cap) => ({ id, kind, title: kind, name, host: '127.0.0.1', sub: id, leds: 8, per_led: 1, online: 1, enabled: 1, cap, info: '' });
       await gdSet([dev(61, 'razer', 'BlackWidow'), dev(62, 'openrgb', 'Razer BlackWidow V3', 3), dev(63, 'openrgb', 'ENE DRAM', 1)], 'dev');
-      ok(gdSteps().join() === 'dev,path,test,save', 'no path step for a pair: ' + gdSteps());
+      ok(gdSteps().join() === 'dev,path,test,try,save', 'no path step for a pair: ' + gdSteps());
       gd('next').click(); await wait(40);
       ok(gdH() === t('gd.path.h') && $$('#guide [data-gp]').length === 1, 'not one pair offered');
       ok($('#guide .gd-pair .hint')?.textContent === t('gd.p.rec', 'BlackWidow', t('drive.3')), 'no hint for a static-only OpenRGB device');
@@ -2446,7 +2447,7 @@
       STATE.ext.devs[1].cap = 1; STATE.ext.devs[1].same = 0; setCfg('dev.62', 'same', ''); emit(STATE); await wait(80);
       ok(!$('#guide .gd-pair .hint'), 'a hint from the name alone');
       await gdSet([dev(63, 'openrgb', 'ENE DRAM', 1)], 'dev');
-      ok(gdSteps().join() === 'dev,test,save', 'a path step with no pair');
+      ok(gdSteps().join() === 'dev,test,try,save', 'a path step with no pair');
       noHw();
     } finally { await gdBack(k); }
   });
@@ -2466,51 +2467,141 @@
     ok(['en', 'ru', 'fr'].every(l => ['dev.ev.7', 'why.who.app', 'why.who.busy', 'why.who.unk'].every(k => STR[l][k])), 'a language misses the owner or history texts');
   });
 
-  test('guide test step: one steady colour on that device only, ended by Works, Problem, Stop, Back, leaving, the window, the core; never saved', async () => {
+  test('guide test step: Show with light on that device only, one at a time; Yes or No on its row; ended by Back, leaving, the window, the core; a lost one named; never saved', async () => {
     const k = gdKeep();
     try {
       await fresh();
       const dev = (id, kind, name, x) => Object.assign({ id, kind, title: kind, name, host: '10.0.0.' + id, sub: -1, leds: 8, per_led: 1, online: 1, enabled: 1, info: '' }, x);
       await gdSet([dev(1, 'wled', 'Strip'), dev(2, 'openrgb', 'Board', { cap: 3 }), dev(3, 'openrgb', 'Dead', { cap: 4 }), dev(4, 'tryx', 'Cooler'), dev(11, 'elgato', 'Key Light')], 'test');
-      ok([...$('#gd-dev').options].map(o => o.value).join() === '1,2', 'the test offered for ' + [...$('#gd-dev').options].map(o => o.value));
-      const txt = $('#guide').textContent;
-      ok(txt.includes(t('gd.t.screen')) && txt.includes(t('gd.t.white')) && $$('#guide [data-g="card"]').length === 3, 'the screen, white-only and unsupported ones not sent to their card');
-      sent.length = 0; gd('check').click(); await wait(80);
+      const shows = () => [...$$('#guide [data-g="show"]')].map(b => b.dataset.id), show = id => $(`#guide [data-g="show"][data-id="${id}"]`);
+      // a white light takes the test too (a soft brightness step, preview.h pv_test_level); a screen and an unsupported one go to their card
+      ok(shows().join() === '1,2,11', 'the test offered for ' + shows());
+      ok($('#guide').textContent.includes(t('gd.t.screen')) && $$('#guide [data-g="card"]').length === 2, 'the screen and the unsupported one not sent to their card');
       const tests = () => sent.filter(o => o.cmd === 'dev_test').map(o => o.zone);
-      ok(tests().join() === 'zone.dev1' && gdSt() === t('gd.t.on', 'Strip'), 'Check: ' + tests() + ' / ' + gdSt());
-      ok(gd('works') && gd('problem') && gd('stop') && !gd('check'), 'no Works / Problem / Stop');
-      gd('works').click(); await wait(60);
-      ok(tests().join() === 'zone.dev1,' && gdSt() === t('gd.t.ok') && gd('next').classList.contains('primary'), 'Works did not end it: ' + tests());
-      ok(sent.every(o => o.cmd === 'dev_test') && devById(1).cap === undefined, 'Works (the user\'s word) sent or marked more than the end of the test: ' + JSON.stringify(sent));
-      const d2 = $('#gd-dev'); d2.value = '2'; d2.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
-      sent.length = 0; gd('check').click(); await wait(60); gd('problem').click(); await wait(20);
-      ok(tests().join() === 'zone.dev2,' && $$('#guide .gd-probs button').length === 4, 'Problem: ' + tests());
+      sent.length = 0; show(1).click(); await wait(80);
+      ok(tests().join() === 'zone.dev1' && gdSt() === t('gd.t.on', 'Strip'), 'Show: ' + tests() + ' / ' + gdSt());
+      ok(gd('yes')?.dataset.id === '1' && gd('no')?.dataset.id === '1' && !show(1) && document.activeElement === gd('yes'), 'no Yes / No on its row, or the focus not on Yes');
+      ok(!gd('next'), 'Next offered while the test light is on');
+      // a second device: the first one's test ends before the second one starts (the core keeps one test zone)
+      sent.length = 0; show(2).click(); await wait(80);
+      ok(tests().join() === ',zone.dev2' && gdSt() === t('gd.t.on', 'Board') && gd('yes').dataset.id === '2' && show(1), 'the second Show: ' + tests() + ' / ' + gdSt());
+      sent.length = 0; gd('no').click(); await wait(40);
+      ok(tests().join() === '' && $$('#guide .gd-probs button').length === 4 && document.activeElement === gd('pr-dark'), 'I don\'t see it: ' + tests());
+      ok(sent.every(o => o.cmd === 'dev_test'), 'No (the user\'s word) sent more than the end of the test: ' + JSON.stringify(sent));
       gd('pr-blink').click(); await wait(20);
-      ok($('#guide').textContent.includes(t('gd.pr.blink.t')) && gd('help-conflict') && gd('check').textContent === t('gd.t.again'), 'Blinks has no help or retry');
-      gd('pr-colour'); gd('check').click(); await wait(60);
-      sent.length = 0; gd('stop').click(); await wait(20);
-      ok(tests().join() === '' && gdSt() === t('gd.t.back'), 'Stop: ' + tests() + ' / ' + gdSt());
-      sent.length = 0; gd('check').click(); await wait(60); gd('back').click(); await wait(20);
+      ok($('#guide').textContent.includes(t('gd.pr.blink.t')) && gd('help-conflict') && $$('#guide [data-g="show"][data-id="2"]').length === 2 &&
+        [...$$('#guide [data-g="show"][data-id="2"]')].some(b => b.textContent === t('gd.t.again')), 'Blinks has no help or Show again');
+      sent.length = 0; show(2).click(); await wait(60); gd('back').click(); await wait(20);
       ok(tests().join() === 'zone.dev2,' && cv('general', 'guide') === 'dev', 'Back left it on: ' + tests());
       setCfg('general', 'guide', 'test'); updateGuide();
-      sent.length = 0; gd('check').click(); await wait(60); showTab('devices'); await wait(20);
+      sent.length = 0; show(2).click(); await wait(60); showTab('devices'); await wait(20);
       ok(tests().join() === 'zone.dev2,', 'leaving Home left it on: ' + tests());
-      showTab('home'); sent.length = 0; gd('check').click(); await wait(60); dispatchEvent(new Event('pagehide')); await wait(20);
+      showTab('home'); await wait(20);
+      ok(gdSt() === t('gd.t.back'), 'not told the lights are back: ' + gdSt());
+      sent.length = 0; show(2).click(); await wait(60); dispatchEvent(new Event('pagehide')); await wait(20);
       ok(tests().join() === 'zone.dev2,', 'closing the window left it on: ' + tests());
-      updateGuide(); sent.length = 0; gd('check').click(); await wait(1100);   // the status ticks
+      updateGuide(); sent.length = 0; show(2).click(); await wait(1100);   // the status ticks
       STATE.test = ''; emit(STATE); await wait(60);   // the core's minute, or a layout change
-      ok(gdSt() === t('gd.t.ended') && gd('check'), 'the core ending it not shown: ' + gdSt());
-      gd('check').click(); await wait(60); devById(2).online = 0; STATE.ext.devs[1].online = 0; gd('stop').click(); await wait(20);
-      ok(gdSt() === t('gd.t.lost'), 'a lost device promised back: ' + gdSt());
-      // an error: the device drops while its test colour is on, nobody clicks anything
-      STATE.ext.devs[1].online = 1; emit(STATE); await wait(60); const d3 = $('#gd-dev'); d3.value = '2'; d3.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
-      sent.length = 0; gd('check').click(); await wait(1100);
+      ok(gdSt() === t('gd.t.ended') && show(2), 'the core ending it not shown: ' + gdSt());
+      // an error: the device drops while its test light is on, nobody clicks anything; said by its name
+      sent.length = 0; show(2).click(); await wait(1100);
       ok(tests().join() === 'zone.dev2' && gdSt() === t('gd.t.on', 'Board'), 'the test did not start again: ' + tests() + ' / ' + gdSt());
       STATE.ext.devs[1].online = 0; emit(STATE); await wait(60);
-      ok(tests().join() === 'zone.dev2,' && !GUIDE.test && gdSt() === t('gd.t.lost'), 'a device lost during its test left the colour on: ' + tests() + ' / ' + gdSt());
-      ok(!sent.some(o => o.cmd === 'set' && /^zone\.|^profile\./.test(o.s) || /^profile/.test(o.cmd)), 'the test colour went into the settings: ' + JSON.stringify(sent));
+      ok(tests().join() === 'zone.dev2,' && !GUIDE.test && gdSt() === t('gd.t.lost', 'Board'), 'a device lost during its test: ' + tests() + ' / ' + gdSt());
+      ok(!show(2) && shows().join() === '1,11', 'a lost device still offered: ' + shows());
+      ok(!sent.some(o => o.cmd === 'set' && /^zone\.|^profile\./.test(o.s) || /^profile/.test(o.cmd)), 'the test light went into the settings: ' + JSON.stringify(sent));
       noHw();
     } finally { await gdBack(k); }
+  });
+
+  test('guide naming: two identical lamps, the list reordered before Yes, the name goes to the one shown; kept on a rescan; a new device does not take the focus', async () => {
+    const k = gdKeep();
+    try {
+      await fresh();
+      const lamp = (id, x) => Object.assign({ id, kind: 'wled', title: 'WLED', name: 'Lamp', host: '192.168.1.' + id, sub: -1, leds: 30, per_led: 1, online: 1, enabled: 1, info: '' }, x);
+      await gdSet([lamp(7), lamp(8)], 'test');
+      const show = id => $(`#guide [data-g="show"][data-id="${id}"]`), name = 'Лампа у монитора';
+      ok(gdCan().map(x => x.id).join() === '7,8', 'the keys: ' + gdCan().map(x => x.id));
+      sent.length = 0; show(8).click(); await wait(80);
+      ok(sent.filter(o => o.cmd === 'dev_test').map(o => o.zone).join() === 'zone.dev8', 'not the second lamp lit');
+      STATE.ext.devs.reverse(); emit(STATE); await wait(80);   // a rescan lists them the other way round
+      ok(gd('yes')?.dataset.id === '8' && $('#guide .found-row:first-child').textContent.includes('192.168.1.8'), 'the live row is not the lamp that was lit');
+      gd('yes').click(); await wait(40);
+      const box = $('#gd-nm');
+      ok(box && document.activeElement === box && box.value === 'Lamp' && box.selectionStart === 0 && box.selectionEnd === 4, 'the name field not focused with the old name selected');
+      ok($('#guide .gd-nm').previousElementSibling.textContent.includes('192.168.1.8'), 'the name field is not under the lamp shown');
+      ok(gd('nm-ok').classList.contains('primary') && !gd('next').classList.contains('primary'), 'not one main action while naming');
+      box.value = name.slice(0, 5); box.setSelectionRange(5, 5);
+      STATE.ext.devs.push(lamp(9)); emit(STATE); await wait(80);   // found while the user types
+      ok(document.activeElement === $('#gd-nm') && $('#gd-nm').value === name.slice(0, 5) && $('#gd-nm').selectionStart === 5, 'a new device took the focus or the text');
+      ok(show(9), 'the new device not listed');
+      $('#gd-nm').value = name; sent.length = 0; key($('#gd-nm'), 'Enter'); await wait(60);
+      const names = sent.filter(o => o.cmd === 'set' && o.k === 'name');
+      ok(names.length === 1 && names[0].s === 'dev.8' && names[0].v === name, 'the name written: ' + JSON.stringify(names));
+      ok(devById(8).name === name && devById(7).name === 'Lamp' && gdSt() === t('gd.n.done', name), 'named: ' + gdSt());
+      ok(document.activeElement === gd('next') && gd('next').classList.contains('primary'), 'Next not the way on');
+      ok($('#guide').textContent.includes(t('gd.t.seen')), 'the lamp not marked as recognised');
+      STATE.ext.devs.reverse(); emit(STATE); await wait(80);   // another rescan: the name is the device's, by its id
+      ok(devById(8).name === name && gdCan().find(x => x.id === '8').name === name && gdCan().map(x => x.id).sort().join() === '7,8,9', 'the name or the keys lost on a rescan');
+      // Skip and Esc write nothing
+      sent.length = 0; show(7).click(); await wait(60); gd('yes').click(); await wait(30); gd('nm-skip').click(); await wait(20);
+      show(9).click(); await wait(60); gd('yes').click(); await wait(30); key($('#gd-nm'), 'Escape'); await wait(20);
+      ok(!$('#gd-nm') && !sent.some(o => o.cmd === 'set'), 'Skip or Esc wrote something: ' + JSON.stringify(sent));
+      noHw();
+    } finally { await gdBack(k); }
+  });
+
+  test('guide try step: the devices taking part, Put back with the effect off, Keep once, a full settings file, a change by hand, a late Put back, leaving and closing', async () => {
+    const k = gdKeep(), fx0 = [STATE.effect, STATE.cfg.general.effect];
+    try {
+      await fresh();
+      const dev = (id, kind, name, x) => Object.assign({ id, kind, title: kind, name, host: '10.0.0.' + id, sub: -1, leds: 8, per_led: 1, online: 1, enabled: 1, info: '' }, x);
+      await gdSet([dev(1, 'wled', 'Strip'), dev(2, 'openrgb', 'Board', { cap: 3 })], 'try');
+      ok(gdSteps().join() === 'dev,test,try,save' && gdH() === t('gd.try.h'), 'no try step: ' + gdSteps());
+      const pv = () => sent.filter(o => o.cmd === 'preview').map(o => o.zones), txt = () => $('#guide').textContent;
+      ok(txt().includes(t('gd.y.in')) && txt().includes('Strip') && txt().includes('Board') && gd('try').classList.contains('primary'), 'the devices taking part not listed');
+      // the effect off: Put back leaves it off (the core drops the overlay, preview.h)
+      STATE.effect = 'off'; emit(STATE); await wait(60);
+      sent.length = 0; gd('try').click(); await wait(80);
+      ok(pv().join('|') === 'zone.dev1,zone.dev2' && gdSt() === t('gd.y.on') && document.activeElement === gd('keep'), 'Try: ' + pv() + ' / ' + gdSt());
+      ok(gd('keep').classList.contains('primary') && gd('revert') && !gd('next'), 'not Keep / Put back while it is on');
+      gd('revert').click(); await wait(80);
+      ok(pv().join('|') === 'zone.dev1,zone.dev2|' && STATE.preview === '' && STATE.effect === 'off' && gdSt() === t('gd.y.back'), 'Put back: ' + pv() + ' / ' + STATE.effect);
+      ok(!sent.some(o => /^effect$|^power$|^brightness$|^preview_keep$/.test(o.cmd) || o.cmd === 'set' && /^zone\./.test(o.s)), 'Put back wrote something: ' + JSON.stringify(sent));
+      ok(document.activeElement === gd('next') && gd('next').classList.contains('primary'), 'Next not the way on');
+      // a change by hand (the tray, the phone, a scenario) ends it in the core: told, and a late Put back changes nothing
+      sent.length = 0; gd('try').click(); await wait(80);
+      send({ cmd: 'effect', id: 'flow' }); emit(STATE); await wait(60);
+      ok(gdSt() === t('gd.y.ended') && !gd('revert') && !gd('keep'), 'a change by hand not told: ' + gdSt());
+      const n = sent.length; gdPvEnd(); await wait(40);
+      ok(sent.length === n && STATE.effect === 'flow', 'a late Put back sent ' + JSON.stringify(sent.slice(n)));
+      // Keep: once, whatever the clicks; told only on the core's answer
+      sent.length = 0; gd('try').click(); await wait(80); gd('keep').click(); gd('keep').click(); await wait(10);
+      ok(sent.filter(o => o.cmd === 'preview_keep').length === 1 && gdSt() === t('gd.y.keeping') && gd('keep').disabled, 'Keep: ' + JSON.stringify(sent));
+      await wait(100);
+      ok(gdSt() === t('gd.y.kept') && S.cfg['zone.dev1']?.mode === 'white' && S.cfg['zone.dev2']?.mode === 'white', 'kept: ' + gdSt());
+      // the settings file full: said, nothing kept
+      window.mockKeepFail = 1; delete STATE.cfg['zone.dev1']; delete STATE.cfg['zone.dev2']; emit(STATE); await wait(40);
+      gd('try').click(); await wait(80); gd('keep').click(); await wait(120);
+      ok(gdSt() === t('gd.y.full') && $('#guide .gd-st.bad') && !S.cfg['zone.dev1'] && gd('try'), 'a full settings file: ' + gdSt());
+      window.mockKeepFail = 0;
+      // no answer from the core: not shown as on
+      sent.length = 0; gd('try').click(); await wait(80); STATE.preview = S.preview = ''; GUIDE.pvSeen = 0; GUIDE.pvAt -= 7000; updateGuide();
+      ok(gdSt() === t('gd.y.noans') && $('#guide .gd-st.bad'), 'no answer: ' + gdSt());
+      // a device lost during it: named, the others go on
+      gd('try').click(); await wait(80); STATE.ext.devs[1].online = 0; emit(STATE); await wait(60);
+      ok(gdSt().includes(t('gd.y.lost', 'Board')) && gd('keep') && $('#guide .gd-st.bad'), 'a lost device not named: ' + gdSt());
+      STATE.ext.devs[1].online = 1; emit(STATE); await wait(40);
+      // leaving Home, Back and closing the window put it back
+      sent.length = 0; showTab('devices'); await wait(20);
+      ok(pv().join('|') === '', 'leaving Home left it on: ' + pv());
+      showTab('home'); sent.length = 0; gd('try').click(); await wait(80); gd('back').click(); await wait(20);
+      ok(pv().join('|') === 'zone.dev1,zone.dev2|' && cv('general', 'guide') === 'test', 'Back left it on: ' + pv());
+      setCfg('general', 'guide', 'try'); updateGuide();
+      sent.length = 0; gd('try').click(); await wait(80); dispatchEvent(new Event('pagehide')); await wait(20);
+      ok(pv().join('|') === 'zone.dev1,zone.dev2|', 'closing the window left it on: ' + pv());
+      noHw();
+    } finally { window.mockKeepFail = 0; [STATE.effect, STATE.cfg.general.effect] = fx0; delete STATE.cfg['zone.dev1']; delete STATE.cfg['zone.dev2']; await gdBack(k); }
   });
 
   test('guide with only haku\'s own memory and MSI: found, testable, continue; an unclear or given-back one is explained; none goes on without lights', async () => {
@@ -2521,19 +2612,20 @@
       const txt = $('#guide').textContent;
       ok(txt.includes(t('pc.memory')) && txt.includes(stripName()) && txt.includes(t('ram.src.haku')), 'memory and MSI not listed: ' + txt.slice(0, 200));
       gd('next').click(); await wait(40);
-      ok(gdH() === t('gd.test.h') && $('#gd-dev') && [...$('#gd-dev').options].map(o => o.value).join() === 'ram,gpu', 'the test not offered for them: ' + ($('#gd-dev') ? [...$('#gd-dev').options].map(o => o.value) : 'no list'));
+      const shows = () => [...$$('#guide [data-g="show"]')].map(b => b.dataset.id), show = id => $(`#guide [data-g="show"][data-id="${id}"]`);
+      ok(gdH() === t('gd.test.h') && shows().join() === 'ram,gpu', 'the test not offered for them: ' + shows());
       const tests = () => sent.filter(o => o.cmd === 'dev_test').map(o => o.zone);
-      sent.length = 0; gd('check').click(); await wait(80);
-      ok(tests().join() === 'zone.ram' && gdSt() === t('gd.t.on', `ENE · 2 ${t('chip.pcs')}`), 'Check on memory: ' + tests() + ' / ' + gdSt());
-      gd('stop').click(); await wait(20);
-      ok(tests().join() === 'zone.ram,' && gdSt() === t('gd.t.back'), 'Stop on memory: ' + tests() + ' / ' + gdSt());
-      const sel = $('#gd-dev'); sel.value = 'gpu'; sel.dispatchEvent(new Event('change', { bubbles: true })); await wait(20);
-      sent.length = 0; gd('check').click(); await wait(80); gd('works').click(); await wait(40);
-      ok(tests().join() === 'zone.gpu,' && gdSt() === t('gd.t.ok'), 'Check on MSI: ' + tests() + ' / ' + gdSt());
+      sent.length = 0; show('ram').click(); await wait(80);
+      ok(tests().join() === 'zone.ram' && gdSt() === t('gd.t.on', `ENE · 2 ${t('chip.pcs')}`), 'Show on memory: ' + tests() + ' / ' + gdSt());
+      gd('no').click(); await wait(20);
+      ok(tests().join() === 'zone.ram,' && gd('pr-dark'), 'I don\'t see it on memory: ' + tests());
+      sent.length = 0; show('gpu').click(); await wait(80); gd('yes').click(); await wait(40);
+      // haku's own drivers have no name of their own to give: no name field, a plain note
+      ok(tests().join() === 'zone.gpu,' && gdSt() === t('gd.t.ok') && !$('#gd-nm') && document.activeElement === gd('next'), 'Yes on MSI: ' + tests() + ' / ' + gdSt());
       // OpenRGB might own both sticks, and another program has the MSI: not tested, each with its reason and card
       // (one stick haku's own is still tested: the colour goes to that one only, main.c build_scene)
       await gdSet([], 'test', { sticks: 2, msi: 1, msi_own: 1, ram_src: [2, 2] });
-      ok(!$('#gd-dev') && !gd('check') && $('#guide').textContent.includes(t('gd.t.none')), 'an unclear device offered for the test');
+      ok(!gd('show') && $('#guide').textContent.includes(t('gd.t.none')), 'an unclear device offered for the test');
       const g = $('#guide').textContent;
       ok(g.includes(ramSrcText()) && g.includes(t('ram.src.other')) && $$('#guide [data-g="card"]').length === 2, 'the reasons or cards missing');
       // nothing at all: the search ends empty, and the guide still goes on
@@ -2568,7 +2660,7 @@
       GUIDE.saving.at -= 7000; updateGuide();
       ok(gdSt() === t('gd.s.fail', PROFILE_MAX) && $('#gd-name').value === 'My setup' && gd('save').textContent === t('gd.s.retry'), 'the error: ' + gdSt());
       window.mockSaveFail = 0; gd('save').click(); await wait(200); made = 1;
-      ok(gdH() === t('gd.done.h') && $('#guide').textContent.includes(t('gd.done.t', 'My setup')) && cv('general', 'guide') === 'done', 'not done: ' + gdH());
+      ok(gdH() === t('gd.done.h') && $('#guide').textContent.includes(t('gd.done.t', 'My setup') + ' ' + t('gd.done.devs', gdCan().map(x => x.name).join(', '))) && cv('general', 'guide') === 'done', 'not done: ' + gdH());
       ok(before.every(x => profiles().some(p => p.id + p.name === x)) && profiles().length === before.length + 1, 'the profiles there were changed');
       ok(document.activeElement === $('#gd-h'), 'the focus is not on the confirmation');
       gd('tip-prof').click(); await wait(20);
@@ -2588,7 +2680,7 @@
 
   test('guide: every string in every language, the remote window never shows it', async () => {
     const used = new Set((await (await fetch('app.js')).text()).match(/'gd\.[a-z.]*[a-z]'/g).map(s => s.slice(1, -1)));
-    for (const s of ['dev', 'path', 'test', 'save', 'done']) { used.add('gd.' + s + '.h'); if (s !== 'done') used.add('gd.' + s + '.t'); }
+    for (const s of ['dev', 'path', 'test', 'try', 'save', 'done']) { used.add('gd.' + s + '.h'); if (s !== 'done') used.add('gd.' + s + '.t'); }
     ['dark', 'blink', 'other', 'colour'].forEach(p => { used.add('gd.pr.' + p); used.add('gd.pr.' + p + '.t'); });
     const miss = ['en', 'ru', 'fr'].flatMap(l => [...used].filter(x => !STR[l][x]).map(x => l + ':' + x));
     ok(!miss.length, 'missing: ' + miss.join(' '));
