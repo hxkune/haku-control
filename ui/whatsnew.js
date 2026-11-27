@@ -3,6 +3,13 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.90',
+    en: ['First-run guide: tell two identical lamps apart without leaving it. Show with light lights only that device for a moment (a soft brightness step on a white lamp), then you say Yes, I see it and give it a name right there.',
+      'Then try evening light on the devices you set up: Keep it, or Put back as it was (what was off goes off again). It ends by itself in 45 seconds, and never undoes a change you made in the tray or on the phone. The profile is reported saved only once haku has it; on an error you can retry.'],
+    ru: ['Мастер первого запуска: две одинаковые лампы теперь легко различить, не выходя из него. «Показать светом» ненадолго меняет свет только у этого устройства (у белой лампы — мягким шагом яркости), затем «Да, вижу» — и сразу можно дать ему имя.',
+      'Дальше можно попробовать вечерний свет на настроенных устройствах: «Оставить» или «Вернуть как было» (выключенное снова выключится). Сам заканчивается через 45 секунд и не отменяет то, что вы выбрали в трее или на телефоне. Профиль считается сохранённым только после ответа haku; при ошибке можно повторить.'],
+    fr: ['Guide du premier lancement : distinguez deux lampes identiques sans le quitter. Montrer allume un instant cet appareil seul (un palier de luminosité doux sur une lampe blanche), puis Oui, je le vois, et vous lui donnez un nom sur place.',
+      'Essayez ensuite la lumière du soir sur vos appareils : Garder, ou Remettre comme avant (ce qui était éteint s’éteint à nouveau). Elle s’arrête seule après 45 secondes et n’annule jamais un choix fait dans la zone de notification ou sur le téléphone. Le profil n’est dit enregistré qu’une fois confirmé par haku ; en cas d’erreur, vous pouvez réessayer.'] },
   { v: '0.4.89',
     en: ['A tidier look: on Home the fans sit in an even grid with the GPU temperature beside the title; Lian Li fan groups show their speed choice on the same line; Settings › Files has buttons of one size; sign-in buttons no longer break onto two lines; Notifications close with the cross in the corner.'],
     ru: ['Аккуратнее вид: на главной вентиляторы стоят ровной сеткой, а температура GPU рядом с заголовком; у групп вентиляторов Lian Li выбор скорости в той же строке; в «Настройки › Файлы» кнопки одного размера; кнопки входа больше не переносятся на две строки; «Уведомления» закрываются крестиком в углу.'],
