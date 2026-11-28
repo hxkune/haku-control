@@ -1169,9 +1169,14 @@ static int status_body(char *out, int cap) {
     int n = jcat(out, cap, 0, "\"effect\":\"%s\",\"brightness\":%d,\"msi\":%d,\"sticks\":%d,\"gpu_temp\":%s,\"hotspot\":%d,\"pawnio\":%d,\"msi_own\":%ld,\"ram_own\":%ld,\"ram_src\":[%ld,%ld],\"pc_own\":%d,\"off_in\":%d,\"prof_why\":%d,\"unsaved\":%d,\"rev\":%ld,\"test\":\"%s\",\"preview\":\"%s\",\"fx_audio\":%d,\"fx_temp\":%d,\"bulbs\":[",
                      g_effects[cur_effect].id, (int)(brightness * 100 + 0.5f), have_msi, have_ene ? ene_count() : 0, gt, hotspot_active(), pawnio_busy ? 2 : pawnio_installed(), msi_own, ram_own, ram_src & 3, ram_src >> 2 & 3, app_pc_own_now(),
                      off_at ? max(1, (int)((DWORD)off_at - GetTickCount()) / 1000) : 0, prof_why, cfg_unsaved(), g_state_rev, tz, pz, effects_audio_state(), effects_temp_state());
-    for (int i = 0; i < lights_count() && n < cap - 300; i++) {
-        char nm[200]; jesc(nm, sizeof(nm), lights_name(i));
-        n = jcat(out, cap, n, "%s{\"name\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, lights_is_online(i), lights_ip(i));
+    for (int i = 0; i < lights_count() && n < cap - 700; i++) {
+        // [bulb.<mac>] name: the user's own name, kept by MAC so two identical bulbs stay apart after a re-login reorders them
+        char nk[40] = "", nm[200], an[200]; int q = 0;
+        for (const char *m = lights_mac(i); *m && q < 30; m++) if (isalnum((unsigned char)*m)) { if (!q) q = snprintf(nk, sizeof(nk), "bulb."); nk[q++] = (char)tolower((unsigned char)*m); }
+        nk[q] = 0;
+        const char *own = nk[0] ? cfg_get(nk, "name", "") : "";
+        jesc(nm, sizeof(nm), own[0] ? own : lights_name(i)); jesc(an, sizeof(an), lights_name(i));
+        n = jcat(out, cap, n, "%s{\"name\":\"%s\",\"aname\":\"%s\",\"nk\":\"%s\",\"online\":%d,\"ip\":\"%s\"}", i ? "," : "", nm, an, nk, lights_is_online(i), lights_ip(i));
     }
     n = jcat(out, cap, n, "],\"nano\":");
     n += nano_json(out + n, cap - n);

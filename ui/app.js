@@ -6582,7 +6582,8 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-help
 // ------------------------------------------------------------------ first-run guide: a card on Home from the first device to
 // the first profile, through what is already there (the scan, the device names, the path pair, profile_save).
 // [general] guide = dev | path | test | try | save (where it was left) | done | skip; no key: an install from before it, not offered
-// dev: the key of the device shown by light: an added device's id ('12'), 'ram', 'gpu', 'light:<i>' (a bulb), 'nano:<slot>'
+// dev: the key of the device shown by light: an added device's id ('12'), 'ram', 'gpu', 'bulb.<mac>' (a bulb; 'light:<i>' when its
+// MAC is unknown), 'nano:<slot>'
 const GUIDE = { last: '', scanAt: 0, scanned: 0, adding: new Set(), dev: '', dvn: '', test: '', seen: 0, said: '', prob: '', saving: null, err: '', name: '', tips: null, focus: 0,
   okIds: new Set(), nm: '', nmv: null, fx: '', pv: '', pvSeen: 0, pvAt: 0, pvList: [], pvZ: [] };
 const gdStep = () => cv('general', 'guide', '');
@@ -6601,11 +6602,11 @@ function gdDirect() {
   return L;
 }
 // what can show the test light, by stable keys (an added device's id, a bulb's slot, a panel controller's slot; never the
-// row's place in the list); nm: how it gets its name ('ext' here, 'aidot' and 'nano' from their own apps)
+// row's place in the list); nm: how it gets its name ('ext' and 'bulb' here, 'aidot' and 'nano' from their own apps)
 const gdCan = () => [
   ...gdDirect().filter(x => !x.why).map(x => ({ id: x.id, kind: x.kind, name: x.name, small: x.lv, zone: x.zone })),
   ...S.ext.devs.filter(d => !gdWhyNot(d)).map(d => ({ id: String(d.id), kind: kindTitle(d.kind), name: d.name, small: [d.host, gdLevel(d)].filter(Boolean).join(' · '), zone: 'zone.dev' + d.id, nm: 'ext' })),
-  ...proLocked() ? [] : [...S.bulbs.map((x, i) => x.online && { id: 'light:' + i, kind: t('chip.lamps'), name: bulbName(i), small: x.ip || '', zone: 'zone.light' + (i + 1), nm: 'aidot' }),
+  ...proLocked() ? [] : [...S.bulbs.map((x, i) => x.online && { id: x.nk || 'light:' + i, kind: t('chip.lamps'), name: bulbName(i), small: x.ip || '', zone: 'zone.light' + (i + 1), nm: x.nk ? 'bulb' : 'aidot' }),
     ...nanoCtls().map(n => n.online && { id: 'nano:' + n.slot, kind: 'Nanoleaf', name: nanoName(n), small: n.ip || '', zone: nanoZone(n.slot), nm: 'nano' })].filter(Boolean)];
 // why an added device can't show the test light here (then its own card is the way), '' when it can
 function gdWhyNot(d) {
@@ -6630,6 +6631,7 @@ const gdExtState = d => zonesNeed(d) || !d.online || !d.enabled ? 'need' : !isSc
 function gdOnline(k) {
   if (/^\d+$/.test(k)) return !!devById(+k)?.online;
   if (k.startsWith('light:')) return !!S.bulbs[+k.slice(6)]?.online;
+  if (k.startsWith('bulb.')) return !!S.bulbs.find(b => b.nk === k)?.online;
   if (k.startsWith('nano:')) return !!nanoCtls().find(n => String(n.slot) === k.slice(5))?.online;
   return true;
 }
@@ -6682,10 +6684,12 @@ function gdName() {
 }
 // the name the user gives right after "Yes, I see it": [dev.N] name, the one the cards, Home, the tray, the phone and the
 // scenarios already read (devices.c load_config); a rescan finds the device by its host and keeps it
+// an AiDot bulb: [bulb.<mac>] name, haku's own (the AiDot app keeps its name); the status gives it back as the bulb's name
 function gdNameSave() {
-  const d = devById(+GUIDE.nm), v = ($('#gd-nm')?.value || '').replace(/[;#\[\]=]/g, '').trim();
+  const bl = S.bulbs.find(x => x.nk && x.nk === GUIDE.nm), d = !bl && devById(+GUIDE.nm), v = ($('#gd-nm')?.value || '').replace(/[;#\[\]=]/g, '').trim();
+  if (bl && v && v !== bl.name) { setCfg(bl.nk, 'name', v); bl.name = v; buildBulbs(); }
   if (d && v && v !== d.name) { setCfg('dev.' + d.id, 'name', v); d.name = v; renderOwnList(); }
-  GUIDE.said = d && v ? t('gd.n.done', v) : ''; GUIDE.nm = ''; GUIDE.nmv = null; GUIDE.fx = '[data-g="next"]';
+  GUIDE.said = (bl || d) && v ? t(bl ? 'gd.n.done.b' : 'gd.n.done', v) : ''; GUIDE.nm = ''; GUIDE.nmv = null; GUIDE.fx = '[data-g="next"]';
   updateGuide();
 }
 function gdSave() {
@@ -6739,7 +6743,7 @@ function gdBody(s) {
     if (GUIDE.test && S.test === GUIDE.test) GUIDE.seen = 1;
     else if (GUIDE.test && GUIDE.seen) gdTestEnd('core');   // the core ended it (its minute, a layout change), not the page
     if (GUIDE.test && !gdOnline(GUIDE.dev)) gdTestEnd();     // lost or removed meanwhile: said by name
-    if (GUIDE.nm && !devById(+GUIDE.nm)) { GUIDE.nm = ''; GUIDE.nmv = null; }   // removed while being named
+    if (GUIDE.nm && !devById(+GUIDE.nm) && !S.bulbs.some(x => x.nk === GUIDE.nm)) { GUIDE.nm = ''; GUIDE.nmv = null; }   // removed while being named
     const on = GUIDE.test && S.test === GUIDE.test;
     const nmBox = `<div class="gd-nm"><label class="num"><span>${t('gd.n.label')}</span><input type="text" id="gd-nm" maxlength="40" spellcheck="false" autocomplete="off"></label>
       <div class="btn-row">${b('nm-skip', t('gd.n.skip'))}${b('nm-ok', t('gd.n.save'), ' primary')}</div></div>`;
@@ -6875,7 +6879,7 @@ $('#guide').addEventListener('click', e => {
   if (g === 'yes') {
     const k = GUIDE.dev, x = gdCan().find(x => x.id === k);
     gdTestEnd(); GUIDE.prob = ''; GUIDE.okIds.add(k);
-    if (x?.nm === 'ext') { GUIDE.said = ''; GUIDE.nm = k; GUIDE.nmv = devById(+k).name; GUIDE.fx = '#gd-nm'; }
+    if (x?.nm === 'ext' || x?.nm === 'bulb') { GUIDE.said = ''; GUIDE.nm = k; GUIDE.nmv = x.name; GUIDE.fx = '#gd-nm'; }
     else { GUIDE.said = t(x?.nm === 'aidot' ? 'gd.n.aidot' : x?.nm === 'nano' ? 'gd.n.nano' : 'gd.t.ok'); GUIDE.fx = '[data-g="next"]'; }
     return updateGuide();
   }

@@ -2551,6 +2551,35 @@
     } finally { await gdBack(k); }
   });
 
+  test('guide naming an AiDot bulb: two identical ones, the name kept by MAC when the list is reordered; no MAC, no name box', async () => {
+    const k = gdKeep();
+    try {
+      await fresh();
+      await gdSet([], 'test');
+      const B = 'Matter Smart Light Bulb B38 RGBTW', bulb = (m, ip) => ({ name: B, aname: B, nk: 'bulb.a4c1380000' + m, online: 1, ip });
+      STATE.bulbs = [bulb('04', '192.168.1.143'), bulb('06', '192.168.1.182')]; emit(STATE); await wait(80);
+      const show = id => $(`#guide [data-g="show"][data-id="${id}"]`), name = 'Лампа у монитора';
+      ok(gdCan().map(x => x.id).join() === 'bulb.a4c138000004,bulb.a4c138000006', 'the keys: ' + gdCan().map(x => x.id));
+      sent.length = 0; show('bulb.a4c138000006').click(); await wait(80);
+      ok(sent.filter(o => o.cmd === 'dev_test').map(o => o.zone).join() === 'zone.light2', 'not the second bulb lit: ' + JSON.stringify(sent));
+      gd('yes').click(); await wait(40);
+      const box = $('#gd-nm');
+      ok(box && document.activeElement === box && box.value === B, 'no name box with the AiDot name');
+      ok($('#guide .gd-nm').previousElementSibling.textContent.includes('192.168.1.182'), 'the name field is not under the bulb shown');
+      box.value = name; sent.length = 0; key(box, 'Enter'); await wait(80);
+      const names = sent.filter(o => o.cmd === 'set' && o.k === 'name');
+      ok(names.length === 1 && names[0].s === 'bulb.a4c138000006' && names[0].v === name, 'the name written: ' + JSON.stringify(names));
+      ok(gdSt() === t('gd.n.done.b', name) && bulbName(1) === name && bulbName(0) === B, 'named: ' + gdSt() + ' / ' + bulbName(0) + ' / ' + bulbName(1));
+      STATE.bulbs.reverse(); emit(STATE); await wait(80);   // a new AiDot sign-in gives them the other way round
+      ok(bulbName(0) === name && gdCan().find(x => x.id === 'bulb.a4c138000006').name === name && gdCan().find(x => x.id === 'bulb.a4c138000004').name === B, 'the name did not follow the bulb: ' + S.bulbs.map(b => b.name));
+      // an old key file without the MAC: noted, and the AiDot app is the way to rename it
+      STATE.bulbs = [{ name: B, aname: B, nk: '', online: 1, ip: '192.168.1.9' }]; emit(STATE); await wait(80);
+      sent.length = 0; show('light:0').click(); await wait(60); gd('yes').click(); await wait(30);
+      ok(!$('#gd-nm') && gdSt() === t('gd.n.aidot') && !sent.some(o => o.cmd === 'set'), 'a bulb without a MAC: ' + gdSt());
+      noHw();
+    } finally { await gdBack(k); }
+  });
+
   test('guide try step: the devices taking part, Put back with the effect off, Keep once, a full settings file, a change by hand, a late Put back, leaving and closing', async () => {
     const k = gdKeep(), fx0 = [STATE.effect, STATE.cfg.general.effect];
     try {

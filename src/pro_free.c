@@ -42,6 +42,7 @@ int  lights_is_online(int i) { (void)i; return 0; }
 void lights_suspend(int sleeping) { (void)sleeping; }
 int  lights_changed(void) { return 0; }
 const char *lights_ip(int i) { (void)i; return ""; }
+const char *lights_mac(int i) { (void)i; return ""; }
 
 // sign-ins (AiDot, Tuya, Govee cloud)
 void accounts_aidot_login(const char *country, const char *email, const char *password) { (void)country; (void)email; (void)password; }

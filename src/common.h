@@ -160,6 +160,7 @@ int  lights_is_online(int i);
 void lights_suspend(int sleeping);   // PC sleep / resume
 int  lights_changed(void);        // 1 once after the key file was reloaded
 const char *lights_ip(int i);
+const char *lights_mac(int i);   // lower case, as the cloud gives it; "" when unknown
 
 // ---- dev_nanoleaf.c (Nanoleaf controllers, local OpenAPI + UDP extControl, a thread each)
 // k = slot - 1 (0..NANO_MAX-1): the first controller is [nanoleaf] / zone.nanoleaf, the others [nanoleafN] / zone.nanoleafN
