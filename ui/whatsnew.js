@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.92',
+    en: ['Blink now shows on AiDot bulbs: they blink in one-second steps, since a bulb fades between colours and the quick blink used to average out to nothing.'],
+    ru: ['«Мигнуть» теперь видно на лампах AiDot: они мигают секундными шагами. Лампа плавно переходит между цветами, и прежнее быстрое мигание сглаживалось до незаметного.'],
+    fr: ['Clignoter se voit maintenant sur les ampoules AiDot : elles clignotent par pas d’une seconde, car une ampoule passe en fondu d’une couleur à l’autre et le clignotement rapide se lissait jusqu’à ne plus se voir.'] },
   { v: '0.4.91',
     en: ['First-run guide: AiDot bulbs can now be named right after Yes, I see it. The name is haku’s own, kept by the bulb itself, so two identical bulbs keep their names even when a new AiDot sign-in lists them in another order. The AiDot app keeps its own name.'],
     ru: ['Мастер первого запуска: лампе AiDot теперь можно дать имя сразу после «Да, вижу». Это имя хранится в haku и привязано к самой лампе, поэтому у двух одинаковых ламп имена не перепутаются, даже если после нового входа в AiDot они придут в другом порядке. В приложении AiDot остаётся своё имя.'],
