@@ -456,7 +456,8 @@ static unsigned __stdcall render_thread(void *p) {
         rgbf pvc = scalec(effects_kelvin(PV_KELVIN), PV_LEVEL * br);
         static int tz_was = -1; static float tz_lv;   // a white light's test level, taken once when its test starts
         if (tz != tz_was) { tz_was = tz; tz_lv = -1; }
-        int iz = tk - (DWORD)ident_at < IDENT_MS ? ident_zone : -1, iblink = (tk - (DWORD)ident_at) / 250 % 2 == 0;
+        int iz = tk - (DWORD)ident_at < IDENT_MS ? ident_zone : -1, iblink = (tk - (DWORD)ident_at) / 250 % 2 == 0,
+            iblink_slow = (tk - (DWORD)ident_at) / 1000 % 2 == 0;   // Wi-Fi bulbs fade ([lights] smooth): 1 s steps, or a 250 ms blink averages out to nothing
         int cm = tk - (DWORD)cal_at < CAL_MS ? cal_mode : 0, cz = cal_zone, cn = 0;
         if (cm == 1 || cm == 3) for (int i = 0; i < sc.count; i++) if (sc.leds[i].zone == cz && sc.leds[i].index >= cn) cn = sc.leds[i].index + 1;
         effects_render(fx, &sc, &sn, dt, out);
@@ -486,7 +487,7 @@ static unsigned __stdcall render_thread(void *p) {
                     c.r = c.g = c.b = tz_lv;
                 }
             }
-            if (sc.leds[i].zone == iz) c.r = c.g = c.b = iblink ? 1.0f : 0.0f;
+            if (sc.leds[i].zone == iz) c.r = c.g = c.b = (sc.leds[i].dev == DEV_LIGHT ? iblink_slow : iblink) ? 1.0f : 0.0f;
             if (cm == 2) c.r = c.g = c.b = 0.8f;
             else if ((cm == 1 || cm == 3) && sc.leds[i].zone == cz) {
                 // 3: counted on the cable, so [dev.N] reverse (applied after this) does not move it to another connector
