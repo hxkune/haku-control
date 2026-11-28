@@ -3,6 +3,10 @@
 // What changed, shown once in the window after an update (app.js, whatsNew). Newest first; every version has its
 // points in each language. Add the new version's entry here with each release.
 const WHATSNEW = [
+  { v: '0.4.91',
+    en: ['First-run guide: AiDot bulbs can now be named right after Yes, I see it. The name is haku’s own, kept by the bulb itself, so two identical bulbs keep their names even when a new AiDot sign-in lists them in another order. The AiDot app keeps its own name.'],
+    ru: ['Мастер первого запуска: лампе AiDot теперь можно дать имя сразу после «Да, вижу». Это имя хранится в haku и привязано к самой лампе, поэтому у двух одинаковых ламп имена не перепутаются, даже если после нового входа в AiDot они придут в другом порядке. В приложении AiDot остаётся своё имя.'],
+    fr: ['Guide du premier lancement : une ampoule AiDot peut maintenant être nommée juste après Oui, je le vois. Ce nom est propre à haku et lié à l’ampoule elle-même : deux ampoules identiques gardent leur nom même si une nouvelle connexion AiDot les liste dans un autre ordre. L’application AiDot garde son propre nom.'] },
   { v: '0.4.90',
     en: ['First-run guide: tell two identical lamps apart without leaving it. Show with light lights only that device for a moment (a soft brightness step on a white lamp), then you say Yes, I see it and give it a name right there.',
       'Then try evening light on the devices you set up: Keep it, or Put back as it was (what was off goes off again). It ends by itself in 45 seconds, and never undoes a change you made in the tray or on the phone. The profile is reported saved only once haku has it; on an error you can retry.'],
